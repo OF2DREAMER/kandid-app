@@ -2877,25 +2877,70 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
             return self.send_json(200, {"success": True, "message": "Logged out successfully"})
 
+        if path == "/api/auth/forgot-password":
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "unknown"
+            if not rate_limiter.check_rate_limit(f"forgot_pw:{client_ip}", max_requests=10, window_seconds=60):
+                return self.send_json(429, {"error": "Too many password reset requests. Please wait 1 minute before trying again."})
+                
+            raw_id = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
+            clean_handle = raw_id.replace("@", "")
+            
+            if not raw_id:
+                return self.send_json(400, {"error": "Username or registered email is required"})
+                
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ? OR LOWER(handle) = ?", (clean_handle, raw_id, raw_id))
+            row = cursor.fetchone()
+            
+            if not row:
+                conn.close()
+                return self.send_json(404, {"error": f"Account '{raw_id}' not found. Please verify your handle or email."})
+                
+            u = dict(row)
+            conn.close()
+            
+            user_email = (u.get("email") or "").strip()
+            if not user_email or "@" not in user_email:
+                return self.send_json(400, {"error": "No valid email address linked with this account. Contact support."})
+                
+            res = generate_secure_otp(user_email, client_ip)
+            status_code = res.get("status", 200)
+            if not res.get("success"):
+                return self.send_json(status_code, res)
+                
+            parts = user_email.split("@")
+            user_name_part = parts[0]
+            masked_name = user_name_part[0] + "***" + (user_name_part[-1] if len(user_name_part) > 1 else "")
+            masked_email = f"{masked_name}@{parts[1]}"
+            
+            return self.send_json(200, {
+                "success": True,
+                "message": f"Verification code sent to {masked_email}",
+                "email": user_email,
+                "masked_email": masked_email,
+                "dev_otp": res.get("dev_otp")
+            })
+
         if path == "/api/auth/login" or path == "/api/login":
             client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "unknown"
             if not rate_limiter.check_rate_limit(f"login:{client_ip}", max_requests=10, window_seconds=60):
                 return self.send_json(429, {"error": "Too many login attempts. Please wait 1 minute before trying again."})
                 
-            identifier = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
-            identifier = identifier.replace("@", "")
+            raw_identifier = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
+            clean_handle = raw_identifier.replace("@", "")
             password = (body.get("password") or "").strip()
             
-            if not identifier:
+            if not raw_identifier:
                 return self.send_json(400, {"error": "Username or email is required"})
             
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ?", (identifier, identifier))
+            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ? OR LOWER(handle) = ?", (clean_handle, raw_identifier, raw_identifier))
             row = cursor.fetchone()
             if not row:
                 conn.close()
-                return self.send_json(404, {"error": f"Account '@{identifier}' not found. Please sign up!"})
+                return self.send_json(404, {"error": f"Account '{raw_identifier}' not found. Please sign up!"})
             
             u = dict(row)
             
@@ -2927,44 +2972,54 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "token": token, "user": user_obj})
 
         if path == "/api/auth/reset-password":
-            identifier = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
-            identifier = identifier.replace("@", "")
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "unknown"
+            if not rate_limiter.check_rate_limit(f"reset_pw:{client_ip}", max_requests=10, window_seconds=60):
+                return self.send_json(429, {"error": "Too many attempts. Please wait 1 minute before trying again."})
+
+            raw_id = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
+            clean_handle = raw_id.replace("@", "")
+            otp = str(body.get("otp") or body.get("code") or "").strip()
             new_password = (body.get("new_password") or body.get("password") or "").strip()
 
-            if not identifier:
-                return self.send_json(400, {"error": "Username or email is required"})
+            if not raw_id:
+                return self.send_json(400, {"error": "Username or registered email is required"})
+            if not otp:
+                return self.send_json(400, {"error": "Verification code is required"})
             if not new_password or len(new_password) < 4:
                 return self.send_json(400, {"error": "New password must be at least 4 characters long"})
 
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ?", (identifier, identifier))
+            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ? OR LOWER(handle) = ?", (clean_handle, raw_id, raw_id))
             row = cursor.fetchone()
             if not row:
                 conn.close()
-                return self.send_json(404, {"error": f"Account '@{identifier}' not found."})
+                return self.send_json(404, {"error": f"Account '{raw_id}' not found."})
 
             u = dict(row)
-            pw_hash, salt = hash_password(new_password)
-            conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?", (pw_hash, salt, u["id"]))
+            user_email = (u.get("email") or "").strip()
             
-            token = "token_" + u["handle"] + "_" + secrets.token_hex(6)
-            expires = (datetime.now() + timedelta(days=365)).isoformat()
+            # Verify OTP
+            verify_res = verify_secure_otp(user_email, otp)
+            if not verify_res.get("success"):
+                conn.close()
+                return self.send_json(400, verify_res)
+
+            pw_hash, salt = hash_password(new_password)
+            conn.execute("UPDATE users SET password_hash = ?, salt = ?, email_verified = 1 WHERE id = ?", (pw_hash, salt, u["id"]))
+            
+            token = "token_" + u["handle"] + "_" + secrets.token_hex(24)
+            expires = (datetime.now() + timedelta(days=90)).isoformat()
             conn.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-                         ("sess_" + secrets.token_hex(6), u["id"], token, expires))
+                         ("sess_" + secrets.token_hex(16), u["id"], token, expires))
             conn.commit()
 
             avatar_url = u.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={u.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
-            user_obj = {
-                "id": u["id"],
-                "name": u.get("name", "Student"),
-                "handle": u.get("handle", "user"),
-                "username": u.get("handle", "user"),
-                "campus": u.get("campus", "North City University"),
-                "avatar_url": avatar_url,
-                "avatar": avatar_url,
-                "streak": u.get("streak_count", 1)
-            }
+            user_obj = serialize_user(u)
+            user_obj["avatar_url"] = avatar_url
+            user_obj["avatar"] = avatar_url
+            user_obj["username"] = u.get("handle", "user")
+            user_obj["streak"] = u.get("streak_count", 1)
             conn.close()
             return self.send_json(200, {"success": True, "token": token, "user": user_obj, "message": "Password updated successfully!"})
 
@@ -3162,9 +3217,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             provider_subject = s["provider_subject"]
             name = (body.get("name") or s.get("google_name") or "Kandid Creator").strip()
             handle = (body.get("handle") or s.get("chosen_handle") or email.split("@")[0]).strip().lower().replace("@", "")
-            campus_name = (body.get("campus_name") or s.get("chosen_campus_name") or "Guru Kashi University").strip()
+            campus_name = (body.get("campus_name") or s.get("chosen_campus_name") or "").strip()
             campus_id = (body.get("campus_id") or s.get("chosen_campus_id") or "").strip()
-            city = (body.get("city") or s.get("chosen_city") or "Talwandi Sabo, Bathinda").strip()
+            city = (body.get("city") or s.get("chosen_city") or "").strip()
             avatar_url = (body.get("avatar_url") or s.get("google_avatar") or f"https://api.dicebear.com/7.x/initials/svg?seed={handle}&backgroundColor=18181b,27272a&textColor=f59e0b").strip()
             raw_pwd = (body.get("password") or "").strip()
 
