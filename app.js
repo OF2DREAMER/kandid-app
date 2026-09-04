@@ -5374,21 +5374,11 @@ window.copyInviteLink = function() {
     }
 };
 
-window.continueAsGuest = function() {
-    var obFlow = document.getElementById('onboardingFlow');
-    if (obFlow) obFlow.style.display = 'none';
-    localStorage.setItem('kandid_onboarded', 'true');
-    switchScreenView('feed');
-    loadFeedMoments('foryou');
-    showToast('Browsing campus as guest 👋');
-};
-
 async function checkOnboarding() {
     var token = localStorage.getItem('kandid_token');
-    var onboarded = localStorage.getItem('kandid_onboarded');
     var obFlow = document.getElementById('onboardingFlow');
     
-    if (!token && !onboarded) {
+    if (!token) {
         state.token = null;
         state.currentUser = null;
         if (obFlow) {
@@ -5399,16 +5389,23 @@ async function checkOnboarding() {
         state.token = token;
         if (obFlow) obFlow.style.display = 'none';
         
-        if (token) {
-            try {
-                var res = await apiRequest('/api/auth/me');
-                if (res && res.user) {
-                    state.currentUser = res.user;
-                    localStorage.setItem('kandid_user', JSON.stringify(res.user));
+        try {
+            var res = await apiRequest('/api/auth/me');
+            if (res && res.user) {
+                state.currentUser = res.user;
+                localStorage.setItem('kandid_user', JSON.stringify(res.user));
+            } else {
+                // If token invalid, force login
+                localStorage.removeItem('kandid_token');
+                state.token = null;
+                state.currentUser = null;
+                if (obFlow) {
+                    obFlow.style.display = 'flex';
+                    switchScreen('entry');
                 }
-            } catch(e) {
-                console.error('Auth check failed', e);
             }
+        } catch(e) {
+            console.error('Auth check failed', e);
         }
     }
 }
