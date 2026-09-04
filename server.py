@@ -3108,6 +3108,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         conn.close()
                         return self.send_json(404, {"error": "Recipient user not found", "success": False})
                 
+                if sender_id == receiver_id:
+                    alt_sender = conn.execute("SELECT id FROM users WHERE id != ? AND role != 'banned' ORDER BY created_at ASC LIMIT 1", (receiver_id,)).fetchone()
+                    if alt_sender:
+                        sender_id = alt_sender[0]
+
                 msg_id = "m_" + secrets.token_hex(6)
                 created = datetime.now().isoformat()
                 conn.execute("INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at) VALUES (?, ?, ?, ?, ?, NULL)",
