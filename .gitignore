@@ -8,3 +8,6 @@ ngrok.zip
 err
 error.log
 node_modules/
+.env
+uploads/
+.env.local

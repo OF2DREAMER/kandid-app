@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Kandid Production Server (v3.0.2)
-Standalone Real-Time Platform
+Kandid Production Server (v5.1.0)
+Scalable Campus Social Platform
 """
 
 import os
@@ -13,6 +13,11 @@ import hashlib
 import secrets
 import mimetypes
 import socketserver
+import time
+import urllib.request
+import urllib.parse
+import urllib.error
+import ssl
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
@@ -21,19 +26,246 @@ STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(STATIC_DIR, "data", "kandid.db")
 PORT = int(os.environ.get("PORT", 8080))
 
+# Environment Configuration
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "").strip()
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "").strip()
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
+FROM_EMAIL = os.environ.get("FROM_EMAIL", "Kandid <onboarding@resend.dev>").strip()
+APP_URL = os.environ.get("APP_URL", "https://kandid-app-1.onrender.com").strip()
+SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
+
 os.makedirs(os.path.join(STATIC_DIR, "data"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "uploads", "moments"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "uploads", "audio"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "uploads", "avatars"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "uploads", "covers"), exist_ok=True)
 
+def validate_environment():
+    print(f"\n=======================================================")
+    print(f"🚀 KANDID SERVER INITIALIZING [MODE: {ENVIRONMENT.upper()}]")
+    print(f"=======================================================")
+    if ENVIRONMENT == "production":
+        if not DATABASE_URL:
+            print("⚠️  [PRODUCTION DB] DATABASE_URL not configured. Embedded SQLite active.")
+        else:
+            print(f"✅ [PRODUCTION DB] PostgreSQL Configured: {DATABASE_URL[:20]}...")
+            
+        if not (CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)):
+            print("⚠️  [PRODUCTION MEDIA] Cloudinary keys missing. Storing media on local disk.")
+        else:
+            print(f"✅ [PRODUCTION MEDIA] Cloudinary CDN Active (Cloud: {CLOUDINARY_CLOUD_NAME or 'From URL'})")
+            
+        if not RESEND_API_KEY:
+            print("⚠️  [PRODUCTION EMAIL] RESEND_API_KEY missing. Logging emails to console.")
+        else:
+            print(f"✅ [PRODUCTION EMAIL] Resend Email Active (From: {FROM_EMAIL})")
+    else:
+        print("🛠️  [DEV MODE] Using local SQLite database & local media storage (/uploads/).")
+    print(f"=======================================================\n")
 
+def upload_to_cloudinary(data_str, resource_type="image", folder="kandid/moments"):
+    cloud_name = CLOUDINARY_CLOUD_NAME
+    api_key = CLOUDINARY_API_KEY
+    api_secret = CLOUDINARY_API_SECRET
+    
+    if CLOUDINARY_URL and (not cloud_name or not api_key or not api_secret):
+        try:
+            parsed = urlparse(CLOUDINARY_URL)
+            api_key = parsed.username
+            api_secret = parsed.password
+            cloud_name = parsed.hostname
+        except Exception:
+            pass
+            
+    if not (cloud_name and api_key and api_secret):
+        return None
+        
+    try:
+        timestamp = str(int(time.time()))
+        to_sign = f"folder={folder}&timestamp={timestamp}{api_secret}"
+        signature = hashlib.sha1(to_sign.encode("utf-8")).hexdigest()
+        
+        endpoint = f"https://api.cloudinary.com/v1_1/{cloud_name}/{resource_type}/upload"
+        payload = {
+            "file": data_str,
+            "api_key": api_key,
+            "timestamp": timestamp,
+            "folder": folder,
+            "signature": signature
+        }
+        req_data = urllib.parse.urlencode(payload).encode("utf-8")
+        req = urllib.request.Request(endpoint, data=req_data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, context=ctx, timeout=15) as response:
+            res_json = json.loads(response.read().decode("utf-8"))
+            return res_json.get("secure_url") or res_json.get("url")
+    except Exception as e:
+        print(f"❌ [CLOUDINARY UPLOAD ERROR] {e}")
+        return None
+
+def send_email_resend(to_email, subject, html_content, text_content=""):
+    if not to_email:
+        return {"success": False, "error": "Recipient email required"}
+        
+    if not RESEND_API_KEY:
+        if ENVIRONMENT == "production":
+            print(f"⚠️ [RESEND WARNING] Production email to {to_email} requested without RESEND_API_KEY.")
+            return {"success": False, "error": "Email service not configured"}
+        else:
+            print(f"\n📬 [DEV EMAIL LOG - RESEND SIMULATOR] To: {to_email} | Subject: {subject} | Preview: {text_content or subject}\n")
+            return {"success": True, "id": "dev_" + secrets.token_hex(8), "simulated": True}
+            
+    try:
+        url = "https://api.resend.com/emails"
+        payload = {
+            "from": FROM_EMAIL,
+            "to": [to_email] if isinstance(to_email, str) else to_email,
+            "subject": subject,
+            "html": html_content
+        }
+        if text_content:
+            payload["text"] = text_content
+            
+        req_data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=req_data,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json"
+            }
+        )
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            return {"success": True, "id": res_data.get("id")}
+    except Exception as e:
+        print(f"❌ [RESEND API ERROR] {e}")
+        return {"success": False, "error": str(e)}
+
+def generate_secure_otp(email, ip_address=""):
+    clean_email = email.strip().lower()
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email
+    fifteen_mins_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
+    cursor.execute("SELECT COUNT(*) FROM email_otps WHERE email = ? AND created_at > ?", (clean_email, fifteen_mins_ago))
+    count = cursor.fetchone()[0]
+    if count >= 3:
+        conn.close()
+        return {"success": False, "error": "Maximum OTP limit reached. Please wait 15 minutes before requesting again.", "status": 429}
+        
+    # 2. Invalidate previous pending OTPs
+    cursor.execute("UPDATE email_otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
+    
+    # 3. Generate 6-digit numeric OTP
+    code = f"{secrets.randbelow(900000) + 100000}"
+    salt = secrets.token_hex(16)
+    otp_hash = hashlib.sha256((code + salt).encode("utf-8")).hexdigest()
+    
+    # 4. 10-minute expiry
+    expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+    otp_id = "otp_" + secrets.token_hex(8)
+    now_str = datetime.now().isoformat()
+    
+    cursor.execute("""
+        INSERT INTO email_otps (id, email, otp_hash, salt, attempts, max_attempts, expires_at, is_used, ip_address, created_at)
+        VALUES (?, ?, ?, ?, 0, 5, ?, 0, ?, ?)
+    """, (otp_id, clean_email, otp_hash, salt, expires_at, ip_address, now_str))
+    conn.commit()
+    conn.close()
+    
+    # 5. Email Template & Dispatch
+    subject = f"Your Kandid Verification Code: {code}"
+    html = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b; color: #f4f4f5; padding: 32px 20px; text-align: center; border-radius: 16px; max-width: 480px; margin: 0 auto; border: 1px solid #27272a;">
+        <div style="margin-bottom: 24px;">
+            <span style="font-size: 24px; font-weight: 900; letter-spacing: 0.25em; color: #f59e0b; text-transform: uppercase;">KANDID</span>
+            <p style="font-size: 11px; letter-spacing: 0.15em; color: #71717a; text-transform: uppercase; margin-top: 4px;">Authentic Campus Social</p>
+        </div>
+        <div style="background-color: #18181b; border-radius: 12px; padding: 24px; border: 1px solid #27272a; margin-bottom: 24px;">
+            <p style="font-size: 13px; color: #a1a1aa; margin-bottom: 12px;">Your one-time verification passcode:</p>
+            <div style="font-size: 36px; font-weight: 800; letter-spacing: 0.3em; color: #f59e0b; font-family: monospace; padding: 12px 0;">{code}</div>
+            <p style="font-size: 11px; color: #71717a; margin-top: 8px;">Valid for 10 minutes. Do not share this code with anyone.</p>
+        </div>
+        <p style="font-size: 11px; color: #52525b;">If you didn't request this code, you can safely ignore this email.</p>
+    </div>
+    """
+    text = f"Your Kandid Verification Passcode is: {code} (Valid for 10 minutes)."
+    
+    dispatch_res = send_email_resend(clean_email, subject, html, text)
+    return {"success": True, "message": "Verification code sent to your email.", "email": clean_email, "dispatch": dispatch_res, "dev_otp": code if ENVIRONMENT != 'production' else None}
+
+def verify_secure_otp(email, code_entered):
+    clean_email = email.strip().lower()
+    clean_code = str(code_entered).strip()
+    
+    if not clean_code or len(clean_code) < 4:
+        return {"success": False, "error": "Valid 6-digit code is required"}
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM email_otps WHERE email = ? AND is_used = 0 ORDER BY created_at DESC LIMIT 1", (clean_email,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return {"success": False, "error": "No pending verification code found. Please request a new code."}
+        
+    otp_data = dict(row)
+    
+    # Check expiration
+    now_utc = datetime.now()
+    exp_dt = datetime.fromisoformat(otp_data["expires_at"])
+    if now_utc > exp_dt:
+        cursor.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_data["id"],))
+        conn.commit()
+        conn.close()
+        return {"success": False, "error": "This verification code has expired. Please request a new one."}
+        
+    # Check attempt limit
+    if otp_data["attempts"] >= otp_data["max_attempts"]:
+        cursor.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_data["id"],))
+        conn.commit()
+        conn.close()
+        return {"success": False, "error": "Maximum verification attempts exceeded. Please request a new code."}
+        
+    # Verify Hash
+    expected_hash = hashlib.sha256((clean_code + otp_data["salt"]).encode("utf-8")).hexdigest()
+    if secrets.compare_digest(expected_hash, otp_data["otp_hash"]):
+        cursor.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_data["id"],))
+        cursor.execute("UPDATE users SET email_verified = 1 WHERE email = ?", (clean_email,))
+        conn.commit()
+        conn.close()
+        return {"success": True, "message": "Email verified successfully!"}
+    else:
+        new_attempts = otp_data["attempts"] + 1
+        remaining = otp_data["max_attempts"] - new_attempts
+        cursor.execute("UPDATE email_otps SET attempts = ? WHERE id = ?", (new_attempts, otp_data["id"]))
+        if new_attempts >= otp_data["max_attempts"]:
+            cursor.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_data["id"],))
+        conn.commit()
+        conn.close()
+        if remaining > 0:
+            return {"success": False, "error": f"Invalid verification code. {remaining} attempts remaining."}
+        else:
+            return {"success": False, "error": "Too many failed attempts. This code has been invalidated."}
 
 def save_base64_audio(data_str, prefix="audio"):
     if not data_str or not isinstance(data_str, str):
         return ""
     if not (data_str.startswith("data:audio") or data_str.startswith("data:video/webm")):
         return data_str
+        
+    cloud_url = upload_to_cloudinary(data_str, resource_type="video", folder="kandid/audio")
+    if cloud_url:
+        return cloud_url
+        
     try:
         header, encoded = data_str.split(",", 1)
         ext = "webm"
@@ -46,7 +278,7 @@ def save_base64_audio(data_str, prefix="audio"):
         
         file_bytes = base64.b64decode(encoded)
         filename = f"{prefix}_{secrets.token_hex(8)}.{ext}"
-        filepath = os.path.join(os.path.dirname(__file__), "uploads", filename)
+        filepath = os.path.join(STATIC_DIR, "uploads", filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
             f.write(file_bytes)
@@ -60,6 +292,11 @@ def save_base64_video(data_str, prefix="motion"):
         return ""
     if not (data_str.startswith("data:video") or data_str.startswith("data:application/octet-stream")):
         return data_str
+        
+    cloud_url = upload_to_cloudinary(data_str, resource_type="video", folder="kandid/motion")
+    if cloud_url:
+        return cloud_url
+        
     try:
         header, encoded = data_str.split(",", 1)
         ext = "webm"
@@ -67,7 +304,7 @@ def save_base64_video(data_str, prefix="motion"):
             ext = "mp4"
         file_bytes = base64.b64decode(encoded)
         filename = f"{prefix}_{secrets.token_hex(8)}.{ext}"
-        filepath = os.path.join(os.path.dirname(__file__), "uploads", filename)
+        filepath = os.path.join(STATIC_DIR, "uploads", filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
             f.write(file_bytes)
@@ -75,13 +312,17 @@ def save_base64_video(data_str, prefix="motion"):
     except Exception as e:
         print(f"Error saving base64 video: {e}")
         return ""
-        return ""
 
 def save_base64_image(data_str, prefix="img"):
     if not data_str or not isinstance(data_str, str):
         return ""
     if not data_str.startswith("data:image"):
         return data_str
+        
+    cloud_url = upload_to_cloudinary(data_str, resource_type="image", folder="kandid/images")
+    if cloud_url:
+        return cloud_url
+        
     try:
         header, encoded = data_str.split(",", 1)
         ext = "jpg"
@@ -92,7 +333,7 @@ def save_base64_image(data_str, prefix="img"):
         
         file_bytes = base64.b64decode(encoded)
         filename = f"{prefix}_{secrets.token_hex(8)}.{ext}"
-        filepath = os.path.join(os.path.dirname(__file__), "uploads", filename)
+        filepath = os.path.join(STATIC_DIR, "uploads", filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
             f.write(file_bytes)
@@ -177,6 +418,21 @@ def init_db():
         is_used INTEGER DEFAULT 0,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS email_otps (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        otp_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        attempts INTEGER DEFAULT 0,
+        max_attempts INTEGER DEFAULT 5,
+        expires_at TEXT NOT NULL,
+        is_used INTEGER DEFAULT 0,
+        ip_address TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_email_otps_email ON email_otps(email);
 
     CREATE TABLE IF NOT EXISTS password_resets (
         id TEXT PRIMARY KEY,
@@ -2367,8 +2623,54 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(400, {"error": str(e)})
 
+        if path == "/api/auth/send-otp":
+            email = (body.get("email") or "").strip().lower()
+            if not email or "@" not in email:
+                return self.send_json(400, {"error": "A valid email address is required"})
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else ""
+            res = generate_secure_otp(email, client_ip)
+            status_code = res.get("status", 200)
+            return self.send_json(status_code, res)
+
         if path == "/api/auth/verify-otp":
-            return self.send_json(200, {"success": True, "token": "token_casey_prod"})
+            email = (body.get("email") or "").strip().lower()
+            otp = str(body.get("otp") or body.get("code") or "").strip()
+            if not email:
+                return self.send_json(400, {"error": "Email address is required"})
+            if not otp:
+                return self.send_json(400, {"error": "Verification OTP code is required"})
+                
+            res = verify_secure_otp(email, otp)
+            if not res.get("success"):
+                return self.send_json(400, res)
+                
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1", (email,))
+            row = cursor.fetchone()
+            if row:
+                u = dict(row)
+                token = "token_" + u["handle"] + "_" + secrets.token_hex(6)
+                expires = (datetime.now() + timedelta(days=365)).isoformat()
+                conn.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
+                             ("sess_" + secrets.token_hex(6), u["id"], token, expires))
+                conn.commit()
+                avatar_url = u.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={u.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                user_obj = {
+                    "id": u["id"],
+                    "name": u.get("name", "Student"),
+                    "handle": u.get("handle", "user"),
+                    "username": u.get("handle", "user"),
+                    "campus": u.get("campus", "North City University"),
+                    "avatar_url": avatar_url,
+                    "avatar": avatar_url,
+                    "email": email,
+                    "email_verified": 1
+                }
+                conn.close()
+                return self.send_json(200, {"success": True, "token": token, "user": user_obj, "message": "Email verified successfully!"})
+            conn.close()
+            return self.send_json(200, {"success": True, "message": "Email verified successfully!"})
 
         if path == "/api/auth/login" or path == "/api/login":
             identifier = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
@@ -3315,6 +3617,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
         return self.send_json(404, {"error": "Not Found"})
 
 if __name__ == "__main__":
+    validate_environment()
     init_db()
     server = KandidThreadingServer(("0.0.0.0", PORT), KandidHandler)
     print(f"🚀 Kandid production server running at http://localhost:{PORT}")
