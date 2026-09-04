@@ -5378,12 +5378,21 @@ window.copyInviteLink = function() {
     }
 };
 
+window.continueAsGuest = function() {
+    var obFlow = document.getElementById('onboardingFlow');
+    if (obFlow) obFlow.style.display = 'none';
+    localStorage.setItem('kandid_onboarded', 'true');
+    switchScreenView('feed');
+    loadFeedMoments('foryou');
+    showToast('Browsing campus as guest 👋');
+};
+
 async function checkOnboarding() {
     var token = localStorage.getItem('kandid_token');
     var onboarded = localStorage.getItem('kandid_onboarded');
     var obFlow = document.getElementById('onboardingFlow');
     
-    if (!token || !onboarded) {
+    if (!token && !onboarded) {
         state.token = null;
         state.currentUser = null;
         if (obFlow) {
@@ -5394,22 +5403,16 @@ async function checkOnboarding() {
         state.token = token;
         if (obFlow) obFlow.style.display = 'none';
         
-        try {
-            var res = await apiRequest('/api/auth/me');
-            if (res && res.user) {
-                state.currentUser = res.user;
-            } else {
-                localStorage.removeItem('kandid_token');
-                localStorage.removeItem('kandid_onboarded');
-                state.token = null;
-                state.currentUser = null;
-                if (obFlow) {
-                    obFlow.style.display = 'flex';
-                    switchScreen('entry');
+        if (token) {
+            try {
+                var res = await apiRequest('/api/auth/me');
+                if (res && res.user) {
+                    state.currentUser = res.user;
+                    localStorage.setItem('kandid_user', JSON.stringify(res.user));
                 }
+            } catch(e) {
+                console.error('Auth check failed', e);
             }
-        } catch(e) {
-            console.error('Auth check failed', e);
         }
     }
 }
@@ -6421,7 +6424,7 @@ async function loadChatMessages(userId, isSilent = false) {
       var timeOnly = '';
       if (m.created_at) {
         var t = new Date(m.created_at);
-        if (!isNaN(d.getTime())) {
+        if (!isNaN(t.getTime())) {
           timeOnly = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
       }
