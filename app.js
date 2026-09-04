@@ -6178,7 +6178,41 @@ window.markAllNotificationsRead = markAllNotificationsRead;
 // =====================================================================
 // CHAT V2 MESSAGING ENGINE (PRODUCTION REAL-TIME SYSTEM)
 // =====================================================================
+// REAL-TIME CHAT & MESSAGING ENGINE (V2.1 PRODUCTION)
+// =====================================================================
 state.activeChatUser = null;
+state.chatSyncInterval = null;
+
+function isUserOnline(lastActive) {
+  if (!lastActive) return false;
+  try {
+    var d = new Date(lastActive);
+    var now = new Date();
+    return (now.getTime() - d.getTime()) < 120000; // Active within last 2 minutes
+  } catch(e) {
+    return false;
+  }
+}
+window.isUserOnline = isUserOnline;
+
+async function checkChatUnreadBadge() {
+  if (!state.currentUser) return;
+  try {
+    var data = await apiRequest('/api/chat/unread-count');
+    var badge = document.getElementById('chatUnreadBadge');
+    if (badge) {
+      if (data && data.success && data.count > 0) {
+        badge.textContent = data.count > 99 ? '99+' : data.count;
+        badge.classList.remove('hidden');
+        badge.style.display = 'flex';
+      } else {
+        badge.classList.add('hidden');
+        badge.style.display = 'none';
+      }
+    }
+  } catch(e){}
+}
+window.checkChatUnreadBadge = checkChatUnreadBadge;
 
 async function loadChatConversations(isSilent = false) {
   var container = document.getElementById('chatHomeList');
@@ -6212,7 +6246,8 @@ async function loadChatConversations(isSilent = false) {
 
     convos.forEach(function(c) {
       var item = document.createElement('div');
-      item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-md cursor-pointer hover:bg-zinc-900/50 transition-all';
+      var hasUnread = (c.unreadCount && c.unreadCount > 0);
+      item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-md cursor-pointer hover:bg-zinc-900/50 transition-all ' + (hasUnread ? 'border-amber-500/40 bg-zinc-950/90' : '');
 
       var avatarSrc = c.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(c.handle || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
       var name = escapeHtml(c.name || 'Classmate');
@@ -6220,23 +6255,26 @@ async function loadChatConversations(isSilent = false) {
       var campus = escapeHtml(c.campus || 'North City University');
       var lastMsg = escapeHtml(c.lastMessage || 'Tap to start conversation');
 
-      var isOnline = c.is_online;
+      var isOnline = c.is_online || isUserOnline(c.last_active);
       var statusBadge = isOnline ? 
         '<span class="text-[9px] text-amber-500 font-bold font-mono-tag flex-shrink-0 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>ACTIVE</span>' : 
         '<span class="text-[9px] text-zinc-600 font-mono-tag flex-shrink-0">OFFLINE</span>';
+
+      var unreadPill = hasUnread ?
+        '<span class="min-w-[18px] h-[18px] px-1 bg-amber-500 text-black text-[9px] font-black font-mono-tag rounded-full flex items-center justify-center shadow-md flex-shrink-0 ml-2">' + c.unreadCount + '</span>' : '';
 
       item.innerHTML = 
         '<div class="flex items-center gap-3.5 flex-1 min-w-0">' +
           '<div class="w-12 h-12 rounded-full bg-zinc-900 overflow-hidden border border-zinc-800 flex-shrink-0 relative">' +
             '<img src="' + avatarSrc + '" class="w-full h-full object-cover">' +
-            (isOnline ? '<div class="absolute bottom-0 right-0 w-3 h-3 bg-amber-500 border-2 border-zinc-950 rounded-full"></div>' : '') +
+            (isOnline ? '<div class="absolute bottom-0 right-0 w-3 h-3 bg-amber-500 border-2 border-zinc-950 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"></div>' : '') +
           '</div>' +
           '<div class="flex-1 min-w-0">' +
             '<div class="flex justify-between items-baseline mb-0.5">' +
-              '<h3 class="text-xs font-bold text-white truncate">' + name + '</h3>' +
-              statusBadge +
+              '<h3 class="text-xs font-bold text-white truncate ' + (hasUnread ? 'text-amber-400' : '') + '">' + name + '</h3>' +
+              '<div class="flex items-center gap-1.5">' + statusBadge + unreadPill + '</div>' +
             '</div>' +
-            '<p class="text-[11px] text-zinc-400 truncate">' + lastMsg + '</p>' +
+            '<p class="text-[11px] ' + (hasUnread ? 'text-zinc-100 font-medium' : 'text-zinc-400') + ' truncate">' + lastMsg + '</p>' +
           '</div>' +
         '</div>';
 
@@ -6277,6 +6315,7 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline) {
 
   switchScreenView('chat-conversation');
   loadChatMessages(userId);
+  checkChatUnreadBadge();
 }
 window.openChatThread = openChatThread;
 
@@ -6290,11 +6329,12 @@ async function loadChatMessages(userId, isSilent = false) {
 
   var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId));
   if (data && data.success && Array.isArray(data.messages)) {
-    // Only rebuild DOM if new messages arrived to prevent scrolling jumping
-    if (isSilent && container.dataset.msgCount == data.messages.length) {
+    // Only rebuild DOM if new messages or read receipts state changed
+    var msgSignature = JSON.stringify(data.messages.map(function(m){ return m.id + '_' + (m.read_at ? '1' : '0'); }));
+    if (isSilent && container.dataset.msgSig === msgSignature) {
         return; 
     }
-    container.dataset.msgCount = data.messages.length;
+    container.dataset.msgSig = msgSignature;
     container.innerHTML = '';
 
     if (data.messages.length === 0) {
@@ -6347,12 +6387,21 @@ async function loadChatMessages(userId, isSilent = false) {
           timeOnly = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
       }
-      var statusIcon = isMe ? '<span class="text-[8px] text-black font-mono-tag font-bold">✓✓</span>' : '';
+      
+      // Single Tick (✓) for Sent, Double Tick (✓✓) for Seen/Read
+      var statusIcon = '';
+      if (isMe) {
+        if (m.read_at) {
+          statusIcon = '<span class="text-[9px] text-amber-950 font-bold ml-1 font-mono-tag" title="Seen">✓✓</span>';
+        } else {
+          statusIcon = '<span class="text-[9px] text-black/60 font-bold ml-1 font-mono-tag" title="Delivered">✓</span>';
+        }
+      }
 
       bubble.innerHTML = 
         '<div class="max-w-[78%] rounded-2xl px-4 py-2 text-xs ' + bubbleStyle + ' shadow-sm space-y-0.5">' +
           '<p class="leading-relaxed">' + escapeHtml(m.content) + '</p>' +
-          '<div class="flex items-center justify-end gap-1 opacity-70 pt-0.5">' +
+          '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
             '<span class="text-[8px] font-mono-tag">' + timeOnly + '</span>' +
             statusIcon +
           '</div>' +
@@ -6386,23 +6435,54 @@ async function sendChatMessageV2() {
   if (container) {
     var tempBubble = document.createElement('div');
     tempBubble.className = 'flex justify-end';
+    var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     tempBubble.innerHTML = 
-      '<div class="max-w-[78%] rounded-2xl px-4 py-2.5 text-xs bg-amber-500 text-black font-medium shadow-sm">' +
+      '<div class="max-w-[78%] rounded-2xl px-4 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
         '<p class="leading-relaxed">' + escapeHtml(text) + '</p>' +
+        '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
+          '<span class="text-[8px] font-mono-tag">' + timeNow + '</span>' +
+          '<span class="text-[9px] text-black/60 font-bold ml-1 font-mono-tag">✓</span>' +
+        '</div>' +
       '</div>';
     container.appendChild(tempBubble);
     container.scrollTop = container.scrollHeight;
   }
 
-  await apiRequest('/api/chat/send', {
+  var res = await apiRequest('/api/chat/send', {
     method: 'POST',
     body: JSON.stringify({
       receiverId: state.activeChatUser,
       content: text
     })
   });
+
+  if (res && res.success) {
+    await loadChatMessages(state.activeChatUser, true);
+    checkChatUnreadBadge();
+  } else {
+    showToast('Message send failed. Please check connection.');
+  }
 }
 window.sendChatMessageV2 = sendChatMessageV2;
+
+// Background Real-Time Poller for Chat & Notifications
+if (window.chatSyncGlobalInterval) clearInterval(window.chatSyncGlobalInterval);
+window.chatSyncGlobalInterval = setInterval(function() {
+  checkChatUnreadBadge();
+  if (state.activeScreen === 'chat-conversation' && state.activeChatUser) {
+    loadChatMessages(state.activeChatUser, true);
+  } else if (state.activeScreen === 'chat-home') {
+    loadChatConversations(true);
+  }
+}, 2500);
+
+// Background Heartbeat Ping (keeps active status live every 45s)
+if (window.chatHeartbeatInterval) clearInterval(window.chatHeartbeatInterval);
+window.chatHeartbeatInterval = setInterval(function() {
+  if (state.currentUser && state.token) {
+    apiRequest('/api/auth/ping').catch(function(){});
+  }
+}, 45000);
 
 // =====================================================================
 // EDIT PROFILE & USER UPDATE SYSTEM
