@@ -3,8 +3,13 @@
  * Authentic Campus Moments Discovery
  */
 
+var savedUser = null;
+try {
+  savedUser = JSON.parse(localStorage.getItem('kandid_user') || 'null');
+} catch(e) {}
+
 var state = {
-  currentUser: null,
+  currentUser: savedUser,
   token: localStorage.getItem('kandid_token') || null,
   activeCircle: 'foryou',
   activeScreen: 'feed'
@@ -277,11 +282,12 @@ async function apiRequest(endpoint, options) {
   options = options || {};
   var headers = options.headers || {};
   headers['Content-Type'] = 'application/json';
-  if (state.token) {
+  if (state.token && state.token !== 'null' && state.token !== 'undefined') {
     headers['Authorization'] = 'Bearer ' + state.token;
   }
-  if (state.currentUser && state.currentUser.id) {
-    headers['X-User-Id'] = state.currentUser.id;
+  var currentUser = state.currentUser || JSON.parse(localStorage.getItem('kandid_user') || 'null');
+  if (currentUser && currentUser.id) {
+    headers['X-User-Id'] = currentUser.id;
   }
   options.headers = headers;
 
@@ -5607,9 +5613,11 @@ function renderChatNewUserList(users, container, title) {
   header.textContent = title;
   container.appendChild(header);
 
+  var currentUser = state.currentUser || JSON.parse(localStorage.getItem('kandid_user') || 'null');
+
   users.forEach(function(u) {
     // Skip self
-    if (state.currentUser && state.currentUser.id === u.id) return;
+    if (currentUser && currentUser.id === u.id) return;
 
     var item = document.createElement('div');
     item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between shadow-md cursor-pointer hover:bg-zinc-900/50 transition-all';
@@ -5629,10 +5637,17 @@ function renderChatNewUserList(users, container, title) {
           '<p class="text-[10px] text-zinc-500 font-mono-tag">@' + handle + ' · ' + campus + '</p>' +
         '</div>' +
       '</div>' +
-    item.querySelector('button').addEventListener('click', function(e) {
-      e.stopPropagation();
-      openChatThread(u.id, name, '@' + handle, avatarSrc);
-    });
+      '<button class="chat-start-btn px-3 py-1.5 bg-zinc-900 hover:bg-amber-500 hover:text-black border border-zinc-800 text-zinc-300 font-mono-tag text-[10px] font-bold rounded-xl transition cursor-pointer active:scale-95 flex items-center gap-1 flex-shrink-0">' +
+        '<span>💬</span> <span>CHAT</span>' +
+      '</button>';
+
+    var chatBtn = item.querySelector('.chat-start-btn');
+    if (chatBtn) {
+      chatBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        openChatThread(u.id, name, '@' + handle, avatarSrc);
+      });
+    }
 
     item.addEventListener('click', function() {
       openUserProfile(u.id, u);
@@ -6451,23 +6466,30 @@ async function sendChatMessageV2() {
     container.scrollTop = container.scrollHeight;
   }
 
-  var senderId = (state.currentUser && state.currentUser.id) ? state.currentUser.id : '';
-  var res = await apiRequest('/api/chat/send', {
-    method: 'POST',
-    body: JSON.stringify({
-      senderId: senderId,
-      sender_id: senderId,
-      receiverId: state.activeChatUser,
-      receiver_id: state.activeChatUser,
-      content: text
-    })
-  });
+  var currentUser = state.currentUser || JSON.parse(localStorage.getItem('kandid_user') || 'null');
+  var senderId = (currentUser && currentUser.id) ? currentUser.id : '';
 
-  if (res && res.success) {
-    await loadChatMessages(state.activeChatUser, true);
-    checkChatUnreadBadge();
-  } else {
-    showToast('Message send failed. Please check connection.');
+  try {
+    var res = await apiRequest('/api/chat/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        senderId: senderId,
+        sender_id: senderId,
+        receiverId: state.activeChatUser,
+        receiver_id: state.activeChatUser,
+        content: text
+      })
+    });
+
+    if (res && res.success) {
+      await loadChatMessages(state.activeChatUser, true);
+      checkChatUnreadBadge();
+    } else {
+      showToast('Message send failed. Please check connection.');
+    }
+  } catch (err) {
+    console.error('Chat send error:', err);
+    showToast('Failed to send message.');
   }
 }
 window.sendChatMessageV2 = sendChatMessageV2;
@@ -6760,6 +6782,11 @@ async function loadConnectedFriends() {
   }
 }
 window.loadConnectedFriends = loadConnectedFriends;
+
+function openChatWithUser(userId, name, handle, avatarUrl, isOnline) {
+  openChatThread(userId, name, handle, avatarUrl, isOnline);
+}
+window.openChatWithUser = openChatWithUser;
 
 function switchChatSubTab(tab) {
   var chatList = document.getElementById('chatHomeList');
