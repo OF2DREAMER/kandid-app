@@ -2330,6 +2330,7 @@ const KandidCameraEngine = {
 
   async discoverHardwareDevices() {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
       var devices = await navigator.mediaDevices.enumerateDevices();
       var videoDevices = devices.filter(function(d) { return d.kind === 'videoinput'; });
       
@@ -2337,20 +2338,20 @@ const KandidCameraEngine = {
         // Find front camera
         var front = videoDevices.find(function(d) {
           var l = (d.label || '').toLowerCase();
-          return l.includes('front') || l.includes('user') || l.includes('selfie') || l.includes('facing front');
+          return l.includes('front') || l.includes('user') || l.includes('selfie') || l.includes('facetime') || l.includes('facing front');
         });
         if (!front && videoDevices.length > 1) {
-          front = videoDevices[videoDevices.length - 1]; // On Android, front camera is usually the last device
+          front = videoDevices[videoDevices.length - 1]; // On Android/iOS, front is usually the secondary device
         }
         this.frontDeviceId = front ? front.deviceId : null;
 
         // Find rear camera
         var rear = videoDevices.find(function(d) {
           var l = (d.label || '').toLowerCase();
-          return l.includes('back') || l.includes('environment') || l.includes('rear') || l.includes('facing back');
+          return l.includes('back') || l.includes('environment') || l.includes('rear') || l.includes('facing back') || l.includes('wide') || l.includes('camera 0');
         });
         if (!rear && videoDevices.length > 0) {
-          rear = videoDevices[0]; // On Android, rear camera is usually the first device
+          rear = videoDevices[0];
         }
         this.rearDeviceId = rear ? rear.deviceId : null;
       }
@@ -2374,6 +2375,7 @@ const KandidCameraEngine = {
 
     this.setState('INITIALIZING');
     await this.startMainPreview('environment');
+    await this.discoverHardwareDevices();
     this.setState('READY');
   },
 
@@ -2384,46 +2386,75 @@ const KandidCameraEngine = {
     var mainVideo = document.getElementById('cameraMainVideo');
     var mainImg = document.getElementById('cameraMainPreviewImg');
 
+    // 1. Fully release and terminate all existing hardware streams
     if (this.mainStream) {
       try {
         this.mainStream.getTracks().forEach(function(t) { t.stop(); });
       } catch(e){}
       this.mainStream = null;
     }
-    state.mainMediaStream = null;
-    if (mainVideo) {
+    if (state.mainMediaStream) {
+      try {
+        state.mainMediaStream.getTracks().forEach(function(t) { t.stop(); });
+      } catch(e){}
+      state.mainMediaStream = null;
+    }
+    if (mainVideo && mainVideo.srcObject) {
+      try {
+        var oldTracks = mainVideo.srcObject.getTracks ? mainVideo.srcObject.getTracks() : [];
+        oldTracks.forEach(function(t) { t.stop(); });
+      } catch(e){}
       mainVideo.srcObject = null;
     }
 
-    await new Promise(function(r) { setTimeout(r, 100); });
+    // 2. Hardware cooldown to allow OS camera HAL to release physical sensor
+    await new Promise(function(r) { setTimeout(r, 180); });
 
     var stream = null;
     var targetMode = (this.activeFacing === 'user') ? 'user' : 'environment';
+    var preferredDeviceId = (targetMode === 'user') ? this.frontDeviceId : this.rearDeviceId;
 
-    // 1. Standard mobile browser facingMode request
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: targetMode },
-        audio: false
-      });
-    } catch(e1) {
+    // 3. Multi-Tier Resolution: Device ID -> Exact facingMode -> Ideal facingMode -> Standard
+    if (preferredDeviceId) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: preferredDeviceId } },
+          audio: false
+        });
+      } catch(eDev){}
+    }
+
+    if (!stream) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: targetMode } },
+          audio: false
+        });
+      } catch(eExact){}
+    }
+
+    if (!stream) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: targetMode } },
           audio: false
         });
-      } catch(e2) {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: targetMode } },
-            audio: false
-          });
-        } catch(e3) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          } catch(e4){}
-        }
-      }
+      } catch(eIdeal){}
+    }
+
+    if (!stream) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: targetMode },
+          audio: false
+        });
+      } catch(eStd){}
+    }
+
+    if (!stream) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      } catch(eGen){}
     }
 
     if (!stream) {
@@ -2453,7 +2484,7 @@ const KandidCameraEngine = {
 
       // Poll until video is actively producing live frames
       var pollStart = Date.now();
-      while ((Date.now() - pollStart) < 1500) {
+      while ((Date.now() - pollStart) < 2000) {
         if (mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0 && mainVideo.readyState >= 2) {
           break;
         }
@@ -2525,7 +2556,7 @@ const KandidCameraEngine = {
     }
 
     // Small delay to let sensor auto-exposure and white balance settle
-    await new Promise(function(r) { setTimeout(r, 200); });
+    await new Promise(function(r) { setTimeout(r, 350); });
 
     // ==========================================
     // STEP 3: SNAP FRONT SELFIE CAMERA (ME)
