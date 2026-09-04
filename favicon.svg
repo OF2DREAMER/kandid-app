@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- App Icon Squircle Background -->
+  <rect width="512" height="512" rx="116" fill="#09090b"/>
+  <rect width="512" height="512" rx="116" fill="url(#bgGradient)" opacity="0.6"/>
+
+  <!-- Gradients -->
+  <defs>
+    <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#18181b" />
+      <stop offset="100%" stop-color="#000000" />
+    </radialGradient>
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="1" />
+      <stop offset="100%" stop-color="#d97706" stop-opacity="1" />
+    </radialGradient>
+  </defs>
+
+  <!-- Inner Dark Lens Base -->
+  <circle cx="256" cy="256" r="170" fill="#050505" stroke="#1f1f23" stroke-width="8"/>
+
+  <!-- Amber Orbit / Ring -->
+  <circle cx="256" cy="256" r="120" fill="none" stroke="#f59e0b" stroke-width="20" stroke-linecap="round"/>
+
+  <!-- White Bold Letter "K" -->
+  <text x="195" y="315" font-family="'Plus Jakarta Sans', Arial, sans-serif" font-weight="800" font-size="140" fill="#ffffff" text-anchor="middle">K</text>
+
+  <!-- Solid Amber Core / Dot -->
+  <circle cx="295" cy="256" r="42" fill="url(#coreGlow)"/>
+
+  <!-- Tiny Red Live / Camera Indicator Dot on Ring -->
+  <circle cx="355" cy="175" r="14" fill="#ef4444" stroke="#09090b" stroke-width="4"/>
+</svg>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kandid - Global Window</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; }
+        .font-mono-tag { font-family: 'JetBrains Mono', monospace; }
+        .no-scroll::-webkit-scrollbar { display: none; }
+        .apple-blur { backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); }
+    </style>
+</head>
+<body class="flex justify-center items-center min-h-screen bg-[#050505] py-4">
+
+    <div class="w-[390px] h-[844px] bg-[#09090b] flex flex-col relative overflow-hidden border border-zinc-800/80 rounded-[40px] shadow-2xl justify-between">
+
+        <div>
+            <div class="w-full pt-3 px-6 flex justify-between items-center text-[10px] text-zinc-400 z-30 bg-[#09090b]">
+                <span class="font-bold tracking-wider text-white font-mono-tag">09:41</span>
+                <div class="w-20 h-4 bg-black rounded-full mx-auto"></div>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span class="text-[9px] text-amber-500 font-mono-tag">GLOBAL WINDOW</span>
+                </div>
+            </div>
+
+            <header class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-7 h-7 bg-white text-black font-extrabold rounded-lg flex items-center justify-center text-sm shadow-md font-mono-tag">
+                            K
+                        </div>
+                        <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KANDID</h1>
+                    </div>
+
+                    <button class="w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center text-zinc-400 hover:text-white transition-colors relative shadow-sm cursor-pointer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                        </svg>
+                        <span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-500"></span>
+                    </button>
+                </div>
+
+                <div class="flex justify-between items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[10px] font-mono-tag">
+                    <a href="kandid_feed.html" class="flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer text-center">FOR YOU</a>
+                    <button class="flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer">NEARBY</button>
+                    <a href="kandid_campus.html" class="flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer text-center">CAMPUS</a>
+                    <button class="flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm">GLOBAL</button>
+                </div>
+            </header>
+        </div>
+
+        <main class="flex-1 overflow-y-auto px-4 py-4 space-y-5 pb-32 no-scroll">
+            
+            <div class="px-1 space-y-2.5 border-b border-zinc-900 pb-3.5">
+                <div class="flex justify-between items-center">
+                    <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-widest uppercase">WORLD WINDOW</span>
+                    <span class="text-[9px] text-zinc-500 font-mono-tag">LIVE FEED</span>
+                </div>
+                <h2 class="text-xs text-zinc-300 font-normal">Real moments across global coordinates and timezones.</h2>
+                
+                <div class="flex items-center gap-1.5 text-[9px] font-mono-tag overflow-x-auto no-scroll pt-1">
+                    <button class="px-3 py-1 bg-amber-500 text-black rounded-lg font-bold">ALL</button>
+                    <button class="px-2.5 py-1 bg-zinc-900 text-zinc-400 hover:text-white rounded-lg border border-zinc-800">ASIA</button>
+                    <button class="px-2.5 py-1 bg-zinc-900 text-zinc-400 hover:text-white rounded-lg border border-zinc-800">EUROPE</button>
+                    <button class="px-2.5 py-1 bg-zinc-900 text-zinc-400 hover:text-white rounded-lg border border-zinc-800">AMERICAS</button>
+                </div>
+            </div>
+
+            <article class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3.5 shadow-2xl">
+                <div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner">
+                    <img src="https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=600&q=80" class="w-full h-full object-cover">
+                    <div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">
+                        <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
+                    </div>
+                </div>
+
+                <div class="space-y-2 px-0.5">
+                    <div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider">
+                        <span>TOKYO · 35.6762° N</span>
+                        <span class="text-amber-400">18 MIN AGO</span>
+                    </div>
+                    <p class="text-xs text-zinc-200 font-normal leading-relaxed">
+                        "Everyone stayed late after the rain."
+                    </p>
+                    <div class="flex justify-between items-center pt-1 border-t border-zinc-900 font-mono-tag">
+                        <div class="flex items-center gap-2">
+                            <div class="w-5 h-5 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700">
+                                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&q=80" class="w-full h-full object-cover">
+                            </div>
+                            <span class="text-[11px] text-zinc-400 font-medium font-sans">@hana_k</span>
+                            <span class="text-[9px] text-zinc-600">· ISO 400 · 1/250S</span>
+                        </div>
+                        <button class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 transition-all text-[9px] font-semibold text-zinc-300 rounded-lg border border-zinc-800 cursor-pointer">
+                            ✦ React
+                        </button>
+                    </div>
+                </div>
+            </article>
+
+            <article class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3.5 shadow-2xl">
+                <div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner">
+                    <img src="https://images.unsplash.com/photo-1504893524553-b855bce32c67?auto=format&fit=crop&w=600&q=80" class="w-full h-full object-cover">
+                    <div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">
+                        <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
+                    </div>
+                </div>
+
+                <div class="space-y-2 px-0.5">
+                    <div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider">
+                        <span>REYKJAVÍK · 64.1466° N</span>
+                        <span class="text-amber-400">34 MIN AGO</span>
+                    </div>
+                    <p class="text-xs text-zinc-200 font-normal leading-relaxed">
+                        "Morning light hitting the harbor square."
+                    </p>
+                    <div class="flex justify-between items-center pt-1 border-t border-zinc-900 font-mono-tag">
+                        <div class="flex items-center gap-2">
+                            <div class="w-5 h-5 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700">
+                                <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=80&q=80" class="w-full h-full object-cover">
+                            </div>
+                            <span class="text-[11px] text-zinc-400 font-medium font-sans">@thor_n</span>
+                            <span class="text-[9px] text-zinc-600">· ISO 200 · 1/500S</span>
+                        </div>
+                        <button class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 transition-all text-[9px] font-semibold text-zinc-300 rounded-lg border border-zinc-800 cursor-pointer">
+                            ✦ React
+                        </button>
+                    </div>
+                </div>
+            </article>
+
+            <article class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3.5 shadow-2xl">
+                <div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner">
+                    <img src="https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=600&q=80" class="w-full h-full object-cover">
+                    <div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">
+                        <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
+                    </div>
+                </div>
+
+                <div class="space-y-2 px-0.5">
+                    <div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider">
+                        <span>LONDON · 51.5074° N</span>
+                        <span class="text-amber-400">1 HR AGO</span>
+                    </div>
+                    <p class="text-xs text-zinc-200 font-normal leading-relaxed">
+                        "Last train back after a long library shift."
+                    </p>
+                    <div class="flex justify-between items-center pt-1 border-t border-zinc-900 font-mono-tag">
+                        <div class="flex items-center gap-2">
+                            <div class="w-5 h-5 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700">
+                                <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=80&q=80" class="w-full h-full object-cover">
+                            </div>
+                            <span class="text-[11px] text-zinc-400 font-medium font-sans">@mia_r</span>
+                            <span class="text-[9px] text-zinc-600">· ISO 320 · 1/160S</span>
+                        </div>
+                        <button class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 transition-all text-[9px] font-semibold text-zinc-300 rounded-lg border border-zinc-800 cursor-pointer">
+                            ✦ React
+                        </button>
+                    </div>
+                </div>
+            </article>
+
+            <div class="text-center py-8 space-y-1">
+                <h3 class="text-xs font-bold text-white font-mono-tag tracking-wider uppercase">GLOBAL IS QUIET</h3>
+                <p class="text-[11px] text-zinc-500">More real moments will appear as people capture them.</p>
+            </div>
+
+        </main>
+
+        <nav class="absolute bottom-4 left-4 right-4 bg-zinc-950/95 apple-blur border border-zinc-800/80 rounded-2xl px-5 py-2.5 flex justify-between items-center z-40 shadow-2xl">
+            <a href="kandid_feed.html" class="text-amber-500 flex flex-col items-center cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
+                <span class="text-[8px] mt-0.5 tracking-widest font-bold font-mono-tag">FEED</span>
+            </a>
+            <button class="text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <span class="text-[8px] mt-0.5 tracking-widest font-mono-tag">SEARCH</span>
+            </button>
+            
+            <button class="relative -top-4 group cursor-pointer">
+                <div class="w-14 h-14 bg-zinc-900 border border-zinc-700 rounded-2xl flex flex-col items-center justify-center shadow-xl relative p-1">
+                    <span class="w-2 h-2 rounded-full bg-amber-500 mb-1"></span>
+                    <span class="text-[9px] font-bold text-zinc-400 font-mono-tag tracking-widest">REC</span>
+                </div>
+            </button>
+
+            <button class="text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                <span class="text-[8px] mt-0.5 tracking-widest font-mono-tag">CHAT</span>
+            </button>
+            <button class="text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                <span class="text-[8px] mt-0.5 tracking-widest font-mono-tag">YOU</span>
+            </button>
+        </nav>
+
+    </div>
+</body>
+</html>
