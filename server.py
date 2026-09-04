@@ -266,6 +266,10 @@ def save_base64_audio(data_str, prefix="audio"):
     if cloud_url:
         return cloud_url
         
+    if ENVIRONMENT == "production":
+        print(f"❌ [MEDIA ERROR] Failed to upload audio to Cloudinary in production.")
+        return ""
+        
     try:
         header, encoded = data_str.split(",", 1)
         ext = "webm"
@@ -297,6 +301,10 @@ def save_base64_video(data_str, prefix="motion"):
     if cloud_url:
         return cloud_url
         
+    if ENVIRONMENT == "production":
+        print(f"❌ [MEDIA ERROR] Failed to upload motion video to Cloudinary in production.")
+        return ""
+        
     try:
         header, encoded = data_str.split(",", 1)
         ext = "webm"
@@ -323,6 +331,10 @@ def save_base64_image(data_str, prefix="img"):
     if cloud_url:
         return cloud_url
         
+    if ENVIRONMENT == "production":
+        print(f"❌ [MEDIA ERROR] Failed to upload image to Cloudinary in production.")
+        return ""
+        
     try:
         header, encoded = data_str.split(",", 1)
         ext = "jpg"
@@ -338,6 +350,9 @@ def save_base64_image(data_str, prefix="img"):
         with open(filepath, "wb") as f:
             f.write(file_bytes)
         return f"/uploads/{filename}"
+    except Exception as e:
+        print(f"Error saving base64 image: {e}")
+        return data_str
     except Exception as e:
         print(f"Error saving base64 image: {e}")
         return data_str
@@ -358,7 +373,104 @@ def generate_token(nbytes: int = 32) -> str:
 def generate_otp(length: int = 6) -> str:
     return "".join(secrets.choice("0123456789") for _ in range(length))
 
+class PostgresCursorWrapper:
+    def __init__(self, raw_cursor):
+        self.raw_cursor = raw_cursor
+
+    def execute(self, sql, params=None):
+        pg_sql = sql.replace("?", "%s")
+        if pg_sql.strip().upper().startswith("PRAGMA"):
+            return self
+        if params is None:
+            self.raw_cursor.execute(pg_sql)
+        else:
+            self.raw_cursor.execute(pg_sql, tuple(params))
+        return self
+
+    def executescript(self, sql_script):
+        for stmt in sql_script.split(";"):
+            clean = stmt.strip()
+            if clean and not clean.upper().startswith("PRAGMA"):
+                self.execute(clean)
+        return self
+
+    def fetchone(self):
+        row = self.raw_cursor.fetchone()
+        if row is None:
+            return None
+        return row
+
+    def fetchall(self):
+        return self.raw_cursor.fetchall()
+
+    def __iter__(self):
+        return iter(self.raw_cursor)
+
+    @property
+    def rowcount(self):
+        return self.raw_cursor.rowcount
+
+class PostgresConnectionWrapper:
+    def __init__(self, raw_conn):
+        self.raw_conn = raw_conn
+
+    def cursor(self):
+        try:
+            import psycopg2.extras
+            raw_cur = self.raw_conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        except Exception:
+            raw_cur = self.raw_conn.cursor()
+        return PostgresCursorWrapper(raw_cur)
+
+    def execute(self, sql, params=None):
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executescript(self, sql_script):
+        cur = self.cursor()
+        cur.executescript(sql_script)
+        return cur
+
+    def commit(self):
+        self.raw_conn.commit()
+
+    def rollback(self):
+        self.raw_conn.rollback()
+
+    def close(self):
+        self.raw_conn.close()
+
 def get_db():
+    global DATABASE_URL
+    if DATABASE_URL:
+        try:
+            import psycopg2
+            raw_conn = psycopg2.connect(DATABASE_URL)
+            return PostgresConnectionWrapper(raw_conn)
+        except ImportError:
+            try:
+                import pg8000.dbapi
+                import ssl
+                parsed = urlparse(DATABASE_URL)
+                raw_conn = pg8000.dbapi.connect(
+                    user=parsed.username,
+                    password=parsed.password,
+                    host=parsed.hostname,
+                    port=parsed.port or 5432,
+                    database=parsed.path.lstrip("/"),
+                    ssl_context=ssl.create_default_context() if "sslmode=require" in DATABASE_URL or parsed.hostname != "localhost" else None
+                )
+                return PostgresConnectionWrapper(raw_conn)
+            except Exception as e:
+                if ENVIRONMENT == "production":
+                    raise RuntimeError(f"CRITICAL: Failed to connect to production PostgreSQL database: {e}")
+                print(f"⚠️ PostgreSQL connection error: {e}. Falling back to SQLite in development.")
+        except Exception as e:
+            if ENVIRONMENT == "production":
+                raise RuntimeError(f"CRITICAL: Failed to connect to production PostgreSQL database: {e}")
+            print(f"⚠️ PostgreSQL connection error: {e}. Falling back to SQLite in development.")
+
     conn = sqlite3.connect(DB_FILE, timeout=10.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -1144,8 +1256,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         query = parse_qs(parsed.query)
 
-        if path == "/healthz":
-            return self.send_json(200, {"status": "ok", "time": datetime.now().isoformat()})
+        if path in ["/health", "/healthz", "/api/health"]:
+            db_engine = "postgresql" if DATABASE_URL else "sqlite"
+            return self.send_json(200, {
+                "status": "ok",
+                "environment": ENVIRONMENT,
+                "database_engine": db_engine,
+                "version": "v5.1.0",
+                "time": datetime.now().isoformat()
+            })
 
         if path == "/landing":
             self.path = "/landing.html"
@@ -3073,6 +3192,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             main_img = save_base64_image(raw_main, "main") if raw_main else "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80"
             pip_img = save_base64_image(raw_pip, "pip") if raw_pip else "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80"
+            
+            # Strict Production Media Integrity Check
+            if ENVIRONMENT == "production":
+                if raw_main and not main_img:
+                    return self.send_json(502, {"success": False, "error": "Failed to upload main capture to cloud storage. Moment was not created."})
+                if raw_pip and not pip_img:
+                    return self.send_json(502, {"success": False, "error": "Failed to upload selfie capture to cloud storage. Moment was not created."})
+
             location_city = body.get("locationCity", user.get("campus", "North City University"))
             location_coords = body.get("locationCoords", "")
             iso = body.get("iso", "ISO 400")
@@ -3083,10 +3210,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
             context_comm = body.get("context_community_id") or ""
             context_loc = body.get("context_location") or body.get("locationCity") or ""
 
-            post_id = "post_" + secrets.token_hex(6)
-            conn = get_db()
             raw_audio = body.get("audioData") or body.get("audio_data") or ""
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""
+            if ENVIRONMENT == "production" and raw_audio and not audio_url:
+                return self.send_json(502, {"success": False, "error": "Failed to upload ambient audio to cloud storage. Moment was not created."})
+
+            post_id = "post_" + secrets.token_hex(6)
+            conn = get_db()
             audio_duration = body.get("audioDuration") or body.get("audio_duration") or "3.0s"
             
             raw_motion = body.get("motionData") or body.get("motion_data") or ""
