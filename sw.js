@@ -1,5 +1,5 @@
-// Kandid Service Worker (v3.0.2)
-const CACHE_NAME = 'kandid-v3.0.2';
+// Kandid Service Worker (v5.0.1)
+const CACHE_NAME = 'kandid-v5.0.1';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
