@@ -812,6 +812,38 @@ def get_current_user(headers, body=None, query=None):
     conn.close()
     return None
 
+def resolve_user_id(raw_val, conn=None):
+    if not raw_val:
+        return None
+    raw_s = str(raw_val).strip()
+    if not raw_s or raw_s.lower() in ["null", "undefined", "none", ""]:
+        return None
+    
+    should_close = False
+    if conn is None:
+        conn = get_db()
+        should_close = True
+        
+    try:
+        clean_handle = raw_s.lower().replace("@", "")
+        cursor = conn.cursor()
+        # 1. Exact ID
+        row = cursor.execute("SELECT id FROM users WHERE id = ? LIMIT 1", (raw_s,)).fetchone()
+        if row:
+            return row[0]
+        # 2. Match handle
+        row = cursor.execute("SELECT id FROM users WHERE LOWER(handle) = ? LIMIT 1", (clean_handle,)).fetchone()
+        if row:
+            return row[0]
+        # 3. Match name
+        row = cursor.execute("SELECT id FROM users WHERE LOWER(name) = ? LIMIT 1", (clean_handle,)).fetchone()
+        if row:
+            return row[0]
+        return raw_s
+    finally:
+        if should_close:
+            conn.close()
+
 class KandidThreadingServer(socketserver.ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -896,13 +928,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "online": bool(user)})
 
         if path == "/api/chat/unread-count":
-            user = get_current_user(self.headers)
-            if not user:
-                return self.send_json(200, {"success": True, "count": 0})
+            user = get_current_user(self.headers, query=query)
+            explicit_uid = (query.get("user_id", [""])[0] or self.headers.get("X-User-Id", "")).strip()
+            raw_uid = explicit_uid or (user["id"] if user else None)
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM messages WHERE receiver_id = ? AND read_at IS NULL", (user["id"],))
-            unread_total = cursor.fetchone()[0]
+            resolved_uid = resolve_user_id(raw_uid, conn) if raw_uid else None
+            if resolved_uid:
+                cursor.execute("SELECT COUNT(*) FROM messages WHERE (receiver_id = ? OR receiver_id = ?) AND read_at IS NULL", (resolved_uid, raw_uid))
+                unread_total = cursor.fetchone()[0]
+            else:
+                unread_total = 0
             conn.close()
             return self.send_json(200, {"success": True, "count": unread_total})
 
@@ -1788,27 +1824,29 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True, "requests": requests})
         if path == "/api/chat/conversations":
+            explicit_uid = (query.get("user_id", [""])[0] or self.headers.get("X-User-Id", "")).strip()
             user = get_current_user(self.headers, query=query)
-            user_id = user["id"] if user else None
-            if not user_id:
-                return self.send_json(200, {"success": True, "conversations": []})
+            user_id = explicit_uid or (user["id"] if user else None)
             conn = get_db()
             cursor = conn.cursor()
+            resolved_uid = resolve_user_id(user_id, conn) or user_id or "u_80bef710"
             cursor.execute("""
                 SELECT u.id, u.name, u.handle, u.avatar_url, u.avatar_letter, u.campus, u.last_active, u.created_at
                 FROM users u
                 WHERE u.id != ? AND u.role != 'banned'
                 ORDER BY u.created_at DESC
-            """, (user_id,))
+            """, (resolved_uid,))
             users_list = [dict(r) for r in cursor.fetchall()]
             convos = []
             now_dt = datetime.now()
             for u in users_list:
                 cursor.execute("""
                     SELECT content, created_at, sender_id, read_at FROM messages
-                    WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+                    WHERE (sender_id IN (?, ?) AND receiver_id IN (?, ?))
+                       OR (sender_id IN (?, ?) AND receiver_id IN (?, ?))
                     ORDER BY created_at DESC LIMIT 1
-                """, (user_id, u["id"], u["id"], user_id))
+                """, (resolved_uid, user_id, u["id"], u.get("handle", ""),
+                      u["id"], u.get("handle", ""), resolved_uid, user_id))
                 last_m = cursor.fetchone()
                 
                 # Only include in active chat list if message history exists
@@ -1825,8 +1863,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     # Unread count from this specific user
                     cursor.execute("""
                         SELECT COUNT(*) FROM messages 
-                        WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
-                    """, (u["id"], user_id))
+                        WHERE sender_id IN (?, ?) AND receiver_id IN (?, ?) AND read_at IS NULL
+                    """, (u["id"], u.get("handle", ""), resolved_uid, user_id))
                     unread_cnt = cursor.fetchone()[0]
                             
                     u["lastMessage"] = last_m[0]
@@ -1842,34 +1880,44 @@ class KandidHandler(SimpleHTTPRequestHandler):
             convos.sort(key=lambda x: x["lastTimestamp"], reverse=True)
             
             conn.close()
-            return self.send_json(200, {"success": True, "conversations": convos})
+            return self.send_json(200, {"success": True, "conversations": convos, "resolved_user_id": resolved_uid})
 
         if path == "/api/chat/messages":
-            chat_id = query.get("chat_id", [""])[0]
-            explicit_uid = query.get("user_id", [""])[0] or self.headers.get("X-User-Id", "").strip()
+            raw_chat_id = query.get("chat_id", [""])[0].strip()
+            explicit_uid = (query.get("user_id", [""])[0] or self.headers.get("X-User-Id", "")).strip()
             user = get_current_user(self.headers, query=query)
             user_id = explicit_uid or (user["id"] if user else None)
-            if not user_id:
-                user_id = "u_80bef710"
+            
             conn = get_db()
             cursor = conn.cursor()
             
+            resolved_uid = resolve_user_id(user_id, conn) or user_id or "u_80bef710"
+            resolved_chat_id = resolve_user_id(raw_chat_id, conn) or raw_chat_id
+            
             # Mark incoming messages as read
-            if chat_id:
+            if resolved_chat_id and resolved_uid:
                 cursor.execute("""
                     UPDATE messages SET read_at = ?
-                    WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
-                """, (datetime.now().isoformat(), chat_id, user_id))
+                    WHERE sender_id IN (?, ?) AND receiver_id IN (?, ?) AND read_at IS NULL
+                """, (datetime.now().isoformat(), resolved_chat_id, raw_chat_id, resolved_uid, user_id))
                 conn.commit()
 
+            # Query all messages between these two users (checking both resolved and raw strings)
             cursor.execute("""
                 SELECT * FROM messages
-                WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+                WHERE (sender_id IN (?, ?) AND receiver_id IN (?, ?))
+                   OR (sender_id IN (?, ?) AND receiver_id IN (?, ?))
                 ORDER BY created_at ASC
-            """, (user_id, chat_id, chat_id, user_id))
+            """, (resolved_uid, user_id, resolved_chat_id, raw_chat_id,
+                  resolved_chat_id, raw_chat_id, resolved_uid, user_id))
             msgs = [dict(r) for r in cursor.fetchall()]
             conn.close()
-            return self.send_json(200, {"success": True, "messages": msgs})
+            return self.send_json(200, {
+                "success": True,
+                "messages": msgs,
+                "resolved_user_id": resolved_uid,
+                "resolved_chat_id": resolved_chat_id
+            })
 
         if path == "/api/search":
             q = query.get("q", [""])[0].strip().lower()
@@ -3069,43 +3117,34 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/chat/send":
             try:
-                explicit_uid = body.get("senderId") or body.get("sender_id") or self.headers.get("X-User-Id", "").strip()
+                explicit_uid = (body.get("senderId") or body.get("sender_id") or self.headers.get("X-User-Id", "")).strip()
                 user = get_current_user(self.headers, body)
-                sender_id = explicit_uid or (user["id"] if user else "u_80bef710")
-                receiver_id = body.get("recipientId") or body.get("receiverId") or body.get("receiver_id") or body.get("recipient_id") or body.get("chat_id")
-                if not receiver_id:
+                raw_sender_id = explicit_uid or (user["id"] if user else "u_80bef710")
+                raw_receiver_id = body.get("recipientId") or body.get("receiverId") or body.get("receiver_id") or body.get("recipient_id") or body.get("chat_id")
+                if not raw_receiver_id:
                     return self.send_json(400, {"error": "Receiver ID is required", "success": False})
                 content = (body.get("content") or body.get("text") or "").strip()
                 if not content:
                     return self.send_json(400, {"error": "Message content cannot be empty", "success": False})
 
                 conn = get_db()
-                sender_row = conn.execute("SELECT * FROM users WHERE id = ? OR LOWER(handle) = ? LIMIT 1", (sender_id, sender_id.lower().replace("@", ""))).fetchone()
-                if sender_row:
-                    sender_id = sender_row["id"]
-                    user = dict(sender_row)
-                else:
-                    first_u = conn.execute("SELECT * FROM users WHERE role != 'banned' ORDER BY created_at ASC LIMIT 1").fetchone()
-                    if first_u:
-                        user = dict(first_u)
-                        sender_id = user["id"]
+                sender_id = resolve_user_id(raw_sender_id, conn) or raw_sender_id
+                receiver_id = resolve_user_id(raw_receiver_id, conn) or raw_receiver_id
 
-                # Resolve receiver if handle or username was passed
-                receiver_row = conn.execute("SELECT * FROM users WHERE id = ? OR LOWER(handle) = ? LIMIT 1", (receiver_id, receiver_id.lower().replace("@", ""))).fetchone()
-                if receiver_row:
-                    receiver_id = receiver_row["id"]
-                else:
-                    fallback_r = conn.execute("SELECT id FROM users WHERE id != ? AND role != 'banned' ORDER BY created_at ASC LIMIT 1", (sender_id,)).fetchone()
-                    if fallback_r:
-                        receiver_id = fallback_r[0]
-                    else:
-                        conn.close()
-                        return self.send_json(404, {"error": "Recipient user not found", "success": False})
-                
-                if sender_id == receiver_id:
-                    alt_sender = conn.execute("SELECT id FROM users WHERE id != ? AND role != 'banned' ORDER BY created_at ASC LIMIT 1", (receiver_id,)).fetchone()
-                    if alt_sender:
-                        sender_id = alt_sender[0]
+                sender_row = conn.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (sender_id,)).fetchone()
+                if not sender_row:
+                    sender_row = conn.execute("SELECT * FROM users WHERE LOWER(handle) = ? LIMIT 1", (str(raw_sender_id).lower().replace("@", ""),)).fetchone()
+                    if sender_row:
+                        sender_id = sender_row["id"]
+                    elif user and user.get("id"):
+                        sender_id = user["id"]
+                        sender_row = user
+
+                receiver_row = conn.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (receiver_id,)).fetchone()
+                if not receiver_row:
+                    receiver_row = conn.execute("SELECT * FROM users WHERE LOWER(handle) = ? LIMIT 1", (str(raw_receiver_id).lower().replace("@", ""),)).fetchone()
+                    if receiver_row:
+                        receiver_id = receiver_row["id"]
 
                 msg_id = "m_" + secrets.token_hex(6)
                 created = datetime.now().isoformat()

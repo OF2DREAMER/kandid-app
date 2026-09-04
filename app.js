@@ -6370,13 +6370,15 @@ async function loadChatMessages(userId, isSilent = false) {
   var myUid = getActiveUserId();
   var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid));
   if (data && data.success && Array.isArray(data.messages)) {
+    if (data.resolved_user_id) {
+      localStorage.setItem('kandid_active_uid', data.resolved_user_id);
+    }
     // Only rebuild DOM if new messages or read receipts state changed
     var msgSignature = JSON.stringify(data.messages.map(function(m){ return m.id + '_' + (m.read_at ? '1' : '0'); }));
     if (isSilent && container.dataset.msgSig === msgSignature) {
         return; 
     }
     container.dataset.msgSig = msgSignature;
-    container.innerHTML = '';
 
     if (data.messages.length === 0) {
       container.innerHTML = 
@@ -6388,9 +6390,14 @@ async function loadChatMessages(userId, isSilent = false) {
       return;
     }
 
+    container.innerHTML = '';
+    var myId = String(data.resolved_user_id || myUid || '').toLowerCase();
+    var activePartnerId = String(data.resolved_chat_id || userId || '').toLowerCase();
+
     var lastDateGroup = null;
     data.messages.forEach(function(m) {
-      var isMe = (m.sender_id === myUid) || (m.sender_id !== userId);
+      var senderId = String(m.sender_id || '').toLowerCase();
+      var isMe = (senderId === myId) || (senderId !== activePartnerId);
       
       // Calculate date divider
       var dateStr = 'TODAY';
@@ -6416,6 +6423,7 @@ async function loadChatMessages(userId, isSilent = false) {
 
       var bubble = document.createElement('div');
       bubble.className = isMe ? 'flex justify-end' : 'flex justify-start';
+      bubble.dataset.msgId = m.id;
 
       var bubbleStyle = isMe 
         ? 'bg-amber-500 text-black font-medium' 
@@ -6478,12 +6486,13 @@ async function sendChatMessageV2() {
 
   var myUid = getActiveUserId();
   var container = document.getElementById('chatMessageHistoryV2');
+  var tempBubble = null;
   if (container) {
     if (container.innerText.includes('START OF THE CONVERSATION') || container.innerText.includes('ENCRYPTED CAMPUS CHAT')) {
       container.innerHTML = '';
     }
 
-    var tempBubble = document.createElement('div');
+    tempBubble = document.createElement('div');
     tempBubble.className = 'flex justify-end';
     var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     tempBubble.innerHTML = 
@@ -6511,6 +6520,9 @@ async function sendChatMessageV2() {
     });
 
     if (res && res.success) {
+      if (tempBubble && res.message && res.message.id) {
+        tempBubble.dataset.msgId = res.message.id;
+      }
       await loadChatMessages(state.activeChatUser, true);
       checkChatUnreadBadge();
     } else {
