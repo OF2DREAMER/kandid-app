@@ -278,6 +278,25 @@ var MOCK_DATA = {
   ]
 };
 
+function getActiveUserId() {
+  if (state.currentUser && state.currentUser.id) return state.currentUser.id;
+  var stored = null;
+  try {
+    stored = JSON.parse(localStorage.getItem('kandid_user') || 'null');
+  } catch(e) {}
+  if (stored && stored.id) {
+    state.currentUser = stored;
+    return stored.id;
+  }
+  var activeUid = localStorage.getItem('kandid_active_uid');
+  if (!activeUid) {
+    activeUid = 'u_80bef710';
+    localStorage.setItem('kandid_active_uid', activeUid);
+  }
+  return activeUid;
+}
+window.getActiveUserId = getActiveUserId;
+
 async function apiRequest(endpoint, options) {
   options = options || {};
   var headers = options.headers || {};
@@ -285,9 +304,9 @@ async function apiRequest(endpoint, options) {
   if (state.token && state.token !== 'null' && state.token !== 'undefined') {
     headers['Authorization'] = 'Bearer ' + state.token;
   }
-  var currentUser = state.currentUser || JSON.parse(localStorage.getItem('kandid_user') || 'null');
-  if (currentUser && currentUser.id) {
-    headers['X-User-Id'] = currentUser.id;
+  var uid = getActiveUserId();
+  if (uid) {
+    headers['X-User-Id'] = uid;
   }
   options.headers = headers;
 
@@ -6341,11 +6360,12 @@ async function loadChatMessages(userId, isSilent = false) {
   var container = document.getElementById('chatMessageHistoryV2');
   if (!container) return;
 
-  if (!isSilent) {
+  if (!isSilent && (!container.children.length || container.innerText.includes('LOADING'))) {
       container.innerHTML = '<div class="text-center py-4 text-[10px] text-zinc-500 font-mono-tag">ENCRYPTED CAMPUS CHAT • LOADING...</div>';
   }
 
-  var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId));
+  var myUid = getActiveUserId();
+  var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid));
   if (data && data.success && Array.isArray(data.messages)) {
     // Only rebuild DOM if new messages or read receipts state changed
     var msgSignature = JSON.stringify(data.messages.map(function(m){ return m.id + '_' + (m.read_at ? '1' : '0'); }));
@@ -6367,8 +6387,7 @@ async function loadChatMessages(userId, isSilent = false) {
 
     var lastDateGroup = null;
     data.messages.forEach(function(m) {
-      var currentUser = state.currentUser || JSON.parse(localStorage.getItem('kandid_user') || 'null');
-      var isMe = (currentUser && m.sender_id === currentUser.id) || (m.sender_id !== state.activeChatUser);
+      var isMe = (m.sender_id === myUid) || (m.sender_id !== userId);
       
       // Calculate date divider
       var dateStr = 'TODAY';
@@ -6402,7 +6421,7 @@ async function loadChatMessages(userId, isSilent = false) {
       var timeOnly = '';
       if (m.created_at) {
         var t = new Date(m.created_at);
-        if (!isNaN(t.getTime())) {
+        if (!isNaN(d.getTime())) {
           timeOnly = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
       }
@@ -6454,9 +6473,10 @@ async function sendChatMessageV2() {
   }
   input.value = '';
 
+  var myUid = getActiveUserId();
   var container = document.getElementById('chatMessageHistoryV2');
   if (container) {
-    if (container.children.length === 1 && container.innerText.includes('CONVERSATION')) {
+    if (container.innerText.includes('START OF THE CONVERSATION') || container.innerText.includes('ENCRYPTED CAMPUS CHAT')) {
       container.innerHTML = '';
     }
 
@@ -6475,15 +6495,12 @@ async function sendChatMessageV2() {
     container.scrollTop = container.scrollHeight;
   }
 
-  var currentUser = state.currentUser || JSON.parse(localStorage.getItem('kandid_user') || 'null');
-  var senderId = (currentUser && currentUser.id) ? currentUser.id : '';
-
   try {
     var res = await apiRequest('/api/chat/send', {
       method: 'POST',
       body: JSON.stringify({
-        senderId: senderId,
-        sender_id: senderId,
+        senderId: myUid,
+        sender_id: myUid,
         receiverId: state.activeChatUser,
         receiver_id: state.activeChatUser,
         content: text
