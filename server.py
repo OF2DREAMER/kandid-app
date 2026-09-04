@@ -616,6 +616,15 @@ def init_db():
             except:
                 pass
 
+    # Auto-migrations for messages table (read_at)
+    cursor.execute("PRAGMA table_info(messages)")
+    msg_cols = [row[1] for row in cursor.fetchall()]
+    if "read_at" not in msg_cols:
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN read_at TEXT DEFAULT NULL")
+        except Exception:
+            pass
+
     # Seed Default Collective Memories
     cursor.execute("SELECT COUNT(*) FROM collective_memories")
     if cursor.fetchone()[0] == 0:
@@ -850,6 +859,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not user:
                 return self.send_json(401, {"error": "Unauthenticated"})
             return self.send_json(200, {"user": user})
+
+        if path in ["/api/auth/ping", "/api/ping"]:
+            user = get_current_user(self.headers)
+            return self.send_json(200, {"success": True, "online": bool(user)})
+
+        if path == "/api/chat/unread-count":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(200, {"success": True, "count": 0})
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE receiver_id = ? AND read_at IS NULL", (user["id"],))
+            unread_total = cursor.fetchone()[0]
+            conn.close()
+            return self.send_json(200, {"success": True, "count": unread_total})
 
         if path in ["/api/users/check-handle", "/api/auth/check-handle"]:
             handle = query.get("handle", [""])[0].strip().lower().replace("@", "")
@@ -1736,9 +1760,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user = get_current_user(self.headers)
             user_id = user["id"] if user else None
             if not user_id:
-                self.send_response(401)
-                self.end_headers()
-                return
+                return self.send_json(401, {"error": "Unauthorized", "conversations": []})
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("""
@@ -1752,7 +1774,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             now_dt = datetime.now()
             for u in users_list:
                 cursor.execute("""
-                    SELECT content, created_at FROM messages
+                    SELECT content, created_at, sender_id, read_at FROM messages
                     WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
                     ORDER BY created_at DESC LIMIT 1
                 """, (user_id, u["id"], u["id"], user_id))
@@ -1766,11 +1788,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
                             la_dt = datetime.fromisoformat(u["last_active"])
                             if (now_dt - la_dt).total_seconds() < 120:
                                 is_online = True
-                        except:
+                        except Exception:
                             pass
+                    
+                    # Unread count from this specific user
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM messages 
+                        WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
+                    """, (u["id"], user_id))
+                    unread_cnt = cursor.fetchone()[0]
                             
                     u["lastMessage"] = last_m[0]
                     u["lastTimestamp"] = last_m[1]
+                    u["lastSenderId"] = last_m[2]
+                    u["lastReadAt"] = last_m[3]
+                    u["unreadCount"] = unread_cnt
                     u["hasHistory"] = True
                     u["is_online"] = is_online
                     convos.append(u)
@@ -1783,10 +1815,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/chat/messages":
             user = get_current_user(self.headers)
-            user_id = user["id"] if user else "u_casey"
-            chat_id = query.get("chat_id", ["u_maya"])[0]
+            user_id = user["id"] if user else None
+            if not user_id:
+                return self.send_json(401, {"error": "Unauthorized", "messages": []})
+            chat_id = query.get("chat_id", [""])[0]
             conn = get_db()
             cursor = conn.cursor()
+            
+            # Mark incoming messages as read
+            if chat_id:
+                cursor.execute("""
+                    UPDATE messages SET read_at = ?
+                    WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
+                """, (datetime.now().isoformat(), chat_id, user_id))
+                conn.commit()
+
             cursor.execute("""
                 SELECT * FROM messages
                 WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
@@ -2997,21 +3040,25 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/chat/send":
             user = get_current_user(self.headers)
-            sender_id = user["id"] if user else "u_casey"
-            receiver_id = body.get("recipientId") or body.get("receiverId") or body.get("receiver_id") or body.get("recipient_id") or "u_maya"
+            if not user:
+                return self.send_json(401, {"error": "Unauthorized: Please log in to chat", "success": False})
+            sender_id = user["id"]
+            receiver_id = body.get("recipientId") or body.get("receiverId") or body.get("receiver_id") or body.get("recipient_id") or body.get("chat_id")
+            if not receiver_id:
+                return self.send_json(400, {"error": "Receiver ID is required", "success": False})
             content = (body.get("content") or body.get("text") or "").strip()
             if not content:
-                return self.send_json(400, {"error": "Message content cannot be empty"})
+                return self.send_json(400, {"error": "Message content cannot be empty", "success": False})
             
             msg_id = "m_" + secrets.token_hex(6)
             created = datetime.now().isoformat()
             conn = get_db()
-            conn.execute("INSERT INTO messages (id, sender_id, receiver_id, content, created_at) VALUES (?, ?, ?, ?, ?)",
+            conn.execute("INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at) VALUES (?, ?, ?, ?, ?, NULL)",
                          (msg_id, sender_id, receiver_id, content, created))
             
-            actor_name = user.get("name", "Student") if user else "A student"
-            actor_handle = user.get("handle", "user") if user else "user"
-            actor_avatar = user.get("avatar_url", "") if user else ""
+            actor_name = user.get("name", "Student")
+            actor_handle = user.get("handle", "user")
+            actor_avatar = user.get("avatar_url", "")
             preview = (content[:28] + '...') if len(content) > 28 else content
             try:
                 conn.execute("""
@@ -3023,7 +3070,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             conn.commit()
             conn.close()
-            return self.send_json(201, {"success": True, "message": {"id": msg_id, "sender_id": sender_id, "receiver_id": receiver_id, "content": content, "created_at": created}})
+            return self.send_json(201, {"success": True, "message": {"id": msg_id, "sender_id": sender_id, "receiver_id": receiver_id, "content": content, "created_at": created, "read_at": None}})
 
         if path == "/api/user/update":
             user = get_current_user(self.headers)

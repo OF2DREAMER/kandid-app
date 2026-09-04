@@ -2011,13 +2011,13 @@
          CHAT V2 COMPOSERS
          =================================================================== -->
     <div id="chatComposerMain" class="absolute bottom-0 left-0 right-0 p-4 bg-zinc-950 border-t border-zinc-800/80 flex items-center gap-2 z-40" style="display:none;">
-        <input id="chatComposerInput" type="text" placeholder="Message..." class="bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none w-full placeholder-zinc-500 font-sans">
+        <input id="chatComposerInput" type="text" onkeydown="if(event.key==='Enter') sendChatMessageV2()" placeholder="Message..." class="bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none w-full placeholder-zinc-500 font-sans">
         <button class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 hover:bg-zinc-800 cursor-pointer active:scale-95" onclick="openCameraForActiveChat()" title="Camera Moment">📷</button>
         <button class="w-9 h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center cursor-pointer active:scale-95" onclick="sendChatMessageV2()">↑</button>
     </div>
 
     <div id="chatComposerShared" class="absolute bottom-0 left-0 right-0 p-4 bg-zinc-950 border-t border-zinc-800/80 flex items-center gap-2 z-40" style="display:none;">
-        <input id="chatComposerSharedInput" type="text" placeholder="Reply to Moment..." class="bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none w-full placeholder-zinc-500 font-sans">
+        <input id="chatComposerSharedInput" type="text" onkeydown="if(event.key==='Enter') sendSharedMomentReply()" placeholder="Reply to Moment..." class="bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none w-full placeholder-zinc-500 font-sans">
         <button class="w-9 h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center" onclick="sendSharedMomentReply()">↑</button>
     </div>
 
@@ -2048,9 +2048,12 @@
         </div>
       </button>
 
-      <!-- Chat Tab -->
-      <button class="dock-item text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer" data-screen="chat-home" id="dockChatBtn" onclick="switchScreenView('chat-home')">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+      <!-- Chat Tab with Live Notification Badge -->
+      <button class="dock-item text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer relative" data-screen="chat-home" id="dockChatBtn" onclick="switchScreenView('chat-home')">
+        <div class="relative flex items-center justify-center">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+          <span id="chatUnreadBadge" class="hidden absolute -top-2 -right-2.5 min-w-[17px] h-[17px] px-1 bg-amber-500 text-black text-[9px] font-black font-mono-tag rounded-full items-center justify-center shadow-[0_0_10px_rgba(245,158,11,0.8)] border border-black animate-pulse z-10">1</span>
+        </div>
         <span class="text-[8px] mt-0.5 tracking-widest font-mono-tag">CHAT</span>
       </button>
 
