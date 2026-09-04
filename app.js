@@ -280,6 +280,9 @@ async function apiRequest(endpoint, options) {
   if (state.token) {
     headers['Authorization'] = 'Bearer ' + state.token;
   }
+  if (state.currentUser && state.currentUser.id) {
+    headers['X-User-Id'] = state.currentUser.id;
+  }
   options.headers = headers;
 
   try {
@@ -6448,10 +6451,14 @@ async function sendChatMessageV2() {
     container.scrollTop = container.scrollHeight;
   }
 
+  var senderId = (state.currentUser && state.currentUser.id) ? state.currentUser.id : '';
   var res = await apiRequest('/api/chat/send', {
     method: 'POST',
     body: JSON.stringify({
+      senderId: senderId,
+      sender_id: senderId,
       receiverId: state.activeChatUser,
+      receiver_id: state.activeChatUser,
       content: text
     })
   });

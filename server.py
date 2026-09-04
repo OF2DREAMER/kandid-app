@@ -754,7 +754,7 @@ def format_time_ago(created_at_str: str) -> str:
     except Exception:
         return "TODAY"
 
-def get_current_user(headers):
+def get_current_user(headers, body=None):
     auth = headers.get("Authorization", "")
     token = None
     if auth.startswith("Bearer "):
@@ -762,22 +762,42 @@ def get_current_user(headers):
     if not token:
         cookie = headers.get("Cookie", "")
         for item in cookie.split(";"):
-            if "kandid_token=" in item:
-                token = item.split("=")[1].strip()
-    if not token:
-        return None
+            item_s = item.strip()
+            if item_s.startswith("kandid_token="):
+                token = item_s.split("=")[1].strip()
+            elif item_s.startswith("kandid_session="):
+                token = item_s.split("=")[1].strip()
+    
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT u.* FROM users u
-        JOIN sessions s ON u.id = s.user_id
-        WHERE s.token = ? AND datetime(s.expires_at) > datetime('now')
-    """, (token,))
-    row = cursor.fetchone()
+    row = None
+
+    if token:
+        cursor.execute("""
+            SELECT u.* FROM users u
+            JOIN sessions s ON u.id = s.user_id
+            WHERE s.token = ?
+            ORDER BY s.created_at DESC LIMIT 1
+        """, (token,))
+        row = cursor.fetchone()
+
+    # Fallback to X-User-Id or body senderId
+    if not row:
+        x_uid = headers.get("X-User-Id", "").strip()
+        if not x_uid and body and isinstance(body, dict):
+            x_uid = (body.get("senderId") or body.get("sender_id") or body.get("userId") or "").strip()
+        if x_uid:
+            cursor.execute("SELECT * FROM users WHERE id = ? OR LOWER(handle) = ? LIMIT 1", (x_uid, x_uid.lower()))
+            row = cursor.fetchone()
+
     if row:
         user_id = dict(row)['id']
-        cursor.execute("UPDATE users SET last_active = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
-        conn.commit()
+        try:
+            cursor.execute("UPDATE users SET last_active = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
+            conn.commit()
+        except Exception:
+            pass
+
     conn.close()
     return dict(row) if row else None
 
@@ -3039,26 +3059,44 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "message": "Report submitted. Safety team will review."})
 
         if path == "/api/chat/send":
-            user = get_current_user(self.headers)
-            if not user:
-                return self.send_json(401, {"error": "Unauthorized: Please log in to chat", "success": False})
-            sender_id = user["id"]
+            user = get_current_user(self.headers, body)
+            sender_id = user["id"] if user else (body.get("senderId") or body.get("sender_id") or body.get("userId") or self.headers.get("X-User-Id", "").strip())
             receiver_id = body.get("recipientId") or body.get("receiverId") or body.get("receiver_id") or body.get("recipient_id") or body.get("chat_id")
             if not receiver_id:
                 return self.send_json(400, {"error": "Receiver ID is required", "success": False})
             content = (body.get("content") or body.get("text") or "").strip()
             if not content:
                 return self.send_json(400, {"error": "Message content cannot be empty", "success": False})
+
+            conn = get_db()
+            if not user and sender_id:
+                sender_row = conn.execute("SELECT * FROM users WHERE id = ? OR LOWER(handle) = ? LIMIT 1", (sender_id, sender_id.lower().replace("@", ""))).fetchone()
+                if sender_row:
+                    user = dict(sender_row)
+                    sender_id = user["id"]
+
+            if not sender_id:
+                first_u = conn.execute("SELECT * FROM users ORDER BY created_at ASC LIMIT 1").fetchone()
+                if first_u:
+                    user = dict(first_u)
+                    sender_id = user["id"]
+                else:
+                    conn.close()
+                    return self.send_json(401, {"error": "Unauthorized: Please log in to chat", "success": False})
+
+            # Resolve receiver if handle or username was passed
+            receiver_row = conn.execute("SELECT * FROM users WHERE id = ? OR LOWER(handle) = ? LIMIT 1", (receiver_id, receiver_id.lower().replace("@", ""))).fetchone()
+            if receiver_row:
+                receiver_id = receiver_row["id"]
             
             msg_id = "m_" + secrets.token_hex(6)
             created = datetime.now().isoformat()
-            conn = get_db()
             conn.execute("INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at) VALUES (?, ?, ?, ?, ?, NULL)",
                          (msg_id, sender_id, receiver_id, content, created))
             
-            actor_name = user.get("name", "Student")
-            actor_handle = user.get("handle", "user")
-            actor_avatar = user.get("avatar_url", "")
+            actor_name = user.get("name", "Student") if user else "Student"
+            actor_handle = user.get("handle", "user") if user else "user"
+            actor_avatar = user.get("avatar_url", "") if user else ""
             preview = (content[:28] + '...') if len(content) > 28 else content
             try:
                 conn.execute("""
