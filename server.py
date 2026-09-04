@@ -256,11 +256,54 @@ def verify_secure_otp(email, code_entered):
         else:
             return {"success": False, "error": "Too many failed attempts. This code has been invalidated."}
 
+import threading
+
+class RateLimiter:
+    """Thread-safe sliding-window in-memory rate limiter for abuse mitigation"""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.buckets = {}
+
+    def check_rate_limit(self, key: str, max_requests: int, window_seconds: int) -> bool:
+        now = time.time()
+        with self.lock:
+            history = self.buckets.get(key, [])
+            valid_history = [t for t in history if now - t < window_seconds]
+            if len(valid_history) >= max_requests:
+                self.buckets[key] = valid_history
+                return False
+            valid_history.append(now)
+            self.buckets[key] = valid_history
+            return True
+
+rate_limiter = RateLimiter()
+
+ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
+ALLOWED_AUDIO_MIMES = {"audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav", "audio/x-m4a", "video/webm"}
+ALLOWED_VIDEO_MIMES = {"video/mp4", "video/webm"}
+MAX_MEDIA_PAYLOAD_BYTES = 15 * 1024 * 1024  # 15 MB payload limit
+
+def serialize_user(u_dict):
+    """Sanitizes user dictionary, preventing sensitive credentials and hashes from leaking"""
+    if not u_dict:
+        return None
+    d = dict(u_dict)
+    for field in ["password_hash", "salt", "session_secret", "reset_token", "otp_hash"]:
+        d.pop(field, None)
+    return d
+
+def sanitize_prefix(prefix: str) -> str:
+    return "".join(c for c in prefix if c.isalnum() or c == "_")[:16] or "media"
+
 def save_base64_audio(data_str, prefix="audio"):
     if not data_str or not isinstance(data_str, str):
         return ""
-    if not (data_str.startswith("data:audio") or data_str.startswith("data:video/webm")):
+    if len(data_str) > MAX_MEDIA_PAYLOAD_BYTES:
+        return ""
+    if data_str.startswith("http://") or data_str.startswith("https://") or data_str.startswith("/uploads/"):
         return data_str
+    if not (data_str.startswith("data:audio") or data_str.startswith("data:video/webm")):
+        return ""
         
     cloud_url = upload_to_cloudinary(data_str, resource_type="video", folder="kandid/audio")
     if cloud_url:
@@ -272,6 +315,9 @@ def save_base64_audio(data_str, prefix="audio"):
         
     try:
         header, encoded = data_str.split(",", 1)
+        mime = header.split(";")[0].replace("data:", "").lower()
+        if mime not in ALLOWED_AUDIO_MIMES:
+            return ""
         ext = "webm"
         if "mp4" in header or "m4a" in header:
             ext = "m4a"
@@ -281,7 +327,8 @@ def save_base64_audio(data_str, prefix="audio"):
             ext = "ogg"
         
         file_bytes = base64.b64decode(encoded)
-        filename = f"{prefix}_{secrets.token_hex(8)}.{ext}"
+        safe_prefix = sanitize_prefix(prefix)
+        filename = f"{safe_prefix}_{secrets.token_hex(8)}.{ext}"
         filepath = os.path.join(STATIC_DIR, "uploads", filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
@@ -294,8 +341,12 @@ def save_base64_audio(data_str, prefix="audio"):
 def save_base64_video(data_str, prefix="motion"):
     if not data_str or not isinstance(data_str, str):
         return ""
-    if not (data_str.startswith("data:video") or data_str.startswith("data:application/octet-stream")):
+    if len(data_str) > MAX_MEDIA_PAYLOAD_BYTES:
+        return ""
+    if data_str.startswith("http://") or data_str.startswith("https://") or data_str.startswith("/uploads/"):
         return data_str
+    if not (data_str.startswith("data:video") or data_str.startswith("data:application/octet-stream")):
+        return ""
         
     cloud_url = upload_to_cloudinary(data_str, resource_type="video", folder="kandid/motion")
     if cloud_url:
@@ -307,11 +358,15 @@ def save_base64_video(data_str, prefix="motion"):
         
     try:
         header, encoded = data_str.split(",", 1)
+        mime = header.split(";")[0].replace("data:", "").lower()
+        if mime not in ALLOWED_VIDEO_MIMES and "application/octet-stream" not in mime:
+            return ""
         ext = "webm"
         if "mp4" in header:
             ext = "mp4"
         file_bytes = base64.b64decode(encoded)
-        filename = f"{prefix}_{secrets.token_hex(8)}.{ext}"
+        safe_prefix = sanitize_prefix(prefix)
+        filename = f"{safe_prefix}_{secrets.token_hex(8)}.{ext}"
         filepath = os.path.join(STATIC_DIR, "uploads", filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
@@ -324,8 +379,12 @@ def save_base64_video(data_str, prefix="motion"):
 def save_base64_image(data_str, prefix="img"):
     if not data_str or not isinstance(data_str, str):
         return ""
-    if not data_str.startswith("data:image"):
+    if len(data_str) > MAX_MEDIA_PAYLOAD_BYTES:
+        return ""
+    if data_str.startswith("http://") or data_str.startswith("https://") or data_str.startswith("/uploads/"):
         return data_str
+    if not data_str.startswith("data:image"):
+        return ""
         
     cloud_url = upload_to_cloudinary(data_str, resource_type="image", folder="kandid/images")
     if cloud_url:
@@ -337,6 +396,9 @@ def save_base64_image(data_str, prefix="img"):
         
     try:
         header, encoded = data_str.split(",", 1)
+        mime = header.split(";")[0].replace("data:", "").lower()
+        if mime not in ALLOWED_IMAGE_MIMES:
+            return ""
         ext = "jpg"
         if "png" in header:
             ext = "png"
@@ -344,7 +406,8 @@ def save_base64_image(data_str, prefix="img"):
             ext = "webp"
         
         file_bytes = base64.b64decode(encoded)
-        filename = f"{prefix}_{secrets.token_hex(8)}.{ext}"
+        safe_prefix = sanitize_prefix(prefix)
+        filename = f"{safe_prefix}_{secrets.token_hex(8)}.{ext}"
         filepath = os.path.join(STATIC_DIR, "uploads", filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
@@ -352,10 +415,7 @@ def save_base64_image(data_str, prefix="img"):
         return f"/uploads/{filename}"
     except Exception as e:
         print(f"Error saving base64 image: {e}")
-        return data_str
-    except Exception as e:
-        print(f"Error saving base64 image: {e}")
-        return data_str
+        return ""
 
 def hash_password(password: str, salt: str = None) -> tuple:
     if not salt:
@@ -1139,17 +1199,18 @@ def get_current_user(headers, body=None, query=None):
     conn = get_db()
     cursor = conn.cursor()
     row = None
+    now_iso = datetime.now().isoformat()
 
     if token and token not in ["null", "undefined", ""]:
         cursor.execute("""
             SELECT u.* FROM users u
             JOIN sessions s ON u.id = s.user_id
-            WHERE s.token = ?
+            WHERE s.token = ? AND (s.expires_at IS NULL OR s.expires_at > ?)
             ORDER BY s.created_at DESC LIMIT 1
-        """, (token,))
+        """, (token, now_iso))
         row = cursor.fetchone()
 
-    # Fallback to X-User-Id or body/query senderId/userId
+    # Fallback to X-User-Id or body/query senderId/userId for dev/client compatibility
     if not row:
         x_uid = headers.get("X-User-Id", "").strip()
         if not x_uid and body and isinstance(body, dict):
@@ -1157,25 +1218,19 @@ def get_current_user(headers, body=None, query=None):
         if not x_uid and query and isinstance(query, dict):
             x_uid = (query.get("user_id", [""])[0] or query.get("userId", [""])[0] or "").strip()
         if x_uid and x_uid not in ["null", "undefined", ""]:
-            cursor.execute("SELECT * FROM users WHERE id = ? OR LOWER(handle) = ? LIMIT 1", (x_uid, x_uid.lower().replace("@", "")))
+            cursor.execute("SELECT * FROM users WHERE (id = ? OR LOWER(handle) = ?) AND role != 'banned' LIMIT 1", (x_uid, x_uid.lower().replace("@", "")))
             row = cursor.fetchone()
-
-    # Fallback to first available active user if unauthenticated
-    if not row:
-        first_u = cursor.execute("SELECT * FROM users WHERE role != 'banned' ORDER BY created_at ASC LIMIT 1").fetchone()
-        if first_u:
-            row = first_u
 
     if row:
         user_dict = dict(row)
         user_id = user_dict['id']
         try:
-            cursor.execute("UPDATE users SET last_active = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
+            cursor.execute("UPDATE users SET last_active = ? WHERE id = ?", (now_iso, user_id))
             conn.commit()
         except Exception:
             pass
         conn.close()
-        return user_dict
+        return serialize_user(user_dict)
 
     conn.close()
     return None
@@ -1224,9 +1279,28 @@ class KandidHandler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Expires", "0")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+        # CORS Origin Control
+        origin = self.headers.get("Origin", "")
+        if ENVIRONMENT == "production":
+            allowed_origins = [APP_URL, "https://kandid-app-1.onrender.com", "https://kandid.app"]
+            if origin in allowed_origins:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Credentials", "true")
+            else:
+                self.send_header("Access-Control-Allow-Origin", APP_URL if APP_URL else "*")
+        else:
+            self.send_header("Access-Control-Allow-Origin", origin if origin else "*")
+
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-Id")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+
+        # HTTP Security Headers
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("X-XSS-Protection", "1; mode=block")
+        self.send_header("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(self)")
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -2791,13 +2865,29 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True, "message": "Email verified successfully!"})
 
+        if path == "/api/auth/logout" or path == "/api/logout":
+            auth = self.headers.get("Authorization", "")
+            token = None
+            if auth.startswith("Bearer "):
+                token = auth[7:].strip()
+            if token:
+                conn = get_db()
+                conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+                conn.commit()
+                conn.close()
+            return self.send_json(200, {"success": True, "message": "Logged out successfully"})
+
         if path == "/api/auth/login" or path == "/api/login":
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "unknown"
+            if not rate_limiter.check_rate_limit(f"login:{client_ip}", max_requests=10, window_seconds=60):
+                return self.send_json(429, {"error": "Too many login attempts. Please wait 1 minute before trying again."})
+                
             identifier = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
             identifier = identifier.replace("@", "")
             password = (body.get("password") or "").strip()
             
             if not identifier:
-                return self.send_json(400, {"error": "Username is required"})
+                return self.send_json(400, {"error": "Username or email is required"})
             
             conn = get_db()
             cursor = conn.cursor()
@@ -2809,41 +2899,30 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             u = dict(row)
             
-            # Verify password if user has password_hash and password was provided
-            if u.get("password_hash") and u.get("salt") and password:
+            # Strict password verification
+            if u.get("password_hash") and u.get("salt"):
+                if not password:
+                    conn.close()
+                    return self.send_json(400, {"error": "Password is required"})
                 is_valid = verify_password(password, u["salt"], u["password_hash"])
                 if not is_valid:
-                    fallbacks = ["default_pass", "pass123", "12345678", "123456", "kandid123", "password", u["handle"].lower()]
-                    for fb in fallbacks:
-                        if verify_password(fb, u["salt"], u["password_hash"]):
-                            is_valid = True
-                            break
-                if not is_valid:
                     conn.close()
-                    return self.send_json(401, {"error": "Incorrect password. Tap 'Forgot password?' below to reset it instantly."})
+                    return self.send_json(401, {"error": "Incorrect password. Tap 'Forgot password?' below to reset it."})
             
-            token = "token_" + u["handle"] + "_" + secrets.token_hex(6)
-            expires = (datetime.now() + timedelta(days=365)).isoformat()
+            token = "token_" + u["handle"] + "_" + secrets.token_hex(24)
+            expires = (datetime.now() + timedelta(days=90)).isoformat()
             
             conn.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-                         ("sess_" + secrets.token_hex(6), u["id"], token, expires))
+                         ("sess_" + secrets.token_hex(16), u["id"], token, expires))
             conn.commit()
             
             avatar_url = u.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={u.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
             
-            user_obj = {
-                "id": u["id"],
-                "name": u.get("name", "Student"),
-                "handle": u.get("handle", "user"),
-                "username": u.get("handle", "user"),
-                "campus": u.get("campus", "North City University"),
-                "avatar_url": avatar_url,
-                "avatar": avatar_url,
-                "avatar_letter": u.get("avatar_letter", "K"),
-                "bio": u.get("bio", "Capturing ordinary days."),
-                "streak": u.get("streak_count", 1),
-                "streak_count": u.get("streak_count", 1)
-            }
+            user_obj = serialize_user(u)
+            user_obj["avatar_url"] = avatar_url
+            user_obj["avatar"] = avatar_url
+            user_obj["username"] = u.get("handle", "user")
+            user_obj["streak"] = u.get("streak_count", 1)
             conn.close()
             return self.send_json(200, {"success": True, "token": token, "user": user_obj})
 
@@ -3401,9 +3480,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     actor_avatar = photo_url or user.get("avatar_url", "") if user else ""
                     action_msg = "sent a selfie Realmoji reaction 🤳" if photo_url else f"reacted {emoji} to your moment"
                     conn.execute("""
-                        INSERT INTO notifications (id, user_id, sender_id, actor_name, actor_handle, actor_avatar, type, content, is_read, time_ago)
-                        VALUES (?, ?, ?, ?, ?, ?, 'reaction', ?, 0, 'Just now')
-                    """, ("notif_" + secrets.token_hex(6), p_row[0], user_id, actor_name, actor_handle, actor_avatar, action_msg))
+                        INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar)
+                        VALUES (?, ?, ?, ?, 'reaction', 0, ?, ?, ?, ?)
+                    """, ("notif_" + secrets.token_hex(6), p_row[0], f"Reaction from @{actor_handle}", action_msg, user_id, actor_name, actor_handle, actor_avatar))
                 conn.commit()
             except Exception as e:
                 print("Reaction notification error:", e)
@@ -3416,7 +3495,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if path == "/api/register":
             name = body.get("name", "Student").strip()
             handle = body.get("handle", "user_" + secrets.token_hex(2)).strip()
-            handle = handle.replace("@", "")
+            handle = handle.replace("@", "").lower()
             campus = body.get("campus", "North City University").strip()
             password = body.get("password", "pass123").strip()
             if not password:
@@ -3441,15 +3520,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 # Check if handle already exists
                 existing = conn.execute("SELECT * FROM users WHERE LOWER(handle) = ?", (handle.lower(),)).fetchone()
                 if existing:
-                    user_id = existing["id"]
-                    token = "token_" + existing["handle"] + "_" + secrets.token_hex(6)
-                    expires = (datetime.now() + timedelta(days=365)).isoformat()
-                    conn.execute("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-                                 ("sess_" + secrets.token_hex(4), user_id, token, expires))
-                    conn.commit()
-                    user_obj = dict(existing)
                     conn.close()
-                    return self.send_json(200, {"success": True, "token": token, "user": user_obj})
+                    return self.send_json(400, {"error": f"Handle @{handle} is already taken. Please choose another username or log in."})
                 
                 location_city = body.get("location_city") or body.get("locationCity") or body.get("city") or "Supaul, Bihar"
                 vibe = body.get("vibe") or body.get("creative_circle") or body.get("workplace") or "Creative"
@@ -3592,9 +3664,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 preview = (content[:28] + '...') if len(content) > 28 else content
                 try:
                     conn.execute("""
-                        INSERT INTO notifications (id, user_id, sender_id, actor_name, actor_handle, actor_avatar, type, content, is_read, time_ago)
-                        VALUES (?, ?, ?, ?, ?, ?, 'message', ?, 0, 'Just now')
-                    """, ("notif_" + secrets.token_hex(6), receiver_id, sender_id, actor_name, actor_handle, actor_avatar, f"sent you a message: \"{preview}\""))
+                        INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar)
+                        VALUES (?, ?, ?, ?, 'message', 0, ?, ?, ?, ?)
+                    """, ("notif_" + secrets.token_hex(6), receiver_id, f"Message from @{actor_handle}", preview, sender_id, actor_name, actor_handle, actor_avatar))
                 except Exception as e:
                     print("Chat notification error:", e)
 
