@@ -2335,24 +2335,17 @@ const KandidCameraEngine = {
       var videoDevices = devices.filter(function(d) { return d.kind === 'videoinput'; });
       
       if (videoDevices.length > 0) {
-        // Find front camera
+        // Only trust device labels if they are populated (after permission)
         var front = videoDevices.find(function(d) {
           var l = (d.label || '').toLowerCase();
-          return l.includes('front') || l.includes('user') || l.includes('selfie') || l.includes('facetime') || l.includes('facing front');
+          return l && (l.includes('front') || l.includes('user') || l.includes('selfie') || l.includes('facetime') || l.includes('facing front'));
         });
-        if (!front && videoDevices.length > 1) {
-          front = videoDevices[videoDevices.length - 1]; // On Android/iOS, front is usually the secondary device
-        }
         this.frontDeviceId = front ? front.deviceId : null;
 
-        // Find rear camera
         var rear = videoDevices.find(function(d) {
           var l = (d.label || '').toLowerCase();
-          return l.includes('back') || l.includes('environment') || l.includes('rear') || l.includes('facing back') || l.includes('wide') || l.includes('camera 0');
+          return l && (l.includes('back') || l.includes('environment') || l.includes('rear') || l.includes('facing back') || l.includes('wide'));
         });
-        if (!rear && videoDevices.length > 0) {
-          rear = videoDevices[0];
-        }
         this.rearDeviceId = rear ? rear.deviceId : null;
       }
     } catch(e) {
@@ -2386,7 +2379,7 @@ const KandidCameraEngine = {
     var mainVideo = document.getElementById('cameraMainVideo');
     var mainImg = document.getElementById('cameraMainPreviewImg');
 
-    // 1. Fully release and terminate all existing hardware streams
+    // 1. Fully stop and release previous camera hardware streams
     if (this.mainStream) {
       try {
         this.mainStream.getTracks().forEach(function(t) { t.stop(); });
@@ -2407,54 +2400,44 @@ const KandidCameraEngine = {
       mainVideo.srcObject = null;
     }
 
-    // 2. Hardware cooldown to allow OS camera HAL to release physical sensor
-    await new Promise(function(r) { setTimeout(r, 180); });
+    // 2. Hardware cooldown to allow OS camera subsystem to release physical sensor
+    await new Promise(function(r) { setTimeout(r, 220); });
 
     var stream = null;
     var targetMode = (this.activeFacing === 'user') ? 'user' : 'environment';
     var preferredDeviceId = (targetMode === 'user') ? this.frontDeviceId : this.rearDeviceId;
 
-    // 3. Multi-Tier Resolution: Device ID -> Exact facingMode -> Ideal facingMode -> Standard
-    if (preferredDeviceId) {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: preferredDeviceId } },
-          audio: false
-        });
-      } catch(eDev){}
-    }
-
-    if (!stream) {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { exact: targetMode } },
-          audio: false
-        });
-      } catch(eExact){}
-    }
-
-    if (!stream) {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: targetMode } },
-          audio: false
-        });
-      } catch(eIdeal){}
-    }
-
-    if (!stream) {
+    // 3. WebRTC Standard: Request facingMode with ideal constraints
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: targetMode },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: false
+      });
+    } catch(e1) {
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: targetMode },
           audio: false
         });
-      } catch(eStd){}
-    }
-
-    if (!stream) {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      } catch(eGen){}
+      } catch(e2) {
+        if (preferredDeviceId) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: { exact: preferredDeviceId } },
+              audio: false
+            });
+          } catch(e3){}
+        }
+        if (!stream) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          } catch(e4){}
+        }
+      }
     }
 
     if (!stream) {
@@ -2484,7 +2467,7 @@ const KandidCameraEngine = {
 
       // Poll until video is actively producing live frames
       var pollStart = Date.now();
-      while ((Date.now() - pollStart) < 2000) {
+      while ((Date.now() - pollStart) < 2500) {
         if (mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0 && mainVideo.readyState >= 2) {
           break;
         }
@@ -2507,8 +2490,10 @@ const KandidCameraEngine = {
     var statusTitle = document.getElementById('cameraDualStatusTitle');
     var statusSub = document.getElementById('cameraDualStatusSub');
 
+    var startFacing = this.activeFacing || 'environment';
+
     // ==========================================
-    // STEP 1: SNAP REAR CAMERA (MY MOMENT)
+    // STEP 1: SNAP FIRST FRAME (CURRENT VIEW)
     // ==========================================
     if (flash) {
       flash.style.opacity = '1';
@@ -2516,50 +2501,58 @@ const KandidCameraEngine = {
     }
     if (navigator.vibrate) try { navigator.vibrate(45); } catch(e){}
 
-    var rearCanvas = document.createElement('canvas');
+    var firstCanvas = document.createElement('canvas');
+    var firstFrameData = '';
     if (mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0) {
-      rearCanvas.width = mainVideo.videoWidth;
-      rearCanvas.height = mainVideo.videoHeight;
-      var rctx = rearCanvas.getContext('2d');
-      if (this.activeFacing === 'user') {
-        rctx.translate(rearCanvas.width, 0);
-        rctx.scale(-1, 1);
+      firstCanvas.width = mainVideo.videoWidth;
+      firstCanvas.height = mainVideo.videoHeight;
+      var fctx1 = firstCanvas.getContext('2d');
+      if (startFacing === 'user') {
+        fctx1.translate(firstCanvas.width, 0);
+        fctx1.scale(-1, 1);
       }
-      rctx.drawImage(mainVideo, 0, 0, rearCanvas.width, rearCanvas.height);
-      this.rearFrame = rearCanvas.toDataURL('image/jpeg', 0.92);
+      fctx1.drawImage(mainVideo, 0, 0, firstCanvas.width, firstCanvas.height);
+      firstFrameData = firstCanvas.toDataURL('image/jpeg', 0.92);
     }
 
-    // Freeze rear frame so screen is NEVER black during transition
-    if (mainImg && this.rearFrame) {
-      mainImg.src = this.rearFrame;
+    if (startFacing === 'user') {
+      this.frontFrame = firstFrameData;
+    } else {
+      this.rearFrame = firstFrameData;
+    }
+
+    // Freeze first frame on screen during transition
+    if (mainImg && firstFrameData) {
+      mainImg.src = firstFrameData;
       mainImg.classList.remove('hidden');
     }
 
-    // Show Guided Transition HUD
+    // Show Transition HUD
     if (hud) hud.style.display = 'flex';
-    if (countdownEl) countdownEl.textContent = '🤳';
-    if (statusTitle) statusTitle.textContent = '1/2 REAR CAPTURED! 📸';
-    if (statusSub) statusSub.textContent = 'SMILE FOR FRONT SELFIE...';
+    var nextFacing = (startFacing === 'environment') ? 'user' : 'environment';
+    if (countdownEl) countdownEl.textContent = (nextFacing === 'user') ? '🤳' : '📸';
+    if (statusTitle) statusTitle.textContent = (nextFacing === 'user') ? '1/2 REAR CAPTURED! 📸' : '1/2 SELFIE CAPTURED! 🤳';
+    if (statusSub) statusSub.textContent = (nextFacing === 'user') ? 'SMILE FOR FRONT SELFIE...' : 'NOW SNAPPING REAR SCENE...';
 
     // ==========================================
-    // STEP 2: SWITCH TO FRONT SELFIE CAMERA
+    // STEP 2: SWITCH TO OPPOSITE CAMERA
     // ==========================================
-    await this.startMainPreview('user');
+    await this.startMainPreview(nextFacing);
 
-    // Dynamically poll until front video is actively delivering decoded frames
+    // Poll until second video stream is actively delivering decoded frames
     var pollStart = Date.now();
-    while ((Date.now() - pollStart) < 3000) {
+    while ((Date.now() - pollStart) < 3500) {
       if (mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0 && mainVideo.readyState >= 2) {
         break;
       }
       await new Promise(function(r) { setTimeout(r, 50); });
     }
 
-    // Small delay to let sensor auto-exposure and white balance settle
-    await new Promise(function(r) { setTimeout(r, 350); });
+    // Delay for sensor auto-focus and exposure settling
+    await new Promise(function(r) { setTimeout(r, 400); });
 
     // ==========================================
-    // STEP 3: SNAP FRONT SELFIE CAMERA (ME)
+    // STEP 3: SNAP SECOND FRAME
     // ==========================================
     if (flash) {
       flash.style.opacity = '1';
@@ -2567,17 +2560,31 @@ const KandidCameraEngine = {
     }
     if (navigator.vibrate) try { navigator.vibrate(40); } catch(e){}
 
-    this.frontFrame = null;
+    var secondCanvas = document.createElement('canvas');
+    var secondFrameData = '';
     if (mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0) {
-      var frontCanvas = document.createElement('canvas');
-      frontCanvas.width = mainVideo.videoWidth;
-      frontCanvas.height = mainVideo.videoHeight;
-      var fctx = frontCanvas.getContext('2d');
-      fctx.translate(frontCanvas.width, 0);
-      fctx.scale(-1, 1);
-      fctx.drawImage(mainVideo, 0, 0, frontCanvas.width, frontCanvas.height);
-      this.frontFrame = frontCanvas.toDataURL('image/jpeg', 0.92);
+      secondCanvas.width = mainVideo.videoWidth;
+      secondCanvas.height = mainVideo.videoHeight;
+      var fctx2 = secondCanvas.getContext('2d');
+      if (nextFacing === 'user') {
+        fctx2.translate(secondCanvas.width, 0);
+        fctx2.scale(-1, 1);
+      }
+      fctx2.drawImage(mainVideo, 0, 0, secondCanvas.width, secondCanvas.height);
+      secondFrameData = secondCanvas.toDataURL('image/jpeg', 0.92);
     }
+
+    if (nextFacing === 'user') {
+      this.frontFrame = secondFrameData;
+    } else {
+      this.rearFrame = secondFrameData;
+    }
+
+    if (hud) hud.style.display = 'none';
+
+    // Safe fallback if one sensor failed
+    if (!this.frontFrame && this.rearFrame) this.frontFrame = this.rearFrame;
+    if (!this.rearFrame && this.frontFrame) this.rearFrame = this.frontFrame;
 
     if (hud) hud.style.display = 'none';
 
