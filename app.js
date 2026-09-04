@@ -4791,9 +4791,9 @@ window.selectGoogleAccount = async function(email, name, avatarUrl) {
                     id: res.session_id,
                     profile: gp,
                     handle: saved.handle || gp.suggested_handle || '',
-                    campusId: saved.campus_id || 'camp_1',
-                    campusName: saved.campus_name || 'Guru Kashi University',
-                    city: saved.city || 'Talwandi Sabo, Bathinda',
+                    campusId: saved.campus_id || null,
+                    campusName: saved.campus_name || null,
+                    city: saved.city || null,
                     step: res.step || 1
                 };
 
@@ -4813,7 +4813,7 @@ window.selectGoogleAccount = async function(email, name, avatarUrl) {
                     switchScreen('identity');
                 }
                 return;
-            }
+            } 
 
             // Case 3: New Google User -> Initialize Onboarding Session
             if (res.status === 'NEW_ONBOARDING' || res.is_new) {
@@ -4823,9 +4823,9 @@ window.selectGoogleAccount = async function(email, name, avatarUrl) {
                     id: res.session_id,
                     profile: gp,
                     handle: gp.suggested_handle || 'user',
-                    campusId: 'camp_1',
-                    campusName: 'Guru Kashi University',
-                    city: 'Talwandi Sabo, Bathinda',
+                    campusId: null,
+                    campusName: null,
+                    city: null,
                     step: 1
                 };
 
@@ -4949,9 +4949,9 @@ window.validateAndGoToWorld = async function() {
             id: '',
             profile: { name: nameVal, email: emailVal },
             handle: userVal,
-            campusId: 'camp_1',
-            campusName: 'Guru Kashi University',
-            city: 'Talwandi Sabo, Bathinda',
+            campusId: null,
+            campusName: null,
+            city: null,
             step: 2
         };
     } else {
@@ -5191,8 +5191,6 @@ window.persistWorldContext = function() {
 
     if (!state.onboardingSession) state.onboardingSession = {};
     if (cityVal) state.onboardingSession.city = cityVal;
-    if (!state.onboardingSession.city) state.onboardingSession.city = 'Bengaluru, KA';
-    if (!state.onboardingSession.campusName) state.onboardingSession.campusName = 'Guru Kashi University';
 
     goToOnboardingReview();
 };
@@ -5200,15 +5198,13 @@ window.persistWorldContext = function() {
 // Review Screen Rendering & Editorial Step
 window.goToOnboardingReview = async function() {
     var cityInput = document.getElementById('onboardCityInput');
-    var cityVal = cityInput ? cityInput.value.trim() : 'Talwandi Sabo, Bathinda';
+    var cityVal = cityInput ? cityInput.value.trim() : '';
     
     if (!state.onboardingSession) {
         state.onboardingSession = {};
     }
-    state.onboardingSession.city = cityVal;
-    if (!state.onboardingSession.campusName) {
-        state.onboardingSession.campusName = 'Guru Kashi University';
-        state.onboardingSession.campusId = 'camp_1';
+    if (cityVal) {
+        state.onboardingSession.city = cityVal;
     }
 
     if (state.onboardingSession.id) {
@@ -5218,9 +5214,9 @@ window.goToOnboardingReview = async function() {
                 body: JSON.stringify({
                     session_id: state.onboardingSession.id,
                     step: 3,
-                    campus_id: state.onboardingSession.campusId,
-                    campus_name: state.onboardingSession.campusName,
-                    city: state.onboardingSession.city
+                    campus_id: state.onboardingSession.campusId || '',
+                    campus_name: state.onboardingSession.campusName || '',
+                    city: state.onboardingSession.city || ''
                 })
             });
         } catch(e) {}
@@ -5238,8 +5234,8 @@ function renderOnboardingReview() {
     var nameVal = (nameInput && nameInput.value.trim()) || (state.onboardingSession && state.onboardingSession.profile && state.onboardingSession.profile.name) || 'Student';
     var emailVal = (emailInput && emailInput.value.trim()) || (state.onboardingSession && state.onboardingSession.profile && state.onboardingSession.profile.email) || 'student@kandid.app';
     var handleVal = (usernameInput && usernameInput.value.trim().replace('@', '')) || (state.onboardingSession && state.onboardingSession.handle) || 'user';
-    var campusVal = (state.onboardingSession && state.onboardingSession.campusName) || 'Guru Kashi University';
-    var cityVal = (state.onboardingSession && state.onboardingSession.city) || 'Talwandi Sabo, Bathinda';
+    var campusVal = (state.onboardingSession && state.onboardingSession.campusName) || 'Not specified';
+    var cityVal = (state.onboardingSession && state.onboardingSession.city) || 'Not specified';
 
     var rName = document.getElementById('reviewNameDisplay');
     var rHandle = document.getElementById('reviewHandleDisplay');
@@ -5289,9 +5285,9 @@ window.submitFinalOnboarding = async function() {
     var emailVal = (emailInput && emailInput.value.trim()) || '';
     var userVal = (usernameInput && usernameInput.value.trim().replace('@', '')) || 'user';
     var passVal = (passwordInput && passwordInput.value.trim()) || '';
-    var campusVal = (state.onboardingSession && state.onboardingSession.campusName) || 'Guru Kashi University';
-    var campusIdVal = (state.onboardingSession && state.onboardingSession.campusId) || 'camp_1';
-    var cityVal = (state.onboardingSession && state.onboardingSession.city) || 'Talwandi Sabo, Bathinda';
+    var campusVal = (state.onboardingSession && state.onboardingSession.campusName) || '';
+    var campusIdVal = (state.onboardingSession && state.onboardingSession.campusId) || '';
+    var cityVal = (state.onboardingSession && state.onboardingSession.city) || '';
     var avatarVal = state.onboardAvatarData || '';
 
     try {
@@ -5481,12 +5477,23 @@ window.submitUserLogin = async function() {
 
 window.openResetPasswordModal = function() {
     var modal = document.getElementById('resetPasswordModal');
+    var stage1 = document.getElementById('resetPasswordStage1');
+    var stage2 = document.getElementById('resetPasswordStage2');
     var loginId = document.getElementById('loginIdentifier');
     var resetId = document.getElementById('resetIdentifier');
+    var otpInput = document.getElementById('resetOtpCode');
+    var newPwInput = document.getElementById('resetNewPassword');
+
+    if (stage1) stage1.style.display = 'block';
+    if (stage2) stage2.style.display = 'none';
+    if (otpInput) otpInput.value = '';
+    if (newPwInput) newPwInput.value = '';
+
     if (loginId && resetId && loginId.value.trim()) {
         resetId.value = loginId.value.trim();
     }
     if (modal) modal.style.display = 'flex';
+    if (resetId) resetId.focus();
 };
 
 window.closeResetPasswordModal = function() {
@@ -5494,15 +5501,79 @@ window.closeResetPasswordModal = function() {
     if (modal) modal.style.display = 'none';
 };
 
+window.resetPasswordGoBack = function() {
+    var stage1 = document.getElementById('resetPasswordStage1');
+    var stage2 = document.getElementById('resetPasswordStage2');
+    if (stage1) stage1.style.display = 'block';
+    if (stage2) stage2.style.display = 'none';
+};
+
+window.requestResetPasswordOtp = async function() {
+    var idInput = document.getElementById('resetIdentifier');
+    var btn = document.getElementById('resetSendOtpBtn');
+    var identifier = idInput ? idInput.value.trim() : '';
+
+    if (!identifier) {
+        showToast('Please enter your username or registered email');
+        if (idInput) idInput.focus();
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="animate-pulse">SENDING OTP CODE...</span>';
+    }
+
+    try {
+        var res = await apiRequest('/api/auth/forgot-password', {
+            method: 'POST',
+            body: JSON.stringify({ identifier: identifier })
+        });
+
+        if (res && res.success) {
+            var stage1 = document.getElementById('resetPasswordStage1');
+            var stage2 = document.getElementById('resetPasswordStage2');
+            var hint = document.getElementById('resetOtpHint');
+            var otpInput = document.getElementById('resetOtpCode');
+
+            if (hint && res.masked_email) {
+                hint.textContent = 'Verification code sent to ' + res.masked_email;
+            }
+            if (stage1) stage1.style.display = 'none';
+            if (stage2) stage2.style.display = 'block';
+            if (otpInput) otpInput.focus();
+
+            showToast(res.message || 'Verification code sent! Check your inbox.');
+        } else {
+            showToast(res && res.error ? res.error : 'Could not send verification code.');
+        }
+    } catch(e) {
+        showToast('Network error while requesting code.');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'SEND VERIFICATION CODE →';
+        }
+    }
+};
+
 window.submitResetPassword = async function() {
     var idInput = document.getElementById('resetIdentifier');
+    var otpInput = document.getElementById('resetOtpCode');
     var passInput = document.getElementById('resetNewPassword');
+    
     var identifier = idInput ? idInput.value.trim() : '';
+    var otp = otpInput ? otpInput.value.trim() : '';
     var newPassword = passInput ? passInput.value.trim() : '';
 
     if (!identifier) {
         showToast('Please enter your username or email');
-        if (idInput) idInput.focus();
+        resetPasswordGoBack();
+        return;
+    }
+    if (!otp || otp.length < 4) {
+        showToast('Please enter the 6-digit verification code');
+        if (otpInput) otpInput.focus();
         return;
     }
     if (!newPassword || newPassword.length < 4) {
@@ -5511,10 +5582,10 @@ window.submitResetPassword = async function() {
         return;
     }
 
-    showToast('Updating password & logging in...');
+    showToast('Verifying code & updating password...');
     var res = await apiRequest('/api/auth/reset-password', {
         method: 'POST',
-        body: JSON.stringify({ identifier: identifier, new_password: newPassword })
+        body: JSON.stringify({ identifier: identifier, otp: otp, new_password: newPassword })
     });
 
     if (res && res.success && res.token) {

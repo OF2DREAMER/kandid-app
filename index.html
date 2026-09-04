@@ -2995,8 +2995,8 @@
 
                     <div id="selectedCampusCard" class="hidden bg-zinc-950 border border-amber-500/40 rounded-2xl p-3 flex items-center justify-between font-sans">
                         <div>
-                            <p id="selectedCampusName" class="text-xs font-bold text-white">Guru Kashi University</p>
-                            <p id="selectedCampusLoc" class="text-[9px] text-zinc-400 font-mono-tag">Talwandi Sabo, Bathinda</p>
+                            <p id="selectedCampusName" class="text-xs font-bold text-white"></p>
+                            <p id="selectedCampusLoc" class="text-[9px] text-zinc-400 font-mono-tag"></p>
                         </div>
                         <button onclick="resetCampusSelection()" class="text-[9px] text-amber-400 font-mono-tag hover:underline cursor-pointer">Change</button>
                     </div>
@@ -3716,29 +3716,49 @@
             <div class="flex justify-between items-center pb-2 border-b border-zinc-900">
                 <div class="space-y-0.5">
                     <h3 class="text-sm font-extrabold text-white uppercase font-mono-tag">RESET PASSWORD</h3>
-                    <p class="text-[10px] text-zinc-400">Set a new password for your Kandid account.</p>
+                    <p class="text-[10px] text-zinc-400">Securely recover and update your Kandid account.</p>
                 </div>
                 <button onclick="closeResetPasswordModal()" class="text-zinc-500 hover:text-white text-base cursor-pointer">✕</button>
             </div>
 
-            <div class="space-y-3 font-mono-tag">
+            <!-- Stage 1: Enter Account Identifier -->
+            <div id="resetPasswordStage1" class="space-y-3 font-mono-tag">
                 <div class="space-y-1">
-                    <label class="text-[9px] text-zinc-500 uppercase tracking-widest block font-bold">Username or Handle</label>
-                    <input id="resetIdentifier" type="text" placeholder="@username" class="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 rounded-2xl px-4 py-3 text-xs text-amber-400 outline-none font-mono-tag transition-colors">
+                    <label class="text-[9px] text-zinc-500 uppercase tracking-widest block font-bold">Username or Registered Email</label>
+                    <input id="resetIdentifier" type="text" placeholder="@username or yourname@gmail.com" class="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 rounded-2xl px-4 py-3 text-xs text-amber-400 outline-none font-mono-tag transition-colors">
+                </div>
+                <div class="space-y-2 pt-2">
+                    <button id="resetSendOtpBtn" onclick="requestResetPasswordOtp()" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag shadow-[0_4px_25px_rgba(245,158,11,0.3)] active:scale-[0.98]">
+                        SEND VERIFICATION CODE →
+                    </button>
+                    <button onclick="closeResetPasswordModal()" class="w-full py-2.5 bg-zinc-900 text-zinc-400 text-xs rounded-xl font-mono-tag cursor-pointer hover:bg-zinc-800">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stage 2: Enter OTP Code & New Password -->
+            <div id="resetPasswordStage2" class="space-y-3 font-mono-tag" style="display:none;">
+                <div class="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-center">
+                    <p id="resetOtpHint" class="text-[10px] text-amber-400 font-mono-tag">Verification passcode dispatched to your email.</p>
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[9px] text-zinc-500 uppercase tracking-widest block font-bold">6-Digit Verification Code</label>
+                    <input id="resetOtpCode" type="text" maxlength="6" placeholder="e.g. 849201" class="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 rounded-2xl px-4 py-3 text-xs text-center text-amber-400 tracking-[0.25em] font-bold font-mono outline-none transition-colors">
                 </div>
                 <div class="space-y-1">
                     <label class="text-[9px] text-zinc-500 uppercase tracking-widest block font-bold">New Password</label>
                     <input id="resetNewPassword" type="password" placeholder="Enter new password..." class="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 rounded-2xl px-4 py-3 text-xs text-white outline-none font-sans transition-colors">
                 </div>
-            </div>
-
-            <div class="space-y-2 pt-2">
-                <button onclick="submitResetPassword()" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag shadow-[0_4px_25px_rgba(245,158,11,0.3)] active:scale-[0.98]">
-                    UPDATE PASSWORD & LOG IN →
-                </button>
-                <button onclick="closeResetPasswordModal()" class="w-full py-2.5 bg-zinc-900 text-zinc-400 text-xs rounded-xl font-mono-tag cursor-pointer hover:bg-zinc-800">
-                    Cancel
-                </button>
+                <div class="space-y-2 pt-2">
+                    <button onclick="submitResetPassword()" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag shadow-[0_4px_25px_rgba(245,158,11,0.3)] active:scale-[0.98]">
+                        UPDATE PASSWORD & LOG IN →
+                    </button>
+                    <div class="flex justify-between items-center px-1 text-[10px]">
+                        <span onclick="requestResetPasswordOtp()" class="text-amber-400 underline cursor-pointer">Resend Code</span>
+                        <span onclick="resetPasswordGoBack()" class="text-zinc-500 hover:text-zinc-300 cursor-pointer">Change Account</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
