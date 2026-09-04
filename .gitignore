@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+cloudflared
+cf.tgz
+ngrok
+ngrok.zip
+err
+error.log
+node_modules/

@@ -1,0 +1,191 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg-foundation: #09090b;
+  --bg-card: #09090b;
+  --amber-primary: #f59e0b;
+  --amber-hover: #fbbf24;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #000000;
+  color: #F4F4F5;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-mono-tag {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.no-scroll::-webkit-scrollbar {
+  display: none;
+}
+.no-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.apple-blur {
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+}
+
+.knurled-ring {
+  background: repeating-linear-gradient(0deg, #27272a, #27272a 1px, #09090b 1px, #09090b 3px);
+}
+
+.app-screen {
+  display: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.app-screen.active {
+  display: block;
+  opacity: 1;
+}
+
+.empty-state-card {
+  background: #09090b;
+  border: 1px solid #27272a;
+  border-radius: 1rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.double-tap-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  font-size: 4rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.4s ease;
+  z-index: 30;
+}
+
+.double-tap-burst.animate {
+  transform: translate(-50%, -50%) scale(1.4);
+  opacity: 1;
+}
+
+.reaction-popover-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 9999px;
+  padding: 4px 8px;
+  display: flex;
+  gap: 6px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.8);
+  z-index: 50;
+  animation: popoverFadeIn 0.15s ease-out;
+}
+
+@keyframes popoverFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reaction-popover-emoji {
+  background: transparent;
+  border: none;
+  font-size: 1.15rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+  transition: transform 0.1s ease;
+}
+
+.reaction-popover-emoji:hover {
+  transform: scale(1.25);
+}
+
+.toast-banner {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-60px);
+  background: #18181b;
+  border: 1px solid #f59e0b;
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  z-index: 9999;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.toast-banner.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
+.modal-fullscreen {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-view-card {
+  width: 90%;
+  max-width: 350px;
+  background: #09090b;
+  border: 1px solid #27272a;
+  border-radius: 1.25rem;
+  padding: 1.25rem;
+  color: #fff;
+}
+
+.search-box {
+  background: linear-gradient(180deg, #18181b 0%, #09090b 100%);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* Kandid Dual Camera Studio Smooth Transitions */
+.camera-lens-container {
+  perspective: 1000px;
+}
+
+.camera-flip-card {
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.camera-flip-card.flipped {
+  transform: rotateY(180deg);
+}
+
+@keyframes cameraFlash {
+  0% { opacity: 0; }
+  35% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.camera-flash-pop {
+  animation: cameraFlash 0.18s ease-out forwards;
+}
+
+.shutter-btn-press {
+  transform: scale(0.9);
+  transition: transform 0.08s ease;
+}
+

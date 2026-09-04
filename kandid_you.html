@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kandid - You & Personal Archive</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; }
+        .font-mono-tag { font-family: 'JetBrains Mono', monospace; }
+        .no-scroll::-webkit-scrollbar { display: none; }
+        .apple-blur { backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); }
+    </style>
+</head>
+<body class="flex justify-center items-center min-h-screen bg-[#050505]">
+
+    <!-- Mobile Screen Wrapper (390x844px) -->
+    <div class="w-[390px] h-[844px] bg-[#09090b] flex flex-col relative overflow-hidden border border-zinc-800/80 rounded-[40px] shadow-2xl justify-between">
+
+        <!-- Top Header Container -->
+        <div>
+            <!-- Status Bar -->
+            <div class="w-full pt-3 px-6 flex justify-between items-center text-[10px] text-zinc-400 z-30 bg-[#09090b]">
+                <span class="font-bold tracking-wider text-white font-mono-tag">09:41</span>
+                <div class="w-20 h-4 bg-black rounded-full mx-auto"></div>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span class="text-[9px] text-amber-500 font-mono-tag">YOU</span>
+                </div>
+            </div>
+
+            <!-- Editorial Header -->
+            <header class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KANDID</h1>
+                    
+                    <div class="flex items-center gap-2">
+                        <!-- Notification Bell -->
+                        <button class="w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center text-zinc-400 hover:text-white transition-colors relative shadow-sm cursor-pointer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                            </svg>
+                            <span class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        </button>
+                        <!-- Profile Icon Highlighted -->
+                        <div class="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 text-xs font-bold cursor-pointer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                        </div>
+                    </div>
+                </div>
+            </header>
+        </div>
+
+        <!-- Main Profile Content Stream -->
+        <main class="flex-1 overflow-y-auto px-4 py-4 space-y-4 pb-32 no-scroll">
+            
+            <!-- Profile Identity Header Section -->
+            <div class="flex items-start justify-between relative px-1">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-16 h-16 rounded-2xl bg-zinc-900 overflow-hidden border border-zinc-700 shadow-inner flex-shrink-0">
+                        <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80" class="w-full h-full object-cover">
+                    </div>
+                    <div class="space-y-0.5">
+                        <h2 class="text-sm font-bold text-white tracking-wide">Maya</h2>
+                        <p class="text-xs text-amber-400 font-mono-tag">@maya_s</p>
+                        <p class="text-[10px] text-zinc-300 font-extrabold font-mono-tag tracking-wider uppercase pt-1">NORTH CITY UNIVERSITY</p>
+                        <p class="text-[11px] text-zinc-400 pt-0.5">capturing ordinary days.</p>
+                    </div>
+                </div>
+                <!-- Settings Gear -->
+                <button class="w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-xl flex items-center justify-center text-zinc-400 hover:text-white transition-colors shadow-sm cursor-pointer mt-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+                </button>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 grid grid-cols-3 text-center shadow-lg font-mono-tag">
+                <div class="space-y-0.5 border-r border-zinc-900">
+                    <span class="text-[9px] text-amber-400 tracking-widest block uppercase font-bold">STREAK</span>
+                    <span class="text-sm font-extrabold text-white">12 DAYS</span>
+                </div>
+                <div class="space-y-0.5 border-r border-zinc-900">
+                    <span class="text-[9px] text-zinc-500 tracking-widest block uppercase font-bold">MOMENTS</span>
+                    <span class="text-sm font-extrabold text-white">86</span>
+                </div>
+                <div class="space-y-0.5">
+                    <span class="text-[9px] text-zinc-500 tracking-widest block uppercase font-bold">MEMORIES</span>
+                    <span class="text-sm font-extrabold text-white">42</span>
+                </div>
+            </div>
+
+            <!-- Campus Widget Card -->
+            <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 flex items-center justify-between shadow-lg cursor-pointer hover:border-zinc-700 transition-colors">
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2 text-[10px] text-amber-400 font-mono-tag font-bold">
+                        <span>🎓</span> NORTH CITY UNIVERSITY
+                    </div>
+                    <p class="text-xs text-white font-medium font-mono-tag">12 moments captured this week</p>
+                </div>
+                <span class="text-zinc-400 font-mono-tag">→</span>
+            </div>
+
+            <!-- Memories Archive Card -->
+            <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 space-y-3 shadow-lg">
+                <div class="space-y-1">
+                    <span class="text-[9px] text-amber-400 font-mono-tag tracking-widest uppercase font-bold">MEMORIES</span>
+                    <p class="text-xs text-zinc-300 leading-relaxed font-mono-tag">Your moments, kept exactly as they happened.</p>
+                </div>
+                <button class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-xs font-extrabold rounded-xl transition-all cursor-pointer shadow-md flex items-center justify-center gap-2">
+                    <span>OPEN ARCHIVE</span>
+                    <span>→</span>
+                </button>
+            </div>
+
+            <!-- Your Moments Grid Section -->
+            <div class="space-y-2.5 pt-1">
+                <div class="flex justify-between items-center px-1">
+                    <span class="text-[10px] text-white font-mono-tag tracking-widest uppercase font-bold">YOUR MOMENTS</span>
+                    <button class="text-zinc-400 hover:text-white transition-colors cursor-pointer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                    </button>
+                </div>
+
+                <!-- Grid of Moments -->
+                <div class="grid grid-cols-3 gap-2">
+                    <!-- Item 1 -->
+                    <div class="aspect-[4/5] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden relative shadow-md">
+                        <img src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=300&q=80" class="w-full h-full object-cover">
+                        <span class="absolute bottom-1.5 left-1.5 text-[8px] text-amber-400 font-mono-tag bg-black/80 px-1.5 py-0.5 rounded backdrop-blur-md">TODAY</span>
+                    </div>
+                    <!-- Item 2 -->
+                    <div class="aspect-[4/5] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden relative shadow-md">
+                        <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=300&q=80" class="w-full h-full object-cover">
+                        <span class="absolute bottom-1.5 left-1.5 text-[8px] text-zinc-300 font-mono-tag bg-black/80 px-1.5 py-0.5 rounded backdrop-blur-md">YESTERDAY</span>
+                    </div>
+                    <!-- Item 3 -->
+                    <div class="aspect-[4/5] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden relative shadow-md">
+                        <img src="https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=300&q=80" class="w-full h-full object-cover">
+                        <span class="absolute bottom-1.5 left-1.5 text-[8px] text-zinc-400 font-mono-tag bg-black/80 px-1.5 py-0.5 rounded backdrop-blur-md">3D AGO</span>
+                    </div>
+                    <!-- Item 4 -->
+                    <div class="aspect-[4/5] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden relative shadow-md">
+                        <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=300&q=80" class="w-full h-full object-cover">
+                        <span class="absolute bottom-1.5 left-1.5 text-[8px] text-zinc-400 font-mono-tag bg-black/80 px-1.5 py-0.5 rounded backdrop-blur-md">50 AGO</span>
+                    </div>
+                    <!-- Item 5 -->
+                    <div class="aspect-[4/5] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden relative shadow-md">
+                        <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80" class="w-full h-full object-cover">
+                        <span class="absolute bottom-1.5 left-1.5 text-[8px] text-zinc-400 font-mono-tag bg-black/80 px-1.5 py-0.5 rounded backdrop-blur-md">1W AGO</span>
+                    </div>
+                    <!-- Item 6 (View All) -->
+                    <div class="aspect-[4/5] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden relative shadow-md flex flex-col items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors font-mono-tag">
+                        <span class="text-sm font-bold tracking-widest">···</span>
+                        <span class="text-[9px] uppercase mt-1">VIEW ALL</span>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Bottom Navigation Bar matching the Screenshot -->
+        <nav class="absolute bottom-4 left-4 right-4 bg-zinc-950/95 apple-blur border border-zinc-800/80 rounded-2xl px-5 py-2.5 flex justify-between items-center z-40 shadow-2xl">
+            <!-- Feed Tab -->
+            <button class="text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                <span class="text-[8px] mt-0.5 tracking-widest font-mono-tag">FEED</span>
+            </button>
+            <!-- Search Tab -->
+            <button class="text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <span class="text-[8px] mt-0.5 tracking-widest font-mono-tag">SEARCH</span>
+            </button>
+            
+            <!-- Center REC Shutter Button -->
+            <button class="relative -top-4 group cursor-pointer">
+                <div class="w-14 h-14 bg-zinc-900 border border-zinc-700 rounded-2xl flex flex-col items-center justify-center shadow-xl relative p-1">
+                    <span class="w-2 h-2 rounded-full bg-amber-500 mb-1"></span>
+                    <span class="text-[9px] font-bold text-zinc-400 font-mono-tag tracking-widest">REC</span>
+                </div>
+            </button>
+
+            <!-- Chat Tab -->
+            <button class="text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                <span class="text-[8px] mt-0.5 tracking-widest font-mono-tag">CHAT</span>
+            </button>
+            <!-- You Tab (Active) -->
+            <button class="text-amber-500 flex flex-col items-center cursor-pointer">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                <span class="text-[8px] mt-0.5 tracking-widest font-bold font-mono-tag">YOU</span>
+            </button>
+        </nav>
+
+    </div>
+</body>
+</html>
