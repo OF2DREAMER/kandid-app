@@ -6367,7 +6367,8 @@ async function loadChatMessages(userId, isSilent = false) {
 
     var lastDateGroup = null;
     data.messages.forEach(function(m) {
-      var isMe = (state.currentUser && m.sender_id === state.currentUser.id);
+      var currentUser = state.currentUser || JSON.parse(localStorage.getItem('kandid_user') || 'null');
+      var isMe = (currentUser && m.sender_id === currentUser.id) || (m.sender_id !== state.activeChatUser);
       
       // Calculate date divider
       var dateStr = 'TODAY';
@@ -6446,11 +6447,19 @@ async function sendChatMessageV2() {
   var input = document.getElementById('chatComposerInput');
   if (!input) return;
   var text = input.value.trim();
-  if (!text || !state.activeChatUser) return;
+  if (!text) return;
+  if (!state.activeChatUser) {
+    showToast('Please select a user to message.');
+    return;
+  }
   input.value = '';
 
   var container = document.getElementById('chatMessageHistoryV2');
   if (container) {
+    if (container.children.length === 1 && container.innerText.includes('CONVERSATION')) {
+      container.innerHTML = '';
+    }
+
     var tempBubble = document.createElement('div');
     tempBubble.className = 'flex justify-end';
     var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
