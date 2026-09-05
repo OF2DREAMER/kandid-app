@@ -2554,12 +2554,6 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_cinter_uid ON community_interactions(user_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_cinter_cid ON community_interactions(community_id);")
 
-    # Ensure CEO account handle consistency
-    try:
-        cursor.execute("UPDATE users SET handle = 'ceo' WHERE (id = 'u_802d5f70' OR LOWER(email) = 'ceo@solvarionx.com') AND handle != 'ceo'")
-    except:
-        pass
-
     conn.commit()
     conn.close()
 
