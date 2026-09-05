@@ -68,9 +68,11 @@ CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "").strip()
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
 CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "").strip()
 CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip().strip("'\"")
-RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "Kandid <onboarding@resend.dev>").strip().strip("'\"")
-FROM_EMAIL = RESEND_FROM_EMAIL
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", os.environ.get("RESEND_API_KEY", "")).strip().strip("'\"")
+BREVO_FROM_EMAIL = os.environ.get("BREVO_FROM_EMAIL", os.environ.get("RESEND_FROM_EMAIL", os.environ.get("FROM_EMAIL", "onboarding@kandid.app"))).strip().strip("'\"")
+RESEND_API_KEY = BREVO_API_KEY
+RESEND_FROM_EMAIL = BREVO_FROM_EMAIL
+FROM_EMAIL = BREVO_FROM_EMAIL
 APP_URL = os.environ.get("APP_URL", "https://kandid-app-1.onrender.com").strip()
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
 
@@ -84,13 +86,13 @@ def validate_environment():
     print(f"\n=======================================================")
     print(f"🚀 KANDID SERVER INITIALIZING [MODE: {ENVIRONMENT.upper()}]")
     print(f"=======================================================")
-    key_exists = bool(RESEND_API_KEY)
-    key_len = len(RESEND_API_KEY)
-    key_prefix_valid = RESEND_API_KEY.startswith("re_") if key_exists else False
-    masked_from = mask_email_safe(RESEND_FROM_EMAIL) if "@" in RESEND_FROM_EMAIL else RESEND_FROM_EMAIL
-    print(f"RESEND_API_KEY: exists={'true' if key_exists else 'false'}, length={key_len}, prefix_re={'true' if key_prefix_valid else 'false'}")
-    print(f"RESEND_FROM_EMAIL: {masked_from}")
-    print(f"EMAIL PROVIDER: RESEND")
+    key_exists = bool(BREVO_API_KEY)
+    key_len = len(BREVO_API_KEY)
+    masked_from = mask_email_safe(BREVO_FROM_EMAIL) if "@" in BREVO_FROM_EMAIL else BREVO_FROM_EMAIL
+    print(f"[EMAIL] provider=brevo configured={'true' if key_exists else 'false'}")
+    print(f"BREVO_API_KEY: exists={'true' if key_exists else 'false'}, length={key_len}")
+    print(f"BREVO_FROM_EMAIL: {masked_from}")
+    print(f"EMAIL PROVIDER: BREVO")
     print(f"APP_URL: {APP_URL}")
     if ENVIRONMENT == "production":
         if not DATABASE_URL:
@@ -103,10 +105,10 @@ def validate_environment():
         else:
             print(f"✅ [PRODUCTION MEDIA] Cloudinary CDN Active (Cloud: {CLOUDINARY_CLOUD_NAME or 'From URL'})")
             
-        if not RESEND_API_KEY:
-            print("❌ [PRODUCTION EMAIL] RESEND_API_KEY missing. Real transactional emails disabled.")
+        if not BREVO_API_KEY:
+            print("❌ [PRODUCTION EMAIL] BREVO_API_KEY missing. Real transactional emails disabled.")
         else:
-            print(f"✅ [PRODUCTION EMAIL] Resend Email Active (From: {masked_from})")
+            print(f"✅ [PRODUCTION EMAIL] Brevo Email Active (From: {masked_from})")
     else:
         print("🛠️  [DEV MODE] Using local SQLite database & local media storage.")
     print(f"=======================================================\n")
@@ -160,71 +162,75 @@ def mask_email_safe(email_str):
     masked_name = name[0] + "***" + (name[-1] if len(name) > 1 else "")
     return f"{masked_name}@{domain}"
 
-def send_email_resend(to_email, subject, html_content, text_content=""):
+def send_email_brevo(to_email, subject, html_content, text_content=""):
     masked = mask_email_safe(to_email)
-    print(f"[EMAIL] forgot-password request for {masked}", flush=True)
     
     if not to_email:
-        print(f"❌ [OTP EMAIL] Failed: Recipient email required", flush=True)
+        print(f"❌ [EMAIL] Failed: Recipient email required", flush=True)
         return {"success": False, "error_code": "INVALID_RECIPIENT", "error": "Recipient email required", "status_code": 400, "delivery_status": "failed"}
         
-    api_key = os.environ.get("RESEND_API_KEY", RESEND_API_KEY).strip().strip("'\"")
-    from_email = os.environ.get("RESEND_FROM_EMAIL", os.environ.get("FROM_EMAIL", RESEND_FROM_EMAIL)).strip().strip("'\"")
+    api_key = os.environ.get("BREVO_API_KEY", BREVO_API_KEY).strip().strip("'\"")
+    from_email = os.environ.get("BREVO_FROM_EMAIL", BREVO_FROM_EMAIL).strip().strip("'\"")
     key_configured = bool(api_key)
-    key_length = len(api_key)
-    key_prefix_valid = api_key.startswith("re_") if key_configured else False
     
-    print(f"[EMAIL] configured={'true' if key_configured else 'false'} length={key_length} prefix_valid={'true' if key_prefix_valid else 'false'}", flush=True)
-    print(f"[EMAIL] provider_configured={'true' if key_configured else 'false'}", flush=True)
+    print(f"[EMAIL] provider=brevo configured={'true' if key_configured else 'false'}", flush=True)
 
     if not key_configured:
         if ENVIRONMENT == "production":
-            print(f"⚠️ [OTP EMAIL] Production email to {masked} requested without RESEND_API_KEY.", flush=True)
+            print(f"⚠️ [EMAIL] Production email to {masked} requested without BREVO_API_KEY.", flush=True)
             print(f"[EMAIL] provider_request_started=false", flush=True)
             print(f"[EMAIL] provider_response_status=503", flush=True)
             print(f"[EMAIL] provider_accepted=false", flush=True)
-            print(f"[EMAIL] Resend failure: status=503", flush=True)
+            print(f"[EMAIL] provider_error_code=EMAIL_PROVIDER_UNCONFIGURED", flush=True)
             return {"success": False, "error_code": "EMAIL_PROVIDER_UNCONFIGURED", "error": "Email delivery service is currently unconfigured and unavailable. Please contact support.", "status_code": 503, "delivery_status": "unconfigured"}
         else:
             dev_id = "dev_" + secrets.token_hex(8)
-            print(f"📬 [DEV EMAIL LOG - RESEND SIMULATOR] To: {masked} | Subject: {subject}", flush=True)
+            print(f"📬 [DEV EMAIL LOG - BREVO SIMULATOR] To: {masked} | Subject: {subject}", flush=True)
             print(f"[EMAIL] provider_request_started=true", flush=True)
             print(f"[EMAIL] provider_response_status=200", flush=True)
             print(f"[EMAIL] provider_accepted=true", flush=True)
-            print(f"[EMAIL] Resend success: email_id={dev_id}", flush=True)
-            return {"success": True, "id": dev_id, "status_code": 200, "delivery_status": "sent", "simulated": True}
+            print(f"[EMAIL] provider_error_code=BREVO_SUCCESS", flush=True)
+            return {"success": True, "id": dev_id, "status_code": 200, "delivery_status": "accepted", "simulated": True}
             
     try:
-        url = "https://api.resend.com/emails"
+        url = "https://api.brevo.com/v3/smtp/email"
+        sender_email = from_email or "onboarding@kandid.app"
         payload = {
-            "from": from_email,
-            "to": [to_email] if isinstance(to_email, str) else to_email,
+            "sender": {
+                "name": "Kandid",
+                "email": sender_email
+            },
+            "to": [
+                {
+                    "email": to_email
+                }
+            ],
             "subject": subject,
-            "html": html_content
+            "htmlContent": html_content
         }
         if text_content:
-            payload["text"] = text_content
+            payload["textContent"] = text_content
             
         req_data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             url,
             data=req_data,
             headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
+                "api-key": api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json"
             }
         )
         ctx = ssl.create_default_context()
         print(f"[EMAIL] provider_request_started=true", flush=True)
-        print(f"[EMAIL] Resend request attempted to {masked}", flush=True)
         with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
             status_code = response.getcode()
             res_data = json.loads(response.read().decode("utf-8"))
-            email_id = res_data.get("id")
+            message_id = res_data.get("messageId") or res_data.get("id") or ("msg_" + secrets.token_hex(8))
             print(f"[EMAIL] provider_response_status={status_code}", flush=True)
             print(f"[EMAIL] provider_accepted=true", flush=True)
-            print(f"[EMAIL] Resend success: email_id={email_id}", flush=True)
-            return {"success": True, "id": email_id, "status_code": status_code, "delivery_status": "accepted"}
+            print(f"[EMAIL] provider_error_code=BREVO_SUCCESS", flush=True)
+            return {"success": True, "id": message_id, "status_code": status_code, "delivery_status": "accepted"}
     except urllib.error.HTTPError as e:
         status_code = e.code
         err_msg = str(e)
@@ -235,27 +241,31 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
         except Exception:
             pass
             
-        # Categorize Provider Error
-        if status_code == 429:
+        # Categorize Provider Error according to Task 8:
+        # Brevo HTTP 401/403 -> BREVO_AUTH_FAILURE
+        # Brevo HTTP 400/422 -> BREVO_SENDER_FAILURE
+        # Brevo HTTP 429 -> EMAIL_PROVIDER_RATE_LIMITED
+        if status_code in (401, 403):
+            error_code = "BREVO_AUTH_FAILURE"
+        elif status_code in (400, 422):
+            error_code = "BREVO_SENDER_FAILURE"
+        elif status_code == 429:
             error_code = "EMAIL_PROVIDER_RATE_LIMITED"
-        elif status_code in (401, 403):
-            error_code = "RESEND_AUTH_FAILURE"
-        elif status_code == 422:
-            error_code = "RESEND_SENDER_FAILURE"
         else:
             error_code = "EMAIL_PROVIDER_ERROR"
             
         print(f"[EMAIL] provider_response_status={status_code}", flush=True)
         print(f"[EMAIL] provider_accepted=false", flush=True)
-        print(f"[EMAIL] provider_error_type={type(e).__name__} status={status_code} error_code={error_code}", flush=True)
-        print(f"[EMAIL] Resend failure: status={status_code}", flush=True)
+        print(f"[EMAIL] provider_error_code={error_code}", flush=True)
         return {"success": False, "error_code": error_code, "error": err_msg, "status_code": status_code, "delivery_status": "rejected"}
     except Exception as e:
         print(f"[EMAIL] provider_response_status=500", flush=True)
         print(f"[EMAIL] provider_accepted=false", flush=True)
-        print(f"[EMAIL] provider_error_type={type(e).__name__}", flush=True)
-        print(f"[EMAIL] Resend failure: status=500", flush=True)
-        return {"success": False, "error_code": "EMAIL_PROVIDER_NETWORK_ERROR", "error": str(e), "status_code": 500, "delivery_status": "failed"}
+        print(f"[EMAIL] provider_error_code=EMAIL_PROVIDER_UNAVAILABLE", flush=True)
+        return {"success": False, "error_code": "EMAIL_PROVIDER_UNAVAILABLE", "error": str(e), "status_code": 500, "delivery_status": "failed"}
+
+# Alias for backwards compatibility
+send_email_resend = send_email_brevo
 
 def get_resend_email_status(email_id):
     if not RESEND_API_KEY or not email_id or email_id.startswith("dev_"):
@@ -356,11 +366,11 @@ def generate_secure_otp(email, ip_address=""):
     text = f"Your Kandid verification code is: {code} (Valid for 10 minutes)."
     
     dispatch_res = send_email_resend(clean_email, subject, html, text)
-    resend_http_status = dispatch_res.get("status_code", "none")
+    brevo_http_status = dispatch_res.get("status_code", "none")
     delivery_accepted = dispatch_res.get("success", False)
     
     # Safe diagnostic logging:
-    print(f"OTP request: provider_configured={'true' if RESEND_API_KEY else 'false'}, kandid_rate_limited=false, resend_status={resend_http_status}, delivery_accepted={'true' if delivery_accepted else 'false'}")
+    print(f"OTP request: provider_configured={'true' if BREVO_API_KEY else 'false'}, kandid_rate_limited=false, provider_status={brevo_http_status}, delivery_accepted={'true' if delivery_accepted else 'false'}")
     
     # 6. Strict Verification of Email Dispatch Result
     if not delivery_accepted:
@@ -385,23 +395,20 @@ def generate_secure_otp(email, ip_address=""):
                 "status": 429,
                 "delivery_status": "rejected"
             }
-        elif err_code == "RESEND_AUTH_FAILURE" or status_code in (401, 403):
+        elif err_code == "BREVO_AUTH_FAILURE" or status_code in (401, 403):
             user_err = "Email delivery is temporarily unavailable. Please contact support or try again later."
             ret_dict = {
                 "success": False,
-                "error_code": "RESEND_AUTH_FAILURE",
+                "error_code": "BREVO_AUTH_FAILURE",
                 "error": user_err,
                 "status": 503,
                 "delivery_status": "rejected"
             }
-        elif err_code == "RESEND_SENDER_FAILURE" or status_code == 422:
-            if "only send testing emails" in raw_err:
-                user_err = "Email service is in test mode and can only deliver to verified developer accounts. Please verify a domain on Resend."
-            else:
-                user_err = "Email delivery is temporarily unavailable. Please verify the sender domain."
+        elif err_code == "BREVO_SENDER_FAILURE" or status_code in (400, 422):
+            user_err = "Email delivery is temporarily unavailable. Please verify a domain or sender configuration."
             ret_dict = {
                 "success": False,
-                "error_code": "RESEND_SENDER_FAILURE",
+                "error_code": "BREVO_SENDER_FAILURE",
                 "error": user_err,
                 "status": 422,
                 "delivery_status": "rejected"
@@ -429,7 +436,7 @@ def generate_secure_otp(email, ip_address=""):
         
     return {
         "success": True,
-        "error_code": "RESEND_SUCCESS",
+        "error_code": "BREVO_SUCCESS",
         "message": "Verification code sent to your email.",
         "email": clean_email,
         "email_id": dispatch_res.get("id"),
