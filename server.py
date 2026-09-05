@@ -26,15 +26,44 @@ STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(STATIC_DIR, "data", "kandid.db")
 PORT = int(os.environ.get("PORT", 8080))
 
+# Lightweight .env Loader
+def load_env_file(filepath=None):
+    if filepath is None:
+        filepath = os.path.join(STATIC_DIR, ".env")
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip("'\"")
+                    if k and k not in os.environ:
+                        os.environ[k] = v
+        except Exception:
+            pass
+
+load_env_file()
+
 # Environment Configuration
-ENVIRONMENT = os.environ.get("ENVIRONMENT", "development").strip().lower()
+RAW_ENV = os.environ.get("ENVIRONMENT", "").strip().lower()
+if not RAW_ENV:
+    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"):
+        ENVIRONMENT = "production"
+    else:
+        ENVIRONMENT = "development"
+else:
+    ENVIRONMENT = RAW_ENV
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "").strip()
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
 CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "").strip()
 CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
-FROM_EMAIL = os.environ.get("FROM_EMAIL", "Kandid <onboarding@resend.dev>").strip()
+RESEND_API_KEY = (os.environ.get("RESEND_API_KEY") or "").strip()
+FROM_EMAIL = (os.environ.get("RESEND_FROM_EMAIL") or os.environ.get("FROM_EMAIL") or "Kandid <onboarding@resend.dev>").strip()
 APP_URL = os.environ.get("APP_URL", "https://kandid-app-1.onrender.com").strip()
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
 
@@ -48,6 +77,9 @@ def validate_environment():
     print(f"\n=======================================================")
     print(f"🚀 KANDID SERVER INITIALIZING [MODE: {ENVIRONMENT.upper()}]")
     print(f"=======================================================")
+    print(f"RESEND_API_KEY: {'CONFIGURED' if RESEND_API_KEY else 'MISSING'}")
+    print(f"RESEND_FROM_EMAIL: {FROM_EMAIL}")
+    print(f"EMAIL PROVIDER: RESEND")
     if ENVIRONMENT == "production":
         if not DATABASE_URL:
             print("⚠️  [PRODUCTION DB] DATABASE_URL not configured. Embedded SQLite active.")
@@ -60,11 +92,11 @@ def validate_environment():
             print(f"✅ [PRODUCTION MEDIA] Cloudinary CDN Active (Cloud: {CLOUDINARY_CLOUD_NAME or 'From URL'})")
             
         if not RESEND_API_KEY:
-            print("⚠️  [PRODUCTION EMAIL] RESEND_API_KEY missing. Logging emails to console.")
+            print("❌ [PRODUCTION EMAIL] RESEND_API_KEY missing. Real transactional emails disabled.")
         else:
             print(f"✅ [PRODUCTION EMAIL] Resend Email Active (From: {FROM_EMAIL})")
     else:
-        print("🛠️  [DEV MODE] Using local SQLite database & local media storage (/uploads/).")
+        print("🛠️  [DEV MODE] Using local SQLite database & local media storage.")
     print(f"=======================================================\n")
 
 def upload_to_cloudinary(data_str, resource_type="image", folder="kandid/moments"):
