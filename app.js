@@ -922,6 +922,8 @@ function renderCommunityCards(moments, container) {
     var mainImgSrc = m.main_img || m.mainImg || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=85';
     var pipImgSrc = m.pip_img || m.pipImg || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80';
 
+    var dropContextHtml = m.drop_context ? ('<span class="font-mono-tag text-[8px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30 uppercase font-bold tracking-wider">FROM THIS DROP</span>') : '';
+
     card.innerHTML = 
       '<div class="moment-image aspect-[4/5] rounded-[28px] overflow-hidden relative border border-white/[.08] shadow-2xl moment-viewport-stage cursor-pointer select-none">' +
         '<img class="w-full h-full object-cover main-stage-img" src="' + mainImgSrc + '" alt="Real moment">' +
@@ -941,9 +943,12 @@ function renderCommunityCards(moments, container) {
 
         '<!-- Bottom Overlay -->' +
         '<div class="absolute bottom-4 inset-x-4 z-10 space-y-2.5">' +
-          '<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10">' +
-            '<span class="text-amber-400 text-xs">⌖</span>' +
-            '<span class="text-[10px] text-zinc-200 font-medium">' + locName + '</span>' +
+          '<div class="flex items-center gap-1.5 flex-wrap">' +
+            '<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10">' +
+              '<span class="text-amber-400 text-xs">⌖</span>' +
+              '<span class="text-[10px] text-zinc-200 font-medium">' + locName + '</span>' +
+            '</div>' +
+            dropContextHtml +
           '</div>' +
 
           '<p class="text-[13px] font-medium text-white leading-snug">"' + captionText + '"</p>' +
