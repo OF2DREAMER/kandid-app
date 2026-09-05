@@ -5326,9 +5326,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # 2. Campus Pulse & Moments Query
             cursor.execute("""
                 SELECT * FROM posts
-                WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ? OR circle = 'campus' OR circle = 'foryou')
+                WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ? OR context_community_id = ? OR (campus = 'North City University' AND ? = 'North City University' AND (circle = 'campus' OR circle = 'foryou')))
                 ORDER BY created_at DESC LIMIT 20
-            """, (target_campus, comm_id, comm_id))
+            """, (target_campus, comm_id, comm_id, comm_id, target_campus))
             pulse_posts = [dict(r) for r in cursor.fetchall()]
             for p in pulse_posts:
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
