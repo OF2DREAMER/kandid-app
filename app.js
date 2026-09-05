@@ -1178,6 +1178,13 @@ async function openCampusPage(campusName) {
                         (c.creator_id === 'u_system'); // Allow admin access
         creatorControls.style.display = isCreator ? 'flex' : 'none';
       }
+      // Community Share Moment action
+      var shareBtn = document.getElementById('campusShareMomentBtn');
+      if (shareBtn) {
+        shareBtn.onclick = function() {
+          openCommunityMomentCapture(c.id, c.name);
+        };
+      }
     }
 
     // Load Community Drops (Prioritized Experiences)
@@ -1288,7 +1295,12 @@ async function openCampusPage(campusName) {
       if (Array.isArray(data.moments) && data.moments.length > 0) {
         renderCommunityCards(data.moments, momentsEl);
       } else {
-        momentsEl.innerHTML = '<div class="py-6 text-center text-xs text-zinc-500 font-mono-tag">No shared moments yet. Be the first to share an authentic moment.</div>';
+        var curCommId = (data.campus && data.campus.id) ? data.campus.id : '';
+        var curCommName = (data.campus && data.campus.name) ? data.campus.name : campusName;
+        momentsEl.innerHTML = '<div class="py-6 text-center space-y-2 rounded-2xl bg-zinc-950/60 border border-white/[.04] p-4">' +
+          '<p class="text-xs text-zinc-500 font-mono-tag">No shared moments yet. Be the first to share an authentic moment.</p>' +
+          '<button onclick="openCommunityMomentCapture(\'' + escapeHtml(curCommId) + '\', \'' + escapeHtml(curCommName).replace(/'/g, "\\'") + '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono-tag font-bold text-[10px] uppercase cursor-pointer active:scale-95 transition">📸 + SHARE FIRST MOMENT</button>' +
+        '</div>';
       }
     }
 
@@ -1297,7 +1309,7 @@ async function openCampusPage(campusName) {
         memoriesGridEl.innerHTML = data.collective_memories.map(function(m) {
           var attendeeCount = m.checked_in_count || m.moments_count || 0;
           var attendeeTxt = attendeeCount > 0 ? (attendeeCount + ' people were there') : 'Archived experience';
-          var dropContextTag = m.drop_context ? '<span class="font-mono-tag text-[7px] text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 block truncate">FROM THIS EXPERIENCE</span>' : '';
+          var dropContextTag = m.drop_context ? '<span class="font-mono-tag text-[7px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded block truncate">FROM THIS EXPERIENCE</span>' : '';
           return '<div onclick="openCollectiveMemoryPage(\'' + (m.id || 'mem_1') + '\')" class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 shadow-md cursor-pointer transition active:scale-95 group">' +
             '<div class="w-full aspect-[4/3] rounded-xl overflow-hidden bg-black">' +
               '<img src="' + (m.cover_img || m.cover_image || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80') + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
@@ -1327,6 +1339,16 @@ async function openCampusPage(campusName) {
 }
 window.openCampusPage = openCampusPage;
 window.switchCommunity = openCampusPage;
+
+function openCommunityMomentCapture(commId, commName) {
+  var cName = commName || state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
+  state.activeCommunity = cName;
+  state.selectedReviewCommunity = cName;
+  if (commId) state.activeCommunityId = commId;
+  if (typeof playTactileFeedback === 'function') playTactileFeedback('tap');
+  openCameraStudio();
+}
+window.openCommunityMomentCapture = openCommunityMomentCapture;
 
 // =====================================================================
 // COMMUNITY DROPS & EXPERIENCES SYSTEM (₹19 MONETIZATION ENGINE)
