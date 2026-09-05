@@ -150,21 +150,18 @@ def mask_email_safe(email_str):
 
 def send_email_resend(to_email, subject, html_content, text_content=""):
     masked = mask_email_safe(to_email)
-    print(f"📧 [OTP EMAIL] Request started | Recipient: {masked}")
     
     if not to_email:
         print(f"❌ [OTP EMAIL] Failed: Recipient email required")
-        return {"success": False, "error": "Recipient email required", "status_code": 400, "delivery_status": "failed"}
+        return {"success": False, "error_code": "INVALID_RECIPIENT", "error": "Recipient email required", "status_code": 400, "delivery_status": "failed"}
         
     if not RESEND_API_KEY:
         if ENVIRONMENT == "production":
             print(f"⚠️ [OTP EMAIL] Production email to {masked} requested without RESEND_API_KEY.")
-            print(f"   Resend response status: 503 | delivery status: unconfigured")
-            return {"success": False, "error": "Email delivery service is currently unconfigured. Please contact support.", "status_code": 503, "delivery_status": "unconfigured"}
+            return {"success": False, "error_code": "EMAIL_PROVIDER_UNCONFIGURED", "error": "Email delivery service is currently unconfigured. Please contact support.", "status_code": 503, "delivery_status": "unconfigured"}
         else:
             dev_id = "dev_" + secrets.token_hex(8)
             print(f"📬 [DEV EMAIL LOG - RESEND SIMULATOR] To: {masked} | Subject: {subject}")
-            print(f"   Resend response status: simulated_200 | Resend email_id: {dev_id} | delivery status: sent (dev mode)")
             return {"success": True, "id": dev_id, "status_code": 200, "delivery_status": "sent", "simulated": True}
             
     try:
@@ -192,7 +189,6 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
             status_code = response.getcode()
             res_data = json.loads(response.read().decode("utf-8"))
             email_id = res_data.get("id")
-            print(f"✅ [OTP EMAIL] Resend response status: {status_code} | Resend email_id: {email_id} | delivery status: accepted")
             return {"success": True, "id": email_id, "status_code": status_code, "delivery_status": "accepted"}
     except urllib.error.HTTPError as e:
         status_code = e.code
@@ -203,11 +199,20 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
             err_msg = err_json.get("message") or err_json.get("error") or str(e)
         except Exception:
             pass
-        print(f"❌ [OTP EMAIL] Resend response status: {status_code} | Resend error: {err_msg} | delivery status: rejected")
-        return {"success": False, "error": err_msg, "status_code": status_code, "delivery_status": "rejected"}
+            
+        # Categorize Provider Error
+        if status_code == 429:
+            error_code = "EMAIL_PROVIDER_RATE_LIMITED"
+        elif status_code in (401, 403):
+            error_code = "RESEND_AUTH_FAILURE"
+        elif status_code == 422:
+            error_code = "RESEND_SENDER_FAILURE"
+        else:
+            error_code = "EMAIL_PROVIDER_ERROR"
+            
+        return {"success": False, "error_code": error_code, "error": err_msg, "status_code": status_code, "delivery_status": "rejected"}
     except Exception as e:
-        print(f"❌ [OTP EMAIL] Network/Transport Error: {e} | delivery status: failed")
-        return {"success": False, "error": str(e), "status_code": 500, "delivery_status": "failed"}
+        return {"success": False, "error_code": "EMAIL_PROVIDER_NETWORK_ERROR", "error": str(e), "status_code": 500, "delivery_status": "failed"}
 
 def get_resend_email_status(email_id):
     if not RESEND_API_KEY or not email_id or email_id.startswith("dev_"):
@@ -233,13 +238,34 @@ def generate_secure_otp(email, ip_address=""):
     conn = get_db()
     cursor = conn.cursor()
     
-    # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email
+    # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email (Kandid Rate Limiter)
     fifteen_mins_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
-    cursor.execute("SELECT COUNT(*) FROM email_otps WHERE email = ? AND created_at > ?", (clean_email, fifteen_mins_ago))
-    count = cursor.fetchone()[0]
+    cursor.execute("SELECT created_at FROM email_otps WHERE email = ? AND created_at > ? ORDER BY created_at ASC", (clean_email, fifteen_mins_ago))
+    rows = cursor.fetchall()
+    count = len(rows)
+    
     if count >= 3:
+        # Calculate retry_after_seconds based on the oldest request in the current 15-minute sliding window
+        try:
+            oldest_created = datetime.fromisoformat(rows[0][0])
+            window_end = oldest_created + timedelta(minutes=15)
+            remaining_seconds = max(1, int((window_end - datetime.now()).total_seconds()))
+        except Exception:
+            remaining_seconds = 900
+            
         conn.close()
-        return {"success": False, "error": "Maximum OTP limit reached. Please wait 15 minutes before requesting again.", "status": 429, "delivery_status": "rate_limited"}
+        
+        # Safe diagnostic log
+        print(f"OTP request: provider_configured={'true' if RESEND_API_KEY else 'false'}, kandid_rate_limited=true, resend_status=none, delivery_accepted=false")
+        
+        return {
+            "success": False,
+            "error_code": "OTP_RATE_LIMITED",
+            "error": f"Maximum OTP limit reached. Please wait {max(1, (remaining_seconds + 59)//60)} minutes before requesting again.",
+            "retry_after_seconds": remaining_seconds,
+            "status": 429,
+            "delivery_status": "rate_limited"
+        }
         
     # 2. Invalidate previous pending OTPs
     cursor.execute("UPDATE email_otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
@@ -280,9 +306,14 @@ def generate_secure_otp(email, ip_address=""):
     text = f"Your Kandid Verification Passcode is: {code} (Valid for 10 minutes)."
     
     dispatch_res = send_email_resend(clean_email, subject, html, text)
+    resend_http_status = dispatch_res.get("status_code", "none")
+    delivery_accepted = dispatch_res.get("success", False)
+    
+    # Safe diagnostic logging:
+    print(f"OTP request: provider_configured={'true' if RESEND_API_KEY else 'false'}, kandid_rate_limited=false, resend_status={resend_http_status}, delivery_accepted={'true' if delivery_accepted else 'false'}")
     
     # 6. Strict Verification of Email Dispatch Result
-    if not dispatch_res.get("success"):
+    if not delivery_accepted:
         # Invalidate the OTP record in DB since email could not be delivered
         conn = get_db()
         conn.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_id,))
@@ -291,27 +322,63 @@ def generate_secure_otp(email, ip_address=""):
         
         status_code = dispatch_res.get("status_code", 500)
         raw_err = str(dispatch_res.get("error", ""))
+        err_code = dispatch_res.get("error_code", "EMAIL_PROVIDER_ERROR")
         
-        if "only send testing emails" in raw_err:
-            user_err = "Email service is in test mode and can only deliver to verified developer accounts. Please verify a domain on Resend."
-        elif status_code == 429:
-            user_err = "Email delivery rate limit reached. Please wait a few minutes before requesting again."
-        elif status_code in (401, 403):
+        if err_code == "EMAIL_PROVIDER_RATE_LIMITED" or status_code == 429:
+            user_err = "Email delivery rate limit reached by provider. Please wait a few minutes before requesting again."
+            ret_dict = {
+                "success": False,
+                "error_code": "EMAIL_PROVIDER_RATE_LIMITED",
+                "error": user_err,
+                "retry_after_seconds": 60,
+                "status": 429,
+                "delivery_status": "rejected"
+            }
+        elif err_code == "RESEND_AUTH_FAILURE" or status_code in (401, 403):
             user_err = "Email delivery authentication failed. Please verify Resend credentials."
+            ret_dict = {
+                "success": False,
+                "error_code": "RESEND_AUTH_FAILURE",
+                "error": user_err,
+                "status": 401,
+                "delivery_status": "rejected"
+            }
+        elif err_code == "RESEND_SENDER_FAILURE" or status_code == 422:
+            if "only send testing emails" in raw_err:
+                user_err = "Email service is in test mode and can only deliver to verified developer accounts. Please verify a domain on Resend."
+            else:
+                user_err = "Email provider sender configuration error. Please verify the sender domain."
+            ret_dict = {
+                "success": False,
+                "error_code": "RESEND_SENDER_FAILURE",
+                "error": user_err,
+                "status": 422,
+                "delivery_status": "rejected"
+            }
         elif status_code == 503:
             user_err = "Email service is temporarily unavailable. Please contact support."
+            ret_dict = {
+                "success": False,
+                "error_code": "EMAIL_PROVIDER_UNCONFIGURED",
+                "error": user_err,
+                "status": 503,
+                "delivery_status": "unconfigured"
+            }
         else:
             user_err = "Failed to dispatch verification email. Please verify your address and try again."
+            ret_dict = {
+                "success": False,
+                "error_code": "EMAIL_DISPATCH_FAILED",
+                "error": user_err,
+                "status": status_code if status_code >= 400 else 500,
+                "delivery_status": dispatch_res.get("delivery_status", "rejected")
+            }
             
-        return {
-            "success": False,
-            "error": user_err,
-            "status": status_code if status_code >= 400 else 500,
-            "delivery_status": dispatch_res.get("delivery_status", "rejected")
-        }
+        return ret_dict
         
     return {
         "success": True,
+        "error_code": "RESEND_SUCCESS",
         "message": "Verification code sent to your email.",
         "email": clean_email,
         "email_id": dispatch_res.get("id"),
