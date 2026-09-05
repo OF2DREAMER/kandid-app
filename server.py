@@ -22,6 +22,12 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(STATIC_DIR, "data", "kandid.db")
 PORT = int(os.environ.get("PORT", 8080))
@@ -156,27 +162,42 @@ def mask_email_safe(email_str):
 
 def send_email_resend(to_email, subject, html_content, text_content=""):
     masked = mask_email_safe(to_email)
-    print(f"[EMAIL] forgot-password request for {masked}")
+    print(f"[EMAIL] forgot-password request for {masked}", flush=True)
     
     if not to_email:
-        print(f"❌ [OTP EMAIL] Failed: Recipient email required")
+        print(f"❌ [OTP EMAIL] Failed: Recipient email required", flush=True)
         return {"success": False, "error_code": "INVALID_RECIPIENT", "error": "Recipient email required", "status_code": 400, "delivery_status": "failed"}
         
-    if not RESEND_API_KEY:
+    api_key = os.environ.get("RESEND_API_KEY", RESEND_API_KEY).strip().strip("'\"")
+    from_email = os.environ.get("RESEND_FROM_EMAIL", os.environ.get("FROM_EMAIL", RESEND_FROM_EMAIL)).strip().strip("'\"")
+    key_configured = bool(api_key)
+    key_length = len(api_key)
+    key_prefix_valid = api_key.startswith("re_") if key_configured else False
+    
+    print(f"[EMAIL] configured={'true' if key_configured else 'false'} length={key_length} prefix_valid={'true' if key_prefix_valid else 'false'}", flush=True)
+    print(f"[EMAIL] provider_configured={'true' if key_configured else 'false'}", flush=True)
+
+    if not key_configured:
         if ENVIRONMENT == "production":
-            print(f"⚠️ [OTP EMAIL] Production email to {masked} requested without RESEND_API_KEY.")
-            print(f"[EMAIL] Resend failure: status=503")
+            print(f"⚠️ [OTP EMAIL] Production email to {masked} requested without RESEND_API_KEY.", flush=True)
+            print(f"[EMAIL] provider_request_started=false", flush=True)
+            print(f"[EMAIL] provider_response_status=503", flush=True)
+            print(f"[EMAIL] provider_accepted=false", flush=True)
+            print(f"[EMAIL] Resend failure: status=503", flush=True)
             return {"success": False, "error_code": "EMAIL_PROVIDER_UNCONFIGURED", "error": "Email delivery service is currently unconfigured and unavailable. Please contact support.", "status_code": 503, "delivery_status": "unconfigured"}
         else:
             dev_id = "dev_" + secrets.token_hex(8)
-            print(f"📬 [DEV EMAIL LOG - RESEND SIMULATOR] To: {masked} | Subject: {subject}")
-            print(f"[EMAIL] Resend success: email_id={dev_id}")
+            print(f"📬 [DEV EMAIL LOG - RESEND SIMULATOR] To: {masked} | Subject: {subject}", flush=True)
+            print(f"[EMAIL] provider_request_started=true", flush=True)
+            print(f"[EMAIL] provider_response_status=200", flush=True)
+            print(f"[EMAIL] provider_accepted=true", flush=True)
+            print(f"[EMAIL] Resend success: email_id={dev_id}", flush=True)
             return {"success": True, "id": dev_id, "status_code": 200, "delivery_status": "sent", "simulated": True}
             
     try:
         url = "https://api.resend.com/emails"
         payload = {
-            "from": RESEND_FROM_EMAIL,
+            "from": from_email,
             "to": [to_email] if isinstance(to_email, str) else to_email,
             "subject": subject,
             "html": html_content
@@ -189,17 +210,20 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
             url,
             data=req_data,
             headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             }
         )
         ctx = ssl.create_default_context()
-        print(f"[EMAIL] Resend request attempted to {masked}")
+        print(f"[EMAIL] provider_request_started=true", flush=True)
+        print(f"[EMAIL] Resend request attempted to {masked}", flush=True)
         with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
             status_code = response.getcode()
             res_data = json.loads(response.read().decode("utf-8"))
             email_id = res_data.get("id")
-            print(f"[EMAIL] Resend success: email_id={email_id}")
+            print(f"[EMAIL] provider_response_status={status_code}", flush=True)
+            print(f"[EMAIL] provider_accepted=true", flush=True)
+            print(f"[EMAIL] Resend success: email_id={email_id}", flush=True)
             return {"success": True, "id": email_id, "status_code": status_code, "delivery_status": "accepted"}
     except urllib.error.HTTPError as e:
         status_code = e.code
@@ -211,7 +235,6 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
         except Exception:
             pass
             
-        print(f"[EMAIL] Resend failure: status={status_code}")
         # Categorize Provider Error
         if status_code == 429:
             error_code = "EMAIL_PROVIDER_RATE_LIMITED"
@@ -222,9 +245,16 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
         else:
             error_code = "EMAIL_PROVIDER_ERROR"
             
+        print(f"[EMAIL] provider_response_status={status_code}", flush=True)
+        print(f"[EMAIL] provider_accepted=false", flush=True)
+        print(f"[EMAIL] provider_error_type={type(e).__name__} status={status_code} error_code={error_code}", flush=True)
+        print(f"[EMAIL] Resend failure: status={status_code}", flush=True)
         return {"success": False, "error_code": error_code, "error": err_msg, "status_code": status_code, "delivery_status": "rejected"}
     except Exception as e:
-        print(f"[EMAIL] Resend failure: status=500")
+        print(f"[EMAIL] provider_response_status=500", flush=True)
+        print(f"[EMAIL] provider_accepted=false", flush=True)
+        print(f"[EMAIL] provider_error_type={type(e).__name__}", flush=True)
+        print(f"[EMAIL] Resend failure: status=500", flush=True)
         return {"success": False, "error_code": "EMAIL_PROVIDER_NETWORK_ERROR", "error": str(e), "status_code": 500, "delivery_status": "failed"}
 
 def get_resend_email_status(email_id):
