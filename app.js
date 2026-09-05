@@ -2301,6 +2301,7 @@ async function loadCommunityDiscovery(options) {
   if (type) queryParams.push('type=' + encodeURIComponent(type));
   if (q) queryParams.push('q=' + encodeURIComponent(q));
   if (limit) queryParams.push('limit=' + encodeURIComponent(limit));
+  if (options.nearby_only) queryParams.push('nearby_only=1');
 
   var url = '/api/community/discover' + (queryParams.length ? '?' + queryParams.join('&') : '');
   var res = await apiRequest(url);
@@ -2311,8 +2312,23 @@ window.loadCommunityDiscovery = loadCommunityDiscovery;
 async function loadMoreAroundYou() {
   var container = document.getElementById('moreAroundYouContainer');
   if (!container) return;
-  var res = await loadCommunityDiscovery({ limit: 12 });
-  var list = (res && res.success && res.for_you && res.for_you.length > 0) ? res.for_you : ((res && res.all) ? res.all : []);
+
+  var userCampus = (state.currentUser && state.currentUser.campus) ? state.currentUser.campus : (state.activeCommunity || '');
+  var userCity = (state.currentUser && (state.currentUser.location_city || state.currentUser.city)) ? (state.currentUser.location_city || state.currentUser.city) : '';
+
+  var res = await loadCommunityDiscovery({
+    campus: userCampus,
+    city: userCity,
+    nearby_only: 1,
+    limit: 12
+  });
+
+  var list = (res && res.success && Array.isArray(res.near_you)) ? res.near_you : [];
+  // Ensure strict public visibility and filter out any invalid entries
+  list = list.filter(function(c) {
+    return c && c.visibility === 'public';
+  });
+
   if (list && list.length > 0) {
     container.innerHTML = list.map(function(c) {
       var badge = c.context_reason || (c.activity_state === 'UPCOMING' ? 'Upcoming Drop' : 'Active Community');
@@ -2327,6 +2343,8 @@ async function loadMoreAroundYou() {
         '</div>' +
       '</div>';
     }).join('');
+  } else {
+    container.innerHTML = '<div class="w-full py-4 text-center text-[10px] font-mono-tag text-zinc-500">No other nearby public spaces right now</div>';
   }
 }
 window.loadMoreAroundYou = loadMoreAroundYou;
