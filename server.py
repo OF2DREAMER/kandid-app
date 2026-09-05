@@ -3778,6 +3778,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             req_city = query.get("city", [""])[0].strip()
             req_type = query.get("type", [""])[0].strip()
             req_q = query.get("q", [""])[0].strip().lower()
+            req_nearby_only = query.get("nearby_only", ["0"])[0].strip() in ("1", "true", "yes") or query.get("section", [""])[0].strip() == "around_you"
             
             try:
                 limit_val = int(query.get("limit", ["20"])[0])
@@ -3785,11 +3786,27 @@ class KandidHandler(SimpleHTTPRequestHandler):
             except (ValueError, TypeError):
                 limit_val = 20
 
-            user_campus = req_campus or (user.get("campus", "") if user else "") or "North City University"
-            user_city = req_city or (user.get("location_city", "") if user else "")
+            eff_campus = req_campus or (user.get("campus", "") if user else "")
+            eff_city = req_city or (user.get("location_city", "") if user else "")
+
+            if eff_campus:
+                user_campus = eff_campus
+            elif not eff_city and not req_nearby_only:
+                user_campus = "North City University"
+            else:
+                user_campus = ""
+
+            user_city = eff_city
 
             conn = get_db()
             cursor = conn.cursor()
+
+            # If user_campus is present but user_city is not, infer city from campus community
+            if user_campus and not user_city:
+                cursor.execute("SELECT city FROM communities WHERE LOWER(name) = ? OR id = ? LIMIT 1", (user_campus.lower(), user_campus))
+                camp_c_row = cursor.fetchone()
+                if camp_c_row and camp_c_row["city"]:
+                    user_city = camp_c_row["city"]
 
             # Safety integration: Blocked users
             blocked_uids = set()
@@ -3894,14 +3911,48 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 else:
                     activity_state = "DORMANT"
 
-                # Contextual Matching & Explainability
+                # Contextual Matching & Geographic Proximity (Zero GPS Leakage)
                 comm_name = c.get("name", "").strip().lower()
                 comm_city = c.get("city", "").strip().lower()
+                comm_loc_ctx = c.get("location_context", "").strip().lower()
                 u_camp = user_campus.strip().lower() if user_campus else ""
                 u_cit = user_city.strip().lower() if user_city else ""
 
-                campus_match = bool(u_camp and (u_camp == comm_name or u_camp in comm_name or comm_name in u_camp or (c.get("type") == "Campus" and u_cit and comm_city == u_cit)))
-                city_match = bool(u_cit and comm_city and (u_cit in comm_city or comm_city in u_cit))
+                campus_match = False
+                if u_camp:
+                    if u_camp == comm_name:
+                        campus_match = True
+                    elif len(u_camp) >= 3 and len(comm_name) >= 3:
+                        import re
+                        if re.search(r'\b' + re.escape(u_camp) + r'\b', comm_name) or re.search(r'\b' + re.escape(comm_name) + r'\b', u_camp):
+                            campus_match = True
+                    if not campus_match and comm_loc_ctx and len(comm_loc_ctx) >= 3:
+                        import re
+                        if re.search(r'\b' + re.escape(u_camp) + r'\b', comm_loc_ctx) or re.search(r'\b' + re.escape(comm_loc_ctx) + r'\b', u_camp):
+                            campus_match = True
+                    if not campus_match and c.get("type") == "Campus" and u_cit and comm_city == u_cit:
+                        campus_match = True
+
+                city_match = False
+                if u_cit and comm_city:
+                    if u_cit in comm_city or comm_city in u_cit:
+                        city_match = True
+                    else:
+                        def _extract_city_tokens(text):
+                            for ch in (",", "/", "-", ".", "(", ")", "&"):
+                                text = text.replace(ch, " ")
+                            tokens = set(w for w in text.lower().split() if len(w) >= 4 and w not in ("india", "city", "state", "near", "west", "east", "north", "south", "nagar"))
+                            if "bengaluru" in tokens or "bangalore" in tokens:
+                                tokens.update(["bengaluru", "bangalore"])
+                            if "mumbai" in tokens or "bombay" in tokens:
+                                tokens.update(["mumbai", "bombay"])
+                            if "delhi" in tokens:
+                                tokens.update(["delhi", "ncr"])
+                            return tokens
+                        u_toks = _extract_city_tokens(u_cit)
+                        c_toks = _extract_city_tokens(comm_city)
+                        if u_toks and c_toks and (u_toks & c_toks):
+                            city_match = True
 
                 if campus_match:
                     context_reason = "At your campus"
@@ -3956,16 +4007,24 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             # Sort unjoined purely by context score
             unjoined_comms.sort(key=lambda x: x[0], reverse=True)
-            for_you = [item for (_, item) in unjoined_comms][:limit_val]
 
-            # Near you (campus or city match)
-            near_you = [item for (_, item, c_match, ct_match) in scored_communities if c_match or ct_match][:limit_val]
+            # Near you (ONLY genuinely nearby public communities)
+            near_you = [
+                item for (_, item, c_match, ct_match) in scored_communities 
+                if (c_match or ct_match) and item.get("visibility") == "public"
+            ][:limit_val]
 
             # Upcoming (communities hosting live or upcoming drops)
             upcoming = [item for (_, item, _, _) in scored_communities if item["upcoming_drops_count"] > 0][:limit_val]
 
             # All matching communities
-            all_comms = [item for (_, item, _, _) in scored_communities][:limit_val]
+            if req_nearby_only:
+                # Targeted "More Around You" mode: strictly nearby public communities only
+                for_you = [item for item in near_you if not item.get("is_member")][:limit_val]
+                all_comms = near_you
+            else:
+                for_you = [item for (_, item) in unjoined_comms][:limit_val]
+                all_comms = [item for (_, item, _, _) in scored_communities][:limit_val]
 
             return self.send_json(200, {
                 "success": True,
