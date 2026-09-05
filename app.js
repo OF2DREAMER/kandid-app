@@ -2739,7 +2739,8 @@ function renderFeedCards(moments, container) {
     }
 
     var iWasThereHtml = '';
-    if (!m.is_private && (!state.currentUser || state.currentUser.id !== m.user_id)) {
+    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.drop_id || m.cluster_id);
+    if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       iWasThereHtml = '<button onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="px-2 py-0.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-bold cursor-pointer active:scale-95 transition shadow-sm" title="Self-assert contextual participation">+ I WAS THERE</button>';
     }
 
