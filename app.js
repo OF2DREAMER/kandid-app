@@ -1162,6 +1162,8 @@ async function openCampusPage(campusName) {
   if (data && data.success) {
     if (data.campus) {
       var c = data.campus;
+      state.activeCommunityId = c.id || '';
+      state.activeCommunity = c.name || campusName;
       if (nameEl) nameEl.textContent = c.name;
       if (typeTagEl) typeTagEl.textContent = '◉ ' + (c.tag || 'COMMUNITY HUB');
       if (locEl) locEl.textContent = (c.location || 'Local Region') + (c.creator_handle ? ' · Created by @' + c.creator_handle : '');
@@ -2437,12 +2439,13 @@ window.handleCollectiveMemoryBack = handleCollectiveMemoryBack;
 async function toggleJoinCommunity() {
   var btn = document.getElementById('campusPageJoinBtn');
   var name = state.activeCommunity || 'North City University';
+  var commId = state.activeCommunityId || '';
   if (!btn) return;
   
   btn.style.opacity = '0.5';
   var res = await apiRequest('/api/community/join', {
     method: 'POST',
-    body: JSON.stringify({ name: name })
+    body: JSON.stringify({ name: name, community_id: commId, id: commId })
   });
   btn.style.opacity = '1';
 
@@ -3842,22 +3845,41 @@ async function setupReviewContextUI() {
   var res = await apiRequest('/api/community/my');
   var communities = (res && res.success && Array.isArray(res.communities)) ? res.communities : [];
 
+  // Ensure target community from active context is present
   if (state.activeCommunityId && defaultComm) {
     var hasTarget = communities.some(function(c) { return c.id === state.activeCommunityId; });
     if (!hasTarget) {
       communities.unshift({ id: state.activeCommunityId, name: defaultComm, type: 'Community Space', icon: '📍' });
     }
-  } else if (!communities.length) {
-    communities.unshift({ id: '', name: 'Personal (Feed)', type: 'Feed', icon: '✨' });
+  }
+
+  // Always provide Personal (Feed) option
+  var hasPersonalFeed = communities.some(function(c) { return !c.id || c.name === 'Personal (Feed)'; });
+  if (!hasPersonalFeed) {
+    communities.push({ id: '', name: 'Personal (Feed)', type: 'Feed', icon: '✨' });
+  }
+
+  // Determine pre-selected item index
+  var matchedIdx = -1;
+  if (state.activeCommunityId) {
+    matchedIdx = communities.findIndex(function(c) { return c.id === state.activeCommunityId; });
+  }
+  if (matchedIdx === -1 && defaultComm) {
+    matchedIdx = communities.findIndex(function(c) { 
+      return c.name && c.name.toLowerCase() === defaultComm.toLowerCase(); 
+    });
+  }
+  if (matchedIdx === -1) {
+    matchedIdx = 0;
+  }
+
+  if (communities[matchedIdx]) {
+    state.selectedReviewCommunity = communities[matchedIdx].name;
+    state.activeCommunityId = communities[matchedIdx].id || '';
   }
 
   listEl.innerHTML = communities.map(function(c, idx) {
-    var isChecked = false;
-    if (state.activeCommunityId) {
-      isChecked = (c.id === state.activeCommunityId);
-    } else {
-      isChecked = (idx === 0);
-    }
+    var isChecked = (idx === matchedIdx);
     return '<label class="flex items-center justify-between p-2.5 rounded-xl bg-zinc-900/90 border border-white/[.04] hover:border-amber-500/40 cursor-pointer transition active:scale-[0.99]">' +
       '<div class="flex items-center gap-2">' +
         '<input type="radio" name="reviewCommunityDest" value="' + escapeHtml(c.name).replace(/"/g, '&quot;') + '" data-comm-id="' + (c.id || '') + '" ' + (isChecked ? 'checked' : '') + ' onchange="state.selectedReviewCommunity = this.value; state.activeCommunityId = this.getAttribute(\'data-comm-id\');" class="accent-amber-500 w-3.5 h-3.5">' +
