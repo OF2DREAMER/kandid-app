@@ -50,7 +50,7 @@ load_env_file()
 # Environment Configuration
 RAW_ENV = os.environ.get("ENVIRONMENT", "").strip().lower()
 if not RAW_ENV:
-    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"):
+    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID") or os.environ.get("PORT", "8080") != "8080":
         ENVIRONMENT = "production"
     else:
         ENVIRONMENT = "development"
