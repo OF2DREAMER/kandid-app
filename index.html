@@ -2306,9 +2306,14 @@
                     <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">RECENT MOMENTS</p>
                     <span class="font-mono-tag text-[8px] text-zinc-600">CHRONOLOGICAL</span>
                 </div>
-                <button onclick="openCommunityMomentCapture()" class="text-[9px] font-mono-tag font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-full active:scale-95 transition cursor-pointer flex items-center gap-1.5" id="campusShareMomentBtn">
+                <button onclick="openCommunityMomentCapture()" class="text-[9px] font-mono-tag font-bold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-full active:scale-95 transition cursor-pointer flex items-center gap-1.5" id="campusShareMomentBtn" style="display: none;">
                     <span>+ SHARE MOMENT</span>
                 </button>
+            </div>
+            <!-- Subtle Calm Non-Member Notice -->
+            <div id="campusNonMemberNotice" class="p-3 rounded-xl bg-zinc-950/60 border border-white/[.04] text-center space-y-1" style="display: none;">
+                <p class="text-xs font-bold text-zinc-300">Join this space</p>
+                <p class="text-[11px] text-zinc-500 font-mono-tag">Become part of this community to share moments and experiences.</p>
             </div>
             <div class="space-y-4" id="campusPageMomentsContainer"></div>
         </div>

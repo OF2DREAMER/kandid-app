@@ -1178,12 +1178,30 @@ async function openCampusPage(campusName) {
                         (c.creator_id === 'u_system'); // Allow admin access
         creatorControls.style.display = isCreator ? 'flex' : 'none';
       }
-      // Community Share Moment action
+      // Community Share Moment action - Membership Authorized
+      var isEligibleMember = Boolean(
+        c.is_joined || 
+        (c.user_role && ['owner', 'admin', 'creator', 'member'].indexOf(c.user_role.toLowerCase()) !== -1) ||
+        (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
+      );
+
       var shareBtn = document.getElementById('campusShareMomentBtn');
+      var nonMemberNotice = document.getElementById('campusNonMemberNotice');
+
       if (shareBtn) {
-        shareBtn.onclick = function() {
-          openCommunityMomentCapture(c.id, c.name);
-        };
+        shareBtn.style.display = isEligibleMember ? 'flex' : 'none';
+        if (isEligibleMember) {
+          shareBtn.onclick = function() {
+            openCommunityMomentCapture(c.id, c.name);
+          };
+        } else {
+          shareBtn.onclick = null;
+        }
+      }
+
+      if (nonMemberNotice) {
+        var isPublic = (c.visibility || 'public').toLowerCase() === 'public';
+        nonMemberNotice.style.display = (!isEligibleMember && isPublic) ? 'block' : 'none';
       }
     }
 
@@ -1297,10 +1315,22 @@ async function openCampusPage(campusName) {
       } else {
         var curCommId = (data.campus && data.campus.id) ? data.campus.id : '';
         var curCommName = (data.campus && data.campus.name) ? data.campus.name : campusName;
-        momentsEl.innerHTML = '<div class="py-6 text-center space-y-2 rounded-2xl bg-zinc-950/60 border border-white/[.04] p-4">' +
-          '<p class="text-xs text-zinc-500 font-mono-tag">No shared moments yet. Be the first to share an authentic moment.</p>' +
-          '<button onclick="openCommunityMomentCapture(\'' + escapeHtml(curCommId) + '\', \'' + escapeHtml(curCommName).replace(/'/g, "\\'") + '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono-tag font-bold text-[10px] uppercase cursor-pointer active:scale-95 transition">📸 + SHARE FIRST MOMENT</button>' +
-        '</div>';
+        var isEligibleToContribute = Boolean(
+          (data.campus && data.campus.is_joined) ||
+          (data.campus && data.campus.user_role && ['owner', 'admin', 'creator', 'member'].indexOf(data.campus.user_role.toLowerCase()) !== -1) ||
+          (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
+        );
+        if (isEligibleToContribute) {
+          momentsEl.innerHTML = '<div class="py-6 text-center space-y-2 rounded-2xl bg-zinc-950/60 border border-white/[.04] p-4">' +
+            '<p class="text-xs text-zinc-500 font-mono-tag">No shared moments yet. Be the first to share an authentic moment.</p>' +
+            '<button onclick="openCommunityMomentCapture(\'' + escapeHtml(curCommId) + '\', \'' + escapeHtml(curCommName).replace(/'/g, "\\'") + '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono-tag font-bold text-[10px] uppercase cursor-pointer active:scale-95 transition">📸 + SHARE FIRST MOMENT</button>' +
+          '</div>';
+        } else {
+          momentsEl.innerHTML = '<div class="py-6 text-center space-y-2 rounded-2xl bg-zinc-950/60 border border-white/[.04] p-4">' +
+            '<p class="text-xs text-zinc-500 font-mono-tag">No shared moments yet.</p>' +
+            '<p class="text-[11px] text-zinc-600 font-mono-tag">Join this space to share authentic moments with the community.</p>' +
+          '</div>';
+        }
       }
     }
 
@@ -2382,14 +2412,28 @@ async function toggleJoinCommunity() {
 
   if (res && res.success) {
     playTactileFeedback('xp');
+    var shareBtn = document.getElementById('campusShareMomentBtn');
+    var nonMemberNotice = document.getElementById('campusNonMemberNotice');
     if (res.is_joined) {
       showToast('Joined ' + name + '! ✦');
       btn.textContent = '[ JOINED ✓ ]';
       btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
+      if (shareBtn) {
+        shareBtn.style.display = 'flex';
+        shareBtn.onclick = function() {
+          openCommunityMomentCapture(state.activeCommunityId || '', name);
+        };
+      }
+      if (nonMemberNotice) nonMemberNotice.style.display = 'none';
     } else {
       showToast('Left ' + name);
       btn.textContent = '[ + JOIN COMMUNITY ]';
       btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
+      if (shareBtn) {
+        shareBtn.style.display = 'none';
+        shareBtn.onclick = null;
+      }
+      if (nonMemberNotice) nonMemberNotice.style.display = 'block';
     }
   }
 }
@@ -3738,30 +3782,36 @@ async function setupReviewContextUI() {
   if (!listEl) return;
   listEl.innerHTML = '<div class="py-2 text-center text-[10px] text-zinc-500 font-mono-tag">Loading recommended communities...</div>';
 
-  var defaultComm = state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
+  var defaultComm = state.activeCommunity || (state.currentUser ? state.currentUser.campus : '');
   state.selectedReviewCommunity = defaultComm;
 
   var res = await apiRequest('/api/community/my');
-  var communities = (res && res.success && Array.isArray(res.communities)) ? res.communities : [
-    { id: 'comm_1', name: defaultComm, type: 'Campus', icon: '🎓' }
-  ];
+  var communities = (res && res.success && Array.isArray(res.communities)) ? res.communities : [];
 
-  // Ensure active/default community is in list
-  var hasActive = communities.some(function(c) { return c.name.toLowerCase() === defaultComm.toLowerCase(); });
-  if (!hasActive) {
-    communities.unshift({ id: 'comm_custom', name: defaultComm, type: 'Primary Context', icon: '📍' });
+  if (state.activeCommunityId && defaultComm) {
+    var hasTarget = communities.some(function(c) { return c.id === state.activeCommunityId; });
+    if (!hasTarget) {
+      communities.unshift({ id: state.activeCommunityId, name: defaultComm, type: 'Community Space', icon: '📍' });
+    }
+  } else if (!communities.length) {
+    communities.unshift({ id: '', name: 'Personal (Feed)', type: 'Feed', icon: '✨' });
   }
 
   listEl.innerHTML = communities.map(function(c, idx) {
-    var isChecked = (idx === 0 || c.name.toLowerCase() === defaultComm.toLowerCase());
+    var isChecked = false;
+    if (state.activeCommunityId) {
+      isChecked = (c.id === state.activeCommunityId);
+    } else {
+      isChecked = (idx === 0);
+    }
     return '<label class="flex items-center justify-between p-2.5 rounded-xl bg-zinc-900/90 border border-white/[.04] hover:border-amber-500/40 cursor-pointer transition active:scale-[0.99]">' +
       '<div class="flex items-center gap-2">' +
-        '<input type="radio" name="reviewCommunityDest" value="' + escapeHtml(c.name).replace(/"/g, '&quot;') + '" data-comm-id="' + (c.id || '') + '" ' + (isChecked ? 'checked' : '') + ' onchange="state.selectedReviewCommunity = this.value" class="accent-amber-500 w-3.5 h-3.5">' +
+        '<input type="radio" name="reviewCommunityDest" value="' + escapeHtml(c.name).replace(/"/g, '&quot;') + '" data-comm-id="' + (c.id || '') + '" ' + (isChecked ? 'checked' : '') + ' onchange="state.selectedReviewCommunity = this.value; state.activeCommunityId = this.getAttribute(\'data-comm-id\');" class="accent-amber-500 w-3.5 h-3.5">' +
         '<span class="text-xs">' + (c.icon || '📍') + '</span>' +
         '<span class="text-xs font-bold text-white">' + escapeHtml(c.name) + '</span>' +
       '</div>' +
-      '<span class="font-mono-tag text-[8px] ' + (idx === 0 ? 'text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30' : 'text-zinc-500 bg-zinc-800') + ' px-1.5 py-0.5 rounded">' +
-        (idx === 0 ? 'RECOMMENDED' : escapeHtml(c.type || 'Community')) +
+      '<span class="font-mono-tag text-[8px] ' + (isChecked ? 'text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30' : 'text-zinc-500 bg-zinc-800') + ' px-1.5 py-0.5 rounded">' +
+        (isChecked ? 'SELECTED' : escapeHtml(c.type || 'Community')) +
       '</span>' +
     '</label>';
   }).join('');
@@ -3771,6 +3821,8 @@ window.setupReviewContextUI = setupReviewContextUI;
 function closeMomentReview() {
   var reviewStream = document.getElementById('reviewContentStream');
   if (reviewStream) reviewStream.style.display = 'none';
+  state.activeCommunityId = null;
+  state.selectedReviewCommunity = null;
   selectSubTab(state.activeCircle || 'foryou');
 }
 window.closeMomentReview = closeMomentReview;
@@ -3824,8 +3876,8 @@ async function publishCapturedMoment() {
 
   // Selected Community Context
   var selectedRadio = document.querySelector('input[name="reviewCommunityDest"]:checked');
-  var chosenCommunity = selectedRadio ? selectedRadio.value : (state.selectedReviewCommunity || state.activeCommunity || 'North City University');
-  var chosenCommId = selectedRadio ? selectedRadio.getAttribute('data-comm-id') : '';
+  var chosenCommunity = selectedRadio ? selectedRadio.value : (state.selectedReviewCommunity || state.activeCommunity || '');
+  var chosenCommId = selectedRadio ? selectedRadio.getAttribute('data-comm-id') : (state.activeCommunityId || '');
 
   var payload = {
     caption: caption,
@@ -3833,8 +3885,9 @@ async function publishCapturedMoment() {
     region: 'all',
     locationCity: approxLocName,
     community: chosenCommunity,
+    community_id: chosenCommId,
     primary_community_id: chosenCommId || chosenCommunity,
-    context_community_id: state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University'),
+    context_community_id: state.activeCommunity || (state.currentUser ? state.currentUser.campus : ''),
     context_location: approxLocName,
     mainImg: state.capturedMomentData ? state.capturedMomentData.mainImg : '',
     pipImg: state.capturedMomentData ? state.capturedMomentData.pipImg : '',
@@ -3858,7 +3911,7 @@ async function publishCapturedMoment() {
     if (typeof markDailyAlertCompleted === 'function') {
       markDailyAlertCompleted();
     }
-    showToast('Moment shared to ' + chosenCommunity + '! 🔥 +50 XP');
+    showToast('Moment shared to ' + (chosenCommunity || 'Feed') + '! 🔥 +50 XP');
     closeMomentReview();
     
     // Refresh feeds and profile
@@ -3869,7 +3922,11 @@ async function publishCapturedMoment() {
       await openDropExperience(state.activeDropId);
     }
   } else {
-    showToast('Failed to publish moment: ' + (data ? data.error : 'Network error'));
+    var errMsg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Network error';
+    if (data && data.code === 'COMMUNITY_MEMBERSHIP_REQUIRED') {
+      errMsg = 'Active membership required to share moments to this community.';
+    }
+    showToast('Failed to publish moment: ' + errMsg);
   }
 }
 window.publishCapturedMoment = publishCapturedMoment;

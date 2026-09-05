@@ -5254,11 +5254,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
             creator_handle = comm_row["creator_handle"] if comm_row else "kandid"
             members_count = comm_row["members_count"] if comm_row else 142
 
-            # Check if user is joined
+            # Check if user is joined & authoritative role
             is_joined = False
+            user_role = None
             if user and comm_row:
-                cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ?", (comm_row["id"], user["id"]))
-                is_joined = bool(cursor.fetchone())
+                user_role = get_user_community_role(comm_row["id"], user["id"], cursor)
+                is_joined = bool(user_role)
 
             # Query available Drops for this community
             cursor.execute("SELECT * FROM community_drops WHERE community_id = ? OR community_name = ? ORDER BY created_at DESC", (comm_id, comm_name))
@@ -5320,6 +5321,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "creator_handle": creator_handle,
                 "members_count": members_count,
                 "is_joined": is_joined,
+                "user_role": user_role,
                 "drops": drops_list
             }
 
@@ -9299,8 +9301,81 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if path == "/api/moments/capture" or path == "/api/posts":
             user = get_current_user(self.headers)
             if not user:
-                user = {"id": "u_casey", "name": "Casey Rhodes", "handle": "casey.rx", "campus": "North City University", "avatar_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80"}
-            
+                return self.send_json(401, {"success": False, "error": "Authentication required to share moments.", "code": "UNAUTHORIZED"})
+
+            # Server-authoritative Community Contribution Access Control (Phase 18 Fix)
+            target_comm_key = (body.get("community_id") or body.get("primary_community_id") or "").strip()
+            if not target_comm_key and body.get("community"):
+                c_cand = str(body.get("community")).strip()
+                if c_cand and c_cand.lower() not in ("all", "global", "foryou", "friends", "feed", "none", ""):
+                    target_comm_key = c_cand
+
+            primary_comm = ""
+            if target_comm_key:
+                conn_check = get_db()
+                cursor_check = conn_check.cursor()
+                cursor_check.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?",
+                                     (target_comm_key, target_comm_key.lower(), target_comm_key))
+                comm_row = cursor_check.fetchone()
+                if not comm_row:
+                    conn_check.close()
+                    return self.send_json(404, {
+                        "success": False,
+                        "error": "Target community not found.",
+                        "code": "COMMUNITY_NOT_FOUND"
+                    })
+                target_comm = dict(comm_row)
+
+                # 1. Safety Block Check between user and community creator
+                if target_comm.get("creator_id") and target_comm["creator_id"] != user["id"]:
+                    cursor_check.execute("SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)",
+                                         (user["id"], target_comm["creator_id"], target_comm["creator_id"], user["id"]))
+                    if cursor_check.fetchone():
+                        conn_check.close()
+                        return self.send_json(403, {
+                            "success": False,
+                            "error": "Interaction restricted by safety controls.",
+                            "code": "COMMUNITY_SAFETY_RESTRICTION"
+                        })
+
+                # 2. Community Mute Check
+                cursor_check.execute("SELECT 1 FROM community_mutes WHERE user_id = ? AND target_type = 'community' AND target_id = ?",
+                                     (user["id"], target_comm["id"]))
+                if cursor_check.fetchone():
+                    conn_check.close()
+                    return self.send_json(403, {
+                        "success": False,
+                        "error": "Community is muted.",
+                        "code": "COMMUNITY_MUTED"
+                    })
+
+                # 3. Community Membership Restriction Check
+                cursor_check.execute("SELECT status, role FROM community_members WHERE community_id = ? AND user_id = ?",
+                                     (target_comm["id"], user["id"]))
+                mem_row = cursor_check.fetchone()
+                if mem_row and mem_row["status"] != "active":
+                    conn_check.close()
+                    return self.send_json(403, {
+                        "success": False,
+                        "error": "Your membership in this space is currently restricted.",
+                        "code": "COMMUNITY_RESTRICTED"
+                    })
+
+                # 4. Authoritative Role & Membership Check
+                user_role = get_user_community_role(target_comm["id"], user["id"], cursor_check)
+                is_platform_admin = user.get("role") in ("admin", "founder")
+
+                if not is_platform_admin and user_role not in ("owner", "admin", "creator", "member"):
+                    conn_check.close()
+                    return self.send_json(403, {
+                        "success": False,
+                        "error": "Active community membership required to contribute moments to this space.",
+                        "code": "COMMUNITY_MEMBERSHIP_REQUIRED"
+                    })
+
+                primary_comm = target_comm["id"]
+                conn_check.close()
+
             caption = body.get("caption", "Unfiltered moment.")
             circle = body.get("circle", "campus")
             region = body.get("region", "all")
@@ -9324,7 +9399,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
             shutter = body.get("shutter", "1/250s")
             event_id = body.get("event_id", "")
             drop_id = body.get("drop_id") or body.get("dropId") or ""
-            primary_comm = body.get("primary_community_id") or body.get("community_id") or body.get("community") or ""
             context_comm = body.get("context_community_id") or ""
             context_loc = body.get("context_location") or body.get("locationCity") or ""
 
