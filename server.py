@@ -2567,6 +2567,89 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_cinter_uid ON community_interactions(user_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_cinter_cid ON community_interactions(community_id);")
 
+    # ==============================================================================
+    # AUTHENTIC VIRAL GRAPH — MOMENT CLUSTERS & NETWORK LAYER SCHEMA
+    # ==============================================================================
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS moment_clusters (
+        id TEXT PRIMARY KEY,
+        cluster_type TEXT DEFAULT 'context',
+        originating_context TEXT DEFAULT '',
+        originator_moment_id TEXT NOT NULL,
+        originator_user_id TEXT NOT NULL,
+        community_id TEXT DEFAULT '',
+        drop_id TEXT DEFAULT '',
+        event_id TEXT DEFAULT '',
+        visibility TEXT DEFAULT 'public',
+        status TEXT DEFAULT 'active',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (originator_moment_id) REFERENCES posts(id) ON DELETE CASCADE,
+        FOREIGN KEY (originator_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS moment_cluster_members (
+        id TEXT PRIMARY KEY,
+        cluster_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        moment_id TEXT DEFAULT '',
+        participation_type TEXT NOT NULL,
+        joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(cluster_id, user_id, moment_id),
+        FOREIGN KEY (cluster_id) REFERENCES moment_clusters(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS viral_graph_events (
+        id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        target_user_id TEXT DEFAULT '',
+        moment_id TEXT DEFAULT '',
+        cluster_id TEXT DEFAULT '',
+        community_id TEXT DEFAULT '',
+        drop_id TEXT DEFAULT '',
+        invite_id TEXT DEFAULT '',
+        metadata_json TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
+
+    # Additive column migration: cluster_id in posts
+    cursor.execute("PRAGMA table_info(posts)")
+    post_cols = [row[1] for row in cursor.fetchall()]
+    if "cluster_id" not in post_cols:
+        try:
+            cursor.execute("ALTER TABLE posts ADD COLUMN cluster_id TEXT DEFAULT ''")
+        except:
+            pass
+
+    # Additive column migration: cluster_id in community_invites
+    cursor.execute("PRAGMA table_info(community_invites)")
+    cinv_cols = [row[1] for row in cursor.fetchall()]
+    if "cluster_id" not in cinv_cols:
+        try:
+            cursor.execute("ALTER TABLE community_invites ADD COLUMN cluster_id TEXT DEFAULT ''")
+        except:
+            pass
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mcls_comm ON moment_clusters(community_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mcls_drop ON moment_clusters(drop_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mcls_orig ON moment_clusters(originator_moment_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mcls_user ON moment_clusters(originator_user_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mclsm_cls ON moment_cluster_members(cluster_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mclsm_user ON moment_cluster_members(user_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_mclsm_moment ON moment_cluster_members(moment_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vge_actor ON viral_graph_events(actor_user_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vge_type ON viral_graph_events(event_type);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vge_cluster ON viral_graph_events(cluster_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vge_moment ON viral_graph_events(moment_id);")
+
     conn.commit()
     conn.close()
 
@@ -2591,6 +2674,175 @@ def track_invite_event(conn, invite_id: str, invite_code: str, event_type: str, 
         conn.commit()
     except Exception:
         pass
+
+# ==============================================================================
+# AUTHENTIC VIRAL GRAPH — CONFIGURABLE SAFETY LIMITS & SERVICES
+# ==============================================================================
+VIRAL_GRAPH_MAX_ASSERTIONS_PER_USER_HOUR = 10      # Max "I Was There" assertions/hour per user
+VIRAL_GRAPH_CLUSTER_COOLDOWN_SECONDS = 30           # Minimum cooldown between cluster actions from same user
+VIRAL_GRAPH_NOTIFICATION_DEDUPE_SECONDS = 3600      # 1 hour notification dedupe window
+VIRAL_GRAPH_MAX_PERSPECTIVES_PER_CLUSTER_USER = 1   # Max 1 perspective post per user per cluster
+
+def record_viral_graph_event(conn, event_type: str, actor_user_id: str, target_user_id: str = "", moment_id: str = "", cluster_id: str = "", community_id: str = "", drop_id: str = "", invite_id: str = "", metadata_dict: dict = None):
+    try:
+        cursor = conn.cursor()
+        evt_id = f"vge_{uuid.uuid4().hex[:12]}"
+        meta_str = json.dumps(metadata_dict or {})
+        cursor.execute("""
+            INSERT INTO viral_graph_events (id, event_type, actor_user_id, target_user_id, moment_id, cluster_id, community_id, drop_id, invite_id, metadata_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (evt_id, event_type, actor_user_id, target_user_id, moment_id, cluster_id, community_id, drop_id, invite_id, meta_str, datetime.now().isoformat()))
+        conn.commit()
+    except Exception as e:
+        print(f"Error logging viral graph event: {e}")
+
+def send_calm_cluster_notification(conn, recipient_user_id: str, sender_handle: str, notif_type: str, cluster_id: str, moment_id: str = ""):
+    if not recipient_user_id:
+        return
+    try:
+        cursor = conn.cursor()
+        dedupe_cutoff = (datetime.now() - timedelta(seconds=VIRAL_GRAPH_NOTIFICATION_DEDUPE_SECONDS)).isoformat()
+        cursor.execute("""
+            SELECT 1 FROM notifications 
+            WHERE user_id = ? AND type = ? AND target_id = ?
+            AND created_at > ?
+        """, (recipient_user_id, notif_type, cluster_id, dedupe_cutoff))
+        if cursor.fetchone():
+            return
+
+        notif_id = f"notif_{uuid.uuid4().hex[:12]}"
+        now_iso = datetime.now().isoformat()
+        if notif_type == 'cluster_presence':
+            title = "Moment Context"
+            body = f"@{sender_handle} confirmed they were part of a moment you shared."
+        else:
+            title = "New Perspective"
+            body = f"@{sender_handle} added a perspective to a moment you participated in."
+
+        cursor.execute("""
+            INSERT INTO notifications (id, user_id, title, body, type, is_read, target_id, created_at)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+        """, (notif_id, recipient_user_id, title, body, notif_type, cluster_id, now_iso))
+        conn.commit()
+    except Exception as e:
+        print(f"Error sending calm cluster notification: {e}")
+
+def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
+    """
+    Evaluates context eligibility using strict 5-tier hierarchy.
+    Campus match alone is Tier 5 and DOES NOT authorize "I WAS THERE".
+    """
+    if not viewer or not moment:
+        return False, "INVALID_REQUEST", 0
+
+    if viewer["id"] == moment["user_id"]:
+        return False, "OWN_MOMENT", 0
+    if moment.get("is_private") == 1:
+        return False, "PRIVATE_MOMENT", 0
+    if moment.get("moderation_status") in ("blocked", "removed", "flagged"):
+        return False, "MODERATED_MOMENT", 0
+
+    cursor = conn.cursor()
+
+    # Block check (bidirectional)
+    cursor.execute("""
+        SELECT 1 FROM blocks 
+        WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+    """, (viewer["id"], moment["user_id"], moment["user_id"], viewer["id"]))
+    if cursor.fetchone():
+        return False, "BLOCKED_USER", 0
+
+    # Tier 1: Registered Drop / Event Attendee (Strongest Context)
+    if moment.get("drop_id"):
+        cursor.execute("""
+            SELECT 1 FROM community_drop_registrations 
+            WHERE drop_id = ? AND user_id = ? AND status IN ('registered', 'attended', 'confirmed')
+        """, (moment["drop_id"], viewer["id"]))
+        if cursor.fetchone():
+            return True, "DROP_ATTENDEE", 1
+
+    # Tier 2: Active Member of the Associated Community
+    comm_id = moment.get("primary_community_id") or moment.get("context_community_id")
+    if comm_id:
+        cursor.execute("SELECT 1 FROM community_mutes WHERE user_id = ? AND target_type = 'community' AND target_id = ?", (viewer["id"], comm_id))
+        if cursor.fetchone():
+            return False, "COMMUNITY_MUTED", 0
+
+        cursor.execute("""
+            SELECT role, status FROM community_members 
+            WHERE community_id = ? AND user_id = ?
+        """, (comm_id, viewer["id"]))
+        mem = cursor.fetchone()
+        if mem and mem["status"] == "active" and mem["role"] in ('owner', 'admin', 'creator', 'member'):
+            return True, "ACTIVE_COMMUNITY_MEMBER", 2
+
+    # Tier 3: Valid Contextual Invitation
+    if invite_code:
+        cursor.execute("""
+            SELECT 1 FROM community_invites 
+            WHERE invite_code = ? AND status = 'active' AND (moment_id = ? OR cluster_id = ?)
+        """, (invite_code, moment["id"], moment.get("cluster_id") or ""))
+        if cursor.fetchone():
+            return True, "INVITED_CONTEXT", 3
+
+    # Tier 4: Recurring Context Participant
+    if moment.get("context_location"):
+        cursor.execute("""
+            SELECT COUNT(*) FROM posts 
+            WHERE user_id = ? AND context_location = ? AND datetime(created_at) > datetime('now', '-14 days')
+        """, (viewer["id"], moment["context_location"]))
+        c_count = cursor.fetchone()[0]
+        if c_count >= 3:
+            return True, "RECURRING_CONTEXT_PARTICIPANT", 4
+
+    # Tier 5: Campus / Location Context (DISCOVERY ONLY)
+    return False, "CAMPUS_DISCOVERY_ONLY", 5
+
+def create_or_get_moment_cluster(conn, moment, originator_user_id):
+    """
+    On-demand cluster instantiation.
+    """
+    cursor = conn.cursor()
+    if moment.get("cluster_id"):
+        cursor.execute("SELECT * FROM moment_clusters WHERE id = ?", (moment["cluster_id"],))
+        c_row = cursor.fetchone()
+        if c_row:
+            return dict(c_row)
+
+    cursor.execute("SELECT * FROM moment_clusters WHERE originator_moment_id = ?", (moment["id"],))
+    c_row = cursor.fetchone()
+    if c_row:
+        cluster = dict(c_row)
+        cursor.execute("UPDATE posts SET cluster_id = ? WHERE id = ?", (cluster["id"], moment["id"]))
+        conn.commit()
+        return cluster
+
+    cluster_id = f"cls_{uuid.uuid4().hex[:12]}"
+    cluster_type = 'drop' if moment.get("drop_id") else ('community' if (moment.get("primary_community_id") or moment.get("context_community_id")) else 'context')
+    originating_context = moment.get("context_location") or moment.get("location_city") or moment.get("campus") or "Shared Context"
+    now_iso = datetime.now().isoformat()
+    comm_id = moment.get("primary_community_id") or moment.get("context_community_id") or ""
+    drop_id = moment.get("drop_id") or ""
+    event_id = moment.get("event_id") or ""
+
+    cursor.execute("""
+        INSERT INTO moment_clusters (id, cluster_type, originating_context, originator_moment_id, originator_user_id, community_id, drop_id, event_id, visibility, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'public', 'active', ?, ?)
+    """, (cluster_id, cluster_type, originating_context, moment["id"], originator_user_id, comm_id, drop_id, event_id, now_iso, now_iso))
+
+    clsm_id = f"clsm_{uuid.uuid4().hex[:12]}"
+    cursor.execute("""
+        INSERT INTO moment_cluster_members (id, cluster_id, user_id, moment_id, participation_type, joined_at)
+        VALUES (?, ?, ?, ?, 'creator', ?)
+    """, (clsm_id, cluster_id, originator_user_id, moment["id"], now_iso))
+
+    cursor.execute("UPDATE posts SET cluster_id = ? WHERE id = ?", (cluster_id, moment["id"]))
+    conn.commit()
+
+    record_viral_graph_event(conn, "MOMENT_CLUSTER_CREATED", originator_user_id, moment_id=moment["id"], cluster_id=cluster_id, community_id=comm_id, drop_id=drop_id)
+
+    cursor.execute("SELECT * FROM moment_clusters WHERE id = ?", (cluster_id,))
+    return dict(cursor.fetchone())
 
 def get_campus_network_state(conn, college_id=None, campus_slug=None, campus_name=None):
     cursor = conn.cursor()
@@ -6966,6 +7218,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                             "is_private": False
                         }
 
+            # Cluster preview if attached
+            safe_cluster = None
+            if invite.get("cluster_id"):
+                cursor.execute("SELECT id, cluster_type, originating_context, created_at FROM moment_clusters WHERE id = ?", (invite["cluster_id"],))
+                c_row = cursor.fetchone()
+                if c_row:
+                    safe_cluster = dict(c_row)
+
             # Track 'opened' event
             viewer = get_current_user(self.headers)
             viewer_id = viewer["id"] if viewer else ""
@@ -6988,10 +7248,253 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "community": safe_community,
                     "drop": safe_drop,
                     "moment": safe_moment,
+                    "cluster": safe_cluster,
+                    "context_headline": "A shared moment from your community is unfolding with multiple perspectives." if safe_cluster else "You were invited to view a moment from your campus community.",
                     "is_valid": True,
                     "accepted_count": invite.get("accepted_count", 0),
                     "max_uses": invite.get("max_uses", 50),
                     "expires_at": invite.get("expires_at")
+                }
+            })
+
+        # =========================================================================
+        # AUTHENTIC VIRAL GRAPH — GET ENDPOINTS
+        # =========================================================================
+        if (path.startswith("/api/moment/") and path.endswith("/eligibility")) or path == "/api/moment/eligibility":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
+
+            moment_id = ""
+            if path == "/api/moment/eligibility":
+                moment_id = query.get("moment_id", [""])[0].strip()
+            else:
+                parts = [p for p in path.split("/") if p]
+                if len(parts) >= 3:
+                    moment_id = parts[2].strip()
+
+            if not moment_id:
+                return self.send_json(400, {"success": False, "error": "moment_id is required", "code": "MISSING_MOMENT_ID"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM posts WHERE id = ?", (moment_id,))
+            m_row = cursor.fetchone()
+            if not m_row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Moment not found", "code": "MOMENT_NOT_FOUND"})
+
+            moment = dict(m_row)
+            invite_code = query.get("invite_code", [""])[0].strip()
+
+            eligible, reason, tier = check_moment_context_eligibility(conn, moment, user, invite_code=invite_code)
+
+            has_participated = False
+            cluster_id = moment.get("cluster_id") or ""
+            perspectives_count = 0
+            if cluster_id:
+                cursor.execute("SELECT 1 FROM moment_cluster_members WHERE cluster_id = ? AND user_id = ?", (cluster_id, user["id"]))
+                has_participated = bool(cursor.fetchone())
+                cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'perspective'", (cluster_id,))
+                perspectives_count = cursor.fetchone()[0]
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "moment_id": moment_id,
+                "eligible": eligible,
+                "tier": tier,
+                "reason": reason,
+                "cluster_id": cluster_id,
+                "has_participated": has_participated,
+                "perspectives_count": perspectives_count,
+                "context": {
+                    "community_id": moment.get("primary_community_id") or moment.get("context_community_id") or "",
+                    "drop_id": moment.get("drop_id") or "",
+                    "location": moment.get("context_location") or moment.get("location_city") or moment.get("campus") or ""
+                }
+            })
+
+        if path.startswith("/api/cluster/") and not path.startswith("/api/clusters/"):
+            cluster_id = path[len("/api/cluster/"):].strip()
+            if not cluster_id:
+                return self.send_json(400, {"success": False, "error": "cluster_id is required", "code": "MISSING_CLUSTER_ID"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM moment_clusters WHERE id = ?", (cluster_id,))
+            c_row = cursor.fetchone()
+            if not c_row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Moment cluster not found", "code": "CLUSTER_NOT_FOUND"})
+
+            cluster = dict(c_row)
+            user = get_current_user(self.headers)
+
+            if cluster.get("community_id"):
+                cursor.execute("SELECT * FROM communities WHERE id = ?", (cluster["community_id"],))
+                comm_row = cursor.fetchone()
+                if comm_row and dict(comm_row).get("visibility") == "private":
+                    if not user:
+                        conn.close()
+                        return self.send_json(401, {"success": False, "error": "Authentication required for private community clusters", "code": "UNAUTHORIZED"})
+                    cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (cluster["community_id"], user["id"]))
+                    if not cursor.fetchone() and user.get("role") not in ("admin", "founder"):
+                        conn.close()
+                        return self.send_json(403, {"success": False, "error": "Community membership required to view cluster", "code": "COMMUNITY_RESTRICTED"})
+
+            cursor.execute("SELECT * FROM posts WHERE id = ?", (cluster["originator_moment_id"],))
+            p_row = cursor.fetchone()
+            safe_primary = None
+            if p_row:
+                p_dict = dict(p_row)
+                p_dict.pop("location_coords", None)
+                p_dict.pop("raw_audio", None)
+                safe_primary = p_dict
+
+            cursor.execute("""
+                SELECT p.id, p.user_id, p.author_name, p.author_handle, p.avatar_letter, p.avatar_url, p.campus, p.main_img, p.pip_img, p.caption, p.location_city, p.exif_iso, p.exif_aperture, p.exif_shutter, p.audio_url, p.motion_url, p.created_at, m.joined_at
+                FROM posts p
+                JOIN moment_cluster_members m ON p.id = m.moment_id
+                WHERE m.cluster_id = ? AND m.participation_type = 'perspective' AND p.is_private = 0
+                ORDER BY p.created_at ASC
+            """, (cluster_id,))
+            safe_perspectives = []
+            for row in cursor.fetchall():
+                persp = dict(row)
+                if user and user["id"] != persp["user_id"]:
+                    cursor.execute("SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)", (user["id"], persp["user_id"], persp["user_id"], user["id"]))
+                    if cursor.fetchone():
+                        continue
+                persp.pop("location_coords", None)
+                safe_perspectives.append(persp)
+
+            cursor.execute("""
+                SELECT DISTINCT u.id, u.name, u.handle, u.avatar_letter, u.avatar_url, m.participation_type, m.joined_at
+                FROM moment_cluster_members m
+                JOIN users u ON m.user_id = u.id
+                WHERE m.cluster_id = ?
+                ORDER BY m.joined_at ASC
+            """, (cluster_id,))
+            safe_participants = [dict(r) for r in cursor.fetchall()]
+
+            conn_suggestion = None
+            if user:
+                is_viewer_participant = any(p["id"] == user["id"] for p in safe_participants)
+                co_participants = [p for p in safe_participants if p["id"] != user["id"]]
+                if is_viewer_participant and co_participants:
+                    lead_peer = co_participants[0]
+                    conn_suggestion = {
+                        "suggested": True,
+                        "target_user_id": lead_peer["id"],
+                        "target_handle": lead_peer["handle"],
+                        "message": f"You shared a moment with @{lead_peer['handle']}. Connect?"
+                    }
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "cluster": {
+                    "id": cluster["id"],
+                    "cluster_type": cluster.get("cluster_type", "context"),
+                    "originating_context": cluster.get("originating_context", "Shared Context"),
+                    "community_id": cluster.get("community_id", ""),
+                    "drop_id": cluster.get("drop_id", ""),
+                    "created_at": cluster.get("created_at", ""),
+                    "primary_moment": safe_primary,
+                    "perspectives": safe_perspectives,
+                    "participants": safe_participants,
+                    "perspectives_count": len(safe_perspectives),
+                    "connection_suggestion": conn_suggestion
+                }
+            })
+
+        if path == "/api/clusters/public":
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT c.*, COUNT(m.id) as perspectives_count
+                FROM moment_clusters c
+                LEFT JOIN moment_cluster_members m ON c.id = m.cluster_id AND m.participation_type = 'perspective'
+                WHERE c.visibility = 'public' AND c.status = 'active'
+                GROUP BY c.id
+                ORDER BY c.created_at DESC
+                LIMIT 20
+            """)
+            clusters_rows = cursor.fetchall()
+            safe_clusters = []
+            for c_row in clusters_rows:
+                c_dict = dict(c_row)
+                cursor.execute("SELECT id, user_id, author_name, author_handle, avatar_letter, avatar_url, campus, main_img, pip_img, caption, location_city, created_at FROM posts WHERE id = ?", (c_dict["originator_moment_id"],))
+                p_row = cursor.fetchone()
+                if p_row:
+                    c_dict["primary_moment"] = dict(p_row)
+                safe_clusters.append(c_dict)
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "clusters": safe_clusters
+            })
+
+        if path == "/api/graph/funnel":
+            user = get_current_user(self.headers)
+            secret_hdr = self.headers.get("X-Internal-Secret", "")
+            is_authorized = (secret_hdr in ["kandid_internal_ops_secret_2026", "kandid_ops_key"]) or (user and user.get("role") in ["admin", "founder"])
+            if not is_authorized:
+                return self.send_json(403, {"success": False, "error": "Internal or admin authorization required", "code": "AUTH_FORBIDDEN"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT COUNT(*) FROM posts WHERE is_private = 0")
+            total_moments = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM moment_clusters WHERE status = 'active'")
+            total_clusters = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM viral_graph_events WHERE event_type = 'I_WAS_THERE'")
+            total_participations = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM viral_graph_events WHERE event_type = 'PERSPECTIVE_ADDED'")
+            total_perspectives = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM viral_graph_events WHERE event_type = 'CONTEXTUAL_INVITE_CREATED'")
+            invites_created = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM viral_graph_events WHERE event_type = 'CONTEXTUAL_INVITE_ACCEPTED'")
+            invites_accepted = cursor.fetchone()[0]
+
+            cursor.execute("""
+                SELECT COUNT(DISTINCT cluster_id) 
+                FROM moment_cluster_members 
+                WHERE participation_type = 'perspective'
+            """)
+            clusters_with_perspectives = cursor.fetchone()[0]
+
+            perspective_rate = round(clusters_with_perspectives / max(1, total_clusters), 4) if total_clusters > 0 else 0.0
+            cluster_depth = round(total_perspectives / max(1, clusters_with_perspectives), 2) if clusters_with_perspectives > 0 else 0.0
+            invite_conversion = round(invites_accepted / max(1, invites_created), 4) if invites_created > 0 else 0.0
+
+            cursor.execute("SELECT COUNT(*) FROM viral_graph_events WHERE event_type = 'SUSPICIOUS_PARTICIPATION_ATTEMPT'")
+            suspicious_attempts = cursor.fetchone()[0]
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "metrics": {
+                    "total_public_moments": total_moments,
+                    "total_clusters": total_clusters,
+                    "total_contextual_participations": total_participations,
+                    "total_perspectives_added": total_perspectives,
+                    "clusters_with_perspectives": clusters_with_perspectives,
+                    "perspective_rate": perspective_rate,
+                    "cluster_depth": cluster_depth,
+                    "contextual_invites_created": invites_created,
+                    "contextual_invites_accepted": invites_accepted,
+                    "contextual_invite_conversion": invite_conversion,
+                    "suspicious_attempts_blocked": suspicious_attempts
                 }
             })
 
@@ -9521,6 +10024,127 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "message": "Account created and activated successfully!"
             })
 
+        # =========================================================================
+        # AUTHENTIC VIRAL GRAPH — POST /api/moment/<id>/i-was-there
+        # =========================================================================
+        if (path.startswith("/api/moment/") and path.endswith("/i-was-there")) or path == "/api/moment/i-was-there":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
+
+            moment_id = ""
+            if path == "/api/moment/i-was-there":
+                moment_id = (body.get("moment_id") or "").strip()
+            else:
+                parts = [p for p in path.split("/") if p]
+                if len(parts) >= 3:
+                    moment_id = parts[2].strip()
+
+            if not moment_id:
+                return self.send_json(400, {"success": False, "error": "moment_id is required", "code": "MISSING_MOMENT_ID"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM posts WHERE id = ?", (moment_id,))
+            m_row = cursor.fetchone()
+            if not m_row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Moment not found", "code": "MOMENT_NOT_FOUND"})
+
+            moment = dict(m_row)
+            invite_code = (body.get("invite_code") or "").strip()
+
+            # 1. Check Rate Limit (max 10 assertions per hour)
+            one_hour_ago = (datetime.now() - timedelta(hours=1)).isoformat()
+            cursor.execute("""
+                SELECT COUNT(*) FROM viral_graph_events 
+                WHERE actor_user_id = ? AND event_type = 'I_WAS_THERE' AND created_at > ?
+            """, (user["id"], one_hour_ago))
+            hour_count = cursor.fetchone()[0]
+            if hour_count >= VIRAL_GRAPH_MAX_ASSERTIONS_PER_USER_HOUR:
+                conn.close()
+                return self.send_json(429, {
+                    "success": False,
+                    "error": f"Rate limit reached: Maximum {VIRAL_GRAPH_MAX_ASSERTIONS_PER_USER_HOUR} assertions per hour.",
+                    "code": "RATE_LIMIT_EXCEEDED"
+                })
+
+            # 2. Server-Authoritative Context Eligibility Check
+            eligible, reason, tier = check_moment_context_eligibility(conn, moment, user, invite_code=invite_code)
+            if not eligible:
+                record_viral_graph_event(conn, "SUSPICIOUS_PARTICIPATION_ATTEMPT", user["id"], moment_id=moment["id"], metadata_dict={"reason": reason, "tier": tier})
+                conn.close()
+                return self.send_json(403, {
+                    "success": False,
+                    "error": f"Participation not authorized: {reason}",
+                    "code": reason,
+                    "tier": tier
+                })
+
+            # 3. Create or Get Moment Cluster On-Demand
+            cluster = create_or_get_moment_cluster(conn, moment, moment["user_id"])
+
+            # 4. Idempotency Check
+            cursor.execute("SELECT * FROM moment_cluster_members WHERE cluster_id = ? AND user_id = ?", (cluster["id"], user["id"]))
+            existing = cursor.fetchone()
+            if existing:
+                conn.close()
+                return self.send_json(200, {
+                    "success": True,
+                    "already_participated": True,
+                    "cluster_id": cluster["id"],
+                    "cluster": {
+                        "id": cluster["id"],
+                        "originating_context": cluster.get("originating_context", ""),
+                        "cluster_type": cluster.get("cluster_type", "context")
+                    },
+                    "message": "You have already self-asserted participation in this moment."
+                })
+
+            # 5. Check Per-Cluster Cooldown for new participation
+            cooldown_cutoff = (datetime.now() - timedelta(seconds=VIRAL_GRAPH_CLUSTER_COOLDOWN_SECONDS)).isoformat()
+            cursor.execute("""
+                SELECT 1 FROM viral_graph_events 
+                WHERE actor_user_id = ? AND (event_type = 'I_WAS_THERE' OR event_type = 'PERSPECTIVE_ADDED') 
+                AND moment_id = ? AND created_at > ?
+            """, (user["id"], moment["id"], cooldown_cutoff))
+            if cursor.fetchone():
+                conn.close()
+                return self.send_json(429, {
+                    "success": False,
+                    "error": "Please wait before participating again in this moment.",
+                    "code": "CLUSTER_COOLDOWN"
+                })
+
+            # 6. Register Member
+            clsm_id = f"clsm_{uuid.uuid4().hex[:12]}"
+            cursor.execute("""
+                INSERT INTO moment_cluster_members (id, cluster_id, user_id, moment_id, participation_type, joined_at)
+                VALUES (?, ?, ?, '', 'participant', ?)
+            """, (clsm_id, cluster["id"], user["id"], datetime.now().isoformat()))
+            conn.commit()
+
+            # 7. Log Viral Graph Events
+            record_viral_graph_event(conn, "I_WAS_THERE", user["id"], target_user_id=moment["user_id"], moment_id=moment["id"], cluster_id=cluster["id"], community_id=cluster.get("community_id", ""), drop_id=cluster.get("drop_id", ""))
+            record_viral_graph_event(conn, "MOMENT_CLUSTER_JOINED", user["id"], moment_id=moment["id"], cluster_id=cluster["id"])
+
+            # 8. Deduplicated Calm Notification to Moment Author
+            send_calm_cluster_notification(conn, moment["user_id"], user.get("handle", "Someone"), "cluster_presence", cluster["id"], moment["id"])
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "already_participated": False,
+                "cluster_id": cluster["id"],
+                "participation_type": "participant",
+                "cluster": {
+                    "id": cluster["id"],
+                    "originating_context": cluster.get("originating_context", ""),
+                    "cluster_type": cluster.get("cluster_type", "context")
+                },
+                "message": "Participation recorded. You can now add your perspective to this moment."
+            })
+
         if path == "/api/moments/capture" or path == "/api/posts":
             user = get_current_user(self.headers)
             if not user:
@@ -9624,6 +10248,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             drop_id = body.get("drop_id") or body.get("dropId") or ""
             context_comm = body.get("context_community_id") or ""
             context_loc = body.get("context_location") or body.get("locationCity") or ""
+            cluster_id = (body.get("cluster_id") or "").strip()
 
             raw_audio = body.get("audioData") or body.get("audio_data") or ""
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""
@@ -9638,10 +10263,30 @@ class KandidHandler(SimpleHTTPRequestHandler):
             motion_url = save_base64_video(raw_motion, "motion") if raw_motion else ""
             
             conn.execute("""
-                INSERT INTO posts (id, user_id, author_name, author_handle, avatar_letter, avatar_url, campus, main_img, pip_img, caption, circle, region, location_city, location_coords, exif_iso, exif_aperture, exif_shutter, is_private, event_id, audio_url, audio_duration, motion_url, primary_community_id, context_community_id, context_location, drop_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (post_id, user["id"], user.get("name", "Student"), user.get("handle", "user"), user.get("avatar_letter") or (user.get("name", "K")[0]).upper(), user.get("avatar_url", ""), location_city, main_img, pip_img, caption, circle, region, location_city, location_coords, iso, aperture, shutter, event_id, audio_url, audio_duration, motion_url, primary_comm, context_comm, context_loc, drop_id))
+                INSERT INTO posts (id, user_id, author_name, author_handle, avatar_letter, avatar_url, campus, main_img, pip_img, caption, circle, region, location_city, location_coords, exif_iso, exif_aperture, exif_shutter, is_private, event_id, audio_url, audio_duration, motion_url, primary_community_id, context_community_id, context_location, drop_id, cluster_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (post_id, user["id"], user.get("name", "Student"), user.get("handle", "user"), user.get("avatar_letter") or (user.get("name", "K")[0]).upper(), user.get("avatar_url", ""), location_city, main_img, pip_img, caption, circle, region, location_city, location_coords, iso, aperture, shutter, event_id, audio_url, audio_duration, motion_url, primary_comm, context_comm, context_loc, drop_id, cluster_id))
             
+            if cluster_id:
+                cursor_cls = conn.cursor()
+                cursor_cls.execute("SELECT * FROM moment_clusters WHERE id = ? AND status = 'active'", (cluster_id,))
+                c_row = cursor_cls.fetchone()
+                if c_row:
+                    target_cluster = dict(c_row)
+                    clsm_id = f"clsm_{uuid.uuid4().hex[:12]}"
+                    cursor_cls.execute("""
+                        INSERT OR REPLACE INTO moment_cluster_members (id, cluster_id, user_id, moment_id, participation_type, joined_at)
+                        VALUES (?, ?, ?, ?, 'perspective', ?)
+                    """, (clsm_id, cluster_id, user["id"], post_id, datetime.now().isoformat()))
+
+                    # Record PERSPECTIVE_ADDED
+                    record_viral_graph_event(conn, "PERSPECTIVE_ADDED", user["id"], moment_id=post_id, cluster_id=cluster_id, community_id=target_cluster.get("community_id", ""), drop_id=target_cluster.get("drop_id", ""))
+
+                    # Calm notifications to other participants in this cluster
+                    cursor_cls.execute("SELECT DISTINCT user_id FROM moment_cluster_members WHERE cluster_id = ? AND user_id != ?", (cluster_id, user["id"]))
+                    for p_row in cursor_cls.fetchall():
+                        send_calm_cluster_notification(conn, p_row[0], user.get("handle", "Someone"), "cluster_perspective", cluster_id, post_id)
+
             # Progress Updates
             today = datetime.utcnow().strftime('%Y-%m-%d')
             cursor = conn.cursor()
@@ -10162,6 +10807,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             max_uses = min(max(int(body.get("max_uses", 50)), 1), 100)
             expires_in_days = min(max(int(body.get("expires_in_days", 30)), 1), 365)
 
+            cluster_id = (body.get("cluster_id") or "").strip()
+
             if not community_id:
                 return self.send_json(400, {"success": False, "error": "community_id is required"})
 
@@ -10215,18 +10862,27 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     conn.close()
                     return self.send_json(403, {"success": False, "error": "Cannot create invite referencing private moment of another user"})
 
+            # Validate cluster if provided
+            if cluster_id:
+                cursor.execute("SELECT 1 FROM moment_clusters WHERE id = ? AND status = 'active'", (cluster_id,))
+                if not cursor.fetchone():
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Moment cluster not found"})
+
             invite_id = f"inv_{uuid.uuid4().hex[:12]}"
             invite_code = generate_invite_code(8)
             created_at = datetime.now().isoformat()
             expires_at = (datetime.now() + timedelta(days=expires_in_days)).isoformat()
 
             cursor.execute("""
-                INSERT INTO community_invites (id, invite_code, inviter_user_id, community_id, drop_id, moment_id, invite_type, created_at, expires_at, accepted_count, max_uses, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'active')
-            """, (invite_id, invite_code, user["id"], actual_community_id, drop_id, moment_id, invite_type, created_at, expires_at, max_uses))
+                INSERT INTO community_invites (id, invite_code, inviter_user_id, community_id, drop_id, moment_id, cluster_id, invite_type, created_at, expires_at, accepted_count, max_uses, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'active')
+            """, (invite_id, invite_code, user["id"], actual_community_id, drop_id, moment_id, cluster_id, invite_type, created_at, expires_at, max_uses))
             
             conn.commit()
             track_invite_event(conn, invite_id, invite_code, "created", user["id"])
+            if cluster_id or moment_id or drop_id:
+                record_viral_graph_event(conn, "CONTEXTUAL_INVITE_CREATED", user["id"], moment_id=moment_id, cluster_id=cluster_id, community_id=actual_community_id, drop_id=drop_id, invite_id=invite_id)
             conn.close()
 
             return self.send_json(201, {
@@ -10241,6 +10897,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "community_name": community["name"],
                     "drop_id": drop_id,
                     "moment_id": moment_id,
+                    "cluster_id": cluster_id,
                     "invite_type": invite_type,
                     "max_uses": max_uses,
                     "accepted_count": 0,
@@ -10348,6 +11005,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # Record event
             track_invite_event(conn, invite["id"], invite["invite_code"], "community_joined", user["id"])
+            if invite.get("cluster_id"):
+                record_viral_graph_event(conn, "CONTEXTUAL_INVITE_ACCEPTED", user["id"], target_user_id=invite["inviter_user_id"], cluster_id=invite["cluster_id"], community_id=invite.get("community_id", ""), invite_id=invite["id"])
 
             # Send notification to inviter
             notif_id = f"notif_{uuid.uuid4().hex[:12]}"

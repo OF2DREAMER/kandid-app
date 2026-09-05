@@ -1334,6 +1334,57 @@
         </div>
       </div>
 
+      <!-- Authentic Viral Graph: Moment Cluster Documentary View Modal -->
+      <div class="modal-fullscreen" id="momentClusterModal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="momentClusterTitle">
+        <div class="modal-inner max-w-lg bg-zinc-950 border border-zinc-800 rounded-3xl p-5 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+          <!-- Header -->
+          <div class="flex items-center justify-between pb-3 border-b border-zinc-800/80">
+            <div>
+              <span class="text-[9px] font-mono-tag uppercase tracking-widest text-amber-400 font-bold">SHARED MOMENT CLUSTER</span>
+              <h2 class="text-sm font-bold text-white" id="momentClusterTitle">One Real Moment — Multiple Perspectives</h2>
+            </div>
+            <button onclick="closeMomentClusterModal()" class="w-7 h-7 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer" aria-label="Close modal">✕</button>
+          </div>
+
+          <!-- Context Chip & Perspectives Count -->
+          <div class="flex items-center justify-between flex-wrap gap-2">
+            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-zinc-900 border border-white/10" id="momentClusterContextChip">
+              <span class="text-amber-400 text-xs">⌖</span>
+              <span class="text-[11px] text-zinc-300 font-medium" id="momentClusterContextText">Campus Gathering</span>
+            </div>
+            <span class="text-[10px] font-mono-tag text-zinc-500" id="momentClusterPerspectivesCount">0 perspectives</span>
+          </div>
+
+          <!-- Primary Moment Showcase -->
+          <div id="momentClusterPrimaryShowcase" class="space-y-2">
+            <!-- Rendered dynamically -->
+          </div>
+
+          <!-- Documentary Perspectives Timeline -->
+          <div class="space-y-3 pt-2 border-t border-zinc-900">
+            <span class="text-[9px] font-mono-tag uppercase tracking-widest text-zinc-500 font-bold">OTHER PERSPECTIVES</span>
+            <div id="momentClusterPerspectivesList" class="space-y-3">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Participants & Connection Prompt -->
+          <div id="momentClusterConnectionArea" class="pt-2 border-t border-zinc-900" style="display:none;">
+            <div class="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between">
+              <span class="text-[11px] text-amber-300 font-medium" id="momentClusterConnectionPrompt">You shared a moment. Connect?</span>
+              <button id="momentClusterConnectBtn" class="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[10px] font-mono-tag rounded-xl cursor-pointer active:scale-95 transition">CONNECT</button>
+            </div>
+          </div>
+
+          <!-- Action Footer: Add Perspective Button -->
+          <div class="pt-2">
+            <button id="momentClusterAddPerspectiveBtn" onclick="handleAddPerspectiveClick()" class="w-full py-3 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs font-mono-tag rounded-xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer">
+              <span>📷</span> <span>+ ADD YOUR PERSPECTIVE</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- End Modals -->    <!-- =================================================================
            SECTION 9: EVENT DETAIL SCREEN
            ================================================================= -->
