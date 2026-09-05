@@ -62,8 +62,8 @@ CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "").strip()
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
 CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "").strip()
 CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
-RESEND_API_KEY = (os.environ.get("RESEND_API_KEY") or "").strip()
-FROM_EMAIL = (os.environ.get("RESEND_FROM_EMAIL") or os.environ.get("FROM_EMAIL") or "Kandid <onboarding@resend.dev>").strip()
+RESEND_API_KEY = (os.environ.get("RESEND_API_KEY") or "").strip().strip("'\"")
+FROM_EMAIL = (os.environ.get("RESEND_FROM_EMAIL") or os.environ.get("FROM_EMAIL") or "Kandid <onboarding@resend.dev>").strip().strip("'\"")
 APP_URL = os.environ.get("APP_URL", "https://kandid-app-1.onrender.com").strip()
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
 
@@ -77,9 +77,14 @@ def validate_environment():
     print(f"\n=======================================================")
     print(f"🚀 KANDID SERVER INITIALIZING [MODE: {ENVIRONMENT.upper()}]")
     print(f"=======================================================")
-    print(f"RESEND_API_KEY: {'CONFIGURED' if RESEND_API_KEY else 'MISSING'}")
-    print(f"RESEND_FROM_EMAIL: {FROM_EMAIL}")
+    key_exists = bool(RESEND_API_KEY)
+    key_len = len(RESEND_API_KEY)
+    key_prefix_valid = RESEND_API_KEY.startswith("re_") if key_exists else False
+    masked_from = mask_email_safe(FROM_EMAIL) if "@" in FROM_EMAIL else FROM_EMAIL
+    print(f"RESEND_API_KEY: exists={'true' if key_exists else 'false'}, length={key_len}, prefix_re={'true' if key_prefix_valid else 'false'}")
+    print(f"RESEND_FROM_EMAIL: {masked_from}")
     print(f"EMAIL PROVIDER: RESEND")
+    print(f"APP_URL: {APP_URL}")
     if ENVIRONMENT == "production":
         if not DATABASE_URL:
             print("⚠️  [PRODUCTION DB] DATABASE_URL not configured. Embedded SQLite active.")
@@ -94,7 +99,7 @@ def validate_environment():
         if not RESEND_API_KEY:
             print("❌ [PRODUCTION EMAIL] RESEND_API_KEY missing. Real transactional emails disabled.")
         else:
-            print(f"✅ [PRODUCTION EMAIL] Resend Email Active (From: {FROM_EMAIL})")
+            print(f"✅ [PRODUCTION EMAIL] Resend Email Active (From: {masked_from})")
     else:
         print("🛠️  [DEV MODE] Using local SQLite database & local media storage.")
     print(f"=======================================================\n")
