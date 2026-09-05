@@ -5317,7 +5317,7 @@ window.submitFinalOnboarding = async function() {
                     handle: userVal,
                     campus: campusVal,
                     location_city: cityVal,
-                    password: passVal || 'kandidPass123',
+                    password: passVal,
                     avatar_url: avatarVal
                 })
             });

@@ -3125,9 +3125,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
             pw_hash, salt = hash_password(new_password)
             conn.execute("UPDATE users SET password_hash = ?, salt = ?, email_verified = 1 WHERE id = ?", (pw_hash, salt, u["id"]))
             
+            # Revoke all previous active sessions upon password reset for security
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (u["id"],))
+            
             token = "token_" + u["handle"] + "_" + secrets.token_hex(24)
             expires = (datetime.now() + timedelta(days=90)).isoformat()
-            conn.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
+            conn.execute("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
                          ("sess_" + secrets.token_hex(16), u["id"], token, expires))
             conn.commit()
 
