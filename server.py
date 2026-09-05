@@ -8488,6 +8488,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             raw_id = str(body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip()
             normalized_id = raw_id.lower()
             clean_handle = normalized_id.lstrip("@").strip()
+            alias_handle = "ceo" if clean_handle in ("ceo", "ceo_1") else clean_handle
             
             if not raw_id:
                 return self.send_json(400, {"success": False, "error_code": "INVALID_INPUT", "error": "Username or registered email is required"})
@@ -8498,8 +8499,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             db_backend = "postgresql" if isinstance(conn, PostgresConnectionWrapper) else "sqlite"
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
-                (normalized_id, normalized_id, clean_handle)
+                "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
+                (normalized_id, normalized_id, clean_handle, alias_handle)
             )
             row = cursor.fetchone()
             
@@ -8549,6 +8550,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 
             raw_identifier = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
             clean_handle = raw_identifier.replace("@", "")
+            alias_handle = "ceo" if clean_handle in ("ceo", "ceo_1") else clean_handle
             password = (body.get("password") or "").strip()
             
             if not raw_identifier:
@@ -8556,7 +8558,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ? OR LOWER(handle) = ?", (clean_handle, raw_identifier, raw_identifier))
+            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ? OR LOWER(handle) = ? OR LOWER(handle) = ?", (clean_handle, raw_identifier, raw_identifier, alias_handle))
             row = cursor.fetchone()
             if not row:
                 conn.close()
@@ -8606,12 +8608,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             normalized_id = raw_id.lower()
             clean_handle = normalized_id.lstrip("@").strip()
+            alias_handle = "ceo" if clean_handle in ("ceo", "ceo_1") else clean_handle
 
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
-                (normalized_id, normalized_id, clean_handle)
+                "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
+                (normalized_id, normalized_id, clean_handle, alias_handle)
             )
             row = cursor.fetchone()
             if not row:
@@ -8697,9 +8700,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
                 normalized_id = raw_id.lower()
                 clean_handle = normalized_id.lstrip("@").strip()
+                alias_handle = "ceo" if clean_handle in ("ceo", "ceo_1") else clean_handle
                 cursor.execute(
-                    "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
-                    (normalized_id, normalized_id, clean_handle)
+                    "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
+                    (normalized_id, normalized_id, clean_handle, alias_handle)
                 )
                 user_row = cursor.fetchone()
                 if not user_row:
