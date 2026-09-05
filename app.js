@@ -5534,18 +5534,18 @@ window.requestResetPasswordOtp = async function() {
             var otpInput = document.getElementById('resetOtpCode');
 
             if (hint && res.masked_email) {
-                hint.textContent = 'Verification code sent to ' + res.masked_email;
+                hint.textContent = 'Check ' + res.masked_email + ' for your verification code.';
             }
             if (stage1) stage1.style.display = 'none';
             if (stage2) stage2.style.display = 'block';
             if (otpInput) otpInput.focus();
 
-            showToast(res.message || 'Verification code sent! Check your inbox.');
+            showToast('Check your email for the verification code ✉️');
         } else {
-            showToast(res && res.error ? res.error : 'Could not send verification code.');
+            showToast(res && res.error ? res.error : 'Unable to send verification code. Please try again.');
         }
     } catch(e) {
-        showToast('Network error while requesting code.');
+        showToast('Unable to send verification code. Please try again.');
     } finally {
         if (btn) {
             btn.disabled = false;
