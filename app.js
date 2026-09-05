@@ -924,13 +924,27 @@ function renderCommunityCards(moments, container) {
 
     var dropContextHtml = m.drop_context ? ('<span class="font-mono-tag text-[8px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30 uppercase font-bold tracking-wider">FROM THIS DROP</span>') : '';
 
+    var clusterBadgeHtml = '';
+    if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
+      var pCount = m.perspectives_count || 1;
+      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + (m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
+        '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
+      '</button>';
+    }
+
+    var iWasThereHtml = '';
+    if (!m.is_private && (!state.currentUser || state.currentUser.id !== m.user_id)) {
+      iWasThereHtml = '<button onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="px-2.5 py-1 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-bold cursor-pointer active:scale-95 transition shadow-sm" title="Self-assert contextual participation">+ I WAS THERE</button>';
+    }
+
     card.innerHTML = 
       '<div class="moment-image aspect-[4/5] rounded-[28px] overflow-hidden relative border border-white/[.08] shadow-2xl moment-viewport-stage cursor-pointer select-none">' +
         '<img class="w-full h-full object-cover main-stage-img" src="' + mainImgSrc + '" alt="Real moment">' +
         '<div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/35 pointer-events-none"></div>' +
         
         '<!-- Time Badge -->' +
-        '<div class="absolute top-4 right-4 z-10">' +
+        '<div class="absolute top-4 right-4 z-10 flex items-center gap-1.5">' +
+          clusterBadgeHtml +
           '<span class="font-mono-tag text-[9px] text-white/90 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15">' +
             timeAgo +
           '</span>' +
@@ -967,9 +981,12 @@ function renderCommunityCards(moments, container) {
       '<div class="mt-2 flex items-center justify-between px-1">' +
         '<div class="reaction-badge-group flex items-center gap-1.5" id="realmojis-' + m.id + '">' +
         '</div>' +
-        '<button onclick="openReactions(\'' + m.id + '\')" class="px-4 py-2 rounded-2xl bg-zinc-950 border border-white/[.07] text-zinc-300 hover:text-white text-[11px] font-mono-tag flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-sm">' +
-          '<span class="text-amber-400">✦</span> React' +
-        '</button>' +
+        '<div class="flex items-center gap-2">' +
+          iWasThereHtml +
+          '<button onclick="openReactions(\'' + m.id + '\')" class="px-4 py-2 rounded-2xl bg-zinc-950 border border-white/[.07] text-zinc-300 hover:text-white text-[11px] font-mono-tag flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-sm">' +
+            '<span class="text-amber-400">✦</span> React' +
+          '</button>' +
+        '</div>' +
       '</div>';
 
     container.appendChild(card);
@@ -2712,6 +2729,19 @@ function renderFeedCards(moments, container) {
     var motionVideoHtml = motionUrl ?
       '<video src="' + escapeHtml(motionUrl) + '" playsinline loop muted class="live-moment-video absolute inset-0 w-full h-full object-cover z-[5]" style="display:none;"></video>' : '';
 
+    var clusterBadgeHtml = '';
+    if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
+      var pCount = m.perspectives_count || 1;
+      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + (m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
+        '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
+      '</button>';
+    }
+
+    var iWasThereHtml = '';
+    if (!m.is_private && (!state.currentUser || state.currentUser.id !== m.user_id)) {
+      iWasThereHtml = '<button onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="px-2 py-0.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-bold cursor-pointer active:scale-95 transition shadow-sm" title="Self-assert contextual participation">+ I WAS THERE</button>';
+    }
+
     card.innerHTML =
       '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
         liveBadgeHtml +
@@ -2725,8 +2755,11 @@ function renderFeedCards(moments, container) {
       '</div>' +
 
       '<div class="space-y-2 px-0.5">' +
-        '<div class="text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider uppercase">' +
-          campusName + ' · ' + timeAgo +
+        '<div class="flex items-center justify-between gap-1">' +
+          '<div class="text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider uppercase">' +
+            campusName + ' · ' + timeAgo +
+          '</div>' +
+          clusterBadgeHtml +
         '</div>' +
 
         '<p class="text-xs text-zinc-200 font-normal leading-relaxed">' +
@@ -2748,6 +2781,7 @@ function renderFeedCards(moments, container) {
             '<div class="reaction-badge-group flex items-center gap-1">' +
               reactionPillsHtml +
             '</div>' +
+            iWasThereHtml +
             '<button class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 transition-all text-[9px] font-semibold text-zinc-300 rounded-lg border border-zinc-800 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center gap-1">' +
               '<span>✦ React</span>' +
             '</button>' +
@@ -3916,7 +3950,8 @@ async function publishCapturedMoment() {
     shutter: '1/250s',
     is_daily_mission: (state.activeScreen === 'mission'),
     event_id: state.activeEventId || '',
-    drop_id: state.activeDropId || ''
+    drop_id: state.activeDropId || '',
+    cluster_id: state.activeClusterContext || ''
   };
 
   var data = await apiRequest('/api/moments/capture', {
@@ -3929,7 +3964,12 @@ async function publishCapturedMoment() {
     if (typeof markDailyAlertCompleted === 'function') {
       markDailyAlertCompleted();
     }
-    showToast('Moment shared to ' + (chosenCommunity || 'Feed') + '! 🔥 +50 XP');
+    if (state.activeClusterContext) {
+      showToast('Perspective added to shared moment cluster! ✦');
+      state.activeClusterContext = null;
+    } else {
+      showToast('Moment shared to ' + (chosenCommunity || 'Feed') + '! 🔥 +50 XP');
+    }
     closeMomentReview();
     
     // Refresh feeds and profile
@@ -8348,4 +8388,191 @@ window.renderMemoriesFeedGrouped = renderMemoriesFeedGrouped;
 setTimeout(function() {
   initDailyKandidAlert();
 }, 5 * 60 * 1000); // 5 Minutes (300,000 ms)
+
+// =============================================================================
+// AUTHENTIC VIRAL GRAPH & MOMENT CLUSTERS FRONTEND MODULE
+// =============================================================================
+state.activeClusterContext = null;
+state.currentViewingCluster = null;
+
+async function openMomentClusterModal(clusterId, momentId) {
+  var modal = document.getElementById('momentClusterModal');
+  if (!modal) return;
+
+  var titleEl = document.getElementById('momentClusterTitle');
+  var contextTextEl = document.getElementById('momentClusterContextText');
+  var countEl = document.getElementById('momentClusterPerspectivesCount');
+  var primaryEl = document.getElementById('momentClusterPrimaryShowcase');
+  var listEl = document.getElementById('momentClusterPerspectivesList');
+  var connArea = document.getElementById('momentClusterConnectionArea');
+  var connPrompt = document.getElementById('momentClusterConnectionPrompt');
+  var connBtn = document.getElementById('momentClusterConnectBtn');
+  var addBtn = document.getElementById('momentClusterAddPerspectiveBtn');
+
+  if (listEl) listEl.innerHTML = '<div class="p-4 text-center text-xs text-zinc-500 font-mono-tag">Loading perspectives...</div>';
+  modal.style.display = 'flex';
+
+  var clusterData = null;
+  if (clusterId) {
+    var res = await apiRequest('/api/cluster/' + encodeURIComponent(clusterId));
+    if (res && res.success && res.cluster) {
+      clusterData = res.cluster;
+    }
+  }
+
+  if (!clusterData && momentId) {
+    var eligRes = await apiRequest('/api/moment/' + encodeURIComponent(momentId) + '/eligibility');
+    if (eligRes && eligRes.success && eligRes.cluster_id) {
+      var res2 = await apiRequest('/api/cluster/' + encodeURIComponent(eligRes.cluster_id));
+      if (res2 && res2.success && res2.cluster) {
+        clusterData = res2.cluster;
+      }
+    }
+  }
+
+  state.currentViewingCluster = clusterData;
+
+  if (!clusterData) {
+    if (listEl) listEl.innerHTML = '<div class="p-4 text-center text-xs text-zinc-500 font-mono-tag">This moment is waiting for its first shared perspective.</div>';
+    if (countEl) countEl.textContent = '0 perspectives';
+    if (addBtn) {
+      addBtn.onclick = function() {
+        if (momentId) {
+          handleIWasThereClick(momentId, true);
+        } else {
+          closeMomentClusterModal();
+          openCameraStudio();
+        }
+      };
+    }
+    return;
+  }
+
+  state.activeClusterContext = clusterData.id;
+
+  if (titleEl) titleEl.textContent = 'One Real Moment — ' + ((clusterData.perspectives_count || 0) + 1) + ' Perspectives';
+  if (contextTextEl) contextTextEl.textContent = clusterData.originating_context || 'Shared Context';
+  if (countEl) countEl.textContent = (clusterData.perspectives_count || 0) + ' perspective' + ((clusterData.perspectives_count === 1) ? '' : 's');
+
+  if (primaryEl && clusterData.primary_moment) {
+    var pm = clusterData.primary_moment;
+    primaryEl.innerHTML = 
+      '<div class="p-3 rounded-2xl bg-zinc-900 border border-amber-500/20 space-y-2">' +
+        '<div class="flex items-center justify-between text-[10px] font-mono-tag">' +
+          '<span class="text-amber-400 font-bold">PRIMARY MOMENT</span>' +
+          '<span class="text-zinc-500">@' + escapeHtml(pm.author_handle || 'creator') + '</span>' +
+        '</div>' +
+        '<div class="aspect-[16/10] bg-black rounded-xl overflow-hidden relative">' +
+          '<img src="' + escapeHtml(pm.main_img || '') + '" class="w-full h-full object-cover">' +
+        '</div>' +
+        '<p class="text-xs text-zinc-200 font-normal leading-relaxed">"' + escapeHtml(pm.caption || 'Unfiltered moment.') + '"</p>' +
+      '</div>';
+  }
+
+  if (listEl) {
+    if (clusterData.perspectives && clusterData.perspectives.length > 0) {
+      listEl.innerHTML = '';
+      clusterData.perspectives.forEach(function(persp) {
+        var card = document.createElement('div');
+        card.className = 'p-3 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2';
+        card.innerHTML = 
+          '<div class="flex items-center justify-between text-[10px] font-mono-tag">' +
+            '<div class="flex items-center gap-1.5">' +
+              '<div class="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-amber-400 text-[9px]">' + escapeHtml(persp.avatar_letter || 'K') + '</div>' +
+              '<span class="text-zinc-300 font-bold">@' + escapeHtml(persp.author_handle || 'user') + '</span>' +
+            '</div>' +
+            '<span class="text-zinc-500">' + escapeHtml(persp.location_city || 'Campus') + '</span>' +
+          '</div>' +
+          '<div class="aspect-[16/10] bg-black rounded-xl overflow-hidden relative">' +
+            '<img src="' + escapeHtml(persp.main_img || '') + '" class="w-full h-full object-cover">' +
+          '</div>' +
+          '<p class="text-xs text-zinc-300 font-normal leading-relaxed">"' + escapeHtml(persp.caption || 'Perspective.') + '"</p>';
+        listEl.appendChild(card);
+      });
+    } else {
+      listEl.innerHTML = '<div class="p-4 text-center text-xs text-zinc-500 font-mono-tag">No additional perspectives added yet. Be the first to share what you saw.</div>';
+    }
+  }
+
+  if (connArea && clusterData.connection_suggestion && clusterData.connection_suggestion.suggested) {
+    connArea.style.display = 'block';
+    if (connPrompt) connPrompt.textContent = clusterData.connection_suggestion.message;
+    if (connBtn) {
+      connBtn.onclick = function() {
+        connectWithClusterMember(clusterData.connection_suggestion.target_user_id, clusterData.connection_suggestion.target_handle);
+      };
+    }
+  } else if (connArea) {
+    connArea.style.display = 'none';
+  }
+
+  if (addBtn) {
+    addBtn.onclick = function() {
+      openPerspectiveCapture(clusterData.id, clusterData.community_id, clusterData.originating_context);
+    };
+  }
+}
+window.openMomentClusterModal = openMomentClusterModal;
+
+function closeMomentClusterModal() {
+  var modal = document.getElementById('momentClusterModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeMomentClusterModal = closeMomentClusterModal;
+
+async function handleIWasThereClick(momentId, openCaptureAfter) {
+  try {
+    var res = await apiRequest('/api/moment/' + encodeURIComponent(momentId) + '/i-was-there', {
+      method: 'POST',
+      body: JSON.stringify({ moment_id: momentId })
+    });
+    if (res && res.success) {
+      showToast(res.message || 'Participation recorded! ✦');
+      state.activeClusterContext = res.cluster_id;
+      if (openCaptureAfter) {
+        closeMomentClusterModal();
+        openCameraStudio();
+      } else {
+        openMomentClusterModal(res.cluster_id, momentId);
+      }
+    } else {
+      var err = (res && (res.error || res.message)) ? (res.error || res.message) : 'Participation not authorized';
+      showToast(err);
+    }
+  } catch(e) {
+    console.error('Error in handleIWasThereClick:', e);
+    showToast('Failed to record participation.');
+  }
+}
+window.handleIWasThereClick = handleIWasThereClick;
+
+function openPerspectiveCapture(clusterId, communityId, location) {
+  state.activeClusterContext = clusterId;
+  closeMomentClusterModal();
+  openCameraStudio();
+  showToast('Optics ready. Capture your perspective for this cluster.');
+}
+window.openPerspectiveCapture = openPerspectiveCapture;
+
+async function connectWithClusterMember(targetUserId, targetHandle) {
+  try {
+    var res = await apiRequest('/api/chat/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        recipientId: targetUserId,
+        content: 'Hey @' + targetHandle + '! We shared a moment together on Kandid.'
+      })
+    });
+    if (res && res.success) {
+      showToast('Connected with @' + targetHandle + '! Check Direct Messages.');
+      var connArea = document.getElementById('momentClusterConnectionArea');
+      if (connArea) connArea.style.display = 'none';
+    } else {
+      showToast('Connection request sent to @' + targetHandle);
+    }
+  } catch(e) {
+    showToast('Connection sent.');
+  }
+}
+window.connectWithClusterMember = connectWithClusterMember;
 

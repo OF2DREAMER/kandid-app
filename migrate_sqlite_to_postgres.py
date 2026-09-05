@@ -52,7 +52,10 @@ KANDID_TABLES = [
     "community_invites",
     "community_invite_events",
     "user_activation_milestones",
-    "community_interactions"
+    "community_interactions",
+    "moment_clusters",
+    "moment_cluster_members",
+    "viral_graph_events"
 ]
 
 def migrate_database(sqlite_path=DEFAULT_SQLITE_PATH, target_pg_url=None, dry_run=False):
