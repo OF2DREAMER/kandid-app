@@ -13,7 +13,7 @@ from datetime import datetime
 STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SQLITE_PATH = os.path.join(STATIC_DIR, "data", "kandid.db")
 
-# All 27 Kandid Core & Auxiliary Tables in Dependency Order
+# All Kandid Core & Auxiliary Tables in Dependency Order
 KANDID_TABLES = [
     "colleges",
     "campuses",
@@ -33,15 +33,26 @@ KANDID_TABLES = [
     "communities",
     "community_members",
     "community_drops",
+    "drop_orders",
     "community_drop_registrations",
     "community_transactions",
+    "financial_ledger",
+    "drop_reminders",
     "campus_events",
     "campus_requests",
     "collective_memories",
     "quest_progress",
     "xp_history",
     "blocks",
-    "reports"
+    "reports",
+    "community_reports",
+    "moderation_audit_log",
+    "community_mutes",
+    "community_user_state",
+    "community_invites",
+    "community_invite_events",
+    "user_activation_milestones",
+    "community_interactions"
 ]
 
 def migrate_database(sqlite_path=DEFAULT_SQLITE_PATH, target_pg_url=None, dry_run=False):

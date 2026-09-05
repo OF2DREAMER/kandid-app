@@ -1040,13 +1040,7 @@ async function openCommunitySwitcher() {
     }).join('');
   } else {
     listEl.innerHTML = 
-      '<div onclick="switchCommunity(\'North City University\')" class="p-3.5 rounded-2xl bg-zinc-900 border border-amber-500/40 flex items-center justify-between cursor-pointer active:scale-95 transition">' +
-        '<div class="flex items-center gap-2">' +
-          '<span class="text-base">🎓</span>' +
-          '<span class="text-xs font-bold text-white">North City University</span>' +
-        '</div>' +
-        '<span class="font-mono-tag text-[9px] text-amber-400">● Active</span>' +
-      '</div>';
+      '<div class="py-6 text-center text-xs text-zinc-400 font-mono-tag">You haven\'t found your world yet.</div>';
   }
 }
 window.openCommunitySwitcher = openCommunitySwitcher;
@@ -1129,6 +1123,9 @@ async function openCampusPage(campusName) {
   var descEl = document.getElementById('campusPageDescription');
   var joinBtn = document.getElementById('campusPageJoinBtn');
   var activeAreasEl = document.getElementById('campusPageActiveAreasCount');
+  var pulseDotEl = document.getElementById('campusPagePulseDot');
+  var pulseTagEl = document.getElementById('campusPagePulseTag');
+  var pulseHeadingEl = document.getElementById('campusPagePulseHeading');
   var pulseTilesEl = document.getElementById('campusPagePulseTiles');
   var areasListEl = document.getElementById('campusPageAreasList');
   var momentsEl = document.getElementById('campusPageMomentsContainer');
@@ -1178,12 +1175,48 @@ async function openCampusPage(campusName) {
       }
     }
 
-    // Load Community Drops
+    // Load Community Drops (Prioritized Experiences)
     loadCommunityDrops(campusName);
 
-    if (data.pulse) {
+    // Load Personal Community Context & Return Signal (Phase 11)
+    if (state.currentUser) {
+      var contextCard = document.getElementById('campusPageConnectionCard');
+      var statusEl = document.getElementById('campusPageConnectionStatus');
+      var attendedEl = document.getElementById('campusPageAttendedCount');
+      var contributedEl = document.getElementById('campusPageContributedCount');
+      var headlineEl = document.getElementById('campusPageReturnContextHeadline');
+
+      var commId = (data.campus && data.campus.id) ? data.campus.id : '';
+      apiRequest('/api/community/context?name=' + encodeURIComponent(campusName) + (commId ? '&community_id=' + encodeURIComponent(commId) : '')).then(function(ctxRes) {
+        if (ctxRes && ctxRes.success && contextCard) {
+          contextCard.style.display = 'block';
+          if (statusEl) {
+            var roleName = ctxRes.membership_status === 'owner' ? 'Creator / Owner' : (ctxRes.membership_status === 'admin' ? 'Admin' : (ctxRes.is_member ? 'Member' : 'Exploring'));
+            statusEl.textContent = roleName;
+          }
+          if (attendedEl && ctxRes.participation) {
+            attendedEl.textContent = (ctxRes.participation.drops_attended || 0) + ' drops';
+          }
+          if (contributedEl && ctxRes.participation) {
+            contributedEl.textContent = (ctxRes.participation.moments_contributed || 0) + ' moments';
+          }
+        }
+      });
+
+      apiRequest('/api/community/return-context?name=' + encodeURIComponent(campusName) + (commId ? '&community_id=' + encodeURIComponent(commId) : '')).then(function(retRes) {
+        if (retRes && retRes.success && headlineEl && retRes.calm_headline) {
+          headlineEl.textContent = retRes.calm_headline;
+        }
+      });
+    }
+
+    // Live Pulse Rendering (Honest states)
+    if (data.pulse && data.pulse.active_areas_count > 0 && Array.isArray(data.pulse.recent_pulse) && data.pulse.recent_pulse.length > 0) {
+      if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse';
+      if (pulseTagEl) pulseTagEl.textContent = 'HAPPENING NOW';
+      if (pulseHeadingEl) pulseHeadingEl.textContent = 'Life is happening across the community.';
       if (activeAreasEl) activeAreasEl.textContent = data.pulse.active_areas_count + ' active areas';
-      if (pulseTilesEl && Array.isArray(data.pulse.recent_pulse) && data.pulse.recent_pulse.length > 0) {
+      if (pulseTilesEl) {
         pulseTilesEl.innerHTML = '';
         data.pulse.recent_pulse.forEach(function(p) {
           var tile = document.createElement('div');
@@ -1204,6 +1237,14 @@ async function openCampusPage(campusName) {
         pulseActionTile.innerHTML = '<span class="text-amber-400 text-xs font-bold font-mono-tag">OPEN</span><span class="text-[9px] text-amber-300 font-mono-tag font-bold">PULSE →</span>';
         pulseTilesEl.appendChild(pulseActionTile);
       }
+    } else {
+      if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-zinc-600';
+      if (pulseTagEl) pulseTagEl.textContent = 'QUIET RIGHT NOW';
+      if (pulseHeadingEl) pulseHeadingEl.textContent = 'Nothing new has surfaced yet.';
+      if (activeAreasEl) activeAreasEl.textContent = 'Quiet right now';
+      if (pulseTilesEl) {
+        pulseTilesEl.innerHTML = '<div class="py-3 px-1 text-xs text-zinc-500 font-mono-tag">Quiet right now.</div>';
+      }
     }
 
     if (areasListEl && Array.isArray(data.areas) && data.areas.length > 0) {
@@ -1219,20 +1260,30 @@ async function openCampusPage(campusName) {
       });
     }
 
-    if (momentsEl && Array.isArray(data.moments) && data.moments.length > 0) {
-      renderCommunityCards(data.moments, momentsEl);
+    if (momentsEl) {
+      if (Array.isArray(data.moments) && data.moments.length > 0) {
+        renderCommunityCards(data.moments, momentsEl);
+      } else {
+        momentsEl.innerHTML = '<div class="py-6 text-center text-xs text-zinc-500 font-mono-tag">No moments shared here yet.</div>';
+      }
     }
 
-    if (memoriesGridEl && Array.isArray(data.collective_memories)) {
-      memoriesGridEl.innerHTML = data.collective_memories.map(function(m) {
-        return '<div onclick="openCollectiveMemoryPage(\'' + (m.id || 'mem_1') + '\')" class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 shadow-md cursor-pointer transition active:scale-95 group">' +
-          '<div class="w-full aspect-[4/3] rounded-xl overflow-hidden bg-black">' +
-            '<img src="' + (m.cover_img || m.cover_image || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80') + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
-          '</div>' +
-          '<p class="text-xs font-bold text-white truncate group-hover:text-amber-400 transition-colors">' + escapeHtml(m.title) + '</p>' +
-          '<p class="font-mono-tag text-[8px] text-zinc-400">' + (m.moments_count || 14) + ' Moments</p>' +
-        '</div>';
-      }).join('');
+    if (memoriesGridEl) {
+      if (Array.isArray(data.collective_memories) && data.collective_memories.length > 0) {
+        memoriesGridEl.innerHTML = data.collective_memories.map(function(m) {
+          var attendeeCount = m.checked_in_count || m.moments_count || 0;
+          var attendeeTxt = attendeeCount > 0 ? (attendeeCount + ' people were there') : 'Archived experience';
+          return '<div onclick="openCollectiveMemoryPage(\'' + (m.id || 'mem_1') + '\')" class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 shadow-md cursor-pointer transition active:scale-95 group">' +
+            '<div class="w-full aspect-[4/3] rounded-xl overflow-hidden bg-black">' +
+              '<img src="' + (m.cover_img || m.cover_image || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80') + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
+            '</div>' +
+            '<p class="text-xs font-bold text-white truncate group-hover:text-amber-400 transition-colors">' + escapeHtml(m.title) + '</p>' +
+            '<p class="font-mono-tag text-[8px] text-zinc-400">' + attendeeTxt + '</p>' +
+          '</div>';
+        }).join('');
+      } else {
+        memoriesGridEl.innerHTML = '<div class="col-span-2 py-6 text-center text-xs text-zinc-500 font-mono-tag">Your first shared memory is still ahead.</div>';
+      }
     }
 
     if (peopleListEl && Array.isArray(data.people)) {
@@ -1254,6 +1305,32 @@ window.switchCommunity = openCampusPage;
 // =====================================================================
 // COMMUNITY DROPS & EXPERIENCES SYSTEM (₹19 MONETIZATION ENGINE)
 // =====================================================================
+function getDropStateInfo(stateStr) {
+  var s = (stateStr || 'SCHEDULED').toUpperCase();
+  switch (s) {
+    case 'DRAFT':
+      return { label: 'DRAFT', badgeClass: 'bg-zinc-800 text-zinc-400 border-zinc-700', dotClass: 'bg-zinc-500' };
+    case 'SCHEDULED':
+      return { label: 'UPCOMING', badgeClass: 'bg-amber-500/10 text-amber-400 border-amber-500/30', dotClass: 'bg-amber-500' };
+    case 'REMINDER':
+      return { label: 'STARTING SOON', badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse', dotClass: 'bg-amber-400' };
+    case 'LIVE':
+      return { label: 'LIVE NOW', badgeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse', dotClass: 'bg-emerald-500' };
+    case 'CHECK_IN':
+      return { label: 'CHECK-IN OPEN', badgeClass: 'bg-blue-500/20 text-blue-400 border-blue-500/40', dotClass: 'bg-blue-400' };
+    case 'ACTIVE':
+      return { label: 'HAPPENING NOW', badgeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40', dotClass: 'bg-emerald-500' };
+    case 'CLOSED':
+      return { label: 'CLOSED', badgeClass: 'bg-zinc-900 text-zinc-500 border-zinc-800', dotClass: 'bg-zinc-600' };
+    case 'SETTLEMENT':
+      return { label: 'PROCESSING', badgeClass: 'bg-zinc-900 text-zinc-500 border-zinc-800', dotClass: 'bg-zinc-600' };
+    case 'MEMORY':
+      return { label: 'MEMORY', badgeClass: 'bg-purple-500/10 text-purple-400 border-purple-500/30', dotClass: 'bg-purple-400' };
+    default:
+      return { label: 'UPCOMING', badgeClass: 'bg-amber-500/10 text-amber-400 border-amber-500/30', dotClass: 'bg-amber-500' };
+  }
+}
+
 async function loadCommunityDrops(communityName) {
   communityName = communityName || state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
   var hubContainer = document.getElementById('campusPageDropsContainer');
@@ -1262,25 +1339,57 @@ async function loadCommunityDrops(communityName) {
   var res = await apiRequest('/api/community/drops?community=' + encodeURIComponent(communityName));
   if (!res || !res.success || !Array.isArray(res.drops)) return;
 
+  state.communityDrops = res.drops;
+
   var renderDropCard = function(d) {
     var spotsLeft = Math.max(0, (d.capacity || 20) - (d.registered_count || 0));
     var isRegistered = !!d.is_registered;
-    var btnHtml = isRegistered ? 
-      '<button disabled class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-400 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-default flex items-center gap-1"><span>YOU\'RE IN ✓</span></button>' :
-      '<button onclick="joinCommunityDrop(\'' + d.id + '\', this)" class="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm">JOIN FOR ₹' + (d.price || 19) + '</button>';
+    var stateInfo = getDropStateInfo(d.state);
+    var isLiveOrCheckin = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.state) !== -1;
+    var isEnded = ['CLOSED', 'SETTLEMENT', 'MEMORY'].indexOf(d.state) !== -1;
 
-    return '<div class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/30 space-y-2.5 shadow-xl transition">' +
+    var btnHtml = '';
+    if (isRegistered) {
+      if (isLiveOrCheckin) {
+        if (d.is_checked_in) {
+          btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-mono-tag text-[10px] font-bold border border-emerald-500/40 cursor-default flex items-center gap-1"><span>CHECKED IN ✓</span></button>';
+        } else {
+          btnHtml = '<button onclick="event.stopPropagation(); checkinCommunityDrop(\'' + d.id + '\', this)" class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm">CHECK IN</button>';
+        }
+      } else if (d.state === 'MEMORY') {
+        btnHtml = '<button onclick="event.stopPropagation(); openDropDetail(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 font-mono-tag text-[10px] font-bold border border-purple-500/40 cursor-pointer">VIEW MEMORY</button>';
+      } else {
+        btnHtml = '<button onclick="event.stopPropagation(); openDropDetail(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-400 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-pointer flex items-center gap-1"><span>YOU\'RE IN ✓</span></button>';
+      }
+    } else {
+      if (isEnded) {
+        btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-600 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">CLOSED</button>';
+      } else if (spotsLeft <= 0) {
+        btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-500 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">FULL</button>';
+      } else {
+        btnHtml = '<button onclick="event.stopPropagation(); startDropOrderFlow(\'' + d.id + '\')" class="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm">JOIN FOR ₹' + (d.price || 19) + '</button>';
+      }
+    }
+
+    var coverHtml = (d.cover_img || d.image_url) ? 
+      ('<div class="w-full aspect-[16/9] rounded-xl overflow-hidden bg-black mb-2">' +
+        '<img src="' + escapeHtml(d.cover_img || d.image_url) + '" class="w-full h-full object-cover">' +
+      '</div>') : '';
+
+    return '<div onclick="openDropDetail(\'' + d.id + '\')" class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/30 space-y-2.5 shadow-xl transition cursor-pointer">' +
+      coverHtml +
       '<div class="flex justify-between items-start">' +
         '<div class="space-y-0.5">' +
           '<div class="flex items-center gap-2">' +
-            '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>' +
-            '<span class="font-mono-tag text-[9px] text-amber-400 font-bold uppercase tracking-wider">' + escapeHtml(d.date_str || 'This Weekend') + ' · ' + escapeHtml(d.time_str || '6:00 PM') + '</span>' +
+            '<span class="w-1.5 h-1.5 rounded-full ' + stateInfo.dotClass + '"></span>' +
+            '<span class="font-mono-tag text-[9px] ' + stateInfo.badgeClass + ' font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border">' + stateInfo.label + '</span>' +
+            '<span class="font-mono-tag text-[9px] text-zinc-400 font-bold uppercase tracking-wider">' + escapeHtml(d.date_str || 'This Weekend') + ' · ' + escapeHtml(d.time_str || '6:00 PM') + '</span>' +
           '</div>' +
-          '<h3 class="text-xs font-extrabold text-white">' + escapeHtml(d.title) + '</h3>' +
+          '<h3 class="text-xs font-extrabold text-white pt-1">' + escapeHtml(d.title) + '</h3>' +
         '</div>' +
         '<span class="font-mono-tag text-[9px] font-bold bg-zinc-900 border border-zinc-800 text-zinc-300 px-2 py-0.5 rounded">₹' + (d.price || 19) + '</span>' +
       '</div>' +
-      (d.description ? '<p class="text-[11px] text-zinc-400 font-sans leading-relaxed">' + escapeHtml(d.description) + '</p>' : '') +
+      (d.description ? '<p class="text-[11px] text-zinc-400 font-sans leading-relaxed line-clamp-2">' + escapeHtml(d.description) + '</p>' : '') +
       '<div class="pt-1 flex items-center justify-between border-t border-zinc-900">' +
         '<span class="font-mono-tag text-[9px] text-zinc-500">' + spotsLeft + ' spots remaining (' + (d.registered_count || 0) + ' registered)</span>' +
         btnHtml +
@@ -1290,7 +1399,7 @@ async function loadCommunityDrops(communityName) {
 
   var cardsHtml = res.drops.map(renderDropCard).join('');
   if (hubContainer) {
-    hubContainer.innerHTML = cardsHtml || '<div class="py-4 text-center text-xs text-zinc-500 font-mono-tag">No active community drops scheduled right now.</div>';
+    hubContainer.innerHTML = cardsHtml || '<div class="py-8 text-center space-y-1"><p class="text-xs font-bold text-zinc-400 font-mono-tag uppercase tracking-wider">Nothing planned yet.</p><p class="text-[11px] text-zinc-500 font-sans">This world is quiet for now.</p></div>';
   }
   if (feedContainer) {
     feedContainer.innerHTML = cardsHtml || '<div class="py-4 text-center text-xs text-zinc-500 font-mono-tag">No active community drops.</div>';
@@ -1298,7 +1407,354 @@ async function loadCommunityDrops(communityName) {
 }
 window.loadCommunityDrops = loadCommunityDrops;
 
-async function joinCommunityDrop(dropId, btnEl) {
+function openDropDetail(dropId) {
+  var drops = state.communityDrops || [];
+  var d = drops.find(function(x) { return x.id === dropId; });
+  if (!d) return;
+
+  var modal = document.getElementById('dropDetailModal');
+  if (!modal) return;
+
+  var stateInfo = getDropStateInfo(d.state);
+  var badgeEl = document.getElementById('dropDetailStateBadge');
+  var commEl = document.getElementById('dropDetailCommunity');
+  var titleEl = document.getElementById('dropDetailTitle');
+  var dateTimeEl = document.getElementById('dropDetailDateTime');
+  var spotsEl = document.getElementById('dropDetailSpots');
+  var descEl = document.getElementById('dropDetailDesc');
+  var hostHandleEl = document.getElementById('dropDetailHostHandle');
+  var hostAvatarEl = document.getElementById('dropDetailHostAvatar');
+  var priceEl = document.getElementById('dropDetailPriceTxt');
+  var actionContainer = document.getElementById('dropDetailActionContainer');
+
+  var spotsLeft = Math.max(0, (d.capacity || 20) - (d.registered_count || 0));
+
+  if (badgeEl) {
+    badgeEl.textContent = stateInfo.label;
+    badgeEl.className = 'font-mono-tag text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ' + stateInfo.badgeClass;
+  }
+  if (commEl) commEl.textContent = d.community_name || state.activeCommunity || 'Community';
+  if (titleEl) titleEl.textContent = d.title || 'Community Experience';
+  if (dateTimeEl) dateTimeEl.textContent = (d.date_str || 'This Weekend') + ' · ' + (d.time_str || '6:00 PM');
+  if (spotsEl) spotsEl.textContent = spotsLeft + ' spots left (' + (d.registered_count || 0) + ' registered)';
+  if (descEl) descEl.textContent = d.description || 'Join this live verified shared moment with members of the community.';
+  if (hostHandleEl) hostHandleEl.textContent = '@' + (d.host_handle || d.created_by || 'kandid');
+  if (hostAvatarEl) hostAvatarEl.textContent = ((d.host_handle || d.created_by || 'K')[0] || 'K').toUpperCase();
+  if (priceEl) priceEl.textContent = '₹' + (d.price || 19).toFixed(2);
+
+  if (actionContainer) {
+    var isRegistered = !!d.is_registered;
+    var isLiveOrCheckin = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.state) !== -1;
+    var isEnded = ['CLOSED', 'SETTLEMENT', 'MEMORY'].indexOf(d.state) !== -1;
+
+    if (isRegistered) {
+      if (isLiveOrCheckin) {
+        if (d.is_checked_in) {
+          actionContainer.innerHTML = '<button disabled class="w-full py-3.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-default flex items-center justify-center gap-2"><span>CHECKED IN ✓</span></button>';
+        } else {
+          actionContainer.innerHTML = '<button onclick="checkinCommunityDrop(\'' + d.id + '\', this)" class="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>CHECK IN NOW</span></button>';
+        }
+      } else if (d.state === 'MEMORY') {
+        actionContainer.innerHTML = '<button onclick="showToast(\'✦ Drop Memory is archived for attendees.\')" class="w-full py-3.5 bg-purple-500/20 border border-purple-500/40 text-purple-300 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer flex items-center justify-center gap-2"><span>VIEW DROP ARCHIVE</span></button>';
+      } else {
+        actionContainer.innerHTML = '<button disabled class="w-full py-3.5 bg-amber-500/20 border border-amber-500/40 text-amber-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-default flex items-center justify-center gap-2"><span>YOU ARE REGISTERED ✓</span></button>';
+      }
+    } else {
+      if (isEnded) {
+        actionContainer.innerHTML = '<button disabled class="w-full py-3.5 bg-zinc-900 border border-zinc-800 text-zinc-600 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-not-allowed flex items-center justify-center gap-2"><span>EXPERIENCE ENDED</span></button>';
+      } else if (spotsLeft <= 0) {
+        actionContainer.innerHTML = '<button disabled class="w-full py-3.5 bg-zinc-900 border border-zinc-800 text-zinc-500 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-not-allowed flex items-center justify-center gap-2"><span>ALL SPOTS TAKEN</span></button>';
+      } else {
+        actionContainer.innerHTML = '<button onclick="startDropOrderFlow(\'' + d.id + '\')" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>JOIN EXPERIENCE · ₹' + (d.price || 19) + '</span></button>';
+      }
+    }
+  }
+
+  modal.style.display = 'flex';
+}
+window.openDropDetail = openDropDetail;
+
+function closeDropDetailModal() {
+  var modal = document.getElementById('dropDetailModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeDropDetailModal = closeDropDetailModal;
+
+function closeDropPaymentModal() {
+  var modal = document.getElementById('dropPaymentModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeDropPaymentModal = closeDropPaymentModal;
+
+// =====================================================================
+// PHASE 6: REAL-TIME DROP EXPERIENCE & SHARED MOMENT LAYER
+// =====================================================================
+async function openDropExperience(dropId) {
+  if (!dropId) return;
+  state.activeDropId = dropId;
+  state.previousScreen = state.activeScreen || 'campus-page';
+  switchScreenView('drop-experience');
+
+  var headerStatusEl = document.getElementById('dropExperienceHeaderStatus');
+  var stateBadgeEl = document.getElementById('dropExperienceStateBadge');
+  var communityEl = document.getElementById('dropExperienceCommunity');
+  var titleEl = document.getElementById('dropExperienceTitle');
+  var locEl = document.getElementById('dropExperienceLocationTxt');
+  var descEl = document.getElementById('dropExperienceDesc');
+  var timeRemEl = document.getElementById('dropExperienceTimeRemaining');
+  var presenceEl = document.getElementById('dropExperiencePresenceTxt');
+  var pulseDotEl = document.getElementById('dropExperiencePulseDotSmall');
+  var pulseBadgeEl = document.getElementById('dropExperiencePulseBadge');
+  var checkinContainer = document.getElementById('dropExperienceCheckinContainer');
+  var hostControls = document.getElementById('dropExperienceHostControls');
+  var hostAttendEl = document.getElementById('dropExperienceHostAttendanceTxt');
+  var memoryBanner = document.getElementById('dropExperienceMemoryBanner');
+  var viewMemoryBtn = document.getElementById('dropExperienceViewMemoryBtn');
+  var momentsBadge = document.getElementById('dropExperienceMomentsCountBadge');
+  var momentsContainer = document.getElementById('dropExperienceMomentsContainer');
+
+  if (momentsContainer) {
+    momentsContainer.innerHTML = '<div class="py-8 text-center text-xs text-zinc-500 font-mono-tag">Loading shared moments...</div>';
+  }
+
+  var res = await apiRequest('/api/drops/experience?drop_id=' + encodeURIComponent(dropId));
+  if (!res || !res.success || !res.drop) {
+    showToast('Could not load this experience.');
+    if (momentsContainer) {
+      momentsContainer.innerHTML = '<div class="py-8 text-center space-y-1"><p class="text-xs font-bold text-red-400 font-mono-tag">Could not load this experience.</p><p class="text-[11px] text-zinc-500 font-sans">Please check your connection and try again.</p></div>';
+    }
+    return;
+  }
+
+  var d = res.drop;
+  var stateInfo = getDropStateInfo(d.lifecycle_state);
+
+  if (headerStatusEl) headerStatusEl.textContent = stateInfo.label + ' EXPERIENCE';
+  if (stateBadgeEl) {
+    stateBadgeEl.textContent = stateInfo.label;
+    stateBadgeEl.className = 'font-mono-tag text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ' + stateInfo.badgeClass;
+  }
+  if (communityEl) communityEl.textContent = d.community_name || 'Community';
+  if (titleEl) titleEl.textContent = d.title;
+  if (locEl) locEl.textContent = (d.location_context || d.location || 'Campus Commons') + (d.community_city ? ' · ' + d.community_city : '');
+  if (descEl) descEl.textContent = d.description || 'A shared real-world experience captured together with members of the community.';
+  if (timeRemEl) timeRemEl.textContent = (d.date_str || 'Today') + ' · ' + (d.time_str || 'Now');
+  if (presenceEl) presenceEl.textContent = d.presence_label || ((d.checked_in_count || 0) + ' people are here');
+
+  if (pulseBadgeEl && pulseDotEl) {
+    pulseBadgeEl.textContent = d.pulse_status || 'ACTIVE NOW';
+    if (d.pulse_status === 'MOMENTS ARE APPEARING' || d.pulse_status === 'ACTIVE NOW') {
+      pulseBadgeEl.className = 'text-emerald-400 font-bold';
+      pulseDotEl.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+    } else {
+      pulseBadgeEl.className = 'text-zinc-400 font-bold';
+      pulseDotEl.className = 'w-2 h-2 rounded-full bg-zinc-600';
+    }
+  }
+
+  // Dynamic Checkin Container
+  if (checkinContainer) {
+    if (d.is_checked_in) {
+      checkinContainer.innerHTML = '<div class="w-full py-3 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag text-center flex items-center justify-center gap-2"><span>YOU\'RE CHECKED IN ✓</span></div>';
+    } else if (d.is_registered) {
+      var isCheckinWindow = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.lifecycle_state) !== -1;
+      if (isCheckinWindow) {
+        checkinContainer.innerHTML = '<button onclick="checkinCommunityDrop(\'' + d.id + '\', this)" class="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>CHECK IN NOW</span></button>';
+      } else if (d.lifecycle_state === 'CLOSED' || d.lifecycle_state === 'MEMORY') {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">CHECK-IN CLOSED</div>';
+      } else {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">YOU\'RE REGISTERED ✓ · CHECK-IN OPENS SOON</div>';
+      }
+    } else {
+      if (d.lifecycle_state === 'CLOSED' || d.lifecycle_state === 'MEMORY' || d.lifecycle_state === 'SETTLEMENT') {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">EXPERIENCE CLOSED</div>';
+      } else {
+        checkinContainer.innerHTML = '<button onclick="startDropOrderFlow(\'' + d.id + '\')" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>JOIN EXPERIENCE · ₹' + (d.price || 19) + '</span></button>';
+      }
+    }
+  }
+
+  // Host Controls
+  if (hostControls) {
+    if (d.is_host) {
+      hostControls.style.display = 'block';
+      if (hostAttendEl) hostAttendEl.textContent = (d.checked_in_count || 0) + ' / ' + (d.capacity || 20) + ' Attending (' + (d.registered_count || 0) + ' Registered)';
+    } else {
+      hostControls.style.display = 'none';
+    }
+  }
+
+  // Memory Banner
+  if (memoryBanner) {
+    if (d.lifecycle_state === 'MEMORY') {
+      memoryBanner.style.display = 'block';
+      if (viewMemoryBtn) {
+        viewMemoryBtn.onclick = function() {
+          openCollectiveMemoryPage(d.memory_id || 'mem_1');
+        };
+      }
+    } else {
+      memoryBanner.style.display = 'none';
+    }
+  }
+
+  // Shared Moments
+  var moments = Array.isArray(res.moments) ? res.moments : [];
+  if (momentsBadge) momentsBadge.textContent = moments.length + ' Moments';
+  if (momentsContainer) {
+    if (moments.length > 0) {
+      renderCommunityCards(moments, momentsContainer);
+    } else {
+      momentsContainer.innerHTML = '<div class="py-8 text-center space-y-1"><p class="text-xs font-bold text-zinc-400 font-mono-tag uppercase tracking-wider">Nothing has been shared yet.</p><p class="text-[11px] text-zinc-500 font-sans">Be the first to capture a moment from this experience.</p></div>';
+    }
+  }
+}
+window.openDropExperience = openDropExperience;
+
+function handleDropExperienceBack() {
+  switchScreenView(state.previousScreen || 'campus-page');
+}
+window.handleDropExperienceBack = handleDropExperienceBack;
+
+async function refreshDropExperience() {
+  if (state.activeDropId) {
+    await openDropExperience(state.activeDropId);
+    showToast('✦ Drop experience updated');
+  }
+}
+window.refreshDropExperience = refreshDropExperience;
+
+function triggerDropMomentCapture() {
+  if (!state.activeDropId) return;
+  state.activeDropContext = {
+    drop_id: state.activeDropId,
+    community_id: state.activeCommunity || ''
+  };
+  openCameraStudio();
+}
+window.triggerDropMomentCapture = triggerDropMomentCapture;
+
+async function startDropOrderFlow(dropId) {
+  var drops = state.communityDrops || [];
+  var d = drops.find(function(x) { return x.id === dropId; });
+  var title = d ? d.title : 'Community Experience';
+  var dateStr = d ? (d.date_str || 'This Weekend') : 'This Weekend';
+  var timeStr = d ? (d.time_str || '6:00 PM') : '6:00 PM';
+
+  var modal = document.getElementById('dropPaymentModal');
+  var stepContent = document.getElementById('dropPaymentStepContent');
+  if (!modal || !stepContent) return;
+
+  modal.style.display = 'flex';
+  playTactileFeedback('shutter');
+
+  stepContent.innerHTML = '<div class="py-8 space-y-3">' +
+    '<div class="w-10 h-10 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>' +
+    '<p class="text-xs font-mono-tag text-zinc-400">Initiating secure pass order...</p>' +
+  '</div>';
+
+  var res = await apiRequest('/api/drops/order/create', {
+    method: 'POST',
+    body: JSON.stringify({ drop_id: dropId })
+  });
+
+  if (!res || !res.success || !res.order_id) {
+    stepContent.innerHTML = '<div class="py-6 space-y-4 text-center">' +
+      '<div class="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/40 text-red-400 flex items-center justify-center text-xl mx-auto font-bold">✕</div>' +
+      '<div class="space-y-1">' +
+        '<h4 class="text-sm font-extrabold text-white">ORDER CREATION FAILED</h4>' +
+        '<p class="text-xs text-zinc-400 font-sans">' + escapeHtml((res && res.error) ? res.error : 'Could not prepare order') + '</p>' +
+      '</div>' +
+      '<button onclick="closeDropPaymentModal()" class="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white font-mono-tag text-xs font-bold rounded-2xl border border-zinc-700 transition">CLOSE</button>' +
+    '</div>';
+    return;
+  }
+
+  var amountPaise = res.amount || 1900;
+  var creatorPaise = (res.breakdown && res.breakdown.creator_pool_paise) || 1520;
+  var feePaise = (res.breakdown && res.breakdown.platform_fee_paise) || 380;
+
+  stepContent.innerHTML = '<div class="space-y-4 text-left">' +
+    '<div class="p-3.5 rounded-2xl bg-zinc-900 border border-white/[.05] space-y-2.5">' +
+      '<div class="flex justify-between items-start">' +
+        '<div class="space-y-0.5">' +
+          '<span class="text-[9px] font-mono-tag text-amber-500 uppercase tracking-wider font-bold">EXPERIENCE PASS</span>' +
+          '<h4 class="text-sm font-bold text-white">' + escapeHtml(title) + '</h4>' +
+          '<p class="text-[10px] text-zinc-400 font-mono-tag">' + escapeHtml(dateStr) + ' · ' + escapeHtml(timeStr) + '</p>' +
+        '</div>' +
+        '<div class="text-right">' +
+          '<span class="text-base font-extrabold text-amber-400 font-mono-tag">₹' + (amountPaise / 100).toFixed(2) + '</span>' +
+          '<span class="text-[8px] text-zinc-500 block font-mono-tag">' + amountPaise + ' PAISE</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pt-2 border-t border-zinc-800 flex justify-between items-center text-[10px] font-mono-tag text-zinc-400">' +
+        '<span>Creator Pool (80%): ₹' + (creatorPaise / 100).toFixed(2) + '</span>' +
+        '<span>Kandid (20%): ₹' + (feePaise / 100).toFixed(2) + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="space-y-2">' +
+      '<button onclick="confirmDropPayment(\'' + res.order_id + '\', \'' + dropId + '\', \'' + (res.provider_order_id || '') + '\')" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2">' +
+        '<span>PAY ₹' + (amountPaise / 100).toFixed(2) + ' & SECURE PASS</span>' +
+      '</button>' +
+      '<button onclick="closeDropPaymentModal()" class="w-full py-2.5 text-zinc-500 hover:text-white font-mono-tag text-xs font-bold transition">' +
+        'CANCEL' +
+      '</button>' +
+    '</div>' +
+  '</div>';
+}
+window.startDropOrderFlow = startDropOrderFlow;
+window.joinCommunityDrop = function(dropId, btnEl) {
+  startDropOrderFlow(dropId);
+};
+
+async function confirmDropPayment(orderId, dropId, providerOrderId) {
+  var stepContent = document.getElementById('dropPaymentStepContent');
+  if (!stepContent) return;
+
+  stepContent.innerHTML = '<div class="py-8 space-y-3 text-center">' +
+    '<div class="w-10 h-10 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>' +
+    '<p class="text-xs font-mono-tag text-zinc-400">Verifying secure signature & recording ledger...</p>' +
+  '</div>';
+
+  var mockPaymentId = 'pay_' + Math.random().toString(36).substring(2, 11);
+  var validSignature = 'sig_valid_' + orderId;
+
+  var res = await apiRequest('/api/drops/order/verify', {
+    method: 'POST',
+    body: JSON.stringify({
+      order_id: orderId,
+      provider_payment_id: mockPaymentId,
+      provider_order_id: providerOrderId,
+      signature: validSignature
+    })
+  });
+
+  if (res && res.success && res.registration) {
+    playTactileFeedback('click');
+    stepContent.innerHTML = '<div class="py-6 space-y-4 text-center">' +
+      '<div class="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-xl mx-auto font-bold shadow-lg">✓</div>' +
+      '<div class="space-y-1">' +
+        '<h4 class="text-sm font-extrabold text-white">ACCESS PASS CONFIRMED</h4>' +
+        '<p class="text-[11px] text-zinc-400 font-sans">You are officially registered for this experience.</p>' +
+        '<p class="text-[9px] font-mono-tag text-zinc-500 pt-1">Registration ID: #' + escapeHtml(res.registration.id.slice(0, 8)) + '</p>' +
+      '</div>' +
+      '<button onclick="closeDropPaymentModal(); closeDropDetailModal();" class="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white font-mono-tag text-xs font-bold rounded-2xl border border-zinc-700 transition font-mono-tag">DONE</button>' +
+    '</div>';
+    loadCommunityDrops(state.activeCommunity);
+  } else {
+    stepContent.innerHTML = '<div class="py-6 space-y-4 text-center">' +
+      '<div class="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/40 text-red-400 flex items-center justify-center text-xl mx-auto font-bold">✕</div>' +
+      '<div class="space-y-1">' +
+        '<h4 class="text-sm font-extrabold text-white">VERIFICATION FAILED</h4>' +
+        '<p class="text-xs text-zinc-400 font-sans">' + escapeHtml((res && res.error) ? res.error : 'Payment signature could not be verified') + '</p>' +
+      '</div>' +
+      '<button onclick="closeDropPaymentModal()" class="w-full py-3 bg-zinc-900 hover:bg-zinc-800 text-white font-mono-tag text-xs font-bold rounded-2xl border border-zinc-700 transition">CLOSE</button>' +
+    '</div>';
+  }
+}
+window.confirmDropPayment = confirmDropPayment;
+
+async function checkinCommunityDrop(dropId, btnEl) {
   if (!dropId) return;
   playTactileFeedback('shutter');
 
@@ -1307,29 +1763,32 @@ async function joinCommunityDrop(dropId, btnEl) {
     btnEl.innerHTML = '<span class="animate-spin text-xs">⏳</span>';
   }
 
-  var res = await apiRequest('/api/drops/join', {
+  var res = await apiRequest('/api/drops/check-in', {
     method: 'POST',
     body: JSON.stringify({ drop_id: dropId })
   });
 
   if (res && res.success) {
     playTactileFeedback('click');
-    showToast('✓ Access pass confirmed! You are registered (₹19).');
+    showToast('✓ Checked in! Welcome to the experience.');
     if (btnEl) {
-      btnEl.className = 'px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-400 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-default';
-      btnEl.innerHTML = '<span>YOU\'RE IN ✓</span>';
+      btnEl.className = 'px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-mono-tag text-[10px] font-bold border border-emerald-500/40 cursor-default';
+      btnEl.innerHTML = '<span>CHECKED IN ✓</span>';
     }
-    // Refresh drops in background
     loadCommunityDrops(state.activeCommunity);
+    var modal = document.getElementById('dropDetailModal');
+    if (modal && modal.style.display !== 'none') {
+      openDropDetail(dropId);
+    }
   } else {
-    showToast('Could not register: ' + (res ? res.error : 'Network error'));
+    showToast('Check-in failed: ' + (res ? res.error : 'Network error'));
     if (btnEl) {
       btnEl.disabled = false;
-      btnEl.innerHTML = 'JOIN FOR ₹19';
+      btnEl.innerHTML = 'CHECK IN';
     }
   }
 }
-window.joinCommunityDrop = joinCommunityDrop;
+window.checkinCommunityDrop = checkinCommunityDrop;
 
 function openCreateDropModal() {
   var modal = document.getElementById('createDropModal');
@@ -1403,36 +1862,28 @@ async function openCreatorEarningsModal() {
   var res = await apiRequest('/api/community/earnings?community=' + encodeURIComponent(state.activeCommunity || ''));
   if (res && res.success && res.earnings) {
     var e = res.earnings;
-    if (grossEl) grossEl.textContent = '₹' + Math.round(e.gross_volume || 0).toLocaleString();
-    if (feeEl) feeEl.textContent = '₹' + Math.round(e.platform_fee || 0).toLocaleString();
-    if (netEl) netEl.textContent = '₹' + Math.round(e.creator_net || 0).toLocaleString();
+    if (grossEl) grossEl.textContent = '₹' + Number(e.gross_volume || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (feeEl) feeEl.textContent = '₹' + Number(e.platform_fee || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (netEl) netEl.textContent = '₹' + Number(e.creator_net || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
     if (txCountEl) txCountEl.textContent = (e.transactions_count || 0) + ' confirmed registrations';
 
     if (listEl && Array.isArray(e.transactions) && e.transactions.length > 0) {
       listEl.innerHTML = e.transactions.map(function(t) {
+        var gross = t.gross_amount_paise ? (t.gross_amount_paise / 100) : (t.gross_amount || 19);
+        var creator = t.creator_amount_paise ? (t.creator_amount_paise / 100) : (t.creator_amount || 15.20);
         return '<div class="p-2.5 rounded-xl bg-zinc-950 border border-white/[.04] flex items-center justify-between text-xs">' +
           '<div class="space-y-0.5">' +
-            '<span class="text-white font-bold block truncate">Drop Registration #' + escapeHtml(t.id.slice(0, 7)) + '</span>' +
+            '<span class="text-white font-bold block truncate">Drop Registration #' + escapeHtml((t.id || t.order_id || 'reg').slice(0, 7)) + '</span>' +
             '<span class="text-[9px] font-mono-tag text-zinc-500">' + escapeHtml(t.created_at || 'Recent') + '</span>' +
           '</div>' +
           '<div class="text-right">' +
-            '<span class="text-amber-400 font-mono-tag font-bold">+₹' + (t.creator_amount || 17.10) + '</span>' +
-            '<span class="text-[8px] font-mono-tag text-zinc-500 block">Gross ₹' + (t.gross_amount || 19) + '</span>' +
+            '<span class="text-amber-400 font-mono-tag font-bold">+₹' + creator.toFixed(2) + '</span>' +
+            '<span class="text-[8px] font-mono-tag text-zinc-500 block">Gross ₹' + gross.toFixed(2) + '</span>' +
           '</div>' +
         '</div>';
       }).join('');
     } else if (listEl) {
-      listEl.innerHTML = 
-        '<div class="p-2.5 rounded-xl bg-zinc-950 border border-white/[.04] flex items-center justify-between text-xs">' +
-          '<div>' +
-            '<span class="text-white font-bold block">100 Drop Passes Completed</span>' +
-            '<span class="text-[9px] font-mono-tag text-zinc-500">Aug 28 – Sep 03</span>' +
-          '</div>' +
-          '<div class="text-right">' +
-            '<span class="text-amber-400 font-mono-tag font-bold">+₹1,710.00</span>' +
-            '<span class="text-[8px] font-mono-tag text-zinc-500 block">100 × ₹17.10</span>' +
-          '</div>' +
-        '</div>';
+      listEl.innerHTML = '<div class="p-4 rounded-xl bg-zinc-950 border border-white/[.04] text-center text-xs text-zinc-500 font-mono-tag">No transactions recorded yet.</div>';
     }
   }
 }
@@ -1444,17 +1895,328 @@ function closeCreatorEarningsModal() {
 }
 window.closeCreatorEarningsModal = closeCreatorEarningsModal;
 
+async function openCreatorOperationsModal() {
+  var modal = document.getElementById('creatorOperationsModal');
+  if (modal) modal.style.display = 'flex';
+
+  var balanceEl = document.getElementById('opsCreatorBalanceTxt');
+  var setPendEl = document.getElementById('opsSettledPendingTxt');
+  var commsListEl = document.getElementById('opsCommunitiesList');
+  var dropsListEl = document.getElementById('opsDropsList');
+  var checkinsListEl = document.getElementById('opsCheckinsList');
+
+  var res = await apiRequest('/api/community/manage');
+  if (res && res.success && res.operations) {
+    var op = res.operations;
+    var earn = op.earnings || {};
+    
+    if (balanceEl) balanceEl.textContent = '₹' + Number(earn.creator_amount_rupees || 0).toFixed(2);
+    if (setPendEl) setPendEl.textContent = '₹' + Number(earn.settled_rupees || 0).toFixed(0) + ' / ₹' + Number(earn.pending_rupees || 0).toFixed(0);
+
+    // Communities
+    if (commsListEl) {
+      if (Array.isArray(op.communities) && op.communities.length > 0) {
+        commsListEl.innerHTML = op.communities.map(function(c) {
+          return '<div class="p-2.5 rounded-xl bg-zinc-900 border border-white/[.04] flex items-center justify-between text-xs">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="text-sm">' + (c.icon || '📍') + '</span>' +
+              '<div>' +
+                '<span class="text-white font-bold block">' + escapeHtml(c.name) + '</span>' +
+                '<span class="text-[9px] font-mono-tag text-zinc-500">' + escapeHtml(c.city || 'Campus') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<span class="text-[9px] font-mono-tag text-amber-400 font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">' + escapeHtml(c.user_role || 'ADMIN') + '</span>' +
+          '</div>';
+        }).join('');
+      } else {
+        commsListEl.innerHTML = '<div class="p-2.5 rounded-xl bg-zinc-900 text-xs text-zinc-500 font-mono-tag">No managed communities yet.</div>';
+      }
+    }
+
+    // Drops (Combine active, upcoming, draft, past)
+    var allDrops = (op.active_drops || []).concat(op.upcoming_drops || []).concat(op.draft_drops || []).concat(op.past_drops || []);
+    if (dropsListEl) {
+      if (allDrops.length > 0) {
+        dropsListEl.innerHTML = allDrops.map(function(d) {
+          var stateBadgeColor = (d.lifecycle_state === 'LIVE' || d.lifecycle_state === 'CHECK_IN' || d.lifecycle_state === 'ACTIVE') ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+          return '<div class="p-3 rounded-xl bg-zinc-900 border border-white/[.04] space-y-2 text-xs">' +
+            '<div class="flex justify-between items-start">' +
+              '<div>' +
+                '<span class="text-white font-bold block text-xs">' + escapeHtml(d.title) + '</span>' +
+                '<span class="text-[9px] font-mono-tag text-zinc-500">' + escapeHtml(d.date_str || '') + ' · ' + escapeHtml(d.time_str || '') + '</span>' +
+              '</div>' +
+              '<span class="text-[9px] font-mono-tag font-bold uppercase px-2 py-0.5 rounded border ' + stateBadgeColor + '">' + escapeHtml(d.lifecycle_state || 'DRAFT') + '</span>' +
+            '</div>' +
+            '<div class="flex items-center justify-between text-[10px] font-mono-tag text-zinc-400 pt-1 border-t border-zinc-800">' +
+              '<span>' + (d.registered_count || 0) + ' / ' + (d.capacity || 20) + ' Registered</span>' +
+              '<div class="flex items-center gap-2">' +
+                '<button onclick="openDropAttendeesModal(\'' + escapeHtml(d.id) + '\', \'' + escapeHtml(d.title).replace(/'/g, "\\'") + '\')" class="text-amber-400 hover:underline cursor-pointer">Roster</button>' +
+                (d.lifecycle_state !== 'CANCELLED' && d.lifecycle_state !== 'CLOSED' && d.lifecycle_state !== 'MEMORY' ? '<button onclick="cancelDropPrompt(\'' + escapeHtml(d.id) + '\')" class="text-rose-400 hover:underline cursor-pointer">Cancel</button>' : '') +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } else {
+        dropsListEl.innerHTML = '<div class="p-2.5 rounded-xl bg-zinc-900 text-xs text-zinc-500 font-mono-tag">No drops created yet.</div>';
+      }
+    }
+
+    // Recent check-ins
+    if (checkinsListEl) {
+      if (Array.isArray(op.recent_checkins) && op.recent_checkins.length > 0) {
+        checkinsListEl.innerHTML = op.recent_checkins.map(function(ch) {
+          return '<div class="p-2 rounded-xl bg-zinc-900/70 border border-white/[.03] flex items-center justify-between text-xs">' +
+            '<div>' +
+              '<span class="text-white font-bold block truncate">' + escapeHtml(ch.user_name || ch.user_handle) + '</span>' +
+              '<span class="text-[9px] font-mono-tag text-zinc-500">' + escapeHtml(ch.drop_title || 'Drop') + '</span>' +
+            '</div>' +
+            '<span class="text-[9px] font-mono-tag text-emerald-400 font-bold">CHECKED IN ✓</span>' +
+          '</div>';
+        }).join('');
+      } else {
+        checkinsListEl.innerHTML = '<div class="p-2 rounded-xl bg-zinc-900/60 text-[10px] text-zinc-500 font-mono-tag text-center">No check-ins yet.</div>';
+      }
+    }
+  }
+}
+window.openCreatorOperationsModal = openCreatorOperationsModal;
+
+function closeCreatorOperationsModal() {
+  var modal = document.getElementById('creatorOperationsModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeCreatorOperationsModal = closeCreatorOperationsModal;
+
+async function openDropAttendeesModal(dropId, dropTitle) {
+  var modal = document.getElementById('dropAttendeesModal');
+  if (modal) modal.style.display = 'flex';
+
+  var titleEl = document.getElementById('attendeesDropTitle');
+  if (titleEl) titleEl.textContent = (dropTitle || 'Drop') + ' Attendees';
+
+  var countEl = document.getElementById('attendeesRosterCount');
+  var listEl = document.getElementById('attendeesRosterList');
+
+  var res = await apiRequest('/api/community/drops/attendees?drop_id=' + encodeURIComponent(dropId));
+  if (res && res.success && Array.isArray(res.attendees)) {
+    if (countEl) countEl.textContent = res.attendees.length + ' Registered';
+    if (listEl) {
+      if (res.attendees.length > 0) {
+        listEl.innerHTML = res.attendees.map(function(a) {
+          var checkinStatus = a.is_checked_in ? '<span class="text-emerald-400 font-bold font-mono-tag text-[9px]">CHECKED IN ✓</span>' : '<span class="text-zinc-500 font-mono-tag text-[9px]">CONFIRMED</span>';
+          return '<div class="p-2.5 rounded-xl bg-zinc-900 border border-white/[.04] flex items-center justify-between text-xs">' +
+            '<div>' +
+              '<span class="text-white font-bold block">' + escapeHtml(a.user_name || a.user_handle) + '</span>' +
+              '<span class="text-[9px] font-mono-tag text-zinc-500">@' + escapeHtml(a.user_handle) + '</span>' +
+            '</div>' +
+            '<div class="text-right">' +
+              checkinStatus +
+              '<span class="text-[8px] font-mono-tag text-zinc-500 block">' + escapeHtml(a.payment_status || 'paid') + '</span>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } else {
+        listEl.innerHTML = '<div class="p-3 rounded-xl bg-zinc-900 text-xs text-zinc-500 font-mono-tag text-center">No attendees registered yet.</div>';
+      }
+    }
+  } else {
+    if (listEl) listEl.innerHTML = '<div class="p-3 rounded-xl bg-zinc-900 text-xs text-rose-400 font-mono-tag text-center">' + (res ? res.error : 'Failed to load attendees') + '</div>';
+  }
+}
+window.openDropAttendeesModal = openDropAttendeesModal;
+
+function closeDropAttendeesModal() {
+  var modal = document.getElementById('dropAttendeesModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeDropAttendeesModal = closeDropAttendeesModal;
+
+async function cancelDropPrompt(dropId) {
+  if (!confirm('Are you sure you want to cancel this Drop? This will stop further registrations.')) {
+    return;
+  }
+  var res = await apiRequest('/api/community/drops/cancel', {
+    method: 'POST',
+    body: JSON.stringify({ drop_id: dropId })
+  });
+  if (res && res.success) {
+    showToast('✓ Drop cancelled successfully');
+    openCreatorOperationsModal();
+    loadCommunityDrops(state.activeCommunity);
+  } else {
+    showToast('Failed to cancel drop: ' + (res ? res.error : 'Error'));
+  }
+}
+window.cancelDropPrompt = cancelDropPrompt;
+
+// Phase 9: Safety & Moderation Client Controllers
+var currentReportTarget = { communityId: '', targetType: 'community', targetId: '', reason: 'Spam' };
+
+function openCommunityReportModal(communityId, targetType, targetId, title) {
+  currentReportTarget.communityId = communityId || state.activeCommunityId || 'comm_1';
+  currentReportTarget.targetType = targetType || 'community';
+  currentReportTarget.targetId = targetId || communityId || 'comm_1';
+  currentReportTarget.reason = 'Spam';
+
+  var titleEl = document.getElementById('reportTargetTitle');
+  if (titleEl) titleEl.textContent = 'Report ' + (targetType ? targetType.toUpperCase() : 'CONTENT');
+
+  var modal = document.getElementById('communityReportModal');
+  if (modal) modal.style.display = 'flex';
+
+  selectReportReason('Spam');
+}
+window.openCommunityReportModal = openCommunityReportModal;
+
+function closeCommunityReportModal() {
+  var modal = document.getElementById('communityReportModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeCommunityReportModal = closeCommunityReportModal;
+
+function selectReportReason(reason) {
+  currentReportTarget.reason = reason;
+  var btns = document.querySelectorAll('.report-reason-btn');
+  btns.forEach(function(b) {
+    if (b.textContent.trim().toLowerCase() === reason.toLowerCase()) {
+      b.className = 'report-reason-btn p-2 rounded-xl bg-rose-500/20 border border-rose-500 text-rose-300 text-[10px] text-left font-bold';
+    } else {
+      b.className = 'report-reason-btn p-2 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:border-amber-500/40 text-[10px] text-left';
+    }
+  });
+}
+window.selectReportReason = selectReportReason;
+
+async function submitCommunityReport() {
+  var detailsInput = document.getElementById('reportDetailsInput');
+  var details = detailsInput ? detailsInput.value.trim() : '';
+
+  var res = await apiRequest('/api/community/report', {
+    method: 'POST',
+    body: JSON.stringify({
+      community_id: currentReportTarget.communityId,
+      target_type: currentReportTarget.targetType,
+      target_id: currentReportTarget.targetId,
+      reason: currentReportTarget.reason,
+      details: details
+    })
+  });
+
+  if (res && res.success) {
+    playTactileFeedback('click');
+    showToast('✓ ' + (res.message || 'Report submitted to safety team.'));
+    closeCommunityReportModal();
+    if (detailsInput) detailsInput.value = '';
+  } else {
+    showToast('Failed to submit report: ' + (res ? res.error : 'Error'));
+  }
+}
+window.submitCommunityReport = submitCommunityReport;
+
+async function openCommunityModerationModal(communityId) {
+  var commId = communityId || state.activeCommunityId || 'comm_1';
+  var modal = document.getElementById('communityModerationModal');
+  if (modal) modal.style.display = 'flex';
+
+  var listEl = document.getElementById('moderationReportsList');
+  if (listEl) listEl.innerHTML = '<div class="p-3 rounded-xl bg-zinc-900 text-xs text-zinc-400 font-mono-tag text-center">Loading reports...</div>';
+
+  var res = await apiRequest('/api/community/moderation/reports?community_id=' + encodeURIComponent(commId));
+  if (res && res.success && Array.isArray(res.reports)) {
+    if (listEl) {
+      if (res.reports.length > 0) {
+        listEl.innerHTML = res.reports.map(function(r) {
+          var statusColor = r.status === 'pending' ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-zinc-400 bg-zinc-800 border-zinc-700';
+          return '<div class="p-3 rounded-xl bg-zinc-900 border border-white/[.04] space-y-2 text-xs font-mono-tag">' +
+            '<div class="flex justify-between items-start">' +
+              '<div>' +
+                '<span class="text-white font-bold block">' + escapeHtml(r.target_type).toUpperCase() + ' · ' + escapeHtml(r.reason) + '</span>' +
+                '<span class="text-[9px] text-zinc-500">By @' + escapeHtml(r.reporter_handle || 'user') + ' · ' + escapeHtml(r.created_at || 'Recent') + '</span>' +
+              '</div>' +
+              '<span class="text-[9px] font-bold uppercase px-2 py-0.5 rounded border ' + statusColor + '">' + escapeHtml(r.status) + '</span>' +
+            '</div>' +
+            (r.details ? '<p class="text-[10px] text-zinc-300 font-sans bg-zinc-950 p-2 rounded-lg border border-white/[.03]">' + escapeHtml(r.details) + '</p>' : '') +
+            '<div class="flex items-center gap-2 pt-1 border-t border-zinc-800">' +
+              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'review\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-amber-400 hover:underline cursor-pointer text-[10px]">Review</button>' : '') +
+              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'dismiss\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-zinc-400 hover:underline cursor-pointer text-[10px]">Dismiss</button>' : '') +
+              (r.target_type === 'moment' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'hide\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-rose-400 hover:underline cursor-pointer text-[10px]">Hide Content</button>' : '') +
+              (r.target_type === 'drop' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'suspend\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-rose-400 hover:underline cursor-pointer text-[10px]">Suspend Drop</button>' : '') +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } else {
+        listEl.innerHTML = '<div class="p-3 rounded-xl bg-zinc-900 text-xs text-zinc-500 font-mono-tag text-center">No reports filed for this community. Clean record!</div>';
+      }
+    }
+  } else {
+    if (listEl) listEl.innerHTML = '<div class="p-3 rounded-xl bg-zinc-900 text-xs text-rose-400 font-mono-tag text-center">' + (res ? res.error : 'Failed to load moderation reports') + '</div>';
+  }
+}
+window.openCommunityModerationModal = openCommunityModerationModal;
+
+function closeCommunityModerationModal() {
+  var modal = document.getElementById('communityModerationModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeCommunityModerationModal = closeCommunityModerationModal;
+
+async function handleModerationAction(reportId, action, targetType, targetId, communityId) {
+  var res = await apiRequest('/api/community/moderation/action', {
+    method: 'POST',
+    body: JSON.stringify({
+      report_id: reportId,
+      action: action,
+      target_type: targetType,
+      target_id: targetId,
+      community_id: communityId || state.activeCommunityId || 'comm_1'
+    })
+  });
+  if (res && res.success) {
+    showToast('✓ Moderation action executed: ' + action);
+    openCommunityModerationModal(communityId);
+  } else {
+    showToast('Failed to apply moderation action: ' + (res ? res.error : 'Error'));
+  }
+}
+window.handleModerationAction = handleModerationAction;
+
+async function loadCommunityDiscovery(options) {
+  options = options || {};
+  var campus = options.campus || '';
+  var city = options.city || '';
+  var type = options.type || '';
+  var q = options.q || '';
+  var limit = options.limit || 20;
+
+  var queryParams = [];
+  if (campus) queryParams.push('campus=' + encodeURIComponent(campus));
+  if (city) queryParams.push('city=' + encodeURIComponent(city));
+  if (type) queryParams.push('type=' + encodeURIComponent(type));
+  if (q) queryParams.push('q=' + encodeURIComponent(q));
+  if (limit) queryParams.push('limit=' + encodeURIComponent(limit));
+
+  var url = '/api/community/discover' + (queryParams.length ? '?' + queryParams.join('&') : '');
+  var res = await apiRequest(url);
+  return res;
+}
+window.loadCommunityDiscovery = loadCommunityDiscovery;
+
 async function loadMoreAroundYou() {
   var container = document.getElementById('moreAroundYouContainer');
   if (!container) return;
-  var res = await apiRequest('/api/community/recommendations');
-  if (res && res.success && Array.isArray(res.recommendations)) {
-    container.innerHTML = res.recommendations.map(function(c) {
+  var res = await loadCommunityDiscovery({ limit: 12 });
+  var list = (res && res.success && res.for_you && res.for_you.length > 0) ? res.for_you : ((res && res.all) ? res.all : []);
+  if (list && list.length > 0) {
+    container.innerHTML = list.map(function(c) {
+      var badge = c.context_reason || (c.activity_state === 'UPCOMING' ? 'Upcoming Drop' : 'Active Community');
       return '<div onclick="openCampusPage(\'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')" class="w-36 shrink-0 p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 cursor-pointer transition shadow-md active:scale-95 group">' +
-        '<div class="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-sm">' + (c.icon || '📍') + '</div>' +
+        '<div class="flex items-center justify-between">' +
+          '<div class="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-sm">' + (c.icon || '📍') + '</div>' +
+          (c.activity_state === 'UPCOMING' ? '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>' : '') +
+        '</div>' +
         '<div>' +
           '<h3 class="text-xs font-bold text-white group-hover:text-amber-400 transition-colors truncate">' + escapeHtml(c.name) + '</h3>' +
-          '<p class="font-mono-tag text-[8px] text-zinc-500 mt-0.5 truncate">' + escapeHtml(c.status_label) + '</p>' +
+          '<p class="font-mono-tag text-[8px] text-amber-400/90 mt-0.5 truncate">' + escapeHtml(badge) + '</p>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -2995,7 +3757,8 @@ async function publishCapturedMoment() {
     aperture: 'f/2.8',
     shutter: '1/250s',
     is_daily_mission: (state.activeScreen === 'mission'),
-    event_id: state.activeEventId || ''
+    event_id: state.activeEventId || '',
+    drop_id: state.activeDropId || ''
   };
 
   var data = await apiRequest('/api/moments/capture', {
@@ -3015,6 +3778,9 @@ async function publishCapturedMoment() {
     await loadFeedMoments('foryou');
     await loadCampusScreen();
     await loadYouScreen();
+    if (state.activeScreen === 'drop-experience' && state.activeDropId) {
+      await openDropExperience(state.activeDropId);
+    }
   } else {
     showToast('Failed to publish moment: ' + (data ? data.error : 'Network error'));
   }
