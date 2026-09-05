@@ -62,8 +62,9 @@ CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "").strip()
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
 CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "").strip()
 CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
-RESEND_API_KEY = (os.environ.get("RESEND_API_KEY") or "").strip().strip("'\"")
-FROM_EMAIL = (os.environ.get("RESEND_FROM_EMAIL") or os.environ.get("FROM_EMAIL") or "Kandid <onboarding@resend.dev>").strip().strip("'\"")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip().strip("'\"")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "Kandid <onboarding@resend.dev>").strip().strip("'\"")
+FROM_EMAIL = RESEND_FROM_EMAIL
 APP_URL = os.environ.get("APP_URL", "https://kandid-app-1.onrender.com").strip()
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
 
@@ -80,7 +81,7 @@ def validate_environment():
     key_exists = bool(RESEND_API_KEY)
     key_len = len(RESEND_API_KEY)
     key_prefix_valid = RESEND_API_KEY.startswith("re_") if key_exists else False
-    masked_from = mask_email_safe(FROM_EMAIL) if "@" in FROM_EMAIL else FROM_EMAIL
+    masked_from = mask_email_safe(RESEND_FROM_EMAIL) if "@" in RESEND_FROM_EMAIL else RESEND_FROM_EMAIL
     print(f"RESEND_API_KEY: exists={'true' if key_exists else 'false'}, length={key_len}, prefix_re={'true' if key_prefix_valid else 'false'}")
     print(f"RESEND_FROM_EMAIL: {masked_from}")
     print(f"EMAIL PROVIDER: RESEND")
@@ -155,6 +156,7 @@ def mask_email_safe(email_str):
 
 def send_email_resend(to_email, subject, html_content, text_content=""):
     masked = mask_email_safe(to_email)
+    print(f"[EMAIL] forgot-password request for {masked}")
     
     if not to_email:
         print(f"❌ [OTP EMAIL] Failed: Recipient email required")
@@ -163,16 +165,18 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
     if not RESEND_API_KEY:
         if ENVIRONMENT == "production":
             print(f"⚠️ [OTP EMAIL] Production email to {masked} requested without RESEND_API_KEY.")
-            return {"success": False, "error_code": "EMAIL_PROVIDER_UNCONFIGURED", "error": "Email delivery service is currently unconfigured. Please contact support.", "status_code": 503, "delivery_status": "unconfigured"}
+            print(f"[EMAIL] Resend failure: status=503")
+            return {"success": False, "error_code": "EMAIL_PROVIDER_UNCONFIGURED", "error": "Email delivery service is currently unconfigured and unavailable. Please contact support.", "status_code": 503, "delivery_status": "unconfigured"}
         else:
             dev_id = "dev_" + secrets.token_hex(8)
             print(f"📬 [DEV EMAIL LOG - RESEND SIMULATOR] To: {masked} | Subject: {subject}")
+            print(f"[EMAIL] Resend success: email_id={dev_id}")
             return {"success": True, "id": dev_id, "status_code": 200, "delivery_status": "sent", "simulated": True}
             
     try:
         url = "https://api.resend.com/emails"
         payload = {
-            "from": FROM_EMAIL,
+            "from": RESEND_FROM_EMAIL,
             "to": [to_email] if isinstance(to_email, str) else to_email,
             "subject": subject,
             "html": html_content
@@ -190,10 +194,12 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
             }
         )
         ctx = ssl.create_default_context()
+        print(f"[EMAIL] Resend request attempted to {masked}")
         with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
             status_code = response.getcode()
             res_data = json.loads(response.read().decode("utf-8"))
             email_id = res_data.get("id")
+            print(f"[EMAIL] Resend success: email_id={email_id}")
             return {"success": True, "id": email_id, "status_code": status_code, "delivery_status": "accepted"}
     except urllib.error.HTTPError as e:
         status_code = e.code
@@ -205,6 +211,7 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
         except Exception:
             pass
             
+        print(f"[EMAIL] Resend failure: status={status_code}")
         # Categorize Provider Error
         if status_code == 429:
             error_code = "EMAIL_PROVIDER_RATE_LIMITED"
@@ -217,6 +224,7 @@ def send_email_resend(to_email, subject, html_content, text_content=""):
             
         return {"success": False, "error_code": error_code, "error": err_msg, "status_code": status_code, "delivery_status": "rejected"}
     except Exception as e:
+        print(f"[EMAIL] Resend failure: status=500")
         return {"success": False, "error_code": "EMAIL_PROVIDER_NETWORK_ERROR", "error": str(e), "status_code": 500, "delivery_status": "failed"}
 
 def get_resend_email_status(email_id):
@@ -272,10 +280,11 @@ def generate_secure_otp(email, ip_address=""):
             "delivery_status": "rate_limited"
         }
         
-    # 2. Invalidate previous pending OTPs
+    # 2. Invalidate previous pending OTPs in both email_otps and otps tables
     cursor.execute("UPDATE email_otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
+    cursor.execute("UPDATE otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
     
-    # 3. Generate 6-digit numeric OTP
+    # 3. Generate 6-digit numeric OTP using secrets
     code = f"{secrets.randbelow(900000) + 100000}"
     salt = secrets.token_hex(16)
     otp_hash = hashlib.sha256((code + salt).encode("utf-8")).hexdigest()
@@ -289,11 +298,17 @@ def generate_secure_otp(email, ip_address=""):
         INSERT INTO email_otps (id, email, otp_hash, salt, attempts, max_attempts, expires_at, is_used, ip_address, created_at)
         VALUES (?, ?, ?, ?, 0, 5, ?, 0, ?, ?)
     """, (otp_id, clean_email, otp_hash, salt, expires_at, ip_address, now_str))
+    
+    cursor.execute("""
+        INSERT INTO otps (id, email, otp_code, expires_at, is_used, created_at)
+        VALUES (?, ?, ?, ?, 0, ?)
+    """, (otp_id, clean_email, code, expires_at, now_str))
+    
     conn.commit()
     conn.close()
     
     # 5. Email Template & Dispatch
-    subject = f"Your Kandid Verification Code: {code}"
+    subject = "Your Kandid verification code"
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b; color: #f4f4f5; padding: 32px 20px; text-align: center; border-radius: 16px; max-width: 480px; margin: 0 auto; border: 1px solid #27272a;">
         <div style="margin-bottom: 24px;">
@@ -308,7 +323,7 @@ def generate_secure_otp(email, ip_address=""):
         <p style="font-size: 11px; color: #52525b;">If you didn't request this code, you can safely ignore this email.</p>
     </div>
     """
-    text = f"Your Kandid Verification Passcode is: {code} (Valid for 10 minutes)."
+    text = f"Your Kandid verification code is: {code} (Valid for 10 minutes)."
     
     dispatch_res = send_email_resend(clean_email, subject, html, text)
     resend_http_status = dispatch_res.get("status_code", "none")
@@ -322,6 +337,7 @@ def generate_secure_otp(email, ip_address=""):
         # Invalidate the OTP record in DB since email could not be delivered
         conn = get_db()
         conn.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_id,))
+        conn.execute("UPDATE otps SET is_used = 1 WHERE id = ?", (otp_id,))
         conn.commit()
         conn.close()
         
@@ -340,19 +356,19 @@ def generate_secure_otp(email, ip_address=""):
                 "delivery_status": "rejected"
             }
         elif err_code == "RESEND_AUTH_FAILURE" or status_code in (401, 403):
-            user_err = "Email delivery authentication failed. Please verify Resend credentials."
+            user_err = "Email delivery is temporarily unavailable. Please contact support or try again later."
             ret_dict = {
                 "success": False,
                 "error_code": "RESEND_AUTH_FAILURE",
                 "error": user_err,
-                "status": 401,
+                "status": 503,
                 "delivery_status": "rejected"
             }
         elif err_code == "RESEND_SENDER_FAILURE" or status_code == 422:
             if "only send testing emails" in raw_err:
                 user_err = "Email service is in test mode and can only deliver to verified developer accounts. Please verify a domain on Resend."
             else:
-                user_err = "Email provider sender configuration error. Please verify the sender domain."
+                user_err = "Email delivery is temporarily unavailable. Please verify the sender domain."
             ret_dict = {
                 "success": False,
                 "error_code": "RESEND_SENDER_FAILURE",
@@ -387,8 +403,8 @@ def generate_secure_otp(email, ip_address=""):
         "message": "Verification code sent to your email.",
         "email": clean_email,
         "email_id": dispatch_res.get("id"),
-        "delivery_status": dispatch_res.get("delivery_status", "accepted"),
-        "dev_otp": code if ENVIRONMENT != 'production' else None
+        "delivery_status": "accepted",
+        "dev_otp": code if ENVIRONMENT != "production" else None
     }
 
 def verify_secure_otp(email, code_entered):
@@ -3181,39 +3197,127 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True, "token": token, "user": user_obj})
 
-        if path == "/api/auth/reset-password":
+        if path == "/api/auth/verify-reset-otp":
             client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "unknown"
-            if not rate_limiter.check_rate_limit(f"reset_pw:{client_ip}", max_requests=10, window_seconds=60):
-                return self.send_json(429, {"error": "Too many attempts. Please wait 1 minute before trying again."})
+            if not rate_limiter.check_rate_limit(f"verify_reset_otp:{client_ip}", max_requests=15, window_seconds=60):
+                return self.send_json(429, {"success": False, "error_code": "KANDID_RATE_LIMITED", "error": "Too many verification attempts. Please wait 1 minute."})
 
-            raw_id = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
-            clean_handle = raw_id.replace("@", "")
+            raw_id = str(body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip()
             otp = str(body.get("otp") or body.get("code") or "").strip()
-            new_password = (body.get("new_password") or body.get("password") or "").strip()
-
+            
             if not raw_id:
-                return self.send_json(400, {"error": "Username or registered email is required"})
+                return self.send_json(400, {"success": False, "error_code": "INVALID_INPUT", "error": "Username or registered email is required"})
             if not otp:
-                return self.send_json(400, {"error": "Verification code is required"})
-            if not new_password or len(new_password) < 4:
-                return self.send_json(400, {"error": "New password must be at least 4 characters long"})
+                return self.send_json(400, {"success": False, "error_code": "INVALID_INPUT", "error": "Verification code is required"})
+
+            normalized_id = raw_id.lower()
+            clean_handle = normalized_id.lstrip("@").strip()
 
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ? OR LOWER(handle) = ?", (clean_handle, raw_id, raw_id))
+            cursor.execute(
+                "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
+                (normalized_id, normalized_id, clean_handle)
+            )
             row = cursor.fetchone()
             if not row:
                 conn.close()
-                return self.send_json(404, {"error": f"Account '{raw_id}' not found."})
+                return self.send_json(404, {"success": False, "error_code": "ACCOUNT_NOT_FOUND", "error": f"Account '{raw_id}' not found."})
 
             u = dict(row)
             user_email = (u.get("email") or "").strip()
-            
+            conn.close()
+
             # Verify OTP
             verify_res = verify_secure_otp(user_email, otp)
             if not verify_res.get("success"):
-                conn.close()
                 return self.send_json(400, verify_res)
+
+            # Generate short-lived password reset token (10 minutes)
+            reset_token = "prt_" + secrets.token_hex(24)
+            reset_id = "pr_" + secrets.token_hex(8)
+            expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+
+            conn = get_db()
+            conn.execute("DELETE FROM password_resets WHERE email = ?", (user_email,))
+            conn.execute(
+                "INSERT INTO password_resets (id, email, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+                (reset_id, user_email, reset_token, expires_at, datetime.now().isoformat())
+            )
+            conn.commit()
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "reset_token": reset_token,
+                "email": user_email,
+                "message": "Verification code accepted. Please enter your new password."
+            })
+
+        if path == "/api/auth/reset-password":
+            client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "unknown"
+            if not rate_limiter.check_rate_limit(f"reset_pw:{client_ip}", max_requests=10, window_seconds=60):
+                return self.send_json(429, {"success": False, "error": "Too many attempts. Please wait 1 minute before trying again."})
+
+            reset_token = str(body.get("reset_token") or body.get("token") or "").strip()
+            new_password = str(body.get("new_password") or body.get("password") or "").strip()
+
+            if not new_password or len(new_password) < 4:
+                return self.send_json(400, {"success": False, "error": "New password must be at least 4 characters long"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            # Check if reset_token flow is used
+            if reset_token:
+                now_str = datetime.now().isoformat()
+                cursor.execute("SELECT * FROM password_resets WHERE token = ? AND expires_at > ?", (reset_token, now_str))
+                reset_row = cursor.fetchone()
+                if not reset_row:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error_code": "INVALID_RESET_TOKEN", "error": "Invalid or expired password reset token. Please request a new code."})
+                
+                reset_data = dict(reset_row)
+                target_email = reset_data["email"]
+
+                cursor.execute("SELECT * FROM users WHERE LOWER(TRIM(email)) = ?", (target_email.lower(),))
+                user_row = cursor.fetchone()
+                if not user_row:
+                    conn.close()
+                    return self.send_json(404, {"success": False, "error_code": "ACCOUNT_NOT_FOUND", "error": "Associated user account not found."})
+
+                u = dict(user_row)
+                # Invalidate the used reset token
+                conn.execute("DELETE FROM password_resets WHERE token = ?", (reset_token,))
+            else:
+                # Direct flow with identifier & otp
+                raw_id = str(body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip()
+                otp = str(body.get("otp") or body.get("code") or "").strip()
+
+                if not raw_id:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Username or registered email is required"})
+                if not otp:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Verification code is required"})
+
+                normalized_id = raw_id.lower()
+                clean_handle = normalized_id.lstrip("@").strip()
+                cursor.execute(
+                    "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
+                    (normalized_id, normalized_id, clean_handle)
+                )
+                user_row = cursor.fetchone()
+                if not user_row:
+                    conn.close()
+                    return self.send_json(404, {"success": False, "error": f"Account '{raw_id}' not found."})
+
+                u = dict(user_row)
+                target_email = (u.get("email") or "").strip()
+                verify_res = verify_secure_otp(target_email, otp)
+                if not verify_res.get("success"):
+                    conn.close()
+                    return self.send_json(400, verify_res)
 
             pw_hash, salt = hash_password(new_password)
             conn.execute("UPDATE users SET password_hash = ?, salt = ?, email_verified = 1 WHERE id = ?", (pw_hash, salt, u["id"]))
