@@ -3068,29 +3068,47 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if path == "/api/auth/forgot-password":
             client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "unknown"
             if not rate_limiter.check_rate_limit(f"forgot_pw:{client_ip}", max_requests=10, window_seconds=60):
-                return self.send_json(429, {"error": "Too many password reset requests. Please wait 1 minute before trying again."})
+                return self.send_json(429, {"success": False, "error_code": "KANDID_RATE_LIMITED", "error": "Too many password reset requests. Please wait 1 minute before trying again."})
                 
-            raw_id = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
-            clean_handle = raw_id.replace("@", "")
+            raw_id = str(body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip()
+            normalized_id = raw_id.lower()
+            clean_handle = normalized_id.lstrip("@").strip()
             
             if not raw_id:
-                return self.send_json(400, {"error": "Username or registered email is required"})
+                return self.send_json(400, {"success": False, "error_code": "INVALID_INPUT", "error": "Username or registered email is required"})
                 
+            identifier_type = "email" if "@" in normalized_id else "handle"
+            
             conn = get_db()
+            db_backend = "postgresql" if isinstance(conn, PostgresConnectionWrapper) else "sqlite"
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE LOWER(handle) = ? OR LOWER(email) = ? OR LOWER(handle) = ?", (clean_handle, raw_id, raw_id))
+            cursor.execute(
+                "SELECT * FROM users WHERE LOWER(TRIM(email)) = ? OR LOWER(TRIM(handle)) = ? OR LOWER(TRIM(handle)) = ?",
+                (normalized_id, normalized_id, clean_handle)
+            )
             row = cursor.fetchone()
+            
+            # Safe diagnostic logging (no full emails, no secrets)
+            print(f"Forgot password lookup: identifier_type={identifier_type}, normalized_lookup=true, account_found={'true' if row else 'false'}, database_backend={db_backend}")
             
             if not row:
                 conn.close()
-                return self.send_json(404, {"error": f"Account '{raw_id}' not found. Please verify your handle or email."})
+                return self.send_json(404, {
+                    "success": False,
+                    "error_code": "ACCOUNT_NOT_FOUND",
+                    "error": f"Account '{raw_id}' not found. Please verify your handle or email."
+                })
                 
             u = dict(row)
             conn.close()
             
             user_email = (u.get("email") or "").strip()
             if not user_email or "@" not in user_email:
-                return self.send_json(400, {"error": "No valid email address linked with this account. Contact support."})
+                return self.send_json(400, {
+                    "success": False,
+                    "error_code": "INVALID_ACCOUNT_EMAIL",
+                    "error": "No valid email address linked with this account. Contact support."
+                })
                 
             res = generate_secure_otp(user_email, client_ip)
             status_code = res.get("status", 200)
