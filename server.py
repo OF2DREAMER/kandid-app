@@ -2142,6 +2142,19 @@ def init_db():
             ('tx_5', 'drop_3', 'comm_2', 'u_casey', 'u_alex', 19.0, 3.80, 15.20, 'completed')
         ])
 
+    # Auto-migrations for users table (is_creator, creator_activated_at)
+    cursor.execute("PRAGMA table_info(users)")
+    users_cols = [row[1] for row in cursor.fetchall()]
+    for col, col_def in [
+        ("is_creator", "INTEGER DEFAULT 0"),
+        ("creator_activated_at", "TEXT DEFAULT ''")
+    ]:
+        if col not in users_cols:
+            try:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {col_def}")
+            except:
+                pass
+
     # Auto-migrations for posts table (primary_community_id, context_community_id, drop_id)
     cursor.execute("PRAGMA table_info(posts)")
     posts_cols = [row[1] for row in cursor.fetchall()]
@@ -5906,7 +5919,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "hosted_drops": hosted_drops,
                 "joined_communities": joined_communities,
                 "authenticity_score": user.get("authenticity_score", 98.8),
-                "role": user.get("role", "student")
+                "role": user.get("role", "student"),
+                "is_creator": int(user.get("is_creator") or 0),
+                "creator_activated_at": user.get("creator_activated_at") or ""
             }
 
             return self.send_json(200, {
@@ -7087,6 +7102,205 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "intelligence": intel
             })
 
+        # Phase 18: Professional Identity & Community Roles Endpoints
+        if path == "/api/creator/status" or path == "/api/user/professional/status":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, handle, is_creator, creator_activated_at, role FROM users WHERE id = ?", (user["id"],))
+            u_row = cursor.fetchone()
+            if not u_row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "User not found"})
+
+            u = dict(u_row)
+            is_creator = bool(u.get("is_creator") == 1 or (u.get("role") or "").lower() in ("creator", "admin", "founder"))
+
+            # Query communities where user is owner or admin
+            cursor.execute("""
+                SELECT c.id, c.name, c.type, c.city, c.members_count, cm.role
+                FROM communities c
+                JOIN community_members cm ON c.id = cm.community_id
+                WHERE cm.user_id = ? AND cm.status = 'active' AND cm.role IN ('owner', 'admin')
+            """, (user["id"],))
+            managed_comms = [dict(r) for r in cursor.fetchall()]
+
+            cursor.execute("SELECT id, name, type, city, members_count FROM communities WHERE creator_id = ?", (user["id"],))
+            for crow in cursor.fetchall():
+                cd = dict(crow)
+                cd["role"] = "owner"
+                if not any(m["id"] == cd["id"] for m in managed_comms):
+                    managed_comms.append(cd)
+
+            cursor.execute("""
+                SELECT COUNT(*) FROM community_drops 
+                WHERE creator_id = ? AND lifecycle_state IN ('SCHEDULED', 'LIVE', 'CHECK_IN', 'REMINDER')
+            """, (user["id"],))
+            active_drops_count = cursor.fetchone()[0]
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "is_creator": is_creator,
+                "creator_activated_at": u.get("creator_activated_at") or "",
+                "role": "CREATOR" if is_creator else "MEMBER",
+                "role_tier": "Community Creator" if is_creator else "Member",
+                "can_create_community": is_creator,
+                "can_host_drops": is_creator,
+                "can_view_earnings": is_creator or len(managed_comms) > 0,
+                "managed_communities_count": len(managed_comms),
+                "managed_communities": managed_comms,
+                "active_drops_count": active_drops_count
+            })
+
+        if path == "/api/creator/dashboard":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, handle, is_creator, creator_activated_at, role FROM users WHERE id = ?", (user["id"],))
+            u_row = cursor.fetchone()
+            is_creator = bool(u_row and (u_row["is_creator"] == 1 or (u_row["role"] or "").lower() in ("creator", "admin", "founder")))
+
+            # Also check if user is owner/admin of any community
+            cursor.execute("SELECT 1 FROM community_members WHERE user_id = ? AND role IN ('owner', 'admin') AND status = 'active' LIMIT 1", (user["id"],))
+            is_comm_operator = bool(cursor.fetchone())
+            if not is_comm_operator:
+                cursor.execute("SELECT 1 FROM communities WHERE creator_id = ? LIMIT 1", (user["id"],))
+                is_comm_operator = bool(cursor.fetchone())
+
+            if not is_creator and not is_comm_operator:
+                conn.close()
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "CREATOR_REQUIRED",
+                    "code": "CREATOR_REQUIRED",
+                    "message": "Community Creator activation required to access Creator Dashboard."
+                })
+
+            # 1. Managed Communities
+            cursor.execute("""
+                SELECT c.id, c.name, c.type, c.city, c.icon, c.members_count, cm.role, c.created_at
+                FROM communities c
+                JOIN community_members cm ON c.id = cm.community_id
+                WHERE cm.user_id = ? AND cm.status = 'active' AND cm.role IN ('owner', 'admin')
+                ORDER BY c.created_at DESC
+            """, (user["id"],))
+            managed_comms = [dict(r) for r in cursor.fetchall()]
+            cursor.execute("SELECT id, name, type, city, icon, members_count, created_at FROM communities WHERE creator_id = ? ORDER BY created_at DESC", (user["id"],))
+            for crow in cursor.fetchall():
+                cd = dict(crow)
+                cd["role"] = "owner"
+                if not any(m["id"] == cd["id"] for m in managed_comms):
+                    managed_comms.append(cd)
+
+            # 2. Drops Hosted
+            cursor.execute("""
+                SELECT id, community_id, community_name, title, description, date_str, time_str,
+                       capacity, registered_count, price, price_paise, lifecycle_state, created_at
+                FROM community_drops
+                WHERE creator_id = ?
+                ORDER BY created_at DESC
+            """, (user["id"],))
+            all_drops = [dict(r) for r in cursor.fetchall()]
+            for d in all_drops:
+                d["price_paid"] = "₹19"
+                d["spots_left"] = max(0, d.get("capacity", 20) - d.get("registered_count", 0))
+
+            upcoming_drops = [d for d in all_drops if d.get("lifecycle_state") in ("SCHEDULED", "DRAFT", "REMINDER")]
+            active_drops = [d for d in all_drops if d.get("lifecycle_state") in ("LIVE", "CHECK_IN", "ACTIVE")]
+            past_drops = [d for d in all_drops if d.get("lifecycle_state") in ("CLOSED", "SETTLED")]
+
+            # 3. Attendees & Verified Check-ins
+            drop_ids = [d["id"] for d in all_drops]
+            total_attendees = 0
+            total_checkins = 0
+            if drop_ids:
+                placeholders = ', '.join(['?'] * len(drop_ids))
+                cursor.execute(f"SELECT COUNT(*), SUM(is_checked_in) FROM community_drop_registrations WHERE drop_id IN ({placeholders}) AND status = 'confirmed'", drop_ids)
+                row_att = cursor.fetchone()
+                if row_att:
+                    total_attendees = row_att[0] or 0
+                    total_checkins = row_att[1] or 0
+
+            # 4. Earnings Summary (₹19 fixed economic invariant)
+            cursor.execute("""
+                SELECT * FROM financial_ledger 
+                WHERE creator_id = ? AND payment_status = 'successful'
+            """, (user["id"],))
+            ledger_rows = [dict(r) for r in cursor.fetchall()]
+            if ledger_rows:
+                gross_paise = sum(r.get("gross_amount_paise", 1900) for r in ledger_rows)
+                creator_amount_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows)
+                platform_fee_paise = sum(r.get("platform_fee_paise", 380) for r in ledger_rows)
+                settled_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows if r.get("settlement_status") == "settled")
+                pending_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows if r.get("settlement_status") != "settled")
+            else:
+                cursor.execute("""
+                    SELECT * FROM community_transactions 
+                    WHERE creator_id = ? AND status = 'completed'
+                """, (user["id"],))
+                tx_rows = [dict(r) for r in cursor.fetchall()]
+                gross_paise = int(sum(r.get("gross_amount", 19.0) * 100 for r in tx_rows))
+                creator_amount_paise = int(sum(r.get("creator_amount", 15.20) * 100 for r in tx_rows))
+                platform_fee_paise = int(sum(r.get("platform_fee", 3.80) * 100 for r in tx_rows))
+                settled_paise = 0
+                pending_paise = creator_amount_paise
+
+            creator_share_rupees = creator_amount_paise / 100.0
+            settled_rupees = settled_paise / 100.0
+            pending_rupees = pending_paise / 100.0
+            earnings_summary = {
+                "currency": "INR",
+                "price_per_attendee_rupees": 19.0,
+                "creator_share_percentage": 80,
+                "creator_cut_per_attendee_rupees": 15.20,
+                "platform_fee_cut_per_attendee_rupees": 3.80,
+                "gross_rupees": gross_paise / 100.0,
+                "creator_share_rupees": creator_share_rupees,
+                "creator_earnings_rupees": creator_share_rupees,
+                "platform_fee_rupees": platform_fee_paise / 100.0,
+                "settled_rupees": settled_rupees,
+                "pending_rupees": pending_rupees,
+                "gross_paise": gross_paise,
+                "creator_share_paise": creator_amount_paise,
+                "platform_fee_paise": platform_fee_paise,
+                "settled_paise": settled_paise,
+                "pending_paise": pending_paise,
+                "fixed_price_model": "₹19 per attendee (80% creator, 20% platform)"
+            }
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "overview": {
+                    "spaces_managed": len(managed_comms),
+                    "communities_managed_count": len(managed_comms),
+                    "total_drops_hosted": len(all_drops),
+                    "active_drops": len(active_drops),
+                    "upcoming_drops_count": len(upcoming_drops),
+                    "active_drops_count": len(active_drops),
+                    "total_attendees": total_attendees,
+                    "total_registered_attendees": total_attendees,
+                    "verified_checkins": total_checkins,
+                    "verified_checkins_count": total_checkins
+                },
+                "spaces": managed_comms,
+                "communities": managed_comms,
+                "drops": all_drops,
+                "drops_by_state": {
+                    "upcoming": upcoming_drops,
+                    "active": active_drops,
+                    "past": past_drops
+                },
+                "earnings": earnings_summary
+            })
+
         return super().do_GET()
 
     def do_POST(self):
@@ -7094,10 +7308,63 @@ class KandidHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         body = self.read_json_body()
 
+        # Phase 18: Professional Creator Activation
+        if path == "/api/creator/activate" or path == "/api/user/professional/activate":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, handle, is_creator, creator_activated_at, role FROM users WHERE id = ?", (user["id"],))
+            u_before = cursor.fetchone()
+            was_already_active = bool(u_before and u_before["is_creator"] == 1)
+            status_str = "already_active" if was_already_active else "activated"
+
+            now_iso = datetime.now().isoformat()
+            cursor.execute("""
+                UPDATE users 
+                SET is_creator = 1, 
+                    creator_activated_at = CASE WHEN creator_activated_at IS NULL OR creator_activated_at = '' THEN ? ELSE creator_activated_at END 
+                WHERE id = ?
+            """, (now_iso, user["id"]))
+            conn.commit()
+
+            cursor.execute("SELECT id, handle, is_creator, creator_activated_at, role FROM users WHERE id = ?", (user["id"],))
+            u_row = cursor.fetchone()
+            u = dict(u_row) if u_row else {}
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "status": status_str,
+                "is_creator": 1,
+                "creator_activated_at": u.get("creator_activated_at") or now_iso,
+                "role": "CREATOR",
+                "role_tier": "Community Creator",
+                "message": "Community Creator identity activated. You can now create spaces and host experiences."
+            })
+
         if path == "/api/community/create":
             user = get_current_user(self.headers)
             if not user:
                 return self.send_json(401, {"error": "Authentication required"})
+            
+            conn = get_db()
+            cursor = conn.cursor()
+
+            # Phase 18: Server-authoritative Community Creation Eligibility Check
+            cursor.execute("SELECT is_creator, role FROM users WHERE id = ?", (user["id"],))
+            u_row = cursor.fetchone()
+            is_eligible = bool(u_row and (u_row["is_creator"] == 1 or (u_row["role"] or "").lower() in ("creator", "admin", "founder")))
+            if not is_eligible:
+                conn.close()
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "CREATOR_REQUIRED",
+                    "code": "CREATOR_REQUIRED",
+                    "message": "Community Creator activation required. Activate in Settings to create spaces."
+                })
             
             name = (body.get("name") or "").strip()
             comm_type = (body.get("type") or "Interest").strip().capitalize()
@@ -7106,17 +7373,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
             visibility = (body.get("visibility") or "public").strip().lower()
 
             if len(name) < 3:
+                conn.close()
                 return self.send_json(400, {"error": "Community name must be at least 3 characters."})
             
             banned_words = ["test1234", "spam", "fake"]
             if any(bw in name.lower() for bw in banned_words):
+                conn.close()
                 return self.send_json(400, {"error": "Please provide a valid authentic community name."})
 
             icon_map = {"Place": "📍", "Campus": "🎓", "Interest": "📸" if "photo" in name.lower() else "💻" if "tech" in name.lower() or "code" in name.lower() else "✨", "Event": "⚡"}
             icon = icon_map.get(comm_type, "📍")
 
             comm_id = "comm_" + secrets.token_hex(4)
-            conn = get_db()
             try:
                 conn.execute("""
                     INSERT INTO communities (id, name, type, description, city, creator_id, creator_handle, icon, visibility, members_count, status)

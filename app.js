@@ -2376,6 +2376,10 @@ window.toggleJoinCommunity = toggleJoinCommunity;
 state.newCommunityType = 'Interest';
 
 function openCreateCommunityModal() {
+  if (state.currentUser && !state.currentUser.is_creator && !['admin', 'founder', 'creator'].includes(state.currentUser.role)) {
+    openCreatorOnboardingModal();
+    return;
+  }
   var modal = document.getElementById('createCommunityModal');
   if (modal) modal.style.display = 'flex';
 }
@@ -2436,7 +2440,13 @@ async function submitNewCommunity() {
     await openCampusPage(res.community.name);
     if (typeof loadMoreAroundYou === 'function') loadMoreAroundYou();
   } else {
-    showToast(res && res.error ? res.error : 'Could not create community.');
+    if (res && res.error === 'CREATOR_REQUIRED') {
+      closeCreateCommunityModal();
+      openCreatorOnboardingModal();
+      showToast('Community Creator activation required to launch spaces.');
+    } else {
+      showToast(res && res.error ? res.error : 'Could not create community.');
+    }
   }
 }
 window.submitNewCommunity = submitNewCommunity;
@@ -6736,14 +6746,219 @@ function openHiddenContentModal() {
 }
 window.openHiddenContentModal = openHiddenContentModal;
 
+// ===================================================================
+// PHASE 18: PROFESSIONAL IDENTITY, COMMUNITY ROLES & CREATOR DASHBOARD
+// ===================================================================
+
+function renderSettingsCreatorSection(user) {
+  var u = user || state.currentUser;
+  var isCreator = false;
+  if (u) {
+    if (u.is_creator === 1 || u.is_creator === true || u.is_creator === '1') {
+      isCreator = true;
+    } else if (['admin', 'founder', 'creator'].includes(u.role)) {
+      isCreator = true;
+    }
+  }
+
+  var becomeRow = document.getElementById('settingsBecomeCreatorRow');
+  var dashRow = document.getElementById('settingsCreatorDashboardRow');
+  var createRow = document.getElementById('settingsCreateCommunityRow');
+
+  if (isCreator) {
+    if (becomeRow) becomeRow.style.display = 'none';
+    if (dashRow) dashRow.style.display = 'flex';
+    if (createRow) createRow.style.display = 'flex';
+  } else {
+    if (becomeRow) becomeRow.style.display = 'flex';
+    if (dashRow) dashRow.style.display = 'none';
+    if (createRow) createRow.style.display = 'none';
+  }
+}
+window.renderSettingsCreatorSection = renderSettingsCreatorSection;
+
+function openCreatorOnboardingModal() {
+  var modal = document.getElementById('creatorOnboardingModal');
+  if (modal) modal.style.display = 'flex';
+}
+window.openCreatorOnboardingModal = openCreatorOnboardingModal;
+
+function closeCreatorOnboardingModal() {
+  var modal = document.getElementById('creatorOnboardingModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeCreatorOnboardingModal = closeCreatorOnboardingModal;
+
+async function submitCreatorActivation() {
+  var btn = document.getElementById('btnActivateCreator');
+  var origText = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>ACTIVATING...</span>';
+  }
+
+  try {
+    var res = await apiRequest('/api/creator/activate', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+
+    if (res && (res.success || res.status === 'already_active' || res.status === 'activated')) {
+      if (state.currentUser) {
+        state.currentUser.is_creator = 1;
+        state.currentUser.creator_activated_at = res.creator_activated_at || new Date().toISOString();
+      }
+      try {
+        var stored = localStorage.getItem('kandid_user');
+        if (stored) {
+          var parsed = JSON.parse(stored);
+          parsed.is_creator = 1;
+          localStorage.setItem('kandid_user', JSON.stringify(parsed));
+        }
+      } catch (e) {}
+
+      closeCreatorOnboardingModal();
+      renderSettingsCreatorSection(state.currentUser);
+      if (typeof playTactileFeedback === 'function') playTactileFeedback('xp');
+      showToast("You're now a Community Creator! ✦");
+
+      setTimeout(function() {
+        openCreatorDashboardModal();
+      }, 300);
+    } else {
+      showToast(res && res.error ? res.error : 'Failed to activate creator profile');
+    }
+  } catch (err) {
+    console.error('Creator activation error:', err);
+    showToast('Network error activating creator profile');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  }
+}
+window.submitCreatorActivation = submitCreatorActivation;
+
+async function openCreatorDashboardModal() {
+  var modal = document.getElementById('creatorDashboardModal');
+  if (modal) modal.style.display = 'flex';
+
+  var spacesCountEl = document.getElementById('creatorDashSpacesCount');
+  var dropsCountEl = document.getElementById('creatorDashDropsCount');
+  var attendeesCountEl = document.getElementById('creatorDashAttendeesCount');
+  var checkinsCountEl = document.getElementById('creatorDashCheckinsCount');
+  var commsListEl = document.getElementById('creatorDashCommunitiesList');
+  var dropsListEl = document.getElementById('creatorDashDropsList');
+  var shareEl = document.getElementById('creatorDashEarningsShare');
+  var settledEl = document.getElementById('creatorDashEarningsSettled');
+
+  try {
+    var res = await apiRequest('/api/creator/dashboard');
+    if (!res || !res.success) {
+      if (res && res.error === 'CREATOR_REQUIRED') {
+        closeCreatorDashboardModal();
+        openCreatorOnboardingModal();
+        showToast('Please activate Community Creator profile first.');
+        return;
+      }
+      showToast(res && res.error ? res.error : 'Could not load Creator Dashboard');
+      return;
+    }
+
+    var ov = res.overview || {};
+    var earn = res.earnings || {};
+
+    if (spacesCountEl) spacesCountEl.textContent = ov.spaces_managed || 0;
+    if (dropsCountEl) dropsCountEl.textContent = ov.active_drops || 0;
+    if (attendeesCountEl) attendeesCountEl.textContent = ov.total_attendees || 0;
+    if (checkinsCountEl) checkinsCountEl.textContent = ov.verified_checkins || 0;
+
+    if (shareEl) shareEl.textContent = '₹' + Number(earn.creator_earnings_rupees || 0).toFixed(2);
+    if (settledEl) settledEl.textContent = '₹' + Number(earn.settled_rupees || 0).toFixed(2);
+
+    // Communities / Spaces
+    if (commsListEl) {
+      var spaces = res.spaces || [];
+      if (spaces.length > 0) {
+        commsListEl.innerHTML = spaces.map(function(s) {
+          var role = (s.role || s.user_role || 'CREATOR').toUpperCase();
+          var roleBadgeClass = role === 'OWNER' ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30';
+          return '<div class="p-3 rounded-2xl bg-zinc-950 border border-white/[.06] flex items-center justify-between text-xs">' +
+            '<div class="flex items-center gap-2.5 min-w-0">' +
+              '<span class="text-base flex-shrink-0">' + (s.icon || '📍') + '</span>' +
+              '<div class="min-w-0">' +
+                '<span class="text-white font-bold block truncate">' + escapeHtml(s.name) + '</span>' +
+                '<span class="text-[9px] font-mono-tag text-zinc-500 block truncate">' + (s.members_count || 1) + ' members · ' + escapeHtml(s.city || 'Campus') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="flex items-center gap-2 flex-shrink-0">' +
+              '<span class="text-[9px] font-mono-tag font-bold px-2 py-0.5 rounded border ' + roleBadgeClass + '">' + escapeHtml(role) + '</span>' +
+              '<button onclick="closeCreatorDashboardModal(); openCampusPage(\'' + escapeHtml(s.name).replace(/'/g, "\\'") + '\')" class="text-[10px] font-mono-tag font-bold text-amber-400 hover:text-amber-300 p-1">OPEN ›</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } else {
+        commsListEl.innerHTML = '<div class="p-3 text-center text-xs text-zinc-500 font-mono-tag rounded-xl bg-zinc-950/60 border border-white/[.04]">No spaces created yet. Tap + New Space to begin.</div>';
+      }
+    }
+
+    // Hosted Drops
+    if (dropsListEl) {
+      var drops = res.drops || [];
+      if (drops.length > 0) {
+        dropsListEl.innerHTML = drops.map(function(d) {
+          var st = d.lifecycle_state || 'DRAFT';
+          var isLive = st === 'LIVE' || st === 'CHECK_IN';
+          var badgeColor = isLive ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' : 'text-amber-400 bg-amber-500/10 border-amber-500/30';
+          return '<div class="p-3 rounded-2xl bg-zinc-950 border border-white/[.06] space-y-2 text-xs">' +
+            '<div class="flex justify-between items-start gap-2">' +
+              '<div class="min-w-0">' +
+                '<span class="text-white font-bold block truncate">' + escapeHtml(d.title) + '</span>' +
+                '<span class="text-[9px] font-mono-tag text-zinc-500 block truncate">' + escapeHtml(d.community_name || 'Community') + ' · ' + escapeHtml(d.date_str || '') + ' ' + escapeHtml(d.time_str || '') + '</span>' +
+              '</div>' +
+              '<span class="text-[9px] font-mono-tag font-bold uppercase px-2 py-0.5 rounded border flex-shrink-0 ' + badgeColor + '">' + escapeHtml(st) + '</span>' +
+            '</div>' +
+            '<div class="flex items-center justify-between text-[10px] font-mono-tag text-zinc-400 pt-1.5 border-t border-zinc-900">' +
+              '<span>' + (d.registered_count || 0) + ' / ' + (d.capacity || 20) + ' Registered (' + (d.checked_in_count || 0) + ' Checked In)</span>' +
+              '<button onclick="closeCreatorDashboardModal(); openDropExperience(\'' + escapeHtml(d.id) + '\')" class="text-amber-400 hover:text-amber-300 font-bold">VIEW DROP ›</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+      } else {
+        dropsListEl.innerHTML = '<div class="p-3 text-center text-xs text-zinc-500 font-mono-tag rounded-xl bg-zinc-950/60 border border-white/[.04]">No active drops. Schedule a drop to bring people together.</div>';
+      }
+    }
+  } catch (err) {
+    console.error('Creator dashboard fetch error:', err);
+    showToast('Failed to load creator dashboard data');
+  }
+}
+window.openCreatorDashboardModal = openCreatorDashboardModal;
+
+function closeCreatorDashboardModal() {
+  var modal = document.getElementById('creatorDashboardModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeCreatorDashboardModal = closeCreatorDashboardModal;
+
 async function loadSettingsScreen() {
   var data = await apiRequest('/api/me');
   if (data && data.user) {
     var u = data.user;
+    if (state.currentUser) {
+      state.currentUser.is_creator = u.is_creator;
+      state.currentUser.creator_activated_at = u.creator_activated_at;
+    }
     var userEl = document.getElementById('settingsUsername');
     var campusEl = document.getElementById('settingsCampus');
     if (userEl) userEl.textContent = '@' + (u.handle || u.username || 'user');
     if (campusEl) campusEl.textContent = u.campus || 'North City University';
+    if (typeof renderSettingsCreatorSection === 'function') {
+      renderSettingsCreatorSection(u);
+    }
+  } else if (state.currentUser && typeof renderSettingsCreatorSection === 'function') {
+    renderSettingsCreatorSection(state.currentUser);
   }
 
   var settingKeys = ['moment_reminders', 'messages', 'community_activity', 'sound', 'haptics', 'data_saver'];
