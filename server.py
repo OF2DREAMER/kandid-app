@@ -4359,22 +4359,24 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/community/pulse":
             user = get_current_user(self.headers)
-            target_comm = query.get("community", [""])[0].strip() or query.get("campus", [""])[0].strip()
+            target_comm = query.get("community_id", [""])[0].strip() or query.get("community", [""])[0].strip() or query.get("campus", [""])[0].strip()
             if not target_comm:
                 target_comm = user.get("campus", "North City University") if user else "North City University"
 
             conn = get_db()
             cursor = conn.cursor()
             
-            cursor.execute("SELECT * FROM communities WHERE LOWER(name) = ? OR name = ?", (target_comm.lower(), target_comm))
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (target_comm, target_comm.lower(), target_comm))
             comm_row = cursor.fetchone()
+            comm_id = comm_row["id"] if comm_row else target_comm
+            comm_name = comm_row["name"] if comm_row else target_comm
             comm_city = comm_row["city"] if comm_row else "Supaul, Bihar"
             
             cursor.execute("""
                 SELECT * FROM posts
-                WHERE is_private = 0 AND (campus = ? OR circle = 'campus' OR circle = 'foryou')
+                WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ? OR circle = 'campus' OR circle = 'foryou')
                 ORDER BY created_at DESC LIMIT 15
-            """, (target_comm,))
+            """, (comm_name, comm_id, comm_id))
             pulse_posts = [dict(r) for r in cursor.fetchall()]
             for p in pulse_posts:
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
@@ -4383,16 +4385,49 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 loc = p.get("location_city") or p.get("campus") or "Quad"
                 aname = loc.replace("Near ", "").strip() or "Quad"
                 p["area_tag"] = f"Near {aname} · {p['timeAgo']}"
+                if p.get("drop_id"):
+                    p["drop_context"] = {"drop_id": p["drop_id"], "label": "From this Drop"}
+
+            # Server-authoritative activity state: LIVE NOW, ACTIVE, or QUIET RIGHT NOW
+            cursor.execute("""
+                SELECT 1 FROM community_drops 
+                WHERE (community_id = ? OR community_name = ?) 
+                  AND lifecycle_state IN ('LIVE', 'ACTIVE', 'CHECK_IN', 'live', 'active', 'check_in')
+                LIMIT 1
+            """, (comm_id, comm_name))
+            has_live_drop = bool(cursor.fetchone())
+
+            pulse_state = "QUIET RIGHT NOW"
+            if has_live_drop:
+                pulse_state = "LIVE NOW"
+            elif len(pulse_posts) > 0:
+                # Check how recent the latest moment is
+                latest_dt_str = pulse_posts[0].get("created_at", "")
+                try:
+                    latest_dt = datetime.fromisoformat(latest_dt_str.replace("Z", "+00:00"))
+                    if latest_dt.tzinfo is None:
+                        latest_dt = latest_dt.replace(tzinfo=timezone.utc)
+                    age_seconds = (datetime.now(timezone.utc) - latest_dt).total_seconds()
+                    if age_seconds <= 7200: # 2 hours
+                        pulse_state = "LIVE NOW"
+                    elif age_seconds <= 86400: # 24 hours
+                        pulse_state = "ACTIVE"
+                    else:
+                        pulse_state = "QUIET RIGHT NOW"
+                except:
+                    pulse_state = "ACTIVE"
 
             conn.close()
             return self.send_json(200, {
                 "success": True,
                 "community": {
-                    "name": target_comm,
+                    "id": comm_id,
+                    "name": comm_name,
                     "location": comm_city,
                     "tagline": "A living layer of what's happening around here right now.",
                     "active_count": max(len(pulse_posts), 4)
                 },
+                "pulse_state": pulse_state,
                 "moments": pulse_posts
             })
 
@@ -4510,18 +4545,45 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute(query_sql, tuple(params))
             raw_drops = cursor.fetchall()
             drops = []
+            first_upcoming_tagged = False
             for r in raw_drops:
                 d = dict(r)
                 price_paise = int(d.get("price_paise") or 1900)
                 d["price_paise"] = price_paise
                 d["price"] = float(price_paise) / 100.0
                 d["currency"] = d.get("currency") or "INR"
-                d["lifecycle_state"] = d.get("lifecycle_state") or ("SCHEDULED" if d.get("status") == "active" else "DRAFT")
+                state_str = d.get("lifecycle_state") or ("SCHEDULED" if d.get("status") == "active" else "DRAFT")
+                d["lifecycle_state"] = state_str
                 cap = int(d.get("capacity") or 20)
                 reg_cnt = int(d.get("registered_count") or 0)
                 d["capacity"] = cap
                 d["registered_count"] = reg_cnt
                 d["remaining_capacity"] = max(0, cap - reg_cnt)
+
+                # Phase 17 Contextual Labels & Continuity
+                if state_str in ("LIVE", "ACTIVE", "CHECK_IN", "live", "active", "check_in"):
+                    d["contextual_label"] = "Happening now"
+                elif state_str in ("SCHEDULED", "REMINDER", "UPCOMING", "scheduled", "reminder", "upcoming"):
+                    if not first_upcoming_tagged:
+                        d["contextual_label"] = "Next shared experience"
+                        first_upcoming_tagged = True
+                    else:
+                        d["contextual_label"] = "Upcoming experience"
+                elif state_str in ("CLOSED", "SETTLEMENT", "MEMORY", "closed", "settlement", "memory"):
+                    d["contextual_label"] = "Completed experience"
+                    d["memory_id"] = f"mem_{d['id']}"
+                else:
+                    d["contextual_label"] = "Community experience"
+
+                # Phase 17 Coordination Status for registered users
+                if d.get("is_registered"):
+                    if d.get("is_checked_in"):
+                        d["coordination_status"] = "Checked in ✓"
+                    elif state_str in ("CHECK_IN", "LIVE", "ACTIVE", "check_in", "live", "active"):
+                        d["coordination_status"] = "Check-in ready"
+                    else:
+                        d["coordination_status"] = "Spot confirmed"
+
                 drops.append(d)
 
             conn.close()
@@ -4605,11 +4667,32 @@ class KandidHandler(SimpleHTTPRequestHandler):
             else:
                 d["pulse_status"] = "QUIET"
 
+            # Phase 17 Attendee Coordination block (if registered or host)
+            coordination = None
+            if is_registered or is_host:
+                approx_venue = d.get("location_name") or d.get("area") or d.get("community_name") or "Campus Community Area"
+                checkin_status_str = "Checked in ✓" if is_checked_in else ("Check-in open now" if d["lifecycle_state"] in ("CHECK_IN", "LIVE", "ACTIVE", "check_in", "live", "active") else "Check-in opens before experience starts")
+                coordination = {
+                    "drop_id": d["id"],
+                    "title": d["title"],
+                    "community_id": d.get("community_id", ""),
+                    "community_name": d.get("community_name", ""),
+                    "registered_status": "Spot confirmed",
+                    "checkin_status": checkin_status_str,
+                    "is_checked_in": is_checked_in,
+                    "experience_time": f"{d.get('date_str', 'Upcoming')} · {d.get('time_str', 'TBD')}",
+                    "approximate_venue": approx_venue,
+                    "host_handle": d.get("creator_handle", "kandid"),
+                    "instructions": f"Meet with host @{d.get('creator_handle', 'kandid')} at {approx_venue}. Tap Check In on your phone when present.",
+                    "price_paid": "₹19"
+                }
+
             conn.close()
             return self.send_json(200, {
                 "success": True,
                 "drop": d,
-                "moments": raw_moments
+                "moments": raw_moments,
+                "coordination": coordination
             })
 
         if path == "/api/drops/moments":
@@ -4629,8 +4712,88 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
                 m["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
                 m["timeAgo"] = format_time_ago(m.get("created_at", ""))
+                if m.get("drop_id"):
+                    m["drop_context"] = {"drop_id": m["drop_id"], "label": "From this Drop"}
             conn.close()
             return self.send_json(200, {"success": True, "moments": raw_moments})
+
+        # Phase 17: Minimal Attendee Coordination Endpoint
+        if path == "/api/drops/coordination":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
+
+            user_id = user["id"]
+            drop_id = query.get("drop_id", [""])[0].strip() or query.get("id", [""])[0].strip()
+            if not drop_id:
+                return self.send_json(400, {"success": False, "error": "drop_id is required", "code": "BAD_REQUEST"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM community_drops WHERE id = ?", (drop_id,))
+            drop_row = cursor.fetchone()
+            if not drop_row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Experience not found", "code": "NOT_FOUND"})
+
+            d = dict(drop_row)
+
+            # Moderation & block filters
+            if d.get("moderation_status") in ("hidden", "removed", "suspended"):
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Experience not found", "code": "NOT_FOUND"})
+
+            if d.get("creator_id"):
+                cursor.execute("SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)",
+                               (user_id, d["creator_id"], d["creator_id"], user_id))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json(404, {"success": False, "error": "Experience not found", "code": "NOT_FOUND"})
+
+            # Check registration or host status
+            cursor.execute("SELECT is_checked_in FROM community_drop_registrations WHERE drop_id = ? AND user_id = ?", (drop_id, user_id))
+            reg_row = cursor.fetchone()
+            is_host = (d.get("creator_id") == user_id) or (d.get("creator_handle") == user.get("handle")) or (user.get("role") == "admin")
+
+            if not reg_row and not is_host:
+                conn.close()
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "Attendee coordination context is only available for registered participants.",
+                    "code": "NOT_REGISTERED"
+                })
+
+            is_checked_in = bool(reg_row["is_checked_in"]) if reg_row else False
+            state_str = (d.get("lifecycle_state") or "SCHEDULED").upper()
+
+            if is_checked_in:
+                checkin_status_str = "Checked in ✓"
+            elif state_str in ("CHECK_IN", "LIVE", "ACTIVE"):
+                checkin_status_str = "Check-in is open now"
+            else:
+                checkin_status_str = "Check-in opens before experience starts"
+
+            approx_venue = d.get("location_name") or d.get("area") or d.get("community_name") or "Campus Community Area"
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "coordination": {
+                    "drop_id": d["id"],
+                    "title": d["title"],
+                    "community_id": d.get("community_id", ""),
+                    "community_name": d.get("community_name", ""),
+                    "registered_status": "Spot confirmed",
+                    "checkin_status": checkin_status_str,
+                    "is_checked_in": is_checked_in,
+                    "experience_time": f"{d.get('date_str', 'Upcoming')} · {d.get('time_str', 'TBD')}",
+                    "approximate_venue": approx_venue,
+                    "host_handle": d.get("creator_handle", "kandid"),
+                    "instructions": f"Meet with host @{d.get('creator_handle', 'kandid')} at {approx_venue}. Tap Check In on your phone when present.",
+                    "price_paid": "₹19"
+                }
+            })
 
         if path == "/api/community/manage":
             user = get_current_user(self.headers)
@@ -5087,14 +5250,49 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Query available Drops for this community
             cursor.execute("SELECT * FROM community_drops WHERE community_id = ? OR community_name = ? ORDER BY created_at DESC", (comm_id, comm_name))
             drop_rows = cursor.fetchall()
+
+            # User registrations for drops in this community
+            user_regs = {}
+            if user:
+                cursor.execute("SELECT drop_id, is_checked_in FROM community_drop_registrations WHERE user_id = ?", (user["id"],))
+                user_regs = {row["drop_id"]: bool(row["is_checked_in"]) for row in cursor.fetchall()}
+
             drops_list = []
+            first_upcoming_tagged = False
             for dr in drop_rows:
                 dd = dict(dr)
                 price_p = int(dd.get("price_paise") or 1900)
                 dd["price_paise"] = price_p
                 dd["price"] = float(price_p) / 100.0
                 dd["currency"] = dd.get("currency") or "INR"
-                dd["lifecycle_state"] = dd.get("lifecycle_state") or ("SCHEDULED" if dd.get("status") == "active" else "DRAFT")
+                state_str = dd.get("lifecycle_state") or ("SCHEDULED" if dd.get("status") == "active" else "DRAFT")
+                dd["lifecycle_state"] = state_str
+                dd["is_registered"] = dd["id"] in user_regs
+                dd["is_checked_in"] = user_regs.get(dd["id"], False)
+
+                # Contextual labels & memory links
+                if state_str in ("LIVE", "ACTIVE", "CHECK_IN", "live", "active", "check_in"):
+                    dd["contextual_label"] = "Happening now"
+                elif state_str in ("SCHEDULED", "REMINDER", "UPCOMING", "scheduled", "reminder", "upcoming"):
+                    if not first_upcoming_tagged:
+                        dd["contextual_label"] = "Next shared experience"
+                        first_upcoming_tagged = True
+                    else:
+                        dd["contextual_label"] = "Upcoming experience"
+                elif state_str in ("CLOSED", "SETTLEMENT", "MEMORY", "closed", "settlement", "memory"):
+                    dd["contextual_label"] = "Completed experience"
+                    dd["memory_id"] = f"mem_{dd['id']}"
+                else:
+                    dd["contextual_label"] = "Community experience"
+
+                if dd["is_registered"]:
+                    if dd["is_checked_in"]:
+                        dd["coordination_status"] = "Checked in ✓"
+                    elif state_str in ("CHECK_IN", "LIVE", "ACTIVE", "check_in", "live", "active"):
+                        dd["coordination_status"] = "Check-in ready"
+                    else:
+                        dd["coordination_status"] = "Spot confirmed"
+
                 drops_list.append(dd)
 
             campus_info = {
@@ -5115,9 +5313,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # 2. Campus Pulse & Moments Query
             cursor.execute("""
                 SELECT * FROM posts
-                WHERE is_private = 0 AND (campus = ? OR circle = 'campus' OR circle = 'foryou')
+                WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ? OR circle = 'campus' OR circle = 'foryou')
                 ORDER BY created_at DESC LIMIT 20
-            """, (target_campus,))
+            """, (target_campus, comm_id, comm_id))
             pulse_posts = [dict(r) for r in cursor.fetchall()]
             for p in pulse_posts:
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
@@ -5125,6 +5323,29 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 p["timeAgo"] = format_time_ago(p.get("created_at", ""))
                 loc = p.get("location_city") or p.get("campus") or "Quad"
                 p["area"] = loc.replace("Near ", "").strip() or "Quad"
+                if p.get("drop_id"):
+                    p["drop_context"] = {"drop_id": p["drop_id"], "label": "From this Drop"}
+
+            # Compute authoritative pulse_state
+            has_live_drop = any(d.get("lifecycle_state") in ("LIVE", "ACTIVE", "CHECK_IN", "live", "active", "check_in") for d in drops_list)
+            pulse_state = "QUIET RIGHT NOW"
+            if has_live_drop:
+                pulse_state = "LIVE NOW"
+            elif len(pulse_posts) > 0:
+                latest_dt_str = pulse_posts[0].get("created_at", "")
+                try:
+                    latest_dt = datetime.fromisoformat(latest_dt_str.replace("Z", "+00:00"))
+                    if latest_dt.tzinfo is None:
+                        latest_dt = latest_dt.replace(tzinfo=timezone.utc)
+                    age_seconds = (datetime.now(timezone.utc) - latest_dt).total_seconds()
+                    if age_seconds <= 7200:
+                        pulse_state = "LIVE NOW"
+                    elif age_seconds <= 86400:
+                        pulse_state = "ACTIVE"
+                    else:
+                        pulse_state = "QUIET RIGHT NOW"
+                except:
+                    pulse_state = "ACTIVE"
 
             # 3. Campus Areas
             cursor.execute("""
@@ -5172,26 +5393,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 ]
 
             # 6. Collective Memory Layer
-            cursor.execute("SELECT * FROM collective_memories WHERE campus = ? ORDER BY created_at DESC LIMIT 6", (target_campus,))
+            cursor.execute("SELECT * FROM collective_memories WHERE campus = ? OR community_name = ? OR community_id = ? ORDER BY created_at DESC LIMIT 6", (target_campus, comm_name, comm_id))
             mem_rows = cursor.fetchall()
             collective_memories = [dict(r) for r in mem_rows]
-            if not collective_memories:
-                collective_memories = [
-                    {
-                        "id": "mem_1",
-                        "title": "Tech Fest 2026",
-                        "moments_count": 42,
-                        "date_label": "Aug 30",
-                        "cover_image": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=700&q=80"
-                    },
-                    {
-                        "id": "mem_2",
-                        "title": "Freshers' Week",
-                        "moments_count": 28,
-                        "date_label": "Aug 15",
-                        "cover_image": "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=700&q=80"
-                    }
-                ]
+            for m in collective_memories:
+                if m.get("drop_id"):
+                    m["drop_context"] = {"drop_id": m["drop_id"], "label": "A memory from this experience"}
 
             # 7. People Around Campus (No follower counts)
             cursor.execute("""
@@ -5215,20 +5422,42 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # 8. Your Campus Personal Archive Stats
             user_id = user["id"] if user else ""
-            cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND (campus = ? OR circle = 'campus')", (user_id, target_campus))
-            user_moments_count = cursor.fetchone()[0]
-            if user_moments_count == 0:
-                user_moments_count = 18
-
-            cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_private = 1", (user_id,))
-            user_memories_count = cursor.fetchone()[0]
-            if user_memories_count == 0:
-                user_memories_count = 3
+            user_moments_count = 0
+            user_memories_count = 0
+            if user_id:
+                cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND (campus = ? OR circle = 'campus')", (user_id, target_campus))
+                user_moments_count = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_private = 1", (user_id,))
+                user_memories_count = cursor.fetchone()[0]
 
             your_campus = {
                 "name": target_campus,
                 "user_moments_count": user_moments_count,
                 "user_memories_count": user_memories_count
+            }
+
+            # Phase 17: Conceptual Timeline Continuity (Past, Present, Future)
+            upcoming_list = [d for d in drops_list if d.get("lifecycle_state") in ("SCHEDULED", "REMINDER", "UPCOMING", "scheduled", "reminder", "upcoming")]
+            timeline = {
+                "past": {
+                    "label": "Collective Memory",
+                    "description": "Preserved memories of past experiences",
+                    "total_memories": len(collective_memories),
+                    "has_memories": len(collective_memories) > 0
+                },
+                "present": {
+                    "label": "Live Pulse",
+                    "pulse_state": pulse_state,
+                    "active_areas_count": max(len(areas), 4),
+                    "moments_count": len(pulse_posts),
+                    "has_live_activity": pulse_state == "LIVE NOW"
+                },
+                "future": {
+                    "label": "Happening Soon",
+                    "upcoming_drops_count": len(upcoming_list),
+                    "next_drop": upcoming_list[0] if upcoming_list else None,
+                    "has_upcoming": len(upcoming_list) > 0
+                }
             }
 
             conn.close()
@@ -5240,7 +5469,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "drops": drops_list,
                 "pulse": {
                     "active_areas_count": max(len(areas), 4),
-                    "recent_pulse": pulse_posts[:6]
+                    "recent_pulse": pulse_posts[:6],
+                    "pulse_state": pulse_state
                 },
                 "areas": areas,
                 "moments": pulse_posts,
@@ -5248,7 +5478,209 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "events": events,
                 "collective_memories": collective_memories,
                 "people": people,
-                "your_campus": your_campus
+                "your_campus": your_campus,
+                "timeline": timeline
+            })
+
+        # Phase 17: Community Experience Continuity API
+        if path in ("/api/community/continuity", "/api/community/timeline"):
+            user = get_current_user(self.headers)
+            user_id = user["id"] if user else ""
+
+            target_comm = query.get("community_id", [""])[0].strip() or query.get("id", [""])[0].strip() or query.get("campus", [""])[0].strip() or query.get("name", [""])[0].strip()
+            if not target_comm:
+                target_comm = user.get("campus", "North City University") if user else "North City University"
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (target_comm, target_comm.lower(), target_comm))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Community not found", "code": "NOT_FOUND"})
+
+            comm = dict(comm_row)
+
+            # Moderation filter
+            if comm.get("moderation_status") in ("hidden", "removed", "suspended"):
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Community not found", "code": "NOT_FOUND"})
+
+            # Block filter
+            if user_id and comm.get("creator_id"):
+                cursor.execute("SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)",
+                               (user_id, comm["creator_id"], comm["creator_id"], user_id))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json(404, {"success": False, "error": "Community not found", "code": "NOT_FOUND"})
+
+            # Private community protection
+            role = get_user_community_role(comm["id"], user_id, cursor) if user_id else None
+            is_member = bool(role)
+            if comm.get("visibility") == "private" and not is_member:
+                conn.close()
+                return self.send_json(403, {"success": False, "error": "Private community", "code": "FORBIDDEN"})
+
+            # PAST: Collective Memories
+            cursor.execute("""
+                SELECT id, title, date_str, moments_count, checked_in_count, story, cover_img, drop_id, created_at
+                FROM collective_memories
+                WHERE campus = ? OR community_name = ? OR community_id = ?
+                ORDER BY created_at DESC LIMIT 6
+            """, (comm["name"], comm["name"], comm["id"]))
+            mem_rows = cursor.fetchall()
+            memories = []
+            for m in mem_rows:
+                md = dict(m)
+                if md.get("drop_id"):
+                    md["drop_context"] = {"drop_id": md["drop_id"], "label": "A memory from this experience"}
+                memories.append(md)
+
+            # PRESENT: Live Pulse & Moments
+            cursor.execute("""
+                SELECT id, user_id, author_name, author_handle, main_img, caption, created_at, drop_id, location_city
+                FROM posts
+                WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ?)
+                  AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                ORDER BY created_at DESC LIMIT 15
+            """, (comm["name"], comm["id"], comm["id"]))
+            mom_rows = cursor.fetchall()
+            moments = []
+            for m in mom_rows:
+                md = dict(m)
+                md["timeAgo"] = format_time_ago(md.get("created_at", ""))
+                if md.get("drop_id"):
+                    md["drop_context"] = {"drop_id": md["drop_id"], "label": "From this Drop"}
+                moments.append(md)
+
+            # Live Drop Check
+            cursor.execute("""
+                SELECT id, title, description, date_str, time_str, capacity, registered_count, lifecycle_state, creator_handle
+                FROM community_drops
+                WHERE (community_id = ? OR community_name = ?)
+                  AND lifecycle_state IN ('LIVE', 'ACTIVE', 'CHECK_IN', 'live', 'active', 'check_in')
+                  AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                ORDER BY created_at DESC LIMIT 1
+            """, (comm["id"], comm["name"]))
+            live_drop_row = cursor.fetchone()
+            live_drop = dict(live_drop_row) if live_drop_row else None
+
+            # Determine authoritative pulse_state
+            pulse_state = "QUIET RIGHT NOW"
+            if live_drop:
+                pulse_state = "LIVE NOW"
+            elif len(moments) > 0:
+                latest_dt_str = moments[0].get("created_at", "")
+                try:
+                    latest_dt = datetime.fromisoformat(latest_dt_str.replace("Z", "+00:00"))
+                    if latest_dt.tzinfo is None:
+                        latest_dt = latest_dt.replace(tzinfo=timezone.utc)
+                    age_seconds = (datetime.now(timezone.utc) - latest_dt).total_seconds()
+                    if age_seconds <= 7200:
+                        pulse_state = "LIVE NOW"
+                    elif age_seconds <= 86400:
+                        pulse_state = "ACTIVE"
+                    else:
+                        pulse_state = "QUIET RIGHT NOW"
+                except:
+                    pulse_state = "ACTIVE"
+
+            # FUTURE: Upcoming Drops
+            cursor.execute("""
+                SELECT id, title, description, date_str, time_str, capacity, registered_count, price, price_paise, lifecycle_state, creator_handle, cover_img
+                FROM community_drops
+                WHERE (community_id = ? OR community_name = ?)
+                  AND lifecycle_state IN ('SCHEDULED', 'REMINDER', 'UPCOMING', 'scheduled', 'reminder', 'upcoming', 'active')
+                  AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                ORDER BY created_at DESC LIMIT 10
+            """, (comm["id"], comm["name"]))
+            drop_rows = cursor.fetchall()
+            upcoming_drops = []
+            first_up = False
+            for d in drop_rows:
+                dd = dict(d)
+                dd["price"] = 19.0
+                dd["price_paise"] = 1900
+                dd["currency"] = "INR"
+                cap = int(dd.get("capacity") or 20)
+                reg_cnt = int(dd.get("registered_count") or 0)
+                dd["spots_left"] = max(0, cap - reg_cnt)
+                if not first_up:
+                    dd["contextual_label"] = "Next shared experience"
+                    first_up = True
+                else:
+                    dd["contextual_label"] = "Upcoming experience"
+                upcoming_drops.append(dd)
+
+            # PERSONAL: Participation & Return Context
+            personal_context = None
+            if user_id:
+                cursor.execute("SELECT COUNT(*) FROM community_drop_registrations cdr JOIN community_drops cd ON cdr.drop_id = cd.id WHERE cdr.user_id = ? AND (cd.community_id = ? OR cd.community_name = ?) AND cdr.is_checked_in = 1", (user_id, comm["id"], comm["name"]))
+                attended_count = cursor.fetchone()[0]
+
+                cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND (campus = ? OR campus = ? OR primary_community_id = ?)", (user_id, comm["name"], comm["id"], comm["id"]))
+                contributed_count = cursor.fetchone()[0]
+
+                cursor.execute("SELECT cd.id, cd.title, cd.date_str, cd.time_str FROM community_drop_registrations cdr JOIN community_drops cd ON cdr.drop_id = cd.id WHERE cdr.user_id = ? AND (cd.community_id = ? OR cd.community_name = ?) AND cd.lifecycle_state IN ('SCHEDULED', 'REMINDER', 'UPCOMING', 'CHECK_IN', 'LIVE')", (user_id, comm["id"], comm["name"]))
+                reg_drops = [dict(r) for r in cursor.fetchall()]
+
+                calm_headline = "A quiet space with shared context."
+                if live_drop:
+                    calm_headline = "An experience is happening right now."
+                elif len(upcoming_drops) > 0:
+                    calm_headline = "Upcoming experience planned."
+                elif len(memories) > 0:
+                    calm_headline = "Preserved memories of past experiences."
+
+                personal_context = {
+                    "is_member": is_member,
+                    "role": role or "visitor",
+                    "attended_drops_count": attended_count,
+                    "contributed_moments_count": contributed_count,
+                    "registered_drops_count": len(reg_drops),
+                    "registered_drops": reg_drops,
+                    "calm_return_headline": calm_headline
+                }
+
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "community": {
+                    "id": comm["id"],
+                    "name": comm["name"],
+                    "type": comm["type"],
+                    "city": comm["city"],
+                    "description": comm.get("description", ""),
+                    "icon": comm.get("icon", "📍"),
+                    "members_count": comm.get("members_count", 0),
+                    "is_member": is_member
+                },
+                "continuity": {
+                    "past": {
+                        "label": "Collective Memory",
+                        "description": "Preserved memories of past experiences",
+                        "total_memories": len(memories),
+                        "memories": memories,
+                        "has_memories": len(memories) > 0
+                    },
+                    "present": {
+                        "label": "Live Pulse",
+                        "pulse_state": pulse_state,
+                        "active_moments_count": len(moments),
+                        "live_drop": live_drop,
+                        "has_live_activity": pulse_state == "LIVE NOW"
+                    },
+                    "future": {
+                        "label": "Happening Soon",
+                        "upcoming_drops_count": len(upcoming_drops),
+                        "next_drop": upcoming_drops[0] if upcoming_drops else None,
+                        "drops": upcoming_drops,
+                        "has_upcoming": len(upcoming_drops) > 0
+                    },
+                    "personal": personal_context
+                }
             })
 
         if path == "/api/event":
