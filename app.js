@@ -1210,12 +1210,35 @@ async function openCampusPage(campusName) {
       });
     }
 
-    // Live Pulse Rendering (Honest states)
-    if (data.pulse && data.pulse.active_areas_count > 0 && Array.isArray(data.pulse.recent_pulse) && data.pulse.recent_pulse.length > 0) {
-      if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse';
-      if (pulseTagEl) pulseTagEl.textContent = 'HAPPENING NOW';
+    // Live Pulse Rendering (Honest server-authoritative states)
+    var pulseState = (data.pulse && data.pulse.pulse_state) || (data.pulse && data.pulse.active_areas_count > 0 && Array.isArray(data.pulse.recent_pulse) && data.pulse.recent_pulse.length > 0 ? 'LIVE NOW' : 'QUIET RIGHT NOW');
+    if (pulseState === 'LIVE NOW') {
+      if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse';
+      if (pulseTagEl) {
+        pulseTagEl.textContent = '● LIVE NOW';
+        pulseTagEl.className = 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-emerald-400 font-bold';
+      }
+      if (pulseHeadingEl) pulseHeadingEl.textContent = 'An experience is happening across the community right now.';
+      if (activeAreasEl) activeAreasEl.textContent = (data.pulse.active_areas_count || 1) + ' active areas';
+    } else if (pulseState === 'ACTIVE') {
+      if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-500';
+      if (pulseTagEl) {
+        pulseTagEl.textContent = '● ACTIVE';
+        pulseTagEl.className = 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-400 font-bold';
+      }
       if (pulseHeadingEl) pulseHeadingEl.textContent = 'Life is happening across the community.';
-      if (activeAreasEl) activeAreasEl.textContent = data.pulse.active_areas_count + ' active areas';
+      if (activeAreasEl) activeAreasEl.textContent = (data.pulse.active_areas_count || 1) + ' active areas';
+    } else {
+      if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-zinc-600';
+      if (pulseTagEl) {
+        pulseTagEl.textContent = '○ QUIET RIGHT NOW';
+        pulseTagEl.className = 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold';
+      }
+      if (pulseHeadingEl) pulseHeadingEl.textContent = 'This space is calm right now. Shared moments will appear here.';
+      if (activeAreasEl) activeAreasEl.textContent = 'Quiet right now';
+    }
+
+    if (data.pulse && Array.isArray(data.pulse.recent_pulse) && data.pulse.recent_pulse.length > 0) {
       if (pulseTilesEl) {
         pulseTilesEl.innerHTML = '';
         data.pulse.recent_pulse.forEach(function(p) {
@@ -1238,10 +1261,6 @@ async function openCampusPage(campusName) {
         pulseTilesEl.appendChild(pulseActionTile);
       }
     } else {
-      if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-zinc-600';
-      if (pulseTagEl) pulseTagEl.textContent = 'QUIET RIGHT NOW';
-      if (pulseHeadingEl) pulseHeadingEl.textContent = 'Nothing new has surfaced yet.';
-      if (activeAreasEl) activeAreasEl.textContent = 'Quiet right now';
       if (pulseTilesEl) {
         pulseTilesEl.innerHTML = '<div class="py-3 px-1 text-xs text-zinc-500 font-mono-tag">Quiet right now.</div>';
       }
@@ -1264,7 +1283,7 @@ async function openCampusPage(campusName) {
       if (Array.isArray(data.moments) && data.moments.length > 0) {
         renderCommunityCards(data.moments, momentsEl);
       } else {
-        momentsEl.innerHTML = '<div class="py-6 text-center text-xs text-zinc-500 font-mono-tag">No moments shared here yet.</div>';
+        momentsEl.innerHTML = '<div class="py-6 text-center text-xs text-zinc-500 font-mono-tag">No shared moments yet. Be the first to share an authentic moment.</div>';
       }
     }
 
@@ -1273,16 +1292,18 @@ async function openCampusPage(campusName) {
         memoriesGridEl.innerHTML = data.collective_memories.map(function(m) {
           var attendeeCount = m.checked_in_count || m.moments_count || 0;
           var attendeeTxt = attendeeCount > 0 ? (attendeeCount + ' people were there') : 'Archived experience';
+          var dropContextTag = m.drop_context ? '<span class="font-mono-tag text-[7px] text-amber-400 bg-amber-500/10 px-1 py-0.5 rounded border border-amber-500/20 block truncate">FROM THIS EXPERIENCE</span>' : '';
           return '<div onclick="openCollectiveMemoryPage(\'' + (m.id || 'mem_1') + '\')" class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 shadow-md cursor-pointer transition active:scale-95 group">' +
             '<div class="w-full aspect-[4/3] rounded-xl overflow-hidden bg-black">' +
               '<img src="' + (m.cover_img || m.cover_image || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80') + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
             '</div>' +
             '<p class="text-xs font-bold text-white truncate group-hover:text-amber-400 transition-colors">' + escapeHtml(m.title) + '</p>' +
+            dropContextTag +
             '<p class="font-mono-tag text-[8px] text-zinc-400">' + attendeeTxt + '</p>' +
           '</div>';
         }).join('');
       } else {
-        memoriesGridEl.innerHTML = '<div class="col-span-2 py-6 text-center text-xs text-zinc-500 font-mono-tag">Your first shared memory is still ahead.</div>';
+        memoriesGridEl.innerHTML = '<div class="col-span-2 py-6 text-center text-xs text-zinc-500 font-mono-tag">No preserved memories yet. Real-world drops become memories here.</div>';
       }
     }
 
@@ -1376,13 +1397,18 @@ async function loadCommunityDrops(communityName) {
         '<img src="' + escapeHtml(d.cover_img || d.image_url) + '" class="w-full h-full object-cover">' +
       '</div>') : '';
 
+    var contextBadge = d.contextual_label ? ('<span class="font-mono-tag text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">' + escapeHtml(d.contextual_label) + '</span>') : '';
+    var coordBadge = (isRegistered && d.coordination_status) ? ('<span class="font-mono-tag text-[8px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">' + escapeHtml(d.coordination_status) + '</span>') : '';
+
     return '<div onclick="openDropDetail(\'' + d.id + '\')" class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/30 space-y-2.5 shadow-xl transition cursor-pointer">' +
       coverHtml +
       '<div class="flex justify-between items-start">' +
         '<div class="space-y-0.5">' +
-          '<div class="flex items-center gap-2">' +
+          '<div class="flex items-center gap-2 flex-wrap">' +
             '<span class="w-1.5 h-1.5 rounded-full ' + stateInfo.dotClass + '"></span>' +
             '<span class="font-mono-tag text-[9px] ' + stateInfo.badgeClass + ' font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border">' + stateInfo.label + '</span>' +
+            contextBadge +
+            coordBadge +
             '<span class="font-mono-tag text-[9px] text-zinc-400 font-bold uppercase tracking-wider">' + escapeHtml(d.date_str || 'This Weekend') + ' · ' + escapeHtml(d.time_str || '6:00 PM') + '</span>' +
           '</div>' +
           '<h3 class="text-xs font-extrabold text-white pt-1">' + escapeHtml(d.title) + '</h3>' +
@@ -1399,7 +1425,7 @@ async function loadCommunityDrops(communityName) {
 
   var cardsHtml = res.drops.map(renderDropCard).join('');
   if (hubContainer) {
-    hubContainer.innerHTML = cardsHtml || '<div class="py-8 text-center space-y-1"><p class="text-xs font-bold text-zinc-400 font-mono-tag uppercase tracking-wider">Nothing planned yet.</p><p class="text-[11px] text-zinc-500 font-sans">This world is quiet for now.</p></div>';
+    hubContainer.innerHTML = cardsHtml || '<div class="py-8 text-center space-y-1"><p class="text-xs font-bold text-zinc-400 font-mono-tag uppercase tracking-wider">No upcoming experiences yet.</p><p class="text-[11px] text-zinc-500 font-sans">Experiences will appear here as they are planned.</p></div>';
   }
   if (feedContainer) {
     feedContainer.innerHTML = cardsHtml || '<div class="py-4 text-center text-xs text-zinc-500 font-mono-tag">No active community drops.</div>';
@@ -1426,6 +1452,10 @@ function openDropDetail(dropId) {
   var hostAvatarEl = document.getElementById('dropDetailHostAvatar');
   var priceEl = document.getElementById('dropDetailPriceTxt');
   var actionContainer = document.getElementById('dropDetailActionContainer');
+  var coordSec = document.getElementById('dropDetailCoordinationSection');
+  var coordStatus = document.getElementById('dropDetailCoordStatus');
+  var coordVenue = document.getElementById('dropDetailCoordVenue');
+  var coordInstr = document.getElementById('dropDetailCoordInstructions');
 
   var spotsLeft = Math.max(0, (d.capacity || 20) - (d.registered_count || 0));
 
@@ -1442,11 +1472,31 @@ function openDropDetail(dropId) {
   if (hostAvatarEl) hostAvatarEl.textContent = ((d.host_handle || d.created_by || 'K')[0] || 'K').toUpperCase();
   if (priceEl) priceEl.textContent = '₹' + (d.price || 19).toFixed(2);
 
-  if (actionContainer) {
-    var isRegistered = !!d.is_registered;
-    var isLiveOrCheckin = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.state) !== -1;
-    var isEnded = ['CLOSED', 'SETTLEMENT', 'MEMORY'].indexOf(d.state) !== -1;
+  var isRegistered = !!d.is_registered;
+  var isLiveOrCheckin = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.state) !== -1;
+  var isEnded = ['CLOSED', 'SETTLEMENT', 'MEMORY'].indexOf(d.state) !== -1;
 
+  // Phase 17: Attendee Coordination Context
+  if (coordSec) {
+    if (isRegistered) {
+      coordSec.style.display = 'block';
+      if (coordStatus) {
+        coordStatus.textContent = d.is_checked_in ? 'Checked In ✓' : (isLiveOrCheckin ? 'Check-in Ready' : 'Spot Confirmed');
+      }
+      if (coordVenue) {
+        var vname = d.location_name || d.area || d.community_name || 'Campus Community Area';
+        coordVenue.innerHTML = '<span class="text-amber-400">📍</span> <span>' + escapeHtml(vname) + '</span>';
+      }
+      if (coordInstr) {
+        var hhandle = d.host_handle || d.created_by || 'kandid';
+        coordInstr.textContent = 'Meet host @' + hhandle + ' at the venue. Check in on your device to confirm presence.';
+      }
+    } else {
+      coordSec.style.display = 'none';
+    }
+  }
+
+  if (actionContainer) {
     if (isRegistered) {
       if (isLiveOrCheckin) {
         if (d.is_checked_in) {

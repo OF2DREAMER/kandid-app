@@ -2748,9 +2748,21 @@
 
             <!-- Dynamic Action Trigger Button -->
             <div id="dropDetailActionContainer" class="pt-1">
-                <button id="dropDetailActionBtn" onclick="" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2">
+                <button id="dropDetailActionBtn" onclick="" aria-label="Join Experience" class="w-full min-h-[44px] py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2">
                     <span>JOIN EXPERIENCE · ₹19</span>
                 </button>
+            </div>
+
+            <!-- Phase 17: Attendee Coordination Context (Visible when registered) -->
+            <div id="dropDetailCoordinationSection" class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2 text-left" style="display:none;">
+                <div class="flex items-center justify-between">
+                    <span class="font-mono-tag text-[9px] text-amber-400 font-extrabold uppercase tracking-wider">ATTENDEE COORDINATION</span>
+                    <span id="dropDetailCoordStatus" class="font-mono-tag text-[9px] text-emerald-400 font-bold">Spot Confirmed</span>
+                </div>
+                <div class="text-[11px] text-zinc-300 space-y-1 font-sans">
+                    <p id="dropDetailCoordVenue" class="flex items-center gap-1.5"><span class="text-amber-400">📍</span> <span>Campus Area</span></p>
+                    <p id="dropDetailCoordInstructions" class="text-[10px] text-zinc-400 leading-relaxed"></p>
+                </div>
             </div>
         </div>
     </div>
