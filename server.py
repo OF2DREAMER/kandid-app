@@ -1454,7 +1454,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "status": "ok",
                 "environment": ENVIRONMENT,
                 "database_engine": db_engine,
-                "version": "v5.1.0",
+                "resend_configured": bool(RESEND_API_KEY),
+                "resend_from_email": FROM_EMAIL,
+                "app_url": APP_URL,
+                "version": "v5.2.2",
                 "time": datetime.now().isoformat()
             })
 
