@@ -933,7 +933,8 @@ function renderCommunityCards(moments, container) {
     }
 
     var iWasThereHtml = '';
-    if (!m.is_private && (!state.currentUser || state.currentUser.id !== m.user_id)) {
+    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.drop_id || m.cluster_id);
+    if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       iWasThereHtml = '<button onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="px-2.5 py-1 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-bold cursor-pointer active:scale-95 transition shadow-sm" title="Self-assert contextual participation">+ I WAS THERE</button>';
     }
 
@@ -8536,7 +8537,18 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
         openMomentClusterModal(res.cluster_id, momentId);
       }
     } else {
-      var err = (res && (res.error || res.message)) ? (res.error || res.message) : 'Participation not authorized';
+      var err = 'Participation not authorized.';
+      if (res && res.code === 'CAMPUS_DISCOVERY_ONLY') {
+        err = 'Campus discovery: "I WAS THERE" is reserved for community members or event attendees.';
+      } else if (res && res.code === 'OWN_MOMENT') {
+        err = 'You cannot assert participation in your own moment.';
+      } else if (res && res.code === 'BLOCKED_USER') {
+        err = 'Unable to participate in this moment.';
+      } else if (res && res.code === 'CLUSTER_COOLDOWN') {
+        err = 'Please wait a moment before participating again.';
+      } else if (res && (res.error || res.message)) {
+        err = res.error || res.message;
+      }
       showToast(err);
     }
   } catch(e) {
