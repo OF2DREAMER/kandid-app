@@ -1407,7 +1407,8 @@ def save_base64_audio(data_str, prefix="audio"):
     if cloud_url:
         return cloud_url
         
-    if ENVIRONMENT == "production":
+    cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
+    if ENVIRONMENT == "production" and cloudinary_is_setup:
         print(f"❌ [MEDIA ERROR] Failed to upload audio to Cloudinary in production.")
         return ""
         
@@ -1450,7 +1451,8 @@ def save_base64_video(data_str, prefix="motion"):
     if cloud_url:
         return cloud_url
         
-    if ENVIRONMENT == "production":
+    cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
+    if ENVIRONMENT == "production" and cloudinary_is_setup:
         print(f"❌ [MEDIA ERROR] Failed to upload motion video to Cloudinary in production.")
         return ""
         
@@ -1488,7 +1490,8 @@ def save_base64_image(data_str, prefix="img"):
     if cloud_url:
         return cloud_url
         
-    if ENVIRONMENT == "production":
+    cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
+    if ENVIRONMENT == "production" and cloudinary_is_setup:
         print(f"❌ [MEDIA ERROR] Failed to upload image to Cloudinary in production.")
         return ""
         
@@ -10154,7 +10157,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             target_comm_key = (body.get("community_id") or body.get("primary_community_id") or "").strip()
             if not target_comm_key and body.get("community"):
                 c_cand = str(body.get("community")).strip()
-                if c_cand and c_cand.lower() not in ("all", "global", "foryou", "friends", "feed", "none", ""):
+                if c_cand and c_cand.lower() not in ("all", "global", "foryou", "friends", "feed", "none", "", "personal", "personal (feed)"):
                     target_comm_key = c_cand
 
             primary_comm = ""
@@ -10232,8 +10235,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             main_img = save_base64_image(raw_main, "main") if raw_main else "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80"
             pip_img = save_base64_image(raw_pip, "pip") if raw_pip else "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80"
             
-            # Strict Production Media Integrity Check
-            if ENVIRONMENT == "production":
+            # Strict Production Media Integrity Check (only if Cloudinary CDN is configured)
+            cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
+            if ENVIRONMENT == "production" and cloudinary_is_setup:
                 if raw_main and not main_img:
                     return self.send_json(502, {"success": False, "error": "Failed to upload main capture to cloud storage. Moment was not created."})
                 if raw_pip and not pip_img:
@@ -10252,7 +10256,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             raw_audio = body.get("audioData") or body.get("audio_data") or ""
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""
-            if ENVIRONMENT == "production" and raw_audio and not audio_url:
+            if ENVIRONMENT == "production" and cloudinary_is_setup and raw_audio and not audio_url:
                 return self.send_json(502, {"success": False, "error": "Failed to upload ambient audio to cloud storage. Moment was not created."})
 
             post_id = "post_" + secrets.token_hex(6)
