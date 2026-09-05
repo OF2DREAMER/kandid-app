@@ -3486,6 +3486,122 @@ def format_time_ago(created_at_str: str) -> str:
     except Exception:
         return "TODAY"
 
+# Coarse City Center Coordinates for Intelligent Fallback Radius (Zero exact GPS leakage)
+CITY_COORDINATES = {
+    # Maharashtra
+    "pune": (18.5204, 73.8567),
+    "mumbai": (19.0760, 72.8777),
+    "bombay": (19.0760, 72.8777),
+    "bandra": (19.0596, 72.8295),
+    "navi mumbai": (19.0330, 73.0297),
+    "thane": (19.2183, 72.9781),
+    "nashik": (19.9975, 73.7898),
+    "nagpur": (21.1458, 79.0882),
+    "aurangabad": (19.8762, 75.3433),
+    "kolhapur": (16.7050, 74.2433),
+    "solapur": (17.6599, 75.9064),
+    
+    # NCR / North
+    "delhi": (28.6139, 77.2090),
+    "new delhi": (28.6139, 77.2090),
+    "delhi ncr": (28.6139, 77.2090),
+    "hauz khas": (28.5494, 77.2001),
+    "noida": (28.5355, 77.3910),
+    "gurgaon": (28.4595, 77.0266),
+    "gurugram": (28.4595, 77.0266),
+    "faridabad": (28.4089, 77.3178),
+    "ghaziabad": (28.6692, 77.4538),
+    "chandigarh": (30.7333, 76.7794),
+    "jaipur": (26.9124, 75.7873),
+    "lucknow": (26.8467, 80.9462),
+    "kanpur": (26.4499, 80.3319),
+    "agra": (27.1767, 78.0081),
+    "varanasi": (25.3176, 82.9739),
+    "dehradun": (30.3165, 78.0322),
+    "bathinda": (30.2110, 74.9455),
+    "talwandi sabo": (29.9844, 75.0864),
+    "ludhiana": (30.9010, 75.8573),
+    "amritsar": (31.6340, 74.8723),
+
+    # South
+    "bengaluru": (12.9716, 77.5946),
+    "bangalore": (12.9716, 77.5946),
+    "indiranagar": (12.9784, 77.6408),
+    "koramangala": (12.9352, 77.6245),
+    "mysuru": (12.2958, 76.6394),
+    "mysore": (12.2958, 76.6394),
+    "hyderabad": (17.3850, 78.4867),
+    "secunderabad": (17.4399, 78.4983),
+    "chennai": (13.0827, 80.2707),
+    "madras": (13.0827, 80.2707),
+    "coimbatore": (11.0168, 76.9558),
+    "kochi": (9.9312, 76.2673),
+    "cochin": (9.9312, 76.2673),
+    "thiruvananthapuram": (8.5241, 76.9366),
+    "trivandrum": (8.5241, 76.9366),
+    "goa": (15.2993, 74.1240),
+    "panaji": (15.4909, 73.8278),
+
+    # East / Central
+    "supaul": (26.1260, 86.6056),
+    "madhepura": (25.9264, 86.7906),
+    "patna": (25.5941, 85.1376),
+    "bihar": (25.5941, 85.1376),
+    "kolkata": (22.5726, 88.3639),
+    "calcutta": (22.5726, 88.3639),
+    "bhubaneswar": (20.2961, 85.8245),
+    "ranchi": (23.3441, 85.3096),
+    "guwahati": (26.1445, 91.7362),
+    "ahmedabad": (23.0225, 72.5714),
+    "surat": (21.1702, 72.8311),
+    "vadodara": (22.3072, 73.1812),
+    "bhopal": (23.2599, 77.4126),
+    "indore": (22.7196, 75.8577),
+
+    # Global
+    "dubai": (25.2048, 55.2708),
+    "singapore": (1.3521, 103.8198),
+    "tokyo": (35.6762, 139.6503),
+    "london": (51.5074, -0.1278),
+    "paris": (48.8566, 2.3522),
+    "berlin": (52.5200, 13.4050),
+    "new york": (40.7128, -74.0060),
+    "san francisco": (37.7749, -122.4194),
+    "toronto": (43.6532, -79.3832),
+    "sydney": (-33.8688, 151.2093)
+}
+
+def resolve_approx_coords(location_text):
+    if not location_text:
+        return None
+    text = str(location_text).lower().strip()
+    for ch in (",", "/", "-", ".", "(", ")", "&", "_"):
+        text = text.replace(ch, " ")
+    # Multi-word match first
+    for k, coords in CITY_COORDINATES.items():
+        if " " in k and k in text:
+            return coords
+    # Single-word match
+    words = [w for w in text.split() if w]
+    for w in words:
+        if w in CITY_COORDINATES:
+            return CITY_COORDINATES[w]
+    return None
+
+def haversine_distance_km(coords1, coords2):
+    if not coords1 or not coords2:
+        return 99999.0
+    import math
+    lat1, lon1 = coords1
+    lat2, lon2 = coords2
+    if lat1 == lat2 and lon1 == lon2:
+        return 0.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return 6371.0 * c
+
 def get_current_user(headers, body=None, query=None):
     auth = headers.get("Authorization", "")
     token = None
@@ -3808,6 +3924,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if camp_c_row and camp_c_row["city"]:
                     user_city = camp_c_row["city"]
 
+            # Coarse coordinates for user context (Zero exact GPS leakage)
+            user_loc_str = user_city or user_campus
+            user_coords = resolve_approx_coords(user_loc_str)
+
             # Safety integration: Blocked users
             blocked_uids = set()
             if user_id:
@@ -3997,34 +4117,78 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "context_reason": context_reason,
                     "created_at": c.get("created_at", "")
                 }
-                scored_communities.append((context_score, comm_item, campus_match, city_match))
+                # Coarse geographic distance for fallback radius (Zero exact GPS leakage)
+                comm_loc_str = c.get("city", "") or c.get("name", "")
+                comm_coords = resolve_approx_coords(comm_loc_str)
+                dist_km = haversine_distance_km(user_coords, comm_coords) if user_coords and comm_coords else 99999.0
+
+                scored_communities.append((context_score, comm_item, campus_match, city_match, dist_km))
 
             conn.close()
 
             # Categorize outputs
-            joined_comms = [item for (_, item, _, _) in scored_communities if item["is_member"]]
-            unjoined_comms = [(score, item) for (score, item, _, _) in scored_communities if not item["is_member"]]
+            joined_comms = [item for (_, item, _, _, _) in scored_communities if item["is_member"]]
+            unjoined_comms = [(score, item) for (score, item, _, _, _) in scored_communities if not item["is_member"]]
             
             # Sort unjoined purely by context score
             unjoined_comms.sort(key=lambda x: x[0], reverse=True)
 
-            # Near you (ONLY genuinely nearby public communities)
-            near_you = [
-                item for (_, item, c_match, ct_match) in scored_communities 
+            # Immediate local public communities (strictly campus match or city match)
+            immediate_public = [
+                item for (_, item, c_match, ct_match, _) in scored_communities 
                 if (c_match or ct_match) and item.get("visibility") == "public"
-            ][:limit_val]
+            ]
+
+            if req_nearby_only:
+                # "More Around You" Mode:
+                # 1. Show genuinely nearby public communities first.
+                # 2. Always aim to display at least 3 communities.
+                # 3. If fewer than 3 are available nearby, progressively expand the geographic radius until 3 relevant public communities are found.
+                # 4. If the user's immediate area has only 1 community, show that 1 first, then the 2 nearest additional public communities.
+                # 5. Never show random/all communities just to fill the section.
+                if len(immediate_public) >= 3:
+                    near_you = immediate_public[:limit_val]
+                else:
+                    needed = 3 - len(immediate_public)
+                    immediate_ids = {it["id"] for it in immediate_public}
+                    
+                    fallback_candidates = []
+                    for (_, item, c_match, ct_match, d_km) in scored_communities:
+                        if item["id"] in immediate_ids:
+                            continue
+                        if item.get("visibility") != "public":
+                            continue
+                        
+                        item_copy = dict(item)
+                        if d_km <= 300:
+                            item_copy["context_reason"] = "Nearest regional space"
+                        elif d_km <= 1000:
+                            item_copy["context_reason"] = "Regional community"
+                        else:
+                            item_copy["context_reason"] = "Nearby community"
+                        
+                        fallback_candidates.append((d_km, item_copy))
+                    
+                    # Sort strictly by geographic distance ascending
+                    fallback_candidates.sort(key=lambda x: x[0])
+                    
+                    # Pick only the needed closest public communities to reach the minimum of 3
+                    expanded_items = [fc[1] for fc in fallback_candidates[:needed]]
+                    near_you = immediate_public + expanded_items
+            else:
+                near_you = immediate_public[:limit_val]
 
             # Upcoming (communities hosting live or upcoming drops)
-            upcoming = [item for (_, item, _, _) in scored_communities if item["upcoming_drops_count"] > 0][:limit_val]
+            upcoming = [item for (_, item, _, _, _) in scored_communities if item["upcoming_drops_count"] > 0][:limit_val]
 
             # All matching communities
             if req_nearby_only:
-                # Targeted "More Around You" mode: strictly nearby public communities only
+                # Targeted "More Around You" mode: strictly nearby public communities with distance fallback
                 for_you = [item for item in near_you if not item.get("is_member")][:limit_val]
                 all_comms = near_you
             else:
                 for_you = [item for (_, item) in unjoined_comms][:limit_val]
-                all_comms = [item for (_, item, _, _) in scored_communities][:limit_val]
+                all_comms = [item for (_, item, _, _, _) in scored_communities][:limit_val]
 
             return self.send_json(200, {
                 "success": True,
