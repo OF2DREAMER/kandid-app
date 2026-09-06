@@ -569,6 +569,7 @@ function renderGlobalCards(moments, container) {
     var city = escapeHtml((m.location_city || m.campus || 'GLOBAL').toUpperCase());
     var coords = m.location_coords ? escapeHtml(m.location_coords) : '';
     var locBanner = coords ? (city + ' · ' + coords) : city;
+    var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || (m.campus ? m.campus.replace(/^Near\s+/i, '') : '');
     var timeAgo = escapeHtml((m.timeAgo || m.time_ago || '18 MIN AGO').toUpperCase());
     var captionText = escapeHtml(m.caption || 'Real moment across global coordinates.');
     var iso = escapeHtml(m.exif_iso || 'ISO 400');
@@ -602,8 +603,10 @@ function renderGlobalCards(moments, container) {
       '</div>' +
 
       '<div class="space-y-2 px-0.5">' +
-        '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider">' +
-          '<span>' + locBanner + '</span>' +
+        '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider flex-wrap gap-1">' +
+          (commTarget
+            ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="text-amber-400/90 hover:text-amber-300 hover:underline cursor-pointer active:scale-95 transition text-left">◉ ' + escapeHtml(locBanner) + '</button>'
+            : '<span>' + escapeHtml(locBanner) + '</span>') +
           '<span class="text-amber-400">' + timeAgo + '</span>' +
         '</div>' +
 
@@ -926,6 +929,7 @@ function renderCommunityCards(moments, container) {
     var captionText = escapeHtml(m.caption || 'Unfiltered moment.');
     var locName = escapeHtml(m.location_city || m.campus || 'Near Quad');
     if (!locName.toLowerCase().startsWith('near ')) locName = 'Near ' + locName;
+    var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || (m.campus ? m.campus.replace(/^Near\s+/i, '') : '');
 
     var avatarLetter = (m.author_name || authorHandle).substring(0, 2).toUpperCase();
 
@@ -969,10 +973,15 @@ function renderCommunityCards(moments, container) {
         '<!-- Bottom Overlay -->' +
         '<div class="absolute bottom-4 inset-x-4 z-10 space-y-2.5">' +
           '<div class="flex items-center gap-1.5 flex-wrap">' +
-            '<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10">' +
-              '<span class="text-amber-400 text-xs">⌖</span>' +
-              '<span class="text-[10px] text-zinc-200 font-medium">' + locName + '</span>' +
-            '</div>' +
+            (commTarget
+              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10 hover:border-amber-500/50 hover:bg-black/80 transition cursor-pointer text-left active:scale-95" title="Open Community Page">' +
+                  '<span class="text-amber-400 text-xs">⌖</span>' +
+                  '<span class="text-[10px] text-zinc-200 hover:text-amber-300 font-medium font-mono-tag">' + locName + '</span>' +
+                '</button>'
+              : '<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10">' +
+                  '<span class="text-amber-400 text-xs">⌖</span>' +
+                  '<span class="text-[10px] text-zinc-200 font-medium">' + locName + '</span>' +
+                '</div>') +
             dropContextHtml +
           '</div>' +
 
@@ -1145,6 +1154,9 @@ async function sendReaction(emoji) {
 window.sendReaction = sendReaction;
 
 async function openCampusPage(campusName) {
+  if (state.activeScreen && state.activeScreen !== 'campus-page') {
+    state.previousScreen = state.activeScreen;
+  }
   campusName = campusName || state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
   state.activeCommunity = campusName;
   switchScreenView('campus-page');
@@ -1181,20 +1193,19 @@ async function openCampusPage(campusName) {
       if (descEl) descEl.textContent = c.description || 'Authentic moments and shared daily life.';
 
       if (joinBtn) {
-        if (c.type === 'Interest') {
-          if (c.is_joined) {
-            joinBtn.textContent = '[ JOINED ✓ ]';
-            joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
-          } else {
-            joinBtn.textContent = '[ + JOIN COMMUNITY ]';
-            joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
-          }
-        } else if (c.type === 'Place') {
-          joinBtn.textContent = '[ ENTER SPACE ]';
-          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
-        } else {
+        var isPrimary = Boolean(state.currentUser && (
+          (state.currentUser.campus && state.currentUser.campus.toLowerCase() === c.name.toLowerCase()) || 
+          (state.currentUser.campus && state.currentUser.campus === c.id)
+        ));
+        if (isPrimary) {
           joinBtn.textContent = '[ PRIMARY COMMUNITY ]';
           joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-amber-400 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
+        } else if (c.is_joined) {
+          joinBtn.textContent = '[ JOINED ✓ ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
+        } else {
+          joinBtn.textContent = '[ + JOIN COMMUNITY ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
         }
       }
 
@@ -2550,6 +2561,13 @@ function handleCollectiveMemoryBack() {
 }
 window.handleCollectiveMemoryBack = handleCollectiveMemoryBack;
 
+function handleCampusPageBack() {
+  var prev = state.previousScreen || 'feed';
+  if (prev === 'campus-page') prev = 'feed';
+  switchScreenView(prev);
+}
+window.handleCampusPageBack = handleCampusPageBack;
+
 async function toggleJoinCommunity() {
   var btn = document.getElementById('campusPageJoinBtn');
   var name = state.activeCommunity || 'North City University';
@@ -2800,7 +2818,10 @@ function renderFeedCards(moments, container) {
     card.dataset.postId = m.id;
 
     var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'kandid.creator');
-    var campusName = escapeHtml((m.campus || 'CENTRAL CAMPUS').toUpperCase());
+    var rawComm = m.community_name || m.primary_community_name || m.campus || 'CENTRAL CAMPUS';
+    var cleanCommName = rawComm.replace(/^Near\s+/i, '');
+    var campusName = escapeHtml(cleanCommName.toUpperCase());
+    var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || cleanCommName;
     var timeAgo = escapeHtml((m.timeAgo || m.time_ago || '12 MIN AGO').toUpperCase());
     var captionText = escapeHtml(m.caption || 'Raw unfiltered moment on campus.');
     var iso = escapeHtml(m.exif_iso || 'ISO 400');
@@ -2850,7 +2871,7 @@ function renderFeedCards(moments, container) {
     var clusterBadgeHtml = '';
     if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
       var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + (m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
+      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + (m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
         '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
       '</button>';
     }
@@ -2874,9 +2895,13 @@ function renderFeedCards(moments, container) {
       '</div>' +
 
       '<div class="space-y-2 px-0.5">' +
-        '<div class="flex items-center justify-between gap-1">' +
-          '<div class="text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider uppercase">' +
-            campusName + ' · ' + timeAgo +
+        '<div class="flex items-center justify-between gap-1 flex-wrap">' +
+          '<div class="flex items-center gap-1.5">' +
+            (commTarget
+              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="text-[10px] text-amber-400 hover:text-amber-300 font-mono-tag font-bold tracking-wider uppercase inline-flex items-center gap-1 cursor-pointer transition hover:underline active:scale-95" title="Open Community Page"><span>◉</span> <span>' + campusName + '</span></button>'
+              : '<span class="text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider uppercase">' + campusName + '</span>') +
+            '<span class="text-[10px] text-zinc-600 font-mono-tag">·</span>' +
+            '<span class="text-[10px] text-zinc-400 font-mono-tag uppercase">' + timeAgo + '</span>' +
           '</div>' +
           clusterBadgeHtml +
         '</div>' +
@@ -4302,6 +4327,13 @@ async function performSearch(query, filter) {
     }
   }
 
+  if (filter === 'communities' || filter === 'places' || filter === 'all' || (filter === 'live' && query)) {
+    if (Array.isArray(data.communities) && data.communities.length > 0) {
+      hasResults = true;
+      renderCommunitiesSearchResults(data.communities, resultsContainer);
+    }
+  }
+
   if (filter === 'places' || filter === 'all' || (filter === 'live' && query && !hasResults)) {
     if (Array.isArray(data.places) && data.places.length > 0) {
       hasResults = true;
@@ -4627,6 +4659,52 @@ function handlePeerProfileBack() {
 }
 window.handlePeerProfileBack = handlePeerProfileBack;
 
+function renderCommunitiesSearchResults(communities, container) {
+  var header = document.createElement('div');
+  header.className = 'px-1 pt-3 pb-2 flex justify-between items-center text-[9px] font-mono-tag text-zinc-500 font-bold uppercase tracking-widest';
+  header.innerHTML = '<span>COMMUNITIES (' + communities.length + ')</span>';
+  container.appendChild(header);
+
+  var group = document.createElement('div');
+  group.className = 'space-y-2';
+
+  communities.forEach(function(c) {
+    var item = document.createElement('div');
+    item.className = 'bg-zinc-950 border border-zinc-800/80 hover:border-amber-500/40 rounded-2xl p-3.5 flex justify-between items-center shadow-lg transition cursor-pointer active:scale-[0.99]';
+    var cType = (c.type || 'COMMUNITY').toUpperCase();
+    var cIcon = c.icon || (cType === 'CAMPUS' ? '🎓' : cType === 'PLACE' ? '📍' : '📸');
+    var isMember = Boolean(c.is_joined || (state.currentUser && ((state.currentUser.campus && state.currentUser.campus.toLowerCase() === c.name.toLowerCase()) || state.currentUser.campus === c.id)));
+    var actionBtnHtml = isMember
+      ? '<span class="text-[9px] text-zinc-400 font-mono-tag font-bold px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800">JOINED ✓</span>'
+      : '<span class="text-[9px] text-black font-mono-tag font-bold px-3 py-1 rounded-lg bg-amber-500 shadow-sm">+ JOIN</span>';
+
+    item.innerHTML =
+      '<div class="flex items-center gap-3 min-w-0">' +
+        '<div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm flex-shrink-0">' +
+          cIcon +
+        '</div>' +
+        '<div class="min-w-0">' +
+          '<h3 class="text-xs font-bold text-white truncate">◉ ' + escapeHtml(c.name) + '</h3>' +
+          '<span class="text-[9px] text-zinc-400 font-mono-tag uppercase">' + escapeHtml(cType) + ' · ' + (c.members_count || 1) + ' MEMBERS</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="flex items-center gap-2 flex-shrink-0">' +
+        actionBtnHtml +
+      '</div>';
+
+    item.addEventListener('click', function() {
+      if (typeof openCampusPage === 'function') {
+        openCampusPage(c.name);
+      }
+    });
+
+    group.appendChild(item);
+  });
+
+  container.appendChild(group);
+}
+window.renderCommunitiesSearchResults = renderCommunitiesSearchResults;
+
 function renderPlacesSearchResults(places, container) {
   var header = document.createElement('div');
   header.className = 'px-1 pt-3 pb-2 flex justify-between items-center text-[9px] font-mono-tag text-zinc-500 font-bold uppercase tracking-widest';
@@ -4650,7 +4728,11 @@ function renderPlacesSearchResults(places, container) {
       '<span class="text-[10px] text-zinc-400 font-mono-tag font-bold bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-lg">' + pl.momentsCount + ' MOMENTS</span>';
 
     item.addEventListener('click', function() {
-      filterBySector(pl.name);
+      if (pl.is_community || pl.community_id) {
+        if (typeof openCampusPage === 'function') openCampusPage(pl.name);
+      } else {
+        filterBySector(pl.name);
+      }
     });
 
     group.appendChild(item);
@@ -4675,7 +4757,10 @@ function renderMomentsSearchResults(moments, container) {
     var mainImg = m.main_img || m.mainImg || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=600&q=80';
     var pipImg = m.pip_img || m.pipImg || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80';
     var author = escapeHtml(m.author_handle || m.user_handle || 'user');
-    var campus = escapeHtml(m.campus || 'CAMPUS');
+    var rawComm = m.community_name || m.primary_community_name || m.campus || 'CAMPUS';
+    var cleanComm = rawComm.replace(/^Near\s+/i, '');
+    var campus = escapeHtml(cleanComm.toUpperCase());
+    var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || cleanComm;
     var caption = escapeHtml(m.caption || 'Captured moment');
     var timeAgo = m.timeAgo || 'RECENT';
 
@@ -4687,8 +4772,14 @@ function renderMomentsSearchResults(moments, container) {
         '</div>' +
       '</div>' +
       '<div class="space-y-1 px-0.5">' +
-        '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag">' +
-          '<span class="font-bold text-white">@' + author + ' · ' + campus.toUpperCase() + '</span>' +
+        '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag flex-wrap gap-1">' +
+          '<div class="flex items-center gap-1.5">' +
+            '<span class="font-bold text-white">@' + author + '</span>' +
+            '<span>·</span>' +
+            (commTarget
+              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="text-amber-400 hover:text-amber-300 font-bold hover:underline cursor-pointer">◉ ' + campus + '</button>'
+              : '<span>' + campus + '</span>') +
+          '</div>' +
           '<span>' + timeAgo + '</span>' +
         '</div>' +
         '<p class="text-xs text-zinc-200">"' + caption + '"</p>' +
