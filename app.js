@@ -1568,6 +1568,20 @@ function openDropDetail(dropId) {
   if (hostAvatarEl) hostAvatarEl.textContent = ((d.host_handle || d.created_by || 'K')[0] || 'K').toUpperCase();
   if (priceEl) priceEl.textContent = '₹' + (d.price || 19).toFixed(2);
 
+  // Cover Thumbnail in Drop Detail
+  var coverContainer = document.getElementById('dropDetailCoverContainer');
+  var coverImgEl = document.getElementById('dropDetailCoverImg');
+  var coverSrc = d.cover_img || d.image_url || '';
+  if (coverContainer && coverImgEl) {
+    if (coverSrc) {
+      coverImgEl.src = coverSrc;
+      coverContainer.style.display = 'block';
+    } else {
+      coverImgEl.src = '';
+      coverContainer.style.display = 'none';
+    }
+  }
+
   var isRegistered = !!d.is_registered;
   var isLiveOrCheckin = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.state) !== -1;
   var isEnded = ['CLOSED', 'SETTLEMENT', 'MEMORY'].indexOf(d.state) !== -1;
@@ -1686,6 +1700,20 @@ async function openDropExperience(dropId) {
   if (descEl) descEl.textContent = d.description || 'A shared real-world experience captured together with members of the community.';
   if (timeRemEl) timeRemEl.textContent = (d.date_str || 'Today') + ' · ' + (d.time_str || 'Now');
   if (presenceEl) presenceEl.textContent = d.presence_label || ((d.checked_in_count || 0) + ' people are here');
+
+  // Cover Thumbnail in Drop Experience
+  var expCoverContainer = document.getElementById('dropExperienceCoverContainer');
+  var expCoverImg = document.getElementById('dropExperienceCoverImg');
+  var expCoverSrc = d.cover_img || d.image_url || '';
+  if (expCoverContainer && expCoverImg) {
+    if (expCoverSrc) {
+      expCoverImg.src = expCoverSrc;
+      expCoverContainer.style.display = 'block';
+    } else {
+      expCoverImg.src = '';
+      expCoverContainer.style.display = 'none';
+    }
+  }
 
   if (pulseBadgeEl && pulseDotEl) {
     pulseBadgeEl.textContent = d.pulse_status || 'ACTIVE NOW';
@@ -1957,9 +1985,59 @@ function openCreateDropModal() {
 }
 window.openCreateDropModal = openCreateDropModal;
 
+var pendingDropThumbnailData = '';
+
+function handleDropThumbnailSelect(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) {
+    showToast('Thumbnail image must be under 10MB.');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    pendingDropThumbnailData = e.target.result;
+    var preview = document.getElementById('newDropThumbnailPreview');
+    var placeholder = document.getElementById('newDropThumbnailPlaceholder');
+    var removeBtn = document.getElementById('newDropThumbnailRemoveBtn');
+    if (preview) {
+      preview.src = e.target.result;
+      preview.classList.remove('hidden');
+    }
+    if (placeholder) placeholder.classList.add('hidden');
+    if (removeBtn) {
+      removeBtn.classList.remove('hidden');
+      removeBtn.style.display = 'flex';
+    }
+    showToast('Thumbnail photo selected 📸');
+  };
+  reader.readAsDataURL(file);
+}
+window.handleDropThumbnailSelect = handleDropThumbnailSelect;
+
+function removeDropThumbnail() {
+  pendingDropThumbnailData = '';
+  var input = document.getElementById('newDropThumbnailInput');
+  if (input) input.value = '';
+  var preview = document.getElementById('newDropThumbnailPreview');
+  var placeholder = document.getElementById('newDropThumbnailPlaceholder');
+  var removeBtn = document.getElementById('newDropThumbnailRemoveBtn');
+  if (preview) {
+    preview.src = '';
+    preview.classList.add('hidden');
+  }
+  if (placeholder) placeholder.classList.remove('hidden');
+  if (removeBtn) {
+    removeBtn.classList.add('hidden');
+    removeBtn.style.display = 'none';
+  }
+}
+window.removeDropThumbnail = removeDropThumbnail;
+
 function closeCreateDropModal() {
   var modal = document.getElementById('createDropModal');
   if (modal) modal.style.display = 'none';
+  removeDropThumbnail();
 }
 window.closeCreateDropModal = closeCreateDropModal;
 
@@ -1990,6 +2068,7 @@ async function submitNewDrop() {
       date_str: dateStr,
       time_str: timeStr,
       capacity: capacity,
+      cover_img: pendingDropThumbnailData || '',
       price: 19.0
     })
   });
@@ -2000,6 +2079,7 @@ async function submitNewDrop() {
     closeCreateDropModal();
     if (titleInput) titleInput.value = '';
     if (descInput) descInput.value = '';
+    removeDropThumbnail();
     loadCommunityDrops(state.activeCommunity);
   } else {
     showToast('Failed to publish drop: ' + (res ? res.error : 'Error'));
@@ -4831,11 +4911,18 @@ function renderYouHostedDrops(drops) {
     var regCount = d.registered_count || 0;
     var cap = d.capacity || 20;
 
+    var thumbHtml = d.cover_img ?
+      '<img src="' + escapeHtml(d.cover_img) + '" class="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/[.06]">' :
+      '<div class="w-10 h-10 rounded-xl bg-zinc-900 border border-white/[.06] flex items-center justify-center text-sm shrink-0">🎟️</div>';
+
     card.innerHTML =
-      '<div class="space-y-0.5 min-w-0">' +
-        '<span class="text-[8px] text-amber-500 font-mono-tag tracking-widest uppercase font-bold block">HOSTING</span>' +
-        '<h4 class="text-xs font-extrabold text-white font-mono-tag truncate">' + escapeHtml(d.title) + '</h4>' +
-        '<p class="text-[10px] text-zinc-400 font-mono-tag">₹' + (d.price || 19) + ' · ' + regCount + '/' + cap + ' joined</p>' +
+      '<div class="flex items-center gap-3 min-w-0">' +
+        thumbHtml +
+        '<div class="space-y-0.5 min-w-0">' +
+          '<span class="text-[8px] text-amber-500 font-mono-tag tracking-widest uppercase font-bold block">HOSTING</span>' +
+          '<h4 class="text-xs font-extrabold text-white font-mono-tag truncate">' + escapeHtml(d.title) + '</h4>' +
+          '<p class="text-[10px] text-zinc-400 font-mono-tag">₹' + (d.price || 19) + ' · ' + regCount + '/' + cap + ' joined</p>' +
+        '</div>' +
       '</div>' +
       '<button class="px-2.5 py-1.5 bg-zinc-900 border border-zinc-700 text-amber-400 font-mono-tag text-[9px] font-bold rounded-lg uppercase cursor-pointer hover:bg-zinc-800">MANAGE DROP</button>';
 
