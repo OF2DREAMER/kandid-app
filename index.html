@@ -2500,6 +2500,11 @@
                 <span id="dropExperienceTimeRemaining" class="font-mono-tag text-[9px] text-zinc-400 font-bold">01:24:32 REMAINING</span>
             </div>
 
+            <!-- Drop Experience Cover Thumbnail -->
+            <div id="dropExperienceCoverContainer" class="w-full aspect-[16/9] rounded-2xl overflow-hidden bg-zinc-900 border border-white/[.06]" style="display:none;">
+                <img id="dropExperienceCoverImg" src="" alt="Drop cover" class="w-full h-full object-cover">
+            </div>
+
             <div class="space-y-1">
                 <h1 id="dropExperienceTitle" class="text-xl font-extrabold text-white tracking-tight">Sunset Campus Walk</h1>
                 <p id="dropExperienceLocation" class="text-xs text-zinc-400 font-mono-tag flex items-center gap-1">
@@ -2858,6 +2863,25 @@
                     <textarea id="newDropDesc" rows="2" placeholder="e.g. Sunset 35mm film walk along Carter Road. Meet at Bandra Fort." class="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/60 rounded-xl px-3 py-2 text-xs text-white outline-none resize-none"></textarea>
                 </div>
 
+                <!-- Cover Thumbnail (Optional) -->
+                <div class="space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Cover Thumbnail</label>
+                        <span class="text-[9px] font-mono-tag text-zinc-500 lowercase">(optional photo)</span>
+                    </div>
+                    
+                    <input type="file" id="newDropThumbnailInput" accept="image/jpeg,image/png,image/webp" class="hidden" onchange="handleDropThumbnailSelect(event)">
+                    
+                    <div id="newDropThumbnailPreviewContainer" class="relative w-full aspect-[16/9] rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 flex items-center justify-center cursor-pointer group hover:border-amber-500/40 transition" onclick="document.getElementById('newDropThumbnailInput').click()">
+                        <img id="newDropThumbnailPreview" src="" alt="Thumbnail preview" class="w-full h-full object-cover hidden">
+                        <div id="newDropThumbnailPlaceholder" class="flex flex-col items-center justify-center gap-1 text-zinc-500 group-hover:text-amber-400 transition-colors">
+                            <span class="text-base">📸</span>
+                            <span class="text-[10px] font-mono-tag font-bold">+ UPLOAD COVER PHOTO</span>
+                        </div>
+                        <button type="button" id="newDropThumbnailRemoveBtn" onclick="event.stopPropagation(); removeDropThumbnail();" class="hidden absolute top-2 right-2 w-6 h-6 rounded-full bg-black/80 hover:bg-black text-white text-[10px] font-bold items-center justify-center border border-white/20 cursor-pointer">✕</button>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-2 gap-2">
                     <div class="space-y-1">
                         <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Date</label>
@@ -2917,6 +2941,11 @@
                     <h3 id="dropDetailTitle" class="text-base font-extrabold text-white tracking-tight">Experience Title</h3>
                 </div>
                 <button onclick="closeDropDetailModal()" class="text-zinc-500 hover:text-white cursor-pointer text-xs p-1 font-bold">✕</button>
+            </div>
+
+            <!-- Drop Cover Thumbnail -->
+            <div id="dropDetailCoverContainer" class="w-full aspect-[16/9] rounded-2xl overflow-hidden bg-zinc-900 border border-white/[.06]" style="display:none;">
+                <img id="dropDetailCoverImg" src="" alt="Drop cover" class="w-full h-full object-cover">
             </div>
 
             <!-- Date & Time & Spots -->
@@ -4426,6 +4455,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.0.9"></script> 
+  <script src="app.js?v=5.1.0"></script> 
 </body>
 </html>

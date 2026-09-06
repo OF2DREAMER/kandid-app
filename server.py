@@ -8235,7 +8235,20 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if capacity < 1 or capacity > 500:
                 return self.send_json(400, {"error": "Capacity must be between 1 and 500"})
 
-            cover_img = (body.get("cover_img") or "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=600&q=80").strip()
+            # Drop Cover Thumbnail: server-side validation & clean fallback
+            raw_cover = (body.get("cover_img") or body.get("thumbnail") or "").strip()
+            cover_img = ""
+            if raw_cover:
+                if raw_cover.startswith("data:image"):
+                    saved_cover = save_base64_image(raw_cover, prefix="drop_cover")
+                    if not saved_cover:
+                        return self.send_json(400, {"error": "Invalid thumbnail image format or payload too large."})
+                    cover_img = saved_cover
+                elif raw_cover.startswith("http://") or raw_cover.startswith("https://") or raw_cover.startswith("/uploads/"):
+                    cover_img = raw_cover
+                else:
+                    return self.send_json(400, {"error": "Invalid cover thumbnail format."})
+
             scheduled_start = (body.get("scheduled_start") or "").strip()
             requested_state = (body.get("lifecycle_state") or LIFECYCLE_DRAFT).strip().upper()
             initial_state = LIFECYCLE_DRAFT if requested_state not in (LIFECYCLE_DRAFT, LIFECYCLE_SCHEDULED) else requested_state
@@ -8288,6 +8301,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(201, {
                 "success": True,
                 "drop_id": drop_id,
+                "cover_img": cover_img,
                 "lifecycle_state": initial_state,
                 "price_paise": economics["gross_paise"],
                 "price": economics["gross_rupees"],
@@ -8338,9 +8352,19 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if desc is not None:
                 updates.append("description = ?")
                 params.append(str(desc).strip())
-            if cover_img is not None and str(cover_img).strip():
-                updates.append("cover_img = ?")
-                params.append(str(cover_img).strip())
+            if cover_img is not None:
+                raw_cov = str(cover_img).strip()
+                if raw_cov.startswith("data:image"):
+                    saved_cov = save_base64_image(raw_cov, prefix="drop_cover")
+                    if saved_cov:
+                        updates.append("cover_img = ?")
+                        params.append(saved_cov)
+                elif raw_cov.startswith("http://") or raw_cov.startswith("https://") or raw_cov.startswith("/uploads/"):
+                    updates.append("cover_img = ?")
+                    params.append(raw_cov)
+                elif raw_cov == "":
+                    updates.append("cover_img = ?")
+                    params.append("")
             if date_str is not None and str(date_str).strip():
                 updates.append("date_str = ?")
                 params.append(str(date_str).strip())
