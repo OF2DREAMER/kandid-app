@@ -6856,11 +6856,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # 1. Search People
             if type_param in ["people", "all"]:
                 if q:
+                    q_clean = q.strip().lower()
+                    q_alt = q_clean.replace("anum", "anam") if "anum" in q_clean else (q_clean.replace("anam", "anum") if "anam" in q_clean else q_clean)
                     cursor.execute("""
                         SELECT id, name, handle, avatar_url, avatar_letter, campus, bio FROM users
-                        WHERE (LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?) AND (role != 'banned')
+                        WHERE (LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?
+                            OR LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?)
+                          AND (role != 'banned')
                         ORDER BY name ASC
-                    """, (f"%{q}%", f"%{q}%", f"%{q}%"))
+                    """, (f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_alt}%", f"%{q_alt}%", f"%{q_alt}%"))
                 else:
                     cursor.execute("""
                         SELECT id, name, handle, avatar_url, avatar_letter, campus, bio FROM users
@@ -9685,7 +9689,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 
             raw_identifier = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
             clean_handle = raw_identifier.replace("@", "")
-            alias_handle = "ceo" if clean_handle in ("ceo", "ceo_1") else clean_handle
+            alias_handle = "ceo" if clean_handle in ("ceo", "ceo_1") else ("anam" if clean_handle == "anum" else ("anam1" if clean_handle == "anum1" else clean_handle))
             password = (body.get("password") or "").strip()
             
             if not raw_identifier:
