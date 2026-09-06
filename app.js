@@ -4094,14 +4094,18 @@ async function publishCapturedMoment() {
   var chosenCommunity = selectedRadio ? selectedRadio.value : (state.selectedReviewCommunity || state.activeCommunity || '');
   var chosenCommId = selectedRadio ? selectedRadio.getAttribute('data-comm-id') : (state.activeCommunityId || '');
 
+  var isPersonalFeed = (!chosenCommId && (!chosenCommunity || chosenCommunity.toLowerCase() === 'personal (feed)' || chosenCommunity.toLowerCase() === 'feed'));
+  var finalCommId = isPersonalFeed ? '' : (chosenCommId || '');
+  var finalPrimaryComm = isPersonalFeed ? '' : (chosenCommId || chosenCommunity || '');
+
   var payload = {
     caption: caption,
     circle: state.activeCircle || 'campus',
     region: 'all',
     locationCity: approxLocName,
-    community: chosenCommunity,
-    community_id: chosenCommId,
-    primary_community_id: chosenCommId || chosenCommunity,
+    community: isPersonalFeed ? 'Personal (Feed)' : chosenCommunity,
+    community_id: finalCommId,
+    primary_community_id: finalPrimaryComm,
     context_community_id: state.activeCommunity || (state.currentUser ? state.currentUser.campus : ''),
     context_location: approxLocName,
     mainImg: state.capturedMomentData ? state.capturedMomentData.mainImg : '',

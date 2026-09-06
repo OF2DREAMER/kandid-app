@@ -157,12 +157,13 @@ def get_user_community_role(community_id, user_id, cursor):
     if not community_id or not user_id:
         return None
     # 1. Check if user is community creator
-    cursor.execute("SELECT creator_id FROM communities WHERE id = ?", (community_id,))
+    cursor.execute("SELECT id, creator_id, name FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (community_id, str(community_id).lower(), community_id))
     crow = cursor.fetchone()
     if crow and crow["creator_id"] == user_id:
         return "owner"
     # 2. Check community_members table
-    cursor.execute("SELECT role, status FROM community_members WHERE community_id = ? AND user_id = ?", (community_id, user_id))
+    cursor.execute("SELECT role, status FROM community_members WHERE (community_id = ? OR community_id = ?) AND user_id = ?", 
+                   (community_id, crow["id"] if crow else community_id, user_id))
     mrow = cursor.fetchone()
     if mrow:
         if mrow["status"] != "active":
@@ -171,6 +172,14 @@ def get_user_community_role(community_id, user_id, cursor):
         if role in ("owner", "admin", "creator", "member"):
             return role
         return "member"
+    # 3. Check user's home campus
+    cursor.execute("SELECT campus FROM users WHERE id = ?", (user_id,))
+    urow = cursor.fetchone()
+    if urow and urow["campus"] and crow:
+        clean_user_campus = urow["campus"].replace("Near ", "").strip().lower()
+        clean_comm_name = crow["name"].replace("Near ", "").strip().lower()
+        if clean_user_campus == clean_comm_name or clean_user_campus == crow["id"].lower():
+            return "member"
     return None
 
 def validate_drop_ownership(drop_id, user_id, cursor):
@@ -10275,6 +10284,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # Server-authoritative Community Contribution Access Control (Phase 18 Fix)
             target_comm_key = (body.get("community_id") or body.get("primary_community_id") or "").strip()
+            if target_comm_key.lower() in ("all", "global", "foryou", "friends", "feed", "none", "", "personal", "personal (feed)"):
+                target_comm_key = ""
             if not target_comm_key and body.get("community"):
                 c_cand = str(body.get("community")).strip()
                 if c_cand and c_cand.lower() not in ("all", "global", "foryou", "friends", "feed", "none", "", "personal", "personal (feed)"):
