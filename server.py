@@ -79,7 +79,7 @@ FROM_EMAIL = BREVO_FROM_EMAIL
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "").strip().strip("'\"")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "").strip().strip("'\"")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", os.environ.get("WEBHOOK_SECRET", "")).strip().strip("'\"")
-APP_URL = os.environ.get("APP_URL", "https://kandid-app-1.onrender.com").strip()
+APP_URL = os.environ.get("APP_URL", "https://kindid.in").strip()
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
 
 # ==============================================================================
@@ -3958,8 +3958,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
         # CORS Origin Control
         origin = self.headers.get("Origin", "")
         if ENVIRONMENT == "production":
-            allowed_origins = [APP_URL, "https://kandid-app-1.onrender.com", "https://kandid.app"]
-            if origin in allowed_origins:
+            allowed_origins = [
+                APP_URL,
+                "https://kindid.in",
+                "https://www.kindid.in",
+                "https://kandid-app-1.onrender.com",
+                "https://kandid.app",
+                "https://kandid.in",
+                "https://www.kandid.in",
+            ]
+            if origin in allowed_origins or (origin and any(origin.endswith(d) for d in [".kindid.in", "kindid.in", ".onrender.com"])):
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Access-Control-Allow-Credentials", "true")
             else:
