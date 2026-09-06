@@ -641,6 +641,16 @@ window.renderGlobalCards = renderGlobalCards;
 function switchScreenView(screenName) {
   state.activeScreen = screenName;
 
+  if (screenName === 'feed') {
+    if (typeof handleNewUserFeedEntry === 'function') {
+      handleNewUserFeedEntry();
+    }
+  } else {
+    if (typeof handleNewUserFeedExit === 'function') {
+      handleNewUserFeedExit();
+    }
+  }
+
   document.querySelectorAll('.app-screen').forEach(function(scr) {
     scr.classList.remove('active');
     scr.style.display = 'none';
@@ -5159,6 +5169,104 @@ async function switchUserAccount(handle) {
 window.switchUserAccount = switchUserAccount;
 
 
+// =====================================================================
+// NEW USER DAILY MISSION TRIGGER (SERVER-AUTHORITATIVE & CALM UX)
+// =====================================================================
+var newUserMissionTimer = null;
+
+function showDailyMissionPrompt(userId) {
+  var push = document.getElementById('osPushNotification');
+  if (push) {
+    push.classList.remove('-translate-y-[150%]');
+    setTimeout(function() {
+      push.classList.add('-translate-y-[150%]');
+    }, 7000);
+  }
+  if (userId) {
+    try {
+      localStorage.setItem('kandid_daily_mission_shown_' + userId, 'true');
+      localStorage.removeItem('kandid_new_account_' + userId);
+      localStorage.removeItem('kandid_feed_entry_time_' + userId);
+    } catch(e) {}
+  }
+}
+window.showDailyMissionPrompt = showDailyMissionPrompt;
+
+function handleNewUserFeedExit() {
+  if (newUserMissionTimer) {
+    clearTimeout(newUserMissionTimer);
+    newUserMissionTimer = null;
+  }
+}
+window.handleNewUserFeedExit = handleNewUserFeedExit;
+
+function handleNewUserFeedEntry() {
+  var user = state.currentUser;
+  if (!user || !user.id) {
+    try {
+      user = JSON.parse(localStorage.getItem('kandid_user') || 'null');
+    } catch(e) {}
+  }
+  if (!user || !user.id) return;
+  var userId = user.id;
+
+  try {
+    // Rule 6 & 7: Only for genuinely new user account & never if already shown
+    if (localStorage.getItem('kandid_daily_mission_shown_' + userId) === 'true') {
+      return;
+    }
+    if (localStorage.getItem('kandid_new_account_' + userId) !== 'true') {
+      return;
+    }
+  } catch(e) {
+    return;
+  }
+
+  // Rule 2 & 3: Start 2-minute client-side timer from first Feed entry
+  var now = Date.now();
+  var entryTimeStr = null;
+  try {
+    entryTimeStr = localStorage.getItem('kandid_feed_entry_time_' + userId);
+    if (!entryTimeStr) {
+      entryTimeStr = now.toString();
+      localStorage.setItem('kandid_feed_entry_time_' + userId, entryTimeStr);
+    }
+  } catch(e) {
+    entryTimeStr = now.toString();
+  }
+
+  var entryTime = parseInt(entryTimeStr, 10) || now;
+  var DURATION_MS = 2 * 60 * 1000; // Exactly 2 minutes
+  var elapsed = now - entryTime;
+  var remainingMs = DURATION_MS - elapsed;
+
+  // Rule 8: Prevent duplicate timers
+  handleNewUserFeedExit();
+
+  if (remainingMs <= 0) {
+    // 2 minutes already elapsed since first feed entry
+    if (state.activeScreen === 'feed') {
+      showDailyMissionPrompt(userId);
+    }
+    return;
+  }
+
+  // Rule 3, 4, 5: Schedule prompt after remaining duration
+  newUserMissionTimer = setTimeout(function() {
+    newUserMissionTimer = null;
+    try {
+      if (localStorage.getItem('kandid_daily_mission_shown_' + userId) === 'true') {
+        return;
+      }
+    } catch(e) {}
+
+    if (state.activeScreen === 'feed') {
+      showDailyMissionPrompt(userId);
+    }
+  }, remainingMs);
+}
+window.handleNewUserFeedEntry = handleNewUserFeedEntry;
+
 function handlePushClick() {
   var push = document.getElementById('osPushNotification');
   if (push) {
@@ -5255,16 +5363,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     navigator.serviceWorker.register('/sw.js').catch(function() {});
   }
 
-  // 7. Simulate OS Push Notification for Daily Mission
-  setTimeout(function() {
-    var push = document.getElementById('osPushNotification');
-    if (push) {
-      push.classList.remove('-translate-y-[150%]');
-      setTimeout(function() {
-        push.classList.add('-translate-y-[150%]');
-      }, 7000);
-    }
-  }, 4000);
+  // 7. New User Daily Mission Trigger (Only for genuine new users on Feed)
+  if (state.activeScreen === 'feed') {
+    handleNewUserFeedEntry();
+  }
 });
 
 // === EVENT DETAIL SCREEN ===
@@ -6319,6 +6421,7 @@ window.submitFinalOnboarding = async function() {
             localStorage.setItem('kandid_token', res.token);
             localStorage.setItem('kandid_onboarded', 'true');
             localStorage.setItem('kandid_user', JSON.stringify(res.user));
+            localStorage.setItem('kandid_new_account_' + res.user.id, 'true');
             state.token = res.token;
             state.currentUser = res.user;
 
@@ -6635,6 +6738,9 @@ window.dismissFounderModal = dismissFounderModal;
 document.addEventListener('DOMContentLoaded', async function() {
     await checkOnboarding();
     checkAndShowFounderModal();
+    if (state.activeScreen === 'feed' && typeof handleNewUserFeedEntry === 'function') {
+        handleNewUserFeedEntry();
+    }
 });
 
 
@@ -7147,6 +7253,9 @@ async function downloadUserData() {
 window.downloadUserData = downloadUserData;
 
 function logoutUser() {
+  if (typeof handleNewUserFeedExit === 'function') {
+    handleNewUserFeedExit();
+  }
   localStorage.removeItem('kandid_token');
   localStorage.removeItem('kandid_onboarded');
   localStorage.removeItem('kandid_user');
