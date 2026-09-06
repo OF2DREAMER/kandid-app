@@ -2765,16 +2765,31 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
             return True, "DROP_ATTENDEE", 1
 
     # Tier 2: Active Member of the Associated Community
-    comm_id = moment.get("primary_community_id") or moment.get("context_community_id")
-    if comm_id:
-        cursor.execute("SELECT 1 FROM community_mutes WHERE user_id = ? AND target_type = 'community' AND target_id = ?", (viewer["id"], comm_id))
+    comm_key = moment.get("primary_community_id") or moment.get("context_community_id") or ""
+    if not comm_key and moment.get("campus"):
+        raw_campus = moment.get("campus", "").replace("Near ", "").strip()
+        cursor.execute("SELECT id FROM communities WHERE LOWER(name) = ? OR id = ? LIMIT 1", (raw_campus.lower(), raw_campus))
+        camp_row = cursor.fetchone()
+        if camp_row:
+            comm_key = camp_row["id"]
+
+    if comm_key:
+        cursor.execute("SELECT id, name, creator_id FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ? LIMIT 1", (comm_key, comm_key.lower(), comm_key))
+        c_found = cursor.fetchone()
+        target_cid = c_found["id"] if c_found else comm_key
+
+        cursor.execute("SELECT 1 FROM community_mutes WHERE user_id = ? AND target_type = 'community' AND target_id IN (?, ?)", (viewer["id"], target_cid, comm_key))
         if cursor.fetchone():
             return False, "COMMUNITY_MUTED", 0
 
+        # Creator / Owner check
+        if c_found and c_found["creator_id"] == viewer["id"]:
+            return True, "ACTIVE_COMMUNITY_MEMBER", 2
+
         cursor.execute("""
             SELECT role, status FROM community_members 
-            WHERE community_id = ? AND user_id = ?
-        """, (comm_id, viewer["id"]))
+            WHERE community_id IN (?, ?) AND user_id = ?
+        """, (target_cid, comm_key, viewer["id"]))
         mem = cursor.fetchone()
         if mem and mem["status"] == "active" and mem["role"] in ('owner', 'admin', 'creator', 'member'):
             return True, "ACTIVE_COMMUNITY_MEMBER", 2
@@ -4136,11 +4151,33 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 cursor.execute("SELECT * FROM posts ORDER BY created_at DESC")
             posts = [dict(r) for r in cursor.fetchall()]
             
-            # Realmoji aggregation
+            cursor.execute("SELECT id, name FROM communities")
+            comm_map = {r["id"]: r["name"] for r in cursor.fetchall()}
+
+            # Realmoji aggregation & community resolution
             for p in posts:
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
                 p["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
                 p["timeAgo"] = "12 min ago"
+
+                # Resolve community name and id
+                cid = p.get("primary_community_id") or p.get("context_community_id") or ""
+                if cid and cid in comm_map:
+                    p["community_id"] = cid
+                    p["community_name"] = comm_map[cid]
+                    p["primary_community_name"] = comm_map[cid]
+                elif cid:
+                    p["community_id"] = cid
+                    p["community_name"] = cid
+                    p["primary_community_name"] = cid
+                elif p.get("campus"):
+                    clean_campus = p["campus"].replace("Near ", "").strip()
+                    for k_id, k_name in comm_map.items():
+                        if clean_campus.lower() in (k_id.lower(), k_name.lower()):
+                            p["community_id"] = k_id
+                            p["community_name"] = k_name
+                            p["primary_community_name"] = k_name
+                            break
             conn.close()
             return self.send_json(200, {
                 "success": True,
@@ -6709,6 +6746,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if path == "/api/search":
             q = query.get("q", [""])[0].strip().lower()
             type_param = query.get("type", ["all"])[0].lower()
+            user = get_current_user(self.headers)
+            user_id = user["id"] if user else ""
 
             conn = get_db()
             cursor = conn.cursor()
@@ -6816,7 +6855,35 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 for p in people_results:
                     p["avatar_url"] = p.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={p.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
 
-            # 2. Search Places
+            # 2. Search Communities
+            community_results = []
+            if type_param in ["communities", "places", "all"] or (type_param == "live" and q):
+                if q:
+                    cursor.execute("""
+                        SELECT id, name, type, city, description, icon, members_count, creator_id
+                        FROM communities
+                        WHERE (visibility IS NULL OR visibility != 'private') AND (status IS NULL OR status = 'active')
+                          AND (LOWER(name) LIKE ? OR LOWER(city) LIKE ? OR LOWER(description) LIKE ?)
+                        ORDER BY members_count DESC LIMIT 20
+                    """, (f"%{q}%", f"%{q}%", f"%{q}%"))
+                else:
+                    cursor.execute("""
+                        SELECT id, name, type, city, description, icon, members_count, creator_id
+                        FROM communities
+                        WHERE (visibility IS NULL OR visibility != 'private') AND (status IS NULL OR status = 'active')
+                        ORDER BY members_count DESC LIMIT 10
+                    """)
+                for crow in cursor.fetchall():
+                    c_dict = dict(crow)
+                    is_joined = False
+                    if user_id:
+                        user_role = get_user_community_role(c_dict["id"], user_id, cursor)
+                        is_joined = bool(user_role)
+                    c_dict["is_joined"] = is_joined
+                    c_dict["is_community"] = True
+                    community_results.append(c_dict)
+
+            # 3. Search Places
             if type_param in ["places", "all"]:
                 if q:
                     places_results = [s for s in sectors if q in s["name"].lower() or q in s["area"].lower()]
@@ -6835,10 +6902,22 @@ class KandidHandler(SimpleHTTPRequestHandler):
                                 "momentsCount": dp["momentsCount"],
                                 "area": "Campus Location"
                             })
+                    for cr in community_results:
+                        cname = cr["name"].upper()
+                        if not any(cname == p["name"].upper() for p in places_results):
+                            places_results.append({
+                                "id": cr["id"],
+                                "number": f"0{len(places_results)+1}",
+                                "name": cname,
+                                "momentsCount": cr.get("members_count", 1),
+                                "area": cr.get("city") or cr.get("type") or "Community Space",
+                                "is_community": True,
+                                "is_joined": cr["is_joined"]
+                            })
                 else:
                     places_results = sectors
 
-            # 3. Search Moments
+            # 4. Search Moments
             if type_param in ["moments", "all"]:
                 if q:
                     clean_q = q.replace("#", "")
@@ -6873,6 +6952,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "sectors": sectors,
                 "people": people_results,
                 "places": places_results,
+                "communities": community_results,
                 "moments": moments_results
             })
 
