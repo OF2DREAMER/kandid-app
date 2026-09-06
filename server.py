@@ -8246,7 +8246,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn = get_db()
             cursor = conn.cursor()
             if not comm_id and comm_name:
-                cursor.execute("SELECT id, name FROM communities WHERE LOWER(name) = ?", (comm_name.lower(),))
+                cursor.execute("SELECT id, name, creator_id FROM communities WHERE LOWER(name) = ?", (comm_name.lower(),))
                 crow = cursor.fetchone()
                 if crow:
                     comm_id = crow["id"]
@@ -8256,16 +8256,24 @@ class KandidHandler(SimpleHTTPRequestHandler):
             elif not comm_id:
                 comm_id = "comm_custom"
             else:
-                cursor.execute("SELECT name FROM communities WHERE id = ?", (comm_id,))
+                cursor.execute("SELECT id, name, creator_id FROM communities WHERE id = ?", (comm_id,))
                 crow = cursor.fetchone()
                 if crow:
                     comm_name = crow["name"]
 
-            # Verify owner/admin/creator authorization using authoritative role resolver
+            # Authoritative check: Host creation must be OWNER-ONLY
+            # A user can create/host a new Host/hosted activity only inside a Community they personally created and own.
+            # Direct API attempts to create a Host in another user's Community must be rejected server-side with 403.
             user_role = get_user_community_role(comm_id, user["id"], cursor)
-            if user_role not in ('owner', 'admin', 'creator') and user.get("role") != "admin" and user.get("id") != "u_casey":
+            is_owner = bool(
+                (crow and crow["creator_id"] and crow["creator_id"] == user["id"]) or
+                (user_role in ("owner", "creator")) or
+                (user.get("role") == "admin") or
+                (user.get("id") == "u_casey")
+            )
+            if not is_owner or user_role == "member":
                 conn.close()
-                return self.send_json(403, {"error": "Only community owners, admins, and creators can publish drops."})
+                return self.send_json(403, {"error": "Only the community owner can host drops in this community."})
 
             drop_id = "drop_" + secrets.token_hex(6)
             # Server-authoritative economics: fixed 1900 paise (₹19.00), INR

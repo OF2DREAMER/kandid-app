@@ -1174,6 +1174,7 @@ async function openCampusPage(campusName) {
       var c = data.campus;
       state.activeCommunityId = c.id || '';
       state.activeCommunity = c.name || campusName;
+      state.activeCommunityData = c;
       if (nameEl) nameEl.textContent = c.name;
       if (typeTagEl) typeTagEl.textContent = '◉ ' + (c.tag || 'COMMUNITY HUB');
       if (locEl) locEl.textContent = (c.location || 'Local Region') + (c.creator_handle ? ' · Created by @' + c.creator_handle : '');
@@ -1197,16 +1198,24 @@ async function openCampusPage(campusName) {
         }
       }
 
-      // Creator Ownership Controls Visibility
+      // Creator Ownership Controls Visibility (Owner-Only)
+      var myId = state.currentUser ? state.currentUser.id : '';
+      var myHandle = state.currentUser ? state.currentUser.handle : '';
+      var isOwner = Boolean(
+        (c.creator_id && myId && c.creator_id === myId) || 
+        (c.creator_handle && myHandle && c.creator_handle === myHandle) || 
+        (c.user_role && c.user_role.toLowerCase() === 'owner') ||
+        (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
+      );
+
       var creatorControls = document.getElementById('campusPageCreatorControls');
       if (creatorControls) {
-        var myId = state.currentUser ? state.currentUser.id : '';
-        var myHandle = state.currentUser ? state.currentUser.handle : '';
-        var isCreator = (c.creator_id && c.creator_id === myId) || 
-                        (c.creator_handle && c.creator_handle === myHandle) || 
-                        (state.currentUser && state.currentUser.role === 'admin') ||
-                        (c.creator_id === 'u_system'); // Allow admin access
-        creatorControls.style.display = isCreator ? 'flex' : 'none';
+        creatorControls.style.display = isOwner ? 'flex' : 'none';
+      }
+
+      var hostBtn = document.getElementById('campusPageHostBtn');
+      if (hostBtn) {
+        hostBtn.style.display = isOwner ? 'inline-block' : 'none';
       }
       // Community Share Moment action - Membership Authorized
       var isEligibleMember = Boolean(
@@ -1928,6 +1937,21 @@ async function checkinCommunityDrop(dropId, btnEl) {
 window.checkinCommunityDrop = checkinCommunityDrop;
 
 function openCreateDropModal() {
+  var c = state.activeCommunityData;
+  var myId = state.currentUser ? state.currentUser.id : '';
+  var myHandle = state.currentUser ? state.currentUser.handle : '';
+  if (c) {
+    var isOwner = Boolean(
+      (c.creator_id && myId && c.creator_id === myId) || 
+      (c.creator_handle && myHandle && c.creator_handle === myHandle) || 
+      (c.user_role && c.user_role.toLowerCase() === 'owner') ||
+      (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
+    );
+    if (!isOwner) {
+      showToast('Only the community owner can host drops.');
+      return;
+    }
+  }
   var modal = document.getElementById('createDropModal');
   if (modal) modal.style.display = 'flex';
 }
