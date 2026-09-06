@@ -3740,30 +3740,37 @@ def get_creator_intelligence_context(conn, user_id: str, community_id: str):
     }
 
 def format_time_ago(created_at_str: str) -> str:
+    if not created_at_str:
+        return "JUST NOW"
     try:
-        dt = datetime.fromisoformat(created_at_str)
-        now = datetime.now()
-        diff = now - dt
-        seconds = diff.total_seconds()
-        if seconds < 0:
-            return "TODAY"
-        if seconds < 3600:
-            mins = int(seconds / 60)
-            return f"{mins}M AGO" if mins > 0 else "TODAY"
-        if seconds < 86400 and dt.date() == now.date():
-            return "TODAY"
-        if seconds < 172800 and (now.date() - dt.date()).days <= 1:
-            return "YESTERDAY"
-        days = int(seconds / 86400)
-        if days < 7:
-            return f"{days}D AGO"
-        weeks = int(days / 7)
-        if weeks < 4:
-            return f"{weeks}W AGO"
-        months = int(days / 30)
-        return f"{months}MO AGO"
+        s = str(created_at_str).strip()
+        if " " in s and "T" not in s:
+            s = s.replace(" ", "T")
+        if not s.endswith("Z") and "+" not in s and "-" not in s[10:]:
+            s += "Z"
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        diff = (now - dt).total_seconds()
+        if diff < 60:
+            return "JUST NOW"
+        mins = int(diff // 60)
+        if mins < 60:
+            return f"{mins} MIN AGO"
+        hrs = int(diff // 3600)
+        if hrs < 24:
+            return f"{hrs} HR AGO"
+        days = int(diff // 86400)
+        if days <= 6:
+            return f"{days} DAYS AGO"
+        weeks = int(days // 7)
+        if weeks < 5:
+            return f"{weeks} WEEKS AGO" if weeks > 1 else "1 WEEK AGO"
+        months = int(days // 30)
+        if months < 12:
+            return f"{months} MONTHS AGO" if months > 1 else "1 MONTH AGO"
+        return dt.strftime("%d %b %Y").upper()
     except Exception:
-        return "TODAY"
+        return "JUST NOW"
 
 # Coarse City Center Coordinates for Intelligent Fallback Radius (Zero exact GPS leakage)
 CITY_COORDINATES = {
@@ -4167,7 +4174,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             for p in posts:
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
                 p["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
-                p["timeAgo"] = "12 min ago"
+                p["timeAgo"] = format_time_ago(p.get("created_at", ""))
 
                 # Resolve community name and id
                 cid = p.get("primary_community_id") or p.get("context_community_id") or ""

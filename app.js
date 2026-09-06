@@ -925,7 +925,7 @@ function renderCommunityCards(moments, container) {
     card.dataset.postId = m.id;
 
     var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'student');
-    var timeAgo = escapeHtml(m.timeAgo || m.time_ago || '8m ago');
+    var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || m.time_ago || 'JUST NOW').toUpperCase());
     var captionText = escapeHtml(m.caption || 'Unfiltered moment.');
     var locName = escapeHtml(m.location_city || m.campus || 'Near Quad');
     if (!locName.toLowerCase().startsWith('near ')) locName = 'Near ' + locName;
@@ -960,7 +960,7 @@ function renderCommunityCards(moments, container) {
         '<!-- Time Badge -->' +
         '<div class="absolute top-4 right-4 z-10 flex items-center gap-1.5">' +
           clusterBadgeHtml +
-          '<span class="font-mono-tag text-[9px] text-white/90 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15">' +
+          '<span class="font-mono-tag text-[9px] text-white/90 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15 moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' +
             timeAgo +
           '</span>' +
         '</div>' +
@@ -1012,6 +1012,7 @@ function renderCommunityCards(moments, container) {
     container.appendChild(card);
     attachCardInteractions(card, m);
   });
+  updateAllMomentTimestamps();
 }
 window.renderCommunityCards = renderCommunityCards;
 
@@ -2760,22 +2761,54 @@ function formatPostTime(createdStr) {
 }
 
 function formatTimeAgoClean(createdStr) {
-    if (!createdStr) return '12 min ago';
+    if (!createdStr) return 'JUST NOW';
     try {
-        var dt = new Date(createdStr);
-        if (isNaN(dt.getTime())) return '12 min ago';
+        var str = String(createdStr).trim();
+        if (str.indexOf(' ') !== -1 && str.indexOf('T') === -1) {
+            str = str.replace(' ', 'T');
+        }
+        if (!str.endsWith('Z') && str.indexOf('+') === -1 && str.lastIndexOf('-') <= 10) {
+            str += 'Z';
+        }
+        var dt = new Date(str);
+        if (isNaN(dt.getTime())) return 'JUST NOW';
         var now = new Date();
         var diffSec = Math.floor((now.getTime() - dt.getTime()) / 1000);
-        if (diffSec < 60) return 'Just now';
+        if (diffSec < 60) return 'JUST NOW';
         var mins = Math.floor(diffSec / 60);
-        if (mins < 60) return mins + ' min ago';
+        if (mins < 60) return mins + ' MIN AGO';
         var hrs = Math.floor(mins / 60);
-        if (hrs < 24) return hrs + ' hr ago';
+        if (hrs < 24) return hrs + ' HR AGO';
         var days = Math.floor(hrs / 24);
-        return days + 'd ago';
+        if (days <= 6) return days + ' DAYS AGO';
+        var weeks = Math.floor(days / 7);
+        if (weeks < 5) return weeks + (weeks === 1 ? ' WEEK AGO' : ' WEEKS AGO');
+        var months = Math.floor(days / 30);
+        if (months < 12) return months + (months === 1 ? ' MONTH AGO' : ' MONTHS AGO');
+        return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
     } catch(e) {
-        return '12 min ago';
+        return 'JUST NOW';
     }
+}
+window.formatTimeAgoClean = formatTimeAgoClean;
+
+function updateAllMomentTimestamps() {
+    var elements = document.querySelectorAll('.moment-live-timestamp[data-created-at]');
+    if (!elements || elements.length === 0) return;
+    elements.forEach(function(el) {
+        var raw = el.getAttribute('data-created-at');
+        if (raw) {
+            var next = formatTimeAgoClean(raw);
+            if (el.textContent !== next) {
+                el.textContent = next;
+            }
+        }
+    });
+}
+window.updateAllMomentTimestamps = updateAllMomentTimestamps;
+
+if (!window._momentTimestampInterval) {
+    window._momentTimestampInterval = setInterval(updateAllMomentTimestamps, 10000);
 }
 
 function getApproxLocationString(m) {
@@ -2822,7 +2855,7 @@ function renderFeedCards(moments, container) {
     var cleanCommName = rawComm.replace(/^Near\s+/i, '');
     var campusName = escapeHtml(cleanCommName.toUpperCase());
     var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || cleanCommName;
-    var timeAgo = escapeHtml((m.timeAgo || m.time_ago || '12 MIN AGO').toUpperCase());
+    var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || m.time_ago || 'JUST NOW').toUpperCase());
     var captionText = escapeHtml(m.caption || 'Raw unfiltered moment on campus.');
     var iso = escapeHtml(m.exif_iso || 'ISO 400');
     var aperture = escapeHtml(m.exif_aperture || 'F/2.8');
@@ -2901,7 +2934,7 @@ function renderFeedCards(moments, container) {
               ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="text-[10px] text-amber-400 hover:text-amber-300 font-mono-tag font-bold tracking-wider uppercase inline-flex items-center gap-1 cursor-pointer transition hover:underline active:scale-95" title="Open Community Page"><span>◉</span> <span>' + campusName + '</span></button>'
               : '<span class="text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider uppercase">' + campusName + '</span>') +
             '<span class="text-[10px] text-zinc-600 font-mono-tag">·</span>' +
-            '<span class="text-[10px] text-zinc-400 font-mono-tag uppercase">' + timeAgo + '</span>' +
+            '<span class="text-[10px] text-zinc-400 font-mono-tag uppercase moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' + timeAgo + '</span>' +
           '</div>' +
           clusterBadgeHtml +
         '</div>' +
@@ -2936,6 +2969,7 @@ function renderFeedCards(moments, container) {
     container.appendChild(card);
     attachCardInteractions(card, m);
   });
+  updateAllMomentTimestamps();
 }
 
 function attachCardInteractions(card, momentData) {
@@ -4766,7 +4800,7 @@ function renderMomentsSearchResults(moments, container) {
     var campus = escapeHtml(cleanComm.toUpperCase());
     var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || cleanComm;
     var caption = escapeHtml(m.caption || 'Captured moment');
-    var timeAgo = m.timeAgo || 'RECENT';
+    var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || 'JUST NOW'));
 
     card.innerHTML =
       '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none">' +
@@ -4784,7 +4818,7 @@ function renderMomentsSearchResults(moments, container) {
               ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="text-amber-400 hover:text-amber-300 font-bold hover:underline cursor-pointer">◉ ' + campus + '</button>'
               : '<span>' + campus + '</span>') +
           '</div>' +
-          '<span>' + timeAgo + '</span>' +
+          '<span class="moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' + timeAgo + '</span>' +
         '</div>' +
         '<p class="text-xs text-zinc-200">"' + caption + '"</p>' +
       '</div>';
@@ -4793,6 +4827,7 @@ function renderMomentsSearchResults(moments, container) {
   });
 
   container.appendChild(group);
+  updateAllMomentTimestamps();
 }
 
 
