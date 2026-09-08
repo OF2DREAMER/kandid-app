@@ -1438,28 +1438,64 @@ window.openCommunityMomentCapture = openCommunityMomentCapture;
 // COMMUNITY DROPS & EXPERIENCES SYSTEM (₹19 MONETIZATION ENGINE)
 // =====================================================================
 function getDropStateInfo(stateStr) {
-  var s = (stateStr || 'SCHEDULED').toUpperCase();
+  var s = (stateStr || 'UPCOMING').toUpperCase();
   switch (s) {
     case 'DRAFT':
       return { label: 'DRAFT', badgeClass: 'bg-zinc-800 text-zinc-400 border-zinc-700', dotClass: 'bg-zinc-500' };
     case 'SCHEDULED':
+    case 'UPCOMING':
       return { label: 'UPCOMING', badgeClass: 'bg-amber-500/10 text-amber-400 border-amber-500/30', dotClass: 'bg-amber-500' };
     case 'REMINDER':
       return { label: 'STARTING SOON', badgeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse', dotClass: 'bg-amber-400' };
     case 'LIVE':
-      return { label: 'LIVE NOW', badgeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse', dotClass: 'bg-emerald-500' };
-    case 'CHECK_IN':
-      return { label: 'CHECK-IN OPEN', badgeClass: 'bg-blue-500/20 text-blue-400 border-blue-500/40', dotClass: 'bg-blue-400' };
     case 'ACTIVE':
-      return { label: 'HAPPENING NOW', badgeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40', dotClass: 'bg-emerald-500' };
+    case 'CHECK_IN':
+      return { label: 'LIVE NOW', badgeClass: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 animate-pulse', dotClass: 'bg-emerald-500' };
     case 'CLOSED':
-      return { label: 'CLOSED', badgeClass: 'bg-zinc-900 text-zinc-500 border-zinc-800', dotClass: 'bg-zinc-600' };
+    case 'ENDED':
     case 'SETTLEMENT':
-      return { label: 'PROCESSING', badgeClass: 'bg-zinc-900 text-zinc-500 border-zinc-800', dotClass: 'bg-zinc-600' };
     case 'MEMORY':
-      return { label: 'MEMORY', badgeClass: 'bg-purple-500/10 text-purple-400 border-purple-500/30', dotClass: 'bg-purple-400' };
+      return { label: 'COMPLETED', badgeClass: 'bg-purple-500/10 text-purple-400 border-purple-500/30', dotClass: 'bg-purple-400' };
+    case 'CANCELLED':
+      return { label: 'CANCELLED', badgeClass: 'bg-red-500/10 text-red-400 border-red-500/30', dotClass: 'bg-red-500' };
     default:
       return { label: 'UPCOMING', badgeClass: 'bg-amber-500/10 text-amber-400 border-amber-500/30', dotClass: 'bg-amber-500' };
+  }
+}
+
+var dropBoundaryTimer = null;
+function scheduleDropBoundaryTimer(drops) {
+  if (dropBoundaryTimer) {
+    clearTimeout(dropBoundaryTimer);
+    dropBoundaryTimer = null;
+  }
+  if (!Array.isArray(drops) || drops.length === 0) return;
+  var now = Date.now();
+  var minDelay = Infinity;
+  for (var i = 0; i < drops.length; i++) {
+    var d = drops[i];
+    if (d.starts_at) {
+      var sTime = new Date(d.starts_at).getTime();
+      if (sTime > now) {
+        var delay = sTime - now;
+        if (delay < minDelay) minDelay = delay;
+      }
+    }
+    if (d.ends_at) {
+      var eTime = new Date(d.ends_at).getTime();
+      if (eTime > now) {
+        var delay = eTime - now;
+        if (delay < minDelay) minDelay = delay;
+      }
+    }
+  }
+  if (minDelay !== Infinity && minDelay < 24 * 3600 * 1000) {
+    dropBoundaryTimer = setTimeout(function() {
+      if (state.activeScreen === 'drop-experience' && state.activeDropId) {
+        openDropExperience(state.activeDropId);
+      }
+      loadCommunityDrops(state.activeCommunity);
+    }, minDelay + 1000);
   }
 }
 
@@ -1472,30 +1508,33 @@ async function loadCommunityDrops(communityName) {
   if (!res || !res.success || !Array.isArray(res.drops)) return;
 
   state.communityDrops = res.drops;
+  scheduleDropBoundaryTimer(res.drops);
 
   var renderDropCard = function(d) {
     var spotsLeft = Math.max(0, (d.capacity || 20) - (d.registered_count || 0));
     var isRegistered = !!d.is_registered;
-    var stateInfo = getDropStateInfo(d.state);
-    var isLiveOrCheckin = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.state) !== -1;
-    var isEnded = ['CLOSED', 'SETTLEMENT', 'MEMORY'].indexOf(d.state) !== -1;
+    var lifecycle = (d.computed_status || d.lifecycle_state || 'UPCOMING').toUpperCase();
+    var hostState = d.host_experience_state || 'WAITING_FOR_HOST';
+    var stateInfo = getDropStateInfo(lifecycle);
 
     var btnHtml = '';
-    if (isRegistered) {
-      if (isLiveOrCheckin) {
+    if (lifecycle === 'LIVE') {
+      if (isRegistered) {
         if (d.is_checked_in) {
-          btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-mono-tag text-[10px] font-bold border border-emerald-500/40 cursor-default flex items-center gap-1"><span>CHECKED IN ✓</span></button>';
+          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-mono-tag text-[10px] font-bold border border-emerald-500/40 cursor-pointer flex items-center gap-1"><span>CHECKED IN ✓</span></button>';
+        } else if (hostState === 'WALKING_LIVE') {
+          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm animate-pulse">JOIN LIVE WALK</button>';
         } else {
-          btnHtml = '<button onclick="event.stopPropagation(); checkinCommunityDrop(\'' + d.id + '\', this)" class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm">CHECK IN</button>';
+          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-pointer">WAITING FOR HOST</button>';
         }
-      } else if (d.state === 'MEMORY') {
-        btnHtml = '<button onclick="event.stopPropagation(); openDropDetail(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 font-mono-tag text-[10px] font-bold border border-purple-500/40 cursor-pointer">VIEW MEMORY</button>';
       } else {
-        btnHtml = '<button onclick="event.stopPropagation(); openDropDetail(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-400 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-pointer flex items-center gap-1"><span>YOU\'RE IN ✓</span></button>';
+        btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-500 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">REGISTRATION CLOSED</button>';
       }
-    } else {
-      if (isEnded) {
-        btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-600 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">CLOSED</button>';
+    } else if (lifecycle === 'ENDED' || lifecycle === 'CLOSED' || lifecycle === 'MEMORY') {
+      btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 font-mono-tag text-[10px] font-bold border border-purple-500/40 cursor-pointer">VIEW MEMORY</button>';
+    } else { // UPCOMING
+      if (isRegistered) {
+        btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-400 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-pointer flex items-center gap-1"><span>YOU\'RE IN ✓</span></button>';
       } else if (spotsLeft <= 0) {
         btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-500 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">FULL</button>';
       } else {
@@ -1523,7 +1562,7 @@ async function loadCommunityDrops(communityName) {
     var contextBadge = d.contextual_label ? ('<span class="font-mono-tag text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">' + escapeHtml(d.contextual_label) + '</span>') : '';
     var coordBadge = (isRegistered && d.coordination_status) ? ('<span class="font-mono-tag text-[8px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">' + escapeHtml(d.coordination_status) + '</span>') : '';
 
-    return '<div onclick="openDropDetail(\'' + d.id + '\')" class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/30 space-y-2.5 shadow-xl transition cursor-pointer">' +
+    return '<div onclick="openDropExperience(\'' + d.id + '\')" class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/30 space-y-2.5 shadow-xl transition cursor-pointer">' +
       coverHtml +
       '<div class="flex justify-between items-start">' +
         '<div class="space-y-0.5">' +
@@ -1852,7 +1891,10 @@ async function openDropExperience(dropId) {
   }
 
   var d = res.drop;
-  var stateInfo = getDropStateInfo(d.lifecycle_state);
+  var lifecycle = (d.computed_status || d.lifecycle_state || 'UPCOMING').toUpperCase();
+  var hostState = d.host_experience_state || 'WAITING_FOR_HOST';
+  var stateInfo = getDropStateInfo(lifecycle);
+  var meetupPoint = d.meetup_context || d.location_name || d.area || d.location || 'Campus Commons';
 
   if (headerStatusEl) headerStatusEl.textContent = stateInfo.label + ' EXPERIENCE';
   if (stateBadgeEl) {
@@ -1861,7 +1903,7 @@ async function openDropExperience(dropId) {
   }
   if (communityEl) communityEl.textContent = d.community_name || 'Community';
   if (titleEl) titleEl.textContent = d.title;
-  if (locEl) locEl.textContent = (d.location_context || d.location || 'Campus Commons') + (d.community_city ? ' · ' + d.community_city : '');
+  if (locEl) locEl.textContent = meetupPoint + (d.community_city ? ' · ' + d.community_city : '');
   if (descEl) descEl.textContent = d.description || 'A shared real-world experience captured together with members of the community.';
   if (timeRemEl) timeRemEl.textContent = (d.date_str || 'Today') + ' · ' + (d.time_str || 'Now');
   if (presenceEl) presenceEl.textContent = d.presence_label || ((d.checked_in_count || 0) + ' people are here');
@@ -1869,7 +1911,7 @@ async function openDropExperience(dropId) {
   // Cover Thumbnail in Drop Experience
   var expCoverContainer = document.getElementById('dropExperienceCoverContainer');
   var expCoverImg = document.getElementById('dropExperienceCoverImg');
-  var expCoverSrc = d.cover_img || d.image_url || '';
+  var expCoverSrc = d.cover_img || d.thumbnail_url || d.image_url || '';
   if (expCoverContainer && expCoverImg) {
     if (expCoverSrc) {
       expCoverImg.src = expCoverSrc;
@@ -1891,33 +1933,116 @@ async function openDropExperience(dropId) {
     }
   }
 
-  // Dynamic Checkin Container
+  // Dynamic Checkin & Attendee Action Container
   if (checkinContainer) {
-    if (d.is_checked_in) {
-      checkinContainer.innerHTML = '<div class="w-full py-3 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag text-center flex items-center justify-center gap-2"><span>YOU\'RE CHECKED IN ✓</span></div>';
-    } else if (d.is_registered) {
-      var isCheckinWindow = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.lifecycle_state) !== -1;
-      if (isCheckinWindow) {
-        checkinContainer.innerHTML = '<button onclick="checkinCommunityDrop(\'' + d.id + '\', this)" class="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>CHECK IN NOW</span></button>';
-      } else if (d.lifecycle_state === 'CLOSED' || d.lifecycle_state === 'MEMORY') {
-        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">CHECK-IN CLOSED</div>';
+    if (lifecycle === 'LIVE') {
+      if (d.is_checked_in) {
+        checkinContainer.innerHTML = '<div class="w-full py-3.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag text-center flex items-center justify-center gap-2"><span>✓ YOU\'RE CHECKED IN — ENJOY THE WALK!</span></div>';
+      } else if (d.is_registered) {
+        if (hostState === 'WALKING_LIVE') {
+          checkinContainer.innerHTML = '<div class="space-y-2">' +
+            '<div class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-center">' +
+              '<span class="text-xs font-bold text-emerald-400 uppercase font-mono-tag">● THE WALK IS LIVE!</span>' +
+              '<p class="text-[11px] text-zinc-300 mt-0.5">Meet host @' + escapeHtml(d.creator_handle || 'host') + ' at <strong>' + escapeHtml(meetupPoint) + '</strong>.</p>' +
+            '</div>' +
+            '<button onclick="checkinCommunityDrop(\'' + d.id + '\', this)" class="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2 animate-pulse"><span>CHECK IN TO WALK</span></button>' +
+          '</div>';
+        } else {
+          checkinContainer.innerHTML = '<div class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-1">' +
+            '<span class="text-xs font-bold text-amber-400 uppercase font-mono-tag">⏳ WAITING FOR HOST</span>' +
+            '<p class="text-[11px] text-zinc-300">The Host has not started the walk yet. Head towards <strong>' + escapeHtml(meetupPoint) + '</strong> and stay close.</p>' +
+          '</div>';
+        }
       } else {
-        checkinContainer.innerHTML = '<div class="w-full py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">YOU\'RE REGISTERED ✓ · CHECK-IN OPENS SOON</div>';
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">REGISTRATION CLOSED · EXPERIENCE IS LIVE</div>';
       }
-    } else {
-      if (d.lifecycle_state === 'CLOSED' || d.lifecycle_state === 'MEMORY' || d.lifecycle_state === 'SETTLEMENT') {
-        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">EXPERIENCE CLOSED</div>';
+    } else if (lifecycle === 'ENDED' || lifecycle === 'CLOSED' || lifecycle === 'MEMORY') {
+      checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-purple-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">✦ EXPERIENCE COMPLETED</div>';
+    } else { // UPCOMING
+      if (d.is_registered) {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">YOU\'RE REGISTERED ✓ · CHECK-IN OPENS WHEN LIVE</div>';
       } else {
         checkinContainer.innerHTML = '<button onclick="startDropOrderFlow(\'' + d.id + '\')" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>JOIN EXPERIENCE · ₹' + (d.price || 19) + '</span></button>';
       }
     }
   }
 
-  // Host Controls
+  // Host Dedicated Control Center
   if (hostControls) {
     if (d.is_host) {
       hostControls.style.display = 'block';
-      if (hostAttendEl) hostAttendEl.textContent = (d.checked_in_count || 0) + ' / ' + (d.capacity || 20) + ' Attending (' + (d.registered_count || 0) + ' Registered)';
+      var hostStateBadge = document.getElementById('dropExperienceHostStateBadge');
+      var hostActions = document.getElementById('dropExperienceHostActions');
+      var hostMeetupInput = document.getElementById('dropExperienceMeetupInput');
+      var hostAttendeesList = document.getElementById('dropExperienceAttendeesList');
+      var hostAttendeesCount = document.getElementById('dropExperienceAttendeesCount');
+
+      if (hostAttendEl) {
+        hostAttendEl.textContent = (d.checked_in_count || 0) + ' / ' + (d.capacity || 20) + ' Attending';
+      }
+      if (hostMeetupInput && !hostMeetupInput.value) {
+        hostMeetupInput.value = d.meetup_context || '';
+      }
+
+      if (hostStateBadge) {
+        if (lifecycle === 'LIVE') {
+          if (hostState === 'WALKING_LIVE') {
+            hostStateBadge.textContent = 'WALKING LIVE';
+            hostStateBadge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-bold';
+          } else {
+            hostStateBadge.textContent = 'READY TO START';
+            hostStateBadge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-400 font-bold';
+          }
+        } else if (lifecycle === 'ENDED') {
+          hostStateBadge.textContent = 'FINISHED';
+          hostStateBadge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-400 font-bold';
+        } else {
+          hostStateBadge.textContent = 'UPCOMING';
+          hostStateBadge.className = 'text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 border border-blue-500/40 text-blue-400 font-bold';
+        }
+      }
+
+      if (hostActions) {
+        if (lifecycle === 'LIVE') {
+          if (hostState === 'WALKING_LIVE') {
+            hostActions.innerHTML = '<div class="space-y-2">' +
+              '<div class="p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-center">' +
+                '<span class="text-xs font-bold text-emerald-400 uppercase font-mono-tag">● YOU ARE WALKING LIVE WITH ATTENDEES</span>' +
+              '</div>' +
+              '<button onclick="finishHostDropWalk(\'' + d.id + '\')" class="w-full py-2.5 bg-zinc-900 hover:bg-zinc-800 text-red-400 border border-red-500/40 font-mono-tag text-xs font-bold rounded-xl cursor-pointer transition active:scale-95">FINISH WALK</button>' +
+            '</div>';
+          } else {
+            hostActions.innerHTML = '<button onclick="startHostDropWalk(\'' + d.id + '\')" class="w-full py-3 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs font-mono-tag uppercase tracking-wider rounded-xl cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>START WALK NOW</span> <span>→</span></button>';
+          }
+        } else if (lifecycle === 'UPCOMING') {
+          hostActions.innerHTML = '<div class="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-center text-xs text-zinc-400 font-mono-tag">Walk can be started once scheduled start time is reached.</div>';
+        } else {
+          hostActions.innerHTML = '<div class="p-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-center text-xs text-zinc-400 font-mono-tag">This drop has ended. Check Recent Memory.</div>';
+        }
+      }
+
+      // Attendee Roster
+      var attList = Array.isArray(d.attendees) ? d.attendees : [];
+      if (hostAttendeesCount) hostAttendeesCount.textContent = attList.length + ' / ' + (d.capacity || 20);
+      if (hostAttendeesList) {
+        if (attList.length > 0) {
+          hostAttendeesList.innerHTML = attList.map(function(a) {
+            var isChk = !!a.is_checked_in;
+            return '<div class="p-2 rounded-lg bg-zinc-900 border border-white/[.04] flex items-center justify-between text-xs">' +
+              '<div class="flex items-center gap-2">' +
+                '<div class="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] font-bold text-zinc-300">' + escapeHtml((a.name || 'U').slice(0, 1).toUpperCase()) + '</div>' +
+                '<div class="leading-tight">' +
+                  '<span class="text-white font-bold block">' + escapeHtml(a.name || 'Student') + '</span>' +
+                  '<span class="text-[9px] text-zinc-500 font-mono-tag">@' + escapeHtml(a.handle || 'user') + '</span>' +
+                '</div>' +
+              '</div>' +
+              (isChk ? '<span class="text-[9px] font-mono-tag text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">CHECKED IN ✓</span>' : '<span class="text-[9px] font-mono-tag text-zinc-500 bg-zinc-950 px-1.5 py-0.5 rounded">REGISTERED</span>') +
+            '</div>';
+          }).join('');
+        } else {
+          hostAttendeesList.innerHTML = '<div class="p-3 rounded-lg bg-zinc-900/40 text-center text-[10px] text-zinc-500 font-mono-tag">No attendees registered yet.</div>';
+        }
+      }
     } else {
       hostControls.style.display = 'none';
     }
@@ -1925,11 +2050,11 @@ async function openDropExperience(dropId) {
 
   // Memory Banner
   if (memoryBanner) {
-    if (d.lifecycle_state === 'MEMORY') {
+    if (lifecycle === 'ENDED' || lifecycle === 'CLOSED' || lifecycle === 'MEMORY') {
       memoryBanner.style.display = 'block';
       if (viewMemoryBtn) {
         viewMemoryBtn.onclick = function() {
-          openCollectiveMemoryPage(d.memory_id || 'mem_1');
+          openCampusPage(d.community_name || state.activeCommunity);
         };
       }
     } else {
@@ -1949,6 +2074,66 @@ async function openDropExperience(dropId) {
   }
 }
 window.openDropExperience = openDropExperience;
+
+async function startHostDropWalk(dropId) {
+  if (!dropId) return;
+  playTactileFeedback('click');
+  var res = await apiRequest('/api/drops/' + encodeURIComponent(dropId) + '/start', {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+  if (res && res.success) {
+    showToast('✦ You started the walk! Attendees can now check in.');
+    await openDropExperience(dropId);
+    loadCommunityDrops(state.activeCommunity);
+  } else {
+    showToast('Could not start walk: ' + (res ? res.error : 'Error'));
+  }
+}
+window.startHostDropWalk = startHostDropWalk;
+
+async function finishHostDropWalk(dropId) {
+  if (!dropId) return;
+  playTactileFeedback('click');
+  var res = await apiRequest('/api/drops/' + encodeURIComponent(dropId) + '/end', {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+  if (res && res.success) {
+    showToast('✦ Walk ended. Moved to community memories.');
+    await openDropExperience(dropId);
+    loadCommunityDrops(state.activeCommunity);
+  } else {
+    showToast('Could not finish walk: ' + (res ? res.error : 'Error'));
+  }
+}
+window.finishHostDropWalk = finishHostDropWalk;
+
+async function submitHostMeetupUpdate() {
+  if (!state.activeDropId) return;
+  var input = document.getElementById('dropExperienceMeetupInput');
+  var val = input ? input.value.trim() : '';
+  if (!val) {
+    showToast('Please enter a meetup point landmark.');
+    return;
+  }
+  var rawGpsRegex = /[-+]?\d{1,3}\.\d{4,}\s*,\s*[-+]?\d{1,3}\.\d{4,}/;
+  if (rawGpsRegex.test(val)) {
+    showToast('Use a clean landmark name, not raw GPS coordinates.');
+    return;
+  }
+  var res = await apiRequest('/api/drops/' + encodeURIComponent(state.activeDropId) + '/meetup', {
+    method: 'POST',
+    body: JSON.stringify({ meetup_context: val })
+  });
+  if (res && res.success) {
+    showToast('✓ Meetup landmark updated.');
+    await openDropExperience(state.activeDropId);
+  } else {
+    showToast('Could not update meetup: ' + (res ? res.error : 'Error'));
+  }
+}
+window.submitHostMeetupUpdate = submitHostMeetupUpdate;
 
 function handleDropExperienceBack() {
   switchScreenView(state.previousScreen || 'campus-page');
@@ -2115,6 +2300,9 @@ async function checkinCommunityDrop(dropId, btnEl) {
       btnEl.innerHTML = '<span>CHECKED IN ✓</span>';
     }
     loadCommunityDrops(state.activeCommunity);
+    if (state.activeScreen === 'drop-experience') {
+      openDropExperience(dropId);
+    }
     var modal = document.getElementById('dropDetailModal');
     if (modal && modal.style.display !== 'none') {
       openDropDetail(dropId);
@@ -2311,19 +2499,55 @@ window.closeCreateDropModal = closeCreateDropModal;
 async function submitNewDrop() {
   var titleInput = document.getElementById('newDropTitle');
   var descInput = document.getElementById('newDropDesc');
+  var meetupInput = document.getElementById('newDropMeetupPoint');
   var dateInput = document.getElementById('newDropDate');
-  var timeInput = document.getElementById('newDropTime');
+  var startTimeInput = document.getElementById('newDropStartTime');
+  var endTimeInput = document.getElementById('newDropEndTime');
   var capInput = document.getElementById('newDropCapacity');
 
   var title = titleInput ? titleInput.value.trim() : '';
   var desc = descInput ? descInput.value.trim() : '';
-  var dateStr = dateInput ? dateInput.value.trim() : 'This Sunday';
-  var timeStr = timeInput ? timeInput.value.trim() : '6:00 PM';
+  var meetupPoint = meetupInput ? meetupInput.value.trim() : '';
+  var dateVal = dateInput ? dateInput.value.trim() : '';
+  var startTimeVal = startTimeInput ? startTimeInput.value.trim() : '';
+  var endTimeVal = endTimeInput ? endTimeInput.value.trim() : '';
   var capacity = capInput ? parseInt(capInput.value) || 15 : 15;
 
   if (!title) {
     showToast('Please enter an experience title.');
     return;
+  }
+
+  // Check raw GPS regex in meetup point
+  var rawGpsRegex = /[-+]?\d{1,3}\.\d{4,}\s*,\s*[-+]?\d{1,3}\.\d{4,}/;
+  if (meetupPoint && rawGpsRegex.test(meetupPoint)) {
+    showToast('Use a clean landmark name, not GPS coordinates.');
+    return;
+  }
+
+  var startsAtIso = '';
+  var endsAtIso = '';
+  var dateStr = dateVal || 'Today';
+  var timeStr = (startTimeVal || '6:00 PM') + (endTimeVal ? ' - ' + endTimeVal : '');
+
+  if (dateVal && startTimeVal) {
+    var startDate = new Date(dateVal + 'T' + startTimeVal);
+    if (!isNaN(startDate.getTime())) {
+      startsAtIso = startDate.toISOString();
+    }
+  }
+  if (dateVal && endTimeVal) {
+    var endDate = new Date(dateVal + 'T' + endTimeVal);
+    if (!isNaN(endDate.getTime())) {
+      endsAtIso = endDate.toISOString();
+    }
+  }
+
+  if (startsAtIso && endsAtIso) {
+    if (new Date(endsAtIso).getTime() <= new Date(startsAtIso).getTime()) {
+      showToast('End time must be after start time.');
+      return;
+    }
   }
 
   var res = await apiRequest('/api/community/drops/create', {
@@ -2332,6 +2556,9 @@ async function submitNewDrop() {
       community_name: state.activeCommunity || 'North City University',
       title: title,
       description: desc,
+      meetup_context: meetupPoint,
+      starts_at: startsAtIso,
+      ends_at: endsAtIso,
       date_str: dateStr,
       time_str: timeStr,
       capacity: capacity,
@@ -2348,6 +2575,10 @@ async function submitNewDrop() {
     closeCreateDropModal();
     if (titleInput) titleInput.value = '';
     if (descInput) descInput.value = '';
+    if (meetupInput) meetupInput.value = '';
+    if (dateInput) dateInput.value = '';
+    if (startTimeInput) startTimeInput.value = '';
+    if (endTimeInput) endTimeInput.value = '';
     removeDropThumbnail();
     removeDropVideo();
     loadCommunityDrops(state.activeCommunity);
