@@ -323,7 +323,7 @@ async function apiRequest(endpoint, options) {
       return {
         success: true,
         campus: { name: 'North City University', activeMetric: '2.4K ACTIVE THIS WEEK' },
-        liveEvents: [{ name: 'CULTURAL NIGHT', summary: '12 moments captured around the auditorium.' }],
+        liveMoments: [{ name: 'CULTURAL NIGHT', summary: '12 moments captured around the auditorium.' }],
         moments: MOCK_DATA.feed.filter(function(m) { return m.circle === 'campus'; })
       };
     }
@@ -696,7 +696,7 @@ function switchScreenView(screenName) {
     } else if (screenName === 'memories') {
       statusMode.textContent = 'ARCHIVE';
     } else {
-      if (screenName === "event-detail") { statusMode.textContent = "LIVE EVENT"; } else { statusMode.textContent = screenName.toUpperCase(); }
+      statusMode.textContent = screenName.toUpperCase();
     }
   }
 
