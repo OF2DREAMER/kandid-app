@@ -30,12 +30,22 @@
   <link rel="stylesheet" href="style.css?v=3.0.9">
   <style>
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
-    .font-mono-tag { font-family: 'JetBrains Mono', monospace; }
+    .font-mono-tag, .mono { font-family: 'JetBrains Mono', monospace; }
     .no-scroll::-webkit-scrollbar { display: none; }
     .apple-blur { backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); }
     /* kandid-screen: auth/onboarding sub-screens */
     .kandid-screen { display: none; flex-direction: column; height: 100%; width: 100%; }
     .kandid-screen.active { display: flex; }
+    .action-btn {
+      transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+    }
+    .action-btn:active {
+      transform: scale(0.97);
+    }
+    .action-btn:focus-visible {
+      outline: 2px solid #f59e0b;
+      outline-offset: 2px;
+    }
   </style>
 </head>
 <body class="flex justify-center items-center min-h-screen bg-[#000000] antialiased select-none text-zinc-100 overflow-hidden">
@@ -2910,29 +2920,50 @@
     <div id="onboardingFlow" class="absolute inset-0 z-[100] bg-[#09090b] flex flex-col justify-between" style="display:none;">
         
         <!-- SCREEN 0: ENTRY -->
-        <div id="screen-entry" class="kandid-screen active flex flex-col justify-between p-7 h-full w-full">
-            <div class="pt-4 flex justify-between items-center text-[10px] text-zinc-600 font-mono-tag">
-                <span class="tracking-widest uppercase text-amber-500 font-bold">Kandid</span>
-                <span>Welcome</span>
-            </div>
+        <div id="screen-entry" class="kandid-screen active flex flex-col justify-between pt-6 pb-7 px-6 sm:px-7 h-full w-full no-scroll">
 
-            <div class="my-auto text-center space-y-6 px-2">
-                <div class="w-24 h-24 rounded-3xl overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.9)] border border-white/10 mx-auto relative group">
-                    <img src="favicon.svg" class="w-full h-full object-cover" alt="Kandid Logo">
+            <!-- TOP: KANDID Wordmark with refined optical padding -->
+            <header class="pt-2 flex justify-between items-center">
+                <span class="mono text-[11px] tracking-[0.24em] font-bold text-white uppercase select-none">
+                    Kandid
+                </span>
+            </header>
+
+            <!-- CENTER: Logo, Headline (Weight ~700-750) & Supporting Copy with optimized optical spacing -->
+            <div class="my-auto text-center space-y-6 px-1">
+                
+                <!-- Kandid App Icon Mark with precise breathing room -->
+                <div class="w-[72px] h-[72px] bg-[#09090b] border border-zinc-800/80 rounded-2xl flex items-center justify-center shadow-xl mx-auto overflow-hidden relative mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="42" height="42" aria-hidden="true">
+                        <circle cx="256" cy="256" r="170" fill="#050505" stroke="#1f1f23" stroke-width="8"/>
+                        <circle cx="256" cy="256" r="120" fill="none" stroke="#f59e0b" stroke-width="20" stroke-linecap="round"/>
+                        <text x="195" y="315" font-family="Arial, sans-serif" font-weight="800" font-size="140" fill="#ffffff" text-anchor="middle">K</text>
+                        <circle cx="295" cy="256" r="42" fill="#f59e0b"/>
+                        <circle cx="355" cy="175" r="14" fill="#ef4444" stroke="#09090b" stroke-width="4"/>
+                    </svg>
                 </div>
 
-                <div class="space-y-3">
-                    <h2 class="text-2xl font-extrabold text-white tracking-tight leading-tight">Your world,<br>as it really is.</h2>
-                    <p class="text-xs text-zinc-400 leading-relaxed font-normal px-2">
-                        People you know.<br>Places you belong.<br>Moments that happen around you.
-                    </p>
+                <!-- Headline: Exact text "Your world.<br>Your moments." with editorial weight ~700-750 -->
+                <div class="space-y-3.5">
+                    <h1 class="text-[26px] font-bold text-white tracking-tight leading-[1.15] select-none">
+                        Your world.<br>Your moments.
+                    </h1>
+                    
+                    <!-- Supporting Copy: Soft muted text tone, visually subordinate -->
+                    <div class="text-[12px] text-zinc-400 space-y-0.5 leading-relaxed font-normal select-none">
+                        <p>People you know.</p>
+                        <p>Places you belong to.</p>
+                        <p>Moments that happen around you.</p>
+                    </div>
                 </div>
             </div>
 
-            <div class="space-y-3 pb-4">
-                <!-- Google Sign In / Sign Up Button -->
-                <button onclick="loginWithGoogle()" class="w-full py-3.5 bg-white hover:bg-zinc-100 text-zinc-900 font-extrabold text-xs rounded-2xl tracking-wider transition-all flex items-center justify-center gap-3 cursor-pointer shadow-lg active:scale-[0.98]">
-                    <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24">
+            <!-- BOTTOM: Coherent Authentication System & Legal Text with optical safe-area spacing -->
+            <div class="space-y-3.5 pb-1">
+                
+                <!-- 1. Continue with Google (Secondary option) -->
+                <button onclick="loginWithGoogle()" aria-label="Continue with Google" class="action-btn w-full py-3.5 bg-white hover:bg-zinc-100 text-black font-bold text-xs rounded-2xl flex items-center justify-center gap-2.5 shadow-md cursor-pointer">
+                    <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden="true">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                         <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
                         <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
@@ -2941,21 +2972,27 @@
                     <span>Continue with Google</span>
                 </button>
 
-                <div class="flex items-center my-1">
-                    <div class="flex-grow border-t border-zinc-800"></div>
-                    <span class="px-3 text-[9px] text-zinc-600 font-mono-tag uppercase">or</span>
-                    <div class="flex-grow border-t border-zinc-800"></div>
+                <!-- OR Divider: Restrained contrast -->
+                <div class="relative flex py-0.5 items-center justify-center select-none" aria-hidden="true">
+                    <div class="flex-grow border-t border-zinc-800/80"></div>
+                    <span class="flex-shrink mx-3 text-[9px] text-zinc-600 uppercase tracking-widest mono font-mono-tag">or</span>
+                    <div class="flex-grow border-t border-zinc-800/80"></div>
                 </div>
 
-                <button onclick="switchScreen('identity')" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag shadow-[0_4px_25px_rgba(245,158,11,0.3)] active:scale-[0.98]">
-                    Create account
+                <!-- 2. CREATE ACCOUNT (Primary CTA with restrained, premium accent) -->
+                <button onclick="switchScreen('identity')" aria-label="Create Account" class="action-btn w-full py-3.5 bg-[#f59e0b] hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl tracking-widest uppercase mono font-mono-tag shadow-[0_4px_16px_rgba(245,158,11,0.15)] cursor-pointer">
+                    Create Account
                 </button>
-                <button onclick="switchScreen('login')" class="w-full py-3 bg-zinc-950 hover:bg-zinc-900 text-zinc-300 font-bold text-xs rounded-2xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag border border-zinc-800/80 active:scale-[0.98]">
-                    Log in with password
+
+                <!-- 3. LOG IN (Visually quieter secondary action) -->
+                <button onclick="switchScreen('login')" aria-label="Log in" class="action-btn w-full py-3 bg-zinc-950 hover:bg-zinc-900 border border-zinc-800/70 text-zinc-300 font-bold text-xs rounded-2xl tracking-widest uppercase mono font-mono-tag cursor-pointer">
+                    Log In
                 </button>
-                <div class="text-center pt-2">
-                    <p class="text-[9px] text-zinc-600 font-mono-tag">
-                        By continuing, you agree to Kandid's <span onclick="openLegalModal('terms')" class="underline text-zinc-400 hover:text-white cursor-pointer">Terms</span> and <span onclick="openLegalModal('privacy')" class="underline text-zinc-400 hover:text-white cursor-pointer">Privacy Policy</span>.
+
+                <!-- Legal Copy: Readable contrast, optimal bottom safe area -->
+                <div class="text-center pt-1.5 select-none">
+                    <p class="text-[10px] text-zinc-500 leading-normal">
+                        By continuing, you agree to Kandid's <span onclick="openLegalModal('terms')" class="underline text-zinc-400 hover:text-white cursor-pointer transition-colors">Terms</span> and <span onclick="openLegalModal('privacy')" class="underline text-zinc-400 hover:text-white cursor-pointer transition-colors">Privacy Policy</span>.
                     </p>
                 </div>
             </div>
