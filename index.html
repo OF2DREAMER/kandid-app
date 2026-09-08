@@ -2882,6 +2882,26 @@
                     </div>
                 </div>
 
+                <!-- Atmosphere Video (Optional 3-sec video) -->
+                <div class="space-y-1.5">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Atmosphere Video</label>
+                        <span class="text-[9px] font-mono-tag text-zinc-500 lowercase">(optional ≤3s video)</span>
+                    </div>
+                    
+                    <input type="file" id="newDropVideoInput" accept="video/mp4,video/webm,video/quicktime" class="hidden" onchange="handleDropVideoSelect(event)">
+                    
+                    <div id="newDropVideoPreviewContainer" class="relative w-full aspect-[16/9] rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 flex items-center justify-center cursor-pointer group hover:border-amber-500/40 transition" onclick="document.getElementById('newDropVideoInput').click()">
+                        <video id="newDropVideoPreview" playsinline muted class="w-full h-full object-cover hidden"></video>
+                        <div id="newDropVideoPlaceholder" class="flex flex-col items-center justify-center gap-1 text-zinc-500 group-hover:text-amber-400 transition-colors">
+                            <span class="text-base">🎥</span>
+                            <span class="text-[10px] font-mono-tag font-bold">+ ADD 3-SEC VIDEO</span>
+                        </div>
+                        <div id="newDropVideoBadge" class="hidden absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-black/80 border border-white/10 text-[9px] font-mono-tag text-amber-400 font-bold">3s ATMOSPHERE</div>
+                        <button type="button" id="newDropVideoRemoveBtn" onclick="event.stopPropagation(); removeDropVideo();" class="hidden absolute top-2 right-2 w-6 h-6 rounded-full bg-black/80 hover:bg-black text-white text-[10px] font-bold items-center justify-center border border-white/20 cursor-pointer">✕</button>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-2 gap-2">
                     <div class="space-y-1">
                         <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Date</label>
@@ -2943,9 +2963,15 @@
                 <button onclick="closeDropDetailModal()" class="text-zinc-500 hover:text-white cursor-pointer text-xs p-1 font-bold">✕</button>
             </div>
 
-            <!-- Drop Cover Thumbnail -->
-            <div id="dropDetailCoverContainer" class="w-full aspect-[16/9] rounded-2xl overflow-hidden bg-zinc-900 border border-white/[.06]" style="display:none;">
+            <!-- Drop Cover Media (Thumbnail or Atmosphere Video) -->
+            <div id="dropDetailCoverContainer" class="relative w-full aspect-[16/9] rounded-2xl overflow-hidden bg-zinc-900 border border-white/[.06]" style="display:none;">
                 <img id="dropDetailCoverImg" src="" alt="Drop cover" class="w-full h-full object-cover">
+                <video id="dropDetailVideo" playsinline muted class="w-full h-full object-cover hidden"></video>
+                <div id="dropDetailVideoControls" class="absolute bottom-2 right-2 flex items-center gap-1.5" style="display:none;">
+                    <button id="dropDetailVideoPlayBtn" type="button" onclick="toggleDropDetailVideo()" class="px-2.5 py-1 rounded-full bg-black/80 hover:bg-black text-amber-400 text-[10px] font-mono-tag font-bold border border-white/20 flex items-center gap-1.5 cursor-pointer shadow-lg active:scale-95 transition">
+                        <span id="dropDetailPlayIcon">▶</span> <span id="dropDetailPlayText">3s Atmosphere</span>
+                    </button>
+                </div>
             </div>
 
             <!-- Date & Time & Spots -->
@@ -4455,6 +4481,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.1.2"></script> 
+  <script src="app.js?v=5.1.3"></script> 
 </body>
 </html>
