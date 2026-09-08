@@ -160,12 +160,11 @@
           </div>
         </div>
 
-        <!-- Segmented Navigation Tabs: FOR YOU | NEARBY | COMMUNITY | GLOBAL -->
+        <!-- Segmented Navigation Tabs: FOR YOU | NEARBY | COMMUNITY -->
         <div class="flex justify-between items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[10px] font-mono-tag sub-tabs-bar" id="subTabsBar">
           <button class="sub-tab-btn flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm active transition-all" data-circle="foryou" onclick="selectSubTab('foryou')">FOR YOU</button>
           <button class="sub-tab-btn flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer" data-circle="nearby" onclick="selectSubTab('nearby')">NEARBY</button>
           <button class="sub-tab-btn flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer" data-circle="campus" onclick="selectSubTab('campus')">COMMUNITY</button>
-          <button class="sub-tab-btn flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer" data-circle="global" onclick="selectSubTab('global')">GLOBAL</button>
         </div>
 
         <!-- Memories Header Info (Visible only on Memories screen) -->
@@ -480,7 +479,7 @@
             </div>
         </div>
 
-        <!-- Standard Feed Stream (FOR YOU / GLOBAL) -->
+        <!-- Standard Feed Stream (FOR YOU) -->
         <div class="space-y-4" id="feedContentStream">
           <!-- Dynamic Feed Moments Container -->
           <div class="feed-stream-container space-y-5" id="feedStreamContainer">
@@ -603,36 +602,6 @@
 
         </div>
 
-        <!-- Global Window Stream (Approved Global Visual Reference) -->
-        <div class="space-y-5" id="globalContentStream" style="display:none;">
-          
-          <!-- Global Introduction Header -->
-          <div class="px-1 space-y-2.5 border-b border-zinc-900 pb-3.5" id="globalWindowHeader">
-            <div class="flex justify-between items-center">
-              <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-widest uppercase">WORLD WINDOW</span>
-              <span class="text-[9px] text-zinc-500 font-mono-tag">LIVE FEED</span>
-            </div>
-            <h2 class="text-xs text-zinc-300 font-normal">Real moments across global coordinates and timezones.</h2>
-            
-            <!-- Horizontal Region Filters -->
-            <div class="flex items-center gap-1.5 text-[9px] font-mono-tag overflow-x-auto no-scroll pt-1" id="globalRegionFilters">
-              <button class="global-region-btn px-3 py-1 bg-amber-500 text-black rounded-lg font-bold transition-all cursor-pointer" data-region="all" onclick="filterGlobalRegion('all')">ALL</button>
-              <button class="global-region-btn px-2.5 py-1 bg-zinc-900 text-zinc-400 hover:text-white rounded-lg border border-zinc-800 transition-all cursor-pointer" data-region="asia" onclick="filterGlobalRegion('asia')">ASIA</button>
-              <button class="global-region-btn px-2.5 py-1 bg-zinc-900 text-zinc-400 hover:text-white rounded-lg border border-zinc-800 transition-all cursor-pointer" data-region="europe" onclick="filterGlobalRegion('europe')">EUROPE</button>
-              <button class="global-region-btn px-2.5 py-1 bg-zinc-900 text-zinc-400 hover:text-white rounded-lg border border-zinc-800 transition-all cursor-pointer" data-region="americas" onclick="filterGlobalRegion('americas')">AMERICAS</button>
-            </div>
-          </div>
-
-          <!-- Dynamic Global Moments Container -->
-          <div class="space-y-5" id="globalMomentsContainer"></div>
-
-          <!-- Quiet Empty State Indicator -->
-          <div class="text-center py-6 space-y-1" id="globalQuietCard">
-            <h3 class="text-xs font-bold text-white font-mono-tag tracking-wider uppercase">GLOBAL IS QUIET</h3>
-            <p class="text-[11px] text-zinc-500">More real moments will appear as people capture them.</p>
-          </div>
-
-        </div>
 
       </section>
 
@@ -4166,6 +4135,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.7"></script> 
+  <script src="app.js?v=5.2.8"></script> 
 </body>
 </html>
