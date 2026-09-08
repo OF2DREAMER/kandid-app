@@ -3172,7 +3172,7 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
     comm_key = moment.get("primary_community_id") or moment.get("context_community_id") or ""
     if not comm_key and moment.get("campus"):
         raw_campus = moment.get("campus", "").replace("Near ", "").strip()
-        cursor.execute("SELECT id FROM communities WHERE LOWER(name) = ? OR id = ? LIMIT 1", (raw_campus.lower(), raw_campus))
+        cursor.execute("SELECT id FROM communities WHERE LOWER(name) = ? OR id = ? OR LOWER(name) LIKE ? LIMIT 1", (raw_campus.lower(), raw_campus, f"%{raw_campus.lower()}%"))
         camp_row = cursor.fetchone()
         if camp_row:
             comm_key = camp_row["id"]
@@ -8916,12 +8916,20 @@ class KandidHandler(SimpleHTTPRequestHandler):
             eligible, reason, tier = check_moment_context_eligibility(conn, moment, user, invite_code=invite_code)
             if not eligible:
                 record_viral_graph_event(conn, "SUSPICIOUS_PARTICIPATION_ATTEMPT", user["id"], moment_id=moment["id"], metadata_dict={"reason": reason, "tier": tier})
+                comm_key = moment.get("primary_community_id") or moment.get("context_community_id") or ""
+                if not comm_key and moment.get("campus"):
+                    raw_campus = moment.get("campus", "").replace("Near ", "").strip()
+                    cursor.execute("SELECT id FROM communities WHERE LOWER(name) = ? OR id = ? OR LOWER(name) LIKE ? LIMIT 1", (raw_campus.lower(), raw_campus, f"%{raw_campus.lower()}%"))
+                    camp_row = cursor.fetchone()
+                    if camp_row:
+                        comm_key = camp_row["id"]
                 conn.close()
                 return self.send_json(403, {
                     "success": False,
                     "error": f"Participation not authorized: {reason}",
                     "code": reason,
-                    "tier": tier
+                    "tier": tier,
+                    "community_id": comm_key
                 })
 
             # 3. Create or Get Moment Cluster On-Demand
