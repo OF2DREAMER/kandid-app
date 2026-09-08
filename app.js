@@ -5695,34 +5695,89 @@ function renderOnboardingReview() {
     var emailInput = document.getElementById('final-email');
     var usernameInput = document.getElementById('final-username');
 
-    var nameVal = (nameInput && nameInput.value.trim()) || (state.onboardingSession && state.onboardingSession.profile && state.onboardingSession.profile.name) || 'Student';
-    var emailVal = (emailInput && emailInput.value.trim()) || (state.onboardingSession && state.onboardingSession.profile && state.onboardingSession.profile.email) || 'student@kandid.app';
-    var handleVal = (usernameInput && usernameInput.value.trim().replace('@', '')) || (state.onboardingSession && state.onboardingSession.handle) || 'user';
-    var campusVal = (state.onboardingSession && state.onboardingSession.campusName) || 'Not specified';
-    var cityVal = (state.onboardingSession && state.onboardingSession.city) || 'Not specified';
+    var nameVal = (nameInput && nameInput.value.trim()) || (state.onboardingSession && state.onboardingSession.profile && state.onboardingSession.profile.name) || '';
+    var emailVal = (emailInput && emailInput.value.trim()) || (state.onboardingSession && state.onboardingSession.profile && state.onboardingSession.profile.email) || '';
+    var handleVal = (usernameInput && usernameInput.value.trim().replace('@', '')) || (state.onboardingSession && state.onboardingSession.handle) || '';
+    var campusVal = (state.onboardingSession && state.onboardingSession.campusName && state.onboardingSession.campusId !== 'none') ? state.onboardingSession.campusName.trim() : '';
+    var cityVal = (state.onboardingSession && state.onboardingSession.city) ? state.onboardingSession.city.trim() : '';
+    if (!cityVal) {
+        var cInp = document.getElementById('cityInput');
+        if (cInp && cInp.value.trim()) cityVal = cInp.value.trim();
+    }
 
-    var rName = document.getElementById('reviewNameDisplay');
-    var rHandle = document.getElementById('reviewHandleDisplay');
+    var rName = document.getElementById('summaryName') || document.getElementById('reviewNameDisplay');
+    var rHandle = document.getElementById('summaryHandle') || document.getElementById('reviewHandleDisplay');
     var rEmail = document.getElementById('reviewEmailDisplay');
-    var rCampus = document.getElementById('reviewCampusDisplay');
-    var rCity = document.getElementById('reviewCityDisplay');
-    var rAvatarBox = document.getElementById('reviewAvatarBox');
-    var rAvatarLetter = document.getElementById('reviewAvatarLetter');
+    var rCampus = document.getElementById('summaryCampusText') || document.getElementById('reviewCampusDisplay');
+    var rCity = document.getElementById('summaryCityText') || document.getElementById('reviewCityDisplay');
+    var rAvatarBox = document.getElementById('summaryAvatar') || document.getElementById('reviewAvatarBox');
+    var rInterests = document.getElementById('summaryInterestsText');
 
-    if (rName) rName.textContent = nameVal;
-    if (rHandle) rHandle.textContent = '@' + handleVal;
+    if (rName) rName.textContent = nameVal || 'Not added';
+    if (rHandle) {
+        if (handleVal) {
+            rHandle.textContent = '@' + handleVal;
+            rHandle.classList.remove('hidden');
+        } else {
+            rHandle.classList.add('hidden');
+        }
+    }
     if (rEmail) rEmail.textContent = emailVal;
-    if (rCampus) rCampus.textContent = campusVal;
-    if (rCity) rCity.textContent = cityVal;
+    if (rCampus) rCampus.textContent = campusVal || 'Not added';
+    if (rCity) rCity.textContent = cityVal || 'Not added';
+
+    if (rInterests) {
+        var interestMap = {
+            'interest_photo': 'Photography',
+            'interest_music': 'Music',
+            'interest_coding': 'Coding',
+            'interest_sports': 'Sports',
+            'interest_startups': 'Startups',
+            'interest_art': 'Art'
+        };
+        var selectedList = (window.selectedInterests || []).map(function(id) {
+            return interestMap[id] || id.replace('interest_', '');
+        }).filter(Boolean);
+        rInterests.textContent = selectedList.length > 0 ? selectedList.join(' · ') : 'Not added';
+    }
 
     if (rAvatarBox) {
+        rAvatarBox.replaceChildren();
         if (state.onboardAvatarData) {
-            rAvatarBox.innerHTML = '<img src="' + escapeHtml(state.onboardAvatarData) + '" class="w-full h-full object-cover">';
+            var img = document.createElement('img');
+            img.src = state.onboardAvatarData;
+            img.className = 'w-full h-full object-cover';
+            img.alt = nameVal ? (nameVal + "'s profile photo") : 'Profile photo';
+            img.onerror = function() {
+                rAvatarBox.replaceChildren();
+                rAvatarBox.textContent = nameVal ? nameVal.charAt(0).toUpperCase() : '—';
+            };
+            rAvatarBox.appendChild(img);
+        } else if (nameVal) {
+            rAvatarBox.textContent = nameVal.charAt(0).toUpperCase();
         } else {
-            rAvatarBox.innerHTML = '<span>' + escapeHtml((nameVal[0] || 'K').toUpperCase()) + '</span>';
+            rAvatarBox.textContent = '—';
         }
     }
 }
+
+window.navigateBack = function() {
+    switchScreen('world');
+};
+
+window.editIdentity = function() {
+    switchScreen('identity');
+};
+
+window.editWorld = function() {
+    switchScreen('world');
+};
+
+window.completeOnboarding = function() {
+    return window.submitFinalOnboarding();
+};
+
+window.loadOnboardingSummary = renderOnboardingReview;
 
 window.editOnboardingStep = function(step) {
     if (step === 1) {
