@@ -2586,9 +2586,9 @@
                     <span class="text-[9px] font-mono-tag text-amber-400 font-bold uppercase">STEP 2 — WHAT YOU CAN DO</span>
                     <ul class="text-[11px] text-zinc-300 space-y-0.5 list-disc list-inside">
                         <li>Create & operate verified communities</li>
-                        <li>Host ₹19 in-person shared Drops</li>
-                        <li>Manage confirmed attendees & check-ins</li>
-                        <li>View creator operations & earnings</li>
+                        <li>Curate shared moments & collective memory</li>
+                        <li>Grow real-world student connections</li>
+                        <li>View community operations & insights</li>
                     </ul>
                 </div>
                 <div class="p-3 rounded-2xl bg-zinc-900/60 border border-white/[.06] space-y-1">
@@ -2628,15 +2628,15 @@
                     <p class="text-lg font-black text-white font-mono-tag" id="creatorDashSpacesCount">0</p>
                 </div>
                 <div class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-0.5">
-                    <p class="text-[9px] font-mono-tag text-zinc-500 uppercase">ACTIVE DROPS</p>
+                    <p class="text-[9px] font-mono-tag text-zinc-500 uppercase">TOTAL MEMBERS</p>
                     <p class="text-lg font-black text-amber-400 font-mono-tag" id="creatorDashDropsCount">0</p>
                 </div>
                 <div class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-0.5">
-                    <p class="text-[9px] font-mono-tag text-zinc-500 uppercase">TOTAL ATTENDEES</p>
+                    <p class="text-[9px] font-mono-tag text-zinc-500 uppercase">MOMENTS SHARED</p>
                     <p class="text-lg font-black text-white font-mono-tag" id="creatorDashAttendeesCount">0</p>
                 </div>
                 <div class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-0.5">
-                    <p class="text-[9px] font-mono-tag text-zinc-500 uppercase">CHECK-INS</p>
+                    <p class="text-[9px] font-mono-tag text-zinc-500 uppercase">LIVE PULSE</p>
                     <p class="text-lg font-black text-emerald-400 font-mono-tag" id="creatorDashCheckinsCount">0</p>
                 </div>
             </div>
@@ -2653,128 +2653,29 @@
             </div>
             </div>
 
-            <!-- Earnings Summary Section -->
-            <div class="space-y-2 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20">
-                <div class="flex items-center justify-between">
-                    <span class="text-[9px] font-mono-tag text-amber-400 font-extrabold uppercase tracking-wider">EARNINGS SUMMARY</span>
-                    <span class="text-[8px] font-mono-tag text-zinc-400">₹19 FIXED MODEL (80/20)</span>
-                </div>
-                <div class="grid grid-cols-2 gap-2 pt-1 font-mono-tag">
-                    <div>
-                        <p class="text-[8px] text-zinc-400">CREATOR SHARE (80%)</p>
-                        <p class="text-sm font-black text-amber-400" id="creatorDashEarningsShare">₹0.00</p>
-                    </div>
-                    <div>
-                        <p class="text-[8px] text-zinc-400">SETTLED</p>
-                        <p class="text-sm font-black text-emerald-400" id="creatorDashEarningsSettled">₹0.00</p>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
-    <!-- ===================================================================
-         CREATOR EARNINGS DASHBOARD MODAL
-         =================================================================== -->
-    <div id="creatorEarningsModal" class="fixed inset-0 bg-black/80 apple-blur z-[160] flex items-end justify-center pb-8" style="display:none;">
-        <div class="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-t-3xl p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto no-scroll">
-            <div class="flex justify-between items-center border-b border-zinc-900 pb-3">
-                <div>
-                    <span class="text-[9px] font-mono-tag text-amber-500 font-bold uppercase tracking-wider">CREATOR DASHBOARD</span>
-                    <h3 class="text-sm font-bold text-white tracking-tight" id="earningsCommunityTitle">Community Earnings</h3>
-                </div>
-                <button onclick="closeCreatorEarningsModal()" class="text-zinc-500 hover:text-white cursor-pointer text-xs p-1 font-bold">✕</button>
-            </div>
 
-            <!-- Earnings Hero Summary Card -->
-            <div class="p-4 rounded-2xl bg-gradient-to-br from-zinc-900 to-zinc-950 border border-amber-500/30 space-y-3 shadow-xl">
-                <div class="space-y-0.5">
-                    <span class="text-[9px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">AVAILABLE EARNINGS (80%)</span>
-                    <h2 class="text-2xl font-extrabold text-amber-400 font-mono-tag" id="earningsCreatorNetTxt">₹1,520</h2>
-                </div>
-
-                <div class="grid grid-cols-2 gap-2 pt-1 border-t border-zinc-800/80 text-[10px] font-mono-tag">
-                    <div class="p-2 rounded-xl bg-zinc-950/60 border border-white/[.04]">
-                        <span class="text-zinc-500 block text-[8px] uppercase">GROSS VOLUME</span>
-                        <span class="text-white font-bold" id="earningsGrossTxt">₹1,900</span>
-                    </div>
-                    <div class="p-2 rounded-xl bg-zinc-950/60 border border-white/[.04]">
-                        <span class="text-zinc-500 block text-[8px] uppercase">PLATFORM FEE (20%)</span>
-                        <span class="text-zinc-400 font-bold" id="earningsPlatformFeeTxt">₹380</span>
-                    </div>
-                </div>
-
-                <div class="flex justify-between items-center text-[10px] font-mono-tag text-zinc-400 pt-1">
-                    <span>Total Registrations:</span>
-                    <span class="text-white font-bold" id="earningsTxCountTxt">100 confirmed</span>
-                </div>
-            </div>
-
-            <!-- Transaction Ledger -->
-            <div class="space-y-2 text-left">
-                <span class="text-[9px] font-mono-tag text-zinc-500 uppercase tracking-widest font-bold px-1">RECENT DROP TRANSACTIONS</span>
-                <div class="space-y-2 max-h-44 overflow-y-auto no-scroll" id="creatorTransactionsLedgerList">
-                    <!-- Populated via loadCreatorEarnings() -->
-                </div>
-            </div>
-
-            <button onclick="closeCreatorEarningsModal()" class="w-full py-3 bg-zinc-900 hover:bg-zinc-850 text-white font-bold text-xs rounded-xl uppercase font-mono-tag cursor-pointer">
-                Done
-            </button>
-        </div>
-    </div>
 
     <!-- ===================================================================
-         CREATOR OPERATIONS MODAL (PHASE 8: CREATOR CONTROL DASHBOARD)
+         CREATOR OPERATIONS MODAL
          =================================================================== -->
     <div id="creatorOperationsModal" class="fixed inset-0 bg-black/85 apple-blur z-[160] flex items-end justify-center pb-6" style="display:none;">
         <div class="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto no-scroll text-left">
             <div class="flex justify-between items-center border-b border-zinc-900 pb-3">
                 <div class="space-y-0.5">
                     <span class="text-[9px] font-mono-tag text-amber-500 font-bold uppercase tracking-wider">CREATOR OPERATIONS</span>
-                    <h3 class="text-sm font-bold text-white tracking-tight">Community & Drop Operations</h3>
+                    <h3 class="text-sm font-bold text-white tracking-tight">Community Operations</h3>
                 </div>
                 <button onclick="closeCreatorOperationsModal()" class="text-zinc-500 hover:text-white cursor-pointer text-xs p-1 font-bold">✕</button>
             </div>
 
-            <!-- Real Earnings Strip -->
-            <div class="p-3 rounded-2xl bg-zinc-900/80 border border-amber-500/30 flex items-center justify-between text-xs font-mono-tag">
-                <div>
-                    <span class="text-[8px] text-zinc-400 block uppercase">CREATOR BALANCE (80%)</span>
-                    <span class="text-base font-extrabold text-amber-400" id="opsCreatorBalanceTxt">₹0.00</span>
-                </div>
-                <div class="text-right">
-                    <span class="text-[8px] text-zinc-400 block uppercase">SETTLED / PENDING</span>
-                    <span class="text-[10px] text-zinc-300 font-bold" id="opsSettledPendingTxt">₹0 / ₹0</span>
-                </div>
-            </div>
-
-            <!-- Quick Action: Host Drop -->
-            <button onclick="closeCreatorOperationsModal(); openCreateDropModal();" class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-md cursor-pointer flex items-center justify-center gap-1.5">
-                <span>+ HOST NEW DROP</span>
-            </button>
-
-            <!-- Section 1: My Communities -->
+            <!-- Section: My Communities -->
             <div class="space-y-1.5">
                 <span class="text-[9px] font-mono-tag text-zinc-500 uppercase tracking-widest font-bold px-1">MY MANAGED COMMUNITIES</span>
                 <div class="space-y-1.5" id="opsCommunitiesList">
                     <div class="p-2.5 rounded-xl bg-zinc-900 border border-white/[.04] text-xs text-zinc-400 font-mono-tag">Loading communities...</div>
-                </div>
-            </div>
-
-            <!-- Section 2: Active / Scheduled Drops -->
-            <div class="space-y-1.5">
-                <span class="text-[9px] font-mono-tag text-zinc-500 uppercase tracking-widest font-bold px-1">MANAGED DROPS</span>
-                <div class="space-y-2 max-h-56 overflow-y-auto no-scroll" id="opsDropsList">
-                    <div class="p-2.5 rounded-xl bg-zinc-900 border border-white/[.04] text-xs text-zinc-400 font-mono-tag">Loading drops...</div>
-                </div>
-            </div>
-
-            <!-- Section 3: Recent Check-ins -->
-            <div class="space-y-1.5">
-                <span class="text-[9px] font-mono-tag text-zinc-500 uppercase tracking-widest font-bold px-1">RECENT VERIFIED CHECK-INS</span>
-                <div class="space-y-1.5 max-h-40 overflow-y-auto no-scroll" id="opsCheckinsList">
-                    <div class="p-2 rounded-xl bg-zinc-900/60 border border-white/[.03] text-[10px] text-zinc-500 font-mono-tag">No recent check-ins</div>
                 </div>
             </div>
 
@@ -2784,33 +2685,7 @@
         </div>
     </div>
 
-    <!-- ===================================================================
-         DROP ATTENDEES ROSTER MODAL (PHASE 8: PRIVACY-PROTECTED ROSTER)
-         =================================================================== -->
-    <div id="dropAttendeesModal" class="fixed inset-0 bg-black/85 apple-blur z-[170] flex items-end justify-center pb-6" style="display:none;">
-        <div class="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto no-scroll text-left">
-            <div class="flex justify-between items-center border-b border-zinc-900 pb-3">
-                <div class="space-y-0.5">
-                    <span class="text-[9px] font-mono-tag text-amber-500 font-bold uppercase tracking-wider">VERIFIED ATTENDEES</span>
-                    <h3 class="text-sm font-bold text-white tracking-tight" id="attendeesDropTitle">Drop Attendees</h3>
-                </div>
-                <button onclick="closeDropAttendeesModal()" class="text-zinc-500 hover:text-white cursor-pointer text-xs p-1 font-bold">✕</button>
-            </div>
 
-            <div class="flex items-center justify-between text-[10px] font-mono-tag px-1 text-zinc-400">
-                <span id="attendeesRosterCount">0 Registered</span>
-                <span class="text-amber-400">₹19.00 Verified</span>
-            </div>
-
-            <div class="space-y-2 max-h-64 overflow-y-auto no-scroll" id="attendeesRosterList">
-                <div class="p-3 rounded-xl bg-zinc-900 border border-white/[.04] text-xs text-zinc-400 font-mono-tag text-center">Loading attendees...</div>
-            </div>
-
-            <button onclick="closeDropAttendeesModal()" class="w-full py-2.5 bg-zinc-900 hover:bg-zinc-850 text-white font-bold text-xs rounded-xl uppercase font-mono-tag cursor-pointer">
-                Done
-            </button>
-        </div>
-    </div>
 
     <!-- ===================================================================
          COMMUNITY SAFETY & REPORT MODAL (PHASE 9: REPORTING LAYER)
