@@ -6,6 +6,7 @@ Scalable Campus Social Platform
 
 import os
 import sys
+import re
 import json
 import base64
 import sqlite3
@@ -195,10 +196,112 @@ def validate_drop_ownership(drop_id, user_id, cursor):
     drop = dict(drop_row)
     if drop["creator_id"] == user_id:
         return True, "", drop
+    cursor.execute("SELECT handle FROM users WHERE id = ?", (user_id,))
+    u = cursor.fetchone()
+    if u and u["handle"] and drop.get("creator_handle") and u["handle"].strip().lower() == drop["creator_handle"].strip().lower():
+        return True, "", drop
     role = get_user_community_role(drop["community_id"], user_id, cursor)
     if role in ("owner", "admin"):
         return True, "", drop
     return False, "Unauthorized", drop
+
+def compute_drop_lifecycle(d, now_utc=None):
+    """
+    Computes server-authoritative Drop lifecycle status strictly based on UTC timestamps.
+    Statuses:
+      - UPCOMING: now < starts_at
+      - LIVE: starts_at <= now < ends_at
+      - ENDED: now >= ends_at
+      - CANCELLED: status == 'cancelled' or lifecycle_state == 'CANCELLED'
+
+    Host Experience States:
+      - WAITING_FOR_HOST: Default when UPCOMING or newly LIVE before host start
+      - WALKING_LIVE: Host explicitly pressed START WALK
+      - FINISHED: Once Drop reaches ENDED (or host ended walk early)
+    """
+    if not d:
+        return {}
+    item = dict(d)
+    now = now_utc if isinstance(now_utc, datetime) else datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    # 1. Explicit cancellation check
+    db_status = str(item.get("status") or "").strip().lower()
+    db_lifecycle = str(item.get("lifecycle_state") or "").strip().upper()
+    if db_status == "cancelled" or db_lifecycle == "CANCELLED":
+        item["computed_status"] = "CANCELLED"
+        item["lifecycle_state"] = "CANCELLED"
+        item["host_experience_state"] = "FINISHED"
+        return item
+
+    # 2. Parse starts_at
+    st_raw = (item.get("starts_at") or item.get("scheduled_start") or "").strip()
+    s_dt = None
+    if st_raw:
+        try:
+            s_dt = datetime.fromisoformat(st_raw.replace("Z", "+00:00"))
+            if s_dt.tzinfo is None:
+                s_dt = s_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            s_dt = None
+
+    if not s_dt:
+        if db_lifecycle in ("LIVE", "CHECK_IN", "ACTIVE"):
+            s_dt = now - timedelta(minutes=15)
+        elif db_lifecycle in ("ENDED", "CLOSED", "SETTLED", "SETTLEMENT", "MEMORY"):
+            s_dt = now - timedelta(hours=3)
+        else:
+            s_dt = now + timedelta(hours=2)
+    item["starts_at"] = s_dt.isoformat()
+
+    # 3. Parse ends_at
+    et_raw = (item.get("ends_at") or item.get("closed_at") or "").strip()
+    e_dt = None
+    if et_raw:
+        try:
+            e_dt = datetime.fromisoformat(et_raw.replace("Z", "+00:00"))
+            if e_dt.tzinfo is None:
+                e_dt = e_dt.replace(tzinfo=timezone.utc)
+        except Exception:
+            e_dt = None
+
+    if not e_dt or e_dt <= s_dt:
+        e_dt = s_dt + timedelta(hours=2)
+    item["ends_at"] = e_dt.isoformat()
+
+    # 4. Authoritative time-based transition
+    if now < s_dt:
+        status = "UPCOMING"
+        host_exp = "WAITING_FOR_HOST"
+    elif s_dt <= now < e_dt:
+        status = "LIVE"
+        stored_host_exp = (item.get("host_experience_state") or "").strip().upper()
+        if stored_host_exp == "WALKING_LIVE":
+            host_exp = "WALKING_LIVE"
+        elif stored_host_exp == "FINISHED":
+            host_exp = "FINISHED"
+        elif db_lifecycle in ("CHECK_IN", "ACTIVE"):
+            host_exp = "WALKING_LIVE"
+        else:
+            host_exp = "WAITING_FOR_HOST"
+    else:
+        status = "ENDED"
+        host_exp = "FINISHED"
+
+    item["computed_status"] = status
+    # Preserve legacy state labels for backward compatibility with phase test suites
+    if status == "UPCOMING" and db_lifecycle in ("SCHEDULED", "DRAFT", "REMINDER"):
+        item["lifecycle_state"] = db_lifecycle
+    elif status == "ENDED" and db_lifecycle in ("SETTLED", "CLOSED", "MEMORY", "SETTLEMENT"):
+        item["lifecycle_state"] = db_lifecycle
+    else:
+        item["lifecycle_state"] = status
+    item["host_experience_state"] = host_exp
+    if not item.get("meetup_context"):
+        item["meetup_context"] = item.get("location_context") or item.get("location") or "Campus Main Gate"
+
+    return item
 
 def validate_drop_lifecycle_transition(current_state, target_state):
     """
@@ -2307,6 +2410,12 @@ def init_db():
         checkin_window_end TEXT,
         closed_at TEXT,
         settlement_at TEXT,
+        starts_at TEXT DEFAULT '',
+        ends_at TEXT DEFAULT '',
+        host_experience_state TEXT DEFAULT 'WAITING_FOR_HOST',
+        host_started_at TEXT DEFAULT '',
+        meetup_context TEXT DEFAULT '',
+        meetup_updated_at TEXT DEFAULT '',
         status TEXT DEFAULT 'active',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -2338,6 +2447,7 @@ def init_db():
         user_id TEXT NOT NULL,
         user_name TEXT NOT NULL,
         user_handle TEXT NOT NULL,
+        user_avatar TEXT DEFAULT '',
         order_id TEXT DEFAULT '',
         amount_paid REAL DEFAULT 19.0,
         amount_paid_paise INTEGER DEFAULT 1900,
@@ -2493,6 +2603,12 @@ def init_db():
         ("settlement_at", "TEXT DEFAULT ''"),
         ("video_url", "TEXT DEFAULT ''"),
         ("video_duration", "REAL DEFAULT 0.0"),
+        ("starts_at", "TEXT DEFAULT ''"),
+        ("ends_at", "TEXT DEFAULT ''"),
+        ("host_experience_state", "TEXT DEFAULT 'WAITING_FOR_HOST'"),
+        ("host_started_at", "TEXT DEFAULT ''"),
+        ("meetup_context", "TEXT DEFAULT ''"),
+        ("meetup_updated_at", "TEXT DEFAULT ''"),
         ("updated_at", "TEXT DEFAULT ''")
     ]:
         if col not in cd_cols:
@@ -2500,6 +2616,56 @@ def init_db():
                 cursor.execute(f"ALTER TABLE community_drops ADD COLUMN {col} {col_def}")
             except:
                 pass
+
+    # Backfill legacy drops for starts_at, ends_at, and host_experience_state
+    try:
+        cursor.execute("SELECT id, scheduled_start, closed_at, date_str, time_str, created_at, lifecycle_state, starts_at, ends_at, host_experience_state FROM community_drops")
+        legacy_drops = [dict(r) for r in cursor.fetchall()]
+        now_utc = datetime.now(timezone.utc)
+        for row in legacy_drops:
+            rid = row["id"]
+            st = (row.get("starts_at") or "").strip()
+            et = (row.get("ends_at") or "").strip()
+            hexp = (row.get("host_experience_state") or "").strip()
+            needs_update = False
+
+            if not st:
+                if row.get("scheduled_start") and row["scheduled_start"].strip():
+                    st = row["scheduled_start"].strip()
+                elif row.get("created_at") and row["created_at"].strip():
+                    st = row["created_at"].strip()
+                else:
+                    st = now_utc.isoformat()
+                needs_update = True
+
+            if not et:
+                try:
+                    sdt = datetime.fromisoformat(st.replace("Z", "+00:00"))
+                    if sdt.tzinfo is None:
+                        sdt = sdt.replace(tzinfo=timezone.utc)
+                    et = (sdt + timedelta(hours=2)).isoformat()
+                except Exception:
+                    et = (now_utc + timedelta(hours=2)).isoformat()
+                needs_update = True
+
+            if not hexp or hexp not in ("WAITING_FOR_HOST", "WALKING_LIVE", "FINISHED"):
+                lstate = (row.get("lifecycle_state") or "").upper()
+                if lstate in ("CLOSED", "SETTLEMENT", "MEMORY", "ENDED"):
+                    hexp = "FINISHED"
+                elif lstate in ("LIVE", "ACTIVE", "CHECK_IN"):
+                    hexp = "WALKING_LIVE"
+                else:
+                    hexp = "WAITING_FOR_HOST"
+                needs_update = True
+
+            if needs_update:
+                cursor.execute("""
+                    UPDATE community_drops 
+                    SET starts_at = ?, ends_at = ?, host_experience_state = ?
+                    WHERE id = ?
+                """, (st, et, hexp, rid))
+    except Exception as e:
+        print(f"[INIT_DB] Legacy drops backfill notice: {e}")
 
     # Auto-migrations for community_drop_registrations table
     cursor.execute("PRAGMA table_info(community_drop_registrations)")
@@ -5370,40 +5536,43 @@ class KandidHandler(SimpleHTTPRequestHandler):
             drops = []
             first_upcoming_tagged = False
             for r in raw_drops:
-                d = dict(r)
+                d = compute_drop_lifecycle(dict(r))
                 price_paise = int(d.get("price_paise") or 1900)
                 d["price_paise"] = price_paise
                 d["price"] = float(price_paise) / 100.0
                 d["currency"] = d.get("currency") or "INR"
-                state_str = d.get("lifecycle_state") or ("SCHEDULED" if d.get("status") == "active" else "DRAFT")
-                d["lifecycle_state"] = state_str
+                state_str = d.get("computed_status")
+                d["lifecycle_state"] = d.get("lifecycle_state") or state_str
                 cap = int(d.get("capacity") or 20)
                 reg_cnt = int(d.get("registered_count") or 0)
                 d["capacity"] = cap
                 d["registered_count"] = reg_cnt
                 d["remaining_capacity"] = max(0, cap - reg_cnt)
 
-                # Phase 17 Contextual Labels & Continuity
-                if state_str in ("LIVE", "ACTIVE", "CHECK_IN", "live", "active", "check_in"):
+                # Contextual Labels & Continuity
+                if state_str == "LIVE":
                     d["contextual_label"] = "Happening now"
-                elif state_str in ("SCHEDULED", "REMINDER", "UPCOMING", "scheduled", "reminder", "upcoming"):
+                elif state_str == "UPCOMING":
                     if not first_upcoming_tagged:
                         d["contextual_label"] = "Next shared experience"
                         first_upcoming_tagged = True
                     else:
                         d["contextual_label"] = "Upcoming experience"
-                elif state_str in ("CLOSED", "SETTLEMENT", "MEMORY", "closed", "settlement", "memory"):
+                elif state_str in ("ENDED", "CLOSED", "SETTLEMENT", "MEMORY"):
                     d["contextual_label"] = "Completed experience"
                     d["memory_id"] = f"mem_{d['id']}"
                 else:
                     d["contextual_label"] = "Community experience"
 
-                # Phase 17 Coordination Status for registered users
+                # Coordination Status for registered users
                 if d.get("is_registered"):
                     if d.get("is_checked_in"):
                         d["coordination_status"] = "Checked in ✓"
-                    elif state_str in ("CHECK_IN", "LIVE", "ACTIVE", "check_in", "live", "active"):
-                        d["coordination_status"] = "Check-in ready"
+                    elif state_str == "LIVE":
+                        if d.get("host_experience_state") == "WALKING_LIVE":
+                            d["coordination_status"] = "Walk live · Check in now"
+                        else:
+                            d["coordination_status"] = "Waiting for host"
                     else:
                         d["coordination_status"] = "Spot confirmed"
 
@@ -5427,12 +5596,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(404, {"success": False, "error": "Experience not found", "code": "NOT_FOUND"})
 
-            d = dict(drop_row)
+            d = compute_drop_lifecycle(dict(drop_row))
             price_paise = int(d.get("price_paise") or 1900)
             d["price_paise"] = price_paise
             d["price"] = float(price_paise) / 100.0
             d["currency"] = d.get("currency") or "INR"
-            d["lifecycle_state"] = d.get("lifecycle_state") or ("SCHEDULED" if d.get("status") == "active" else "DRAFT")
+            state_str = d.get("computed_status")
+            d["lifecycle_state"] = d.get("lifecycle_state") or state_str
             cap = int(d.get("capacity") or 20)
             reg_cnt = int(d.get("registered_count") or 0)
             d["capacity"] = cap
@@ -5456,11 +5626,32 @@ class KandidHandler(SimpleHTTPRequestHandler):
             checked_in_count = cursor.fetchone()["cnt"]
             d["checked_in_count"] = checked_in_count
 
-            # Host check
+            # Host check using authoritative validate_drop_ownership
             is_host = False
-            if user:
-                is_host = (d.get("creator_id") == user["id"]) or (d.get("creator_handle") == user.get("handle")) or (user.get("role") == "admin")
+            if user_id:
+                is_auth, _, _ = validate_drop_ownership(drop_id, user_id, cursor)
+                is_host = bool(is_auth)
             d["is_host"] = is_host
+
+            # If host, return privacy-safe attendees list
+            if is_host:
+                cursor.execute("""
+                    SELECT user_id, user_name, user_handle, is_checked_in, checked_in_at, created_at
+                    FROM community_drop_registrations
+                    WHERE drop_id = ? AND status = 'confirmed'
+                    ORDER BY is_checked_in DESC, created_at ASC
+                """, (drop_id,))
+                raw_atts = cursor.fetchall()
+                attendees = []
+                for att in raw_atts:
+                    attendees.append({
+                        "user_id": att["user_id"],
+                        "name": att["user_name"] or "Student",
+                        "handle": att["user_handle"] or "user",
+                        "is_checked_in": bool(att["is_checked_in"]),
+                        "checked_in_at": att["checked_in_at"]
+                    })
+                d["attendees"] = attendees
 
             # Fetch shared moments for this drop
             cursor.execute("""
@@ -5485,7 +5676,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             if len(raw_moments) > 0:
                 d["pulse_status"] = "MOMENTS ARE APPEARING"
-            elif checked_in_count > 0 or d["lifecycle_state"] in ("LIVE", "ACTIVE", "CHECK_IN"):
+            elif checked_in_count > 0 or state_str == "LIVE":
                 d["pulse_status"] = "ACTIVE NOW"
             else:
                 d["pulse_status"] = "QUIET"
@@ -5493,8 +5684,19 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Phase 17 Attendee Coordination block (if registered or host)
             coordination = None
             if is_registered or is_host:
-                approx_venue = d.get("location_name") or d.get("area") or d.get("community_name") or "Campus Community Area"
-                checkin_status_str = "Checked in ✓" if is_checked_in else ("Check-in open now" if d["lifecycle_state"] in ("CHECK_IN", "LIVE", "ACTIVE", "check_in", "live", "active") else "Check-in opens before experience starts")
+                approx_venue = d.get("meetup_context") or d.get("location_name") or d.get("area") or d.get("community_name") or "Campus Community Area"
+                if is_checked_in:
+                    checkin_status_str = "Checked in ✓"
+                elif state_str == "LIVE":
+                    if d.get("host_experience_state") == "WALKING_LIVE":
+                        checkin_status_str = "Host walk live · Ready to check in"
+                    else:
+                        checkin_status_str = "Waiting for host to start walk"
+                elif state_str == "UPCOMING":
+                    checkin_status_str = "Check-in opens when experience goes live"
+                else:
+                    checkin_status_str = "Experience ended"
+
                 coordination = {
                     "drop_id": d["id"],
                     "title": d["title"],
@@ -6091,38 +6293,43 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 user_regs = {row["drop_id"]: bool(row["is_checked_in"]) for row in cursor.fetchall()}
 
             drops_list = []
+            ended_drops = []
             first_upcoming_tagged = False
             for dr in drop_rows:
-                dd = dict(dr)
+                dd = compute_drop_lifecycle(dict(dr))
                 price_p = int(dd.get("price_paise") or 1900)
                 dd["price_paise"] = price_p
                 dd["price"] = float(price_p) / 100.0
                 dd["currency"] = dd.get("currency") or "INR"
-                state_str = dd.get("lifecycle_state") or ("SCHEDULED" if dd.get("status") == "active" else "DRAFT")
-                dd["lifecycle_state"] = state_str
+                state_str = dd.get("computed_status")
+                dd["lifecycle_state"] = dd.get("lifecycle_state") or state_str
                 dd["is_registered"] = dd["id"] in user_regs
                 dd["is_checked_in"] = user_regs.get(dd["id"], False)
 
                 # Contextual labels & memory links
-                if state_str in ("LIVE", "ACTIVE", "CHECK_IN", "live", "active", "check_in"):
+                if state_str == "LIVE":
                     dd["contextual_label"] = "Happening now"
-                elif state_str in ("SCHEDULED", "REMINDER", "UPCOMING", "scheduled", "reminder", "upcoming"):
+                elif state_str == "UPCOMING":
                     if not first_upcoming_tagged:
                         dd["contextual_label"] = "Next shared experience"
                         first_upcoming_tagged = True
                     else:
                         dd["contextual_label"] = "Upcoming experience"
-                elif state_str in ("CLOSED", "SETTLEMENT", "MEMORY", "closed", "settlement", "memory"):
+                elif state_str in ("ENDED", "CLOSED", "SETTLEMENT", "MEMORY"):
                     dd["contextual_label"] = "Completed experience"
                     dd["memory_id"] = f"mem_{dd['id']}"
+                    ended_drops.append(dd)
                 else:
                     dd["contextual_label"] = "Community experience"
 
                 if dd["is_registered"]:
                     if dd["is_checked_in"]:
                         dd["coordination_status"] = "Checked in ✓"
-                    elif state_str in ("CHECK_IN", "LIVE", "ACTIVE", "check_in", "live", "active"):
-                        dd["coordination_status"] = "Check-in ready"
+                    elif state_str == "LIVE":
+                        if dd.get("host_experience_state") == "WALKING_LIVE":
+                            dd["coordination_status"] = "Walk live · Check in now"
+                        else:
+                            dd["coordination_status"] = "Waiting for host"
                     else:
                         dd["coordination_status"] = "Spot confirmed"
 
@@ -6228,11 +6435,36 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 ]
 
             # 6. Collective Memory Layer
-            cursor.execute("SELECT * FROM collective_memories WHERE campus = ? OR community_name = ? OR community_id = ? ORDER BY created_at DESC LIMIT 6", (target_campus, comm_name, comm_id))
+            cursor.execute("SELECT * FROM collective_memories WHERE campus = ? OR community_name = ? OR community_id = ? ORDER BY created_at DESC LIMIT 12", (target_campus, comm_name, comm_id))
             mem_rows = cursor.fetchall()
             collective_memories = [dict(r) for r in mem_rows]
+            existing_mem_drop_ids = {m.get("drop_id") for m in collective_memories if m.get("drop_id")}
+
+            for ed in ended_drops:
+                if ed["id"] not in existing_mem_drop_ids:
+                    cursor.execute("SELECT COUNT(*) as mc FROM posts WHERE (drop_id = ? OR event_id = ?) AND is_private = 0", (ed["id"], ed["id"]))
+                    mc_row = cursor.fetchone()
+                    moments_count = mc_row["mc"] if mc_row else 0
+
+                    collective_memories.append({
+                        "id": f"mem_{ed['id']}",
+                        "drop_id": ed["id"],
+                        "community_id": comm_id,
+                        "community_name": comm_name,
+                        "campus": target_campus,
+                        "title": ed.get("title", "Community Drop"),
+                        "cover_image": ed.get("thumbnail_url") or ed.get("cover_image") or "https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&w=600&q=80",
+                        "video_url": ed.get("video_url"),
+                        "video_duration_seconds": ed.get("video_duration_seconds"),
+                        "attendees_count": ed.get("registered_count", 0),
+                        "moments_count": moments_count,
+                        "date_str": ed.get("date_str") or (ed.get("starts_at")[:10] if ed.get("starts_at") else "Recent"),
+                        "time_ago": format_time_ago(ed.get("ends_at") or ed.get("created_at")),
+                        "label": "Recent Drop Memory"
+                    })
+
             for m in collective_memories:
-                if m.get("drop_id"):
+                if m.get("drop_id") and not m.get("drop_context"):
                     m["drop_context"] = {"drop_id": m["drop_id"], "label": "A memory from this experience"}
 
             # 7. People Around Campus (No follower counts)
@@ -8607,7 +8839,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
             desc = (body.get("description") or "").strip()
             date_str = (body.get("date_str") or "This Weekend").strip()
             time_str = (body.get("time_str") or "6:00 PM").strip()
+            meetup_context = (body.get("meetup_context") or body.get("location") or "Campus Main Gate").strip()
             
+            raw_gps_pattern = re.compile(r'[-+]?\d{1,3}\.\d{4,}\s*,\s*[-+]?\d{1,3}\.\d{4,}')
+            if raw_gps_pattern.search(meetup_context):
+                return self.send_json(400, {
+                    "error": "Raw GPS coordinates are not permitted as meetup points. Please provide a clean landmark name (e.g. Near Library Gate 2).",
+                    "code": "RAW_GPS_FORBIDDEN"
+                })
+
             try:
                 capacity = int(body.get("capacity") or 20)
             except (ValueError, TypeError):
@@ -8642,9 +8882,49 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 video_url = v_url
                 video_duration = v_dur
 
-            scheduled_start = (body.get("scheduled_start") or "").strip()
-            requested_state = (body.get("lifecycle_state") or LIFECYCLE_DRAFT).strip().upper()
-            initial_state = LIFECYCLE_DRAFT if requested_state not in (LIFECYCLE_DRAFT, LIFECYCLE_SCHEDULED) else requested_state
+            # Timezone-aware server-authoritative timestamps
+            now_utc = datetime.now(timezone.utc)
+            starts_at_raw = (body.get("starts_at") or body.get("scheduled_start") or "").strip()
+            ends_at_raw = (body.get("ends_at") or body.get("closed_at") or "").strip()
+
+            starts_dt = None
+            ends_dt = None
+
+            if starts_at_raw:
+                try:
+                    starts_dt = datetime.fromisoformat(starts_at_raw.replace("Z", "+00:00"))
+                    if starts_dt.tzinfo is None:
+                        starts_dt = starts_dt.replace(tzinfo=timezone.utc)
+                except Exception:
+                    return self.send_json(400, {"error": "Invalid starts_at format. Must be an ISO timestamp."})
+
+            if ends_at_raw:
+                try:
+                    ends_dt = datetime.fromisoformat(ends_at_raw.replace("Z", "+00:00"))
+                    if ends_dt.tzinfo is None:
+                        ends_dt = ends_dt.replace(tzinfo=timezone.utc)
+                except Exception:
+                    return self.send_json(400, {"error": "Invalid ends_at format. Must be an ISO timestamp."})
+
+            # Start and end interval validation: ends_at <= starts_at MUST be rejected
+            if starts_dt and ends_dt:
+                if ends_dt <= starts_dt:
+                    return self.send_json(400, {"error": "Drop end time must be strictly after start time."})
+            elif starts_dt and not ends_dt:
+                ends_dt = starts_dt + timedelta(hours=2)
+            elif ends_dt and not starts_dt:
+                starts_dt = ends_dt - timedelta(hours=2)
+            else:
+                starts_dt = now_utc + timedelta(hours=2)
+                ends_dt = starts_dt + timedelta(hours=2)
+
+            canonical_starts_at = starts_dt.isoformat()
+            canonical_ends_at = ends_dt.isoformat()
+            scheduled_start = canonical_starts_at
+            closed_at = canonical_ends_at
+
+            requested_state = (body.get("lifecycle_state") or LIFECYCLE_SCHEDULED).strip().upper()
+            initial_state = requested_state if requested_state in (LIFECYCLE_DRAFT, LIFECYCLE_SCHEDULED) else LIFECYCLE_SCHEDULED
 
             if not title:
                 return self.send_json(400, {"error": "Title is required"})
@@ -8668,8 +8948,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     comm_name = crow["name"]
 
             # Authoritative check: Host creation must be OWNER-ONLY
-            # A user can create/host a new Host/hosted activity only inside a Community they personally created and own.
-            # Direct API attempts to create a Host in another user's Community must be rejected server-side with 403.
             user_role = get_user_community_role(comm_id, user["id"], cursor)
             crow_dict = dict(crow) if crow else {}
             is_creator = bool(
@@ -8687,26 +8965,234 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(403, {"error": "Only the community owner can host drops in this community."})
 
             drop_id = "drop_" + secrets.token_hex(6)
-            # Server-authoritative economics: fixed 1900 paise (₹19.00), INR
             economics = calculate_drop_economics(DROP_FIXED_PRICE_PAISE)
 
             cursor.execute("""
-                INSERT INTO community_drops (id, community_id, community_name, creator_id, creator_handle, title, description, date_str, time_str, capacity, registered_count, price, price_paise, currency, cover_img, video_url, video_duration, lifecycle_state, scheduled_start, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'INR', ?, ?, ?, ?, ?, 'active')
-            """, (drop_id, comm_id, comm_name or "Community Drop", user["id"], user.get("handle", "user"), title, desc, date_str, time_str, capacity, economics["gross_rupees"], economics["gross_paise"], cover_img, video_url, video_duration, initial_state, scheduled_start))
+                INSERT INTO community_drops (
+                    id, community_id, community_name, creator_id, creator_handle,
+                    title, description, date_str, time_str, capacity, registered_count,
+                    price, price_paise, currency, cover_img, video_url, video_duration,
+                    lifecycle_state, scheduled_start, closed_at, starts_at, ends_at,
+                    host_experience_state, meetup_context, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'INR', ?, ?, ?, ?, ?, ?, ?, ?, 'WAITING_FOR_HOST', ?, 'active')
+            """, (
+                drop_id, comm_id, comm_name or "Community Drop", user["id"], user.get("handle", "user"),
+                title, desc, date_str, time_str, capacity, economics["gross_rupees"], economics["gross_paise"],
+                cover_img, video_url, video_duration, initial_state, scheduled_start, closed_at,
+                canonical_starts_at, canonical_ends_at, meetup_context
+            ))
             conn.commit()
+
+            cursor.execute("SELECT * FROM community_drops WHERE id = ?", (drop_id,))
+            created_row = cursor.fetchone()
+            computed_drop = compute_drop_lifecycle(created_row) if created_row else {}
             conn.close()
+
             return self.send_json(201, {
                 "success": True,
                 "drop_id": drop_id,
                 "cover_img": cover_img,
                 "video_url": video_url,
                 "video_duration": video_duration,
-                "lifecycle_state": initial_state,
+                "lifecycle_state": computed_drop.get("computed_status") or initial_state,
+                "computed_status": computed_drop.get("computed_status") or "UPCOMING",
+                "host_experience_state": "WAITING_FOR_HOST",
+                "starts_at": canonical_starts_at,
+                "ends_at": canonical_ends_at,
+                "meetup_context": meetup_context,
                 "price_paise": economics["gross_paise"],
                 "price": economics["gross_rupees"],
                 "currency": "INR",
                 "message": "Community Drop published!"
+            })
+
+        # =====================================================================
+        # HOST ACTION: START WALK
+        # =====================================================================
+        if (path.startswith("/api/drops/") and path.endswith("/start")) or path in ("/api/community/drops/start", "/api/drops/start"):
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "code": "UNAUTHORIZED"})
+            
+            drop_id = ""
+            if path.startswith("/api/drops/") and path.endswith("/start"):
+                parts = [p for p in path.split("/") if p]
+                if len(parts) >= 3:
+                    drop_id = parts[2]
+            if not drop_id:
+                drop_id = (body.get("drop_id") or body.get("id") or "").strip()
+            if not drop_id:
+                return self.send_json(400, {"error": "drop_id is required", "code": "MISSING_DROP_ID"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            drop_row = validate_drop_existence(drop_id, cursor)
+            if not drop_row:
+                conn.close()
+                return self.send_json(404, {"error": "Drop not found", "code": "DROP_NOT_FOUND"})
+
+            is_auth, err, drop = validate_drop_ownership(drop_id, user["id"], cursor)
+            if not is_auth:
+                conn.close()
+                return self.send_json(403, {"error": "Only the drop host/owner can start the walk.", "code": "FORBIDDEN"})
+
+            d = compute_drop_lifecycle(drop)
+            if d["computed_status"] != "LIVE":
+                conn.close()
+                return self.send_json(400, {
+                    "error": f"Cannot start walk: Drop is currently {d['computed_status']} (must be LIVE).",
+                    "code": "INVALID_LIFECYCLE_STATE",
+                    "current_status": d["computed_status"]
+                })
+
+            stored_hexp = (drop.get("host_experience_state") or "").strip().upper()
+            if stored_hexp == "WALKING_LIVE":
+                conn.close()
+                return self.send_json(200, {
+                    "success": True,
+                    "already_started": True,
+                    "drop_id": drop_id,
+                    "host_experience_state": "WALKING_LIVE",
+                    "host_started_at": drop.get("host_started_at") or "",
+                    "drop": d
+                })
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor.execute("""
+                UPDATE community_drops
+                SET host_experience_state = 'WALKING_LIVE',
+                    host_started_at = COALESCE(NULLIF(host_started_at, ''), ?),
+                    updated_at = ?
+                WHERE id = ?
+            """, (now_iso, now_iso, drop_id))
+            conn.commit()
+
+            cursor.execute("SELECT * FROM community_drops WHERE id = ?", (drop_id,))
+            updated_drop = compute_drop_lifecycle(cursor.fetchone())
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "drop_id": drop_id,
+                "host_experience_state": "WALKING_LIVE",
+                "host_started_at": updated_drop.get("host_started_at") or now_iso,
+                "drop": updated_drop
+            })
+
+        # =====================================================================
+        # HOST ACTION: END WALK
+        # =====================================================================
+        if (path.startswith("/api/drops/") and path.endswith("/end")) or path in ("/api/community/drops/end", "/api/drops/end"):
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "code": "UNAUTHORIZED"})
+            
+            drop_id = ""
+            if path.startswith("/api/drops/") and path.endswith("/end"):
+                parts = [p for p in path.split("/") if p]
+                if len(parts) >= 3:
+                    drop_id = parts[2]
+            if not drop_id:
+                drop_id = (body.get("drop_id") or body.get("id") or "").strip()
+            if not drop_id:
+                return self.send_json(400, {"error": "drop_id is required", "code": "MISSING_DROP_ID"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            drop_row = validate_drop_existence(drop_id, cursor)
+            if not drop_row:
+                conn.close()
+                return self.send_json(404, {"error": "Drop not found", "code": "DROP_NOT_FOUND"})
+
+            is_auth, err, drop = validate_drop_ownership(drop_id, user["id"], cursor)
+            if not is_auth:
+                conn.close()
+                return self.send_json(403, {"error": "Only the drop host/owner can end the walk.", "code": "FORBIDDEN"})
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor.execute("""
+                UPDATE community_drops
+                SET host_experience_state = 'FINISHED',
+                    closed_at = COALESCE(NULLIF(closed_at, ''), ?),
+                    ends_at = ?,
+                    lifecycle_state = 'ENDED',
+                    updated_at = ?
+                WHERE id = ?
+            """, (now_iso, now_iso, now_iso, drop_id))
+            conn.commit()
+
+            cursor.execute("SELECT * FROM community_drops WHERE id = ?", (drop_id,))
+            updated_drop = compute_drop_lifecycle(cursor.fetchone())
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "drop_id": drop_id,
+                "host_experience_state": "FINISHED",
+                "drop": updated_drop
+            })
+
+        # =====================================================================
+        # HOST ACTION: UPDATE MEETUP POINT
+        # =====================================================================
+        if (path.startswith("/api/drops/") and path.endswith("/meetup")) or path in ("/api/community/drops/meetup", "/api/drops/meetup"):
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "code": "UNAUTHORIZED"})
+            
+            drop_id = ""
+            if path.startswith("/api/drops/") and path.endswith("/meetup"):
+                parts = [p for p in path.split("/") if p]
+                if len(parts) >= 3:
+                    drop_id = parts[2]
+            if not drop_id:
+                drop_id = (body.get("drop_id") or body.get("id") or "").strip()
+            if not drop_id:
+                return self.send_json(400, {"error": "drop_id is required", "code": "MISSING_DROP_ID"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            drop_row = validate_drop_existence(drop_id, cursor)
+            if not drop_row:
+                conn.close()
+                return self.send_json(404, {"error": "Drop not found", "code": "DROP_NOT_FOUND"})
+
+            is_auth, err, drop = validate_drop_ownership(drop_id, user["id"], cursor)
+            if not is_auth:
+                conn.close()
+                return self.send_json(403, {"error": "Only the drop host/owner can update the meetup context.", "code": "FORBIDDEN"})
+
+            meetup_context = (body.get("meetup_context") or body.get("location") or "").strip()
+            if not meetup_context:
+                conn.close()
+                return self.send_json(400, {"error": "meetup_context label is required", "code": "MISSING_MEETUP_CONTEXT"})
+
+            # Privacy rule: Reject raw GPS coordinates (e.g. lat/lng floating point format)
+            raw_gps_pattern = re.compile(r'[-+]?\d{1,3}\.\d{4,}\s*,\s*[-+]?\d{1,3}\.\d{4,}')
+            if raw_gps_pattern.search(meetup_context):
+                conn.close()
+                return self.send_json(400, {"error": "Exact GPS coordinates are not permitted. Please provide an approximate place name (e.g. Main Gate, Library Lawn).", "code": "RAW_GPS_FORBIDDEN"})
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor.execute("""
+                UPDATE community_drops
+                SET meetup_context = ?,
+                    meetup_updated_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (meetup_context, now_iso, now_iso, drop_id))
+            conn.commit()
+
+            cursor.execute("SELECT * FROM community_drops WHERE id = ?", (drop_id,))
+            updated_drop = compute_drop_lifecycle(cursor.fetchone())
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "drop_id": drop_id,
+                "meetup_context": meetup_context,
+                "drop": updated_drop
             })
 
         if path == "/api/community/drops/update" or (path.startswith("/api/community/drops/") and path.endswith("/update")):
@@ -9101,6 +9587,38 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(404, {"error": "Community drop not found"})
 
+            # Lifecycle gating: registration allowed ONLY while UPCOMING
+            drop_dict = compute_drop_lifecycle(dict(drop))
+            computed_status = drop_dict.get("computed_status")
+            if computed_status == "LIVE":
+                conn.close()
+                return self.send_json(400, {
+                    "error": "Registration is closed. This Drop is already live!",
+                    "code": "REGISTRATION_CLOSED_LIVE",
+                    "lifecycle": computed_status
+                })
+            elif computed_status == "ENDED":
+                conn.close()
+                return self.send_json(400, {
+                    "error": "Registration is closed. This Drop has ended.",
+                    "code": "REGISTRATION_CLOSED_ENDED",
+                    "lifecycle": computed_status
+                })
+            elif computed_status == "CANCELLED":
+                conn.close()
+                return self.send_json(400, {
+                    "error": "Registration is unavailable. This Drop was cancelled.",
+                    "code": "DROP_CANCELLED",
+                    "lifecycle": computed_status
+                })
+            elif computed_status != "UPCOMING":
+                conn.close()
+                return self.send_json(400, {
+                    "error": "Registration is only open while the Drop is UPCOMING.",
+                    "code": "REGISTRATION_NOT_OPEN",
+                    "lifecycle": computed_status
+                })
+
             # Check capacity
             reg_cnt = drop["registered_count"] or 0
             cap = drop["capacity"] or 20
@@ -9198,7 +9716,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 })
 
             now_iso = datetime.now(timezone.utc).isoformat()
-            cursor.execute("UPDATE community_drops SET lifecycle_state = ?, updated_at = ? WHERE id = ?", (target_state, now_iso, drop_id))
+            host_exp_update = ""
+            if target_state in ("CHECK_IN", "ACTIVE"):
+                host_exp_update = ", host_experience_state = 'WALKING_LIVE'"
+            elif target_state in ("CLOSED", "SETTLEMENT", "MEMORY"):
+                host_exp_update = ", host_experience_state = 'FINISHED'"
+            cursor.execute(f"UPDATE community_drops SET lifecycle_state = ?, updated_at = ?{host_exp_update} WHERE id = ?", (target_state, now_iso, drop_id))
             conn.commit()
             conn.close()
 
@@ -9590,16 +10113,44 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     conn.close()
                     return self.send_json(400, {"success": False, "error": f"Check-in rejected: payment status is '{ord_row['payment_status']}'", "code": "PAYMENT_NOT_VERIFIED"})
 
-            # 4. Drop state / window validation
-            lifecycle = (drop["lifecycle_state"] or "SCHEDULED").upper()
-            allowed_states = (LIFECYCLE_CHECK_IN, LIFECYCLE_LIVE, LIFECYCLE_ACTIVE)
-            if lifecycle not in allowed_states:
+            # 4. Drop state / window validation: must be LIVE and host must have started the walk
+            drop_dict = compute_drop_lifecycle(dict(drop))
+            computed_status = drop_dict.get("computed_status")
+            host_state = drop_dict.get("host_experience_state")
+
+            if computed_status == "UPCOMING":
                 conn.close()
                 return self.send_json(400, {
                     "success": False,
-                    "error": f"Check-in window is not currently open (Current state: {lifecycle})",
+                    "error": "Cannot check in before the Drop begins. The Drop is still UPCOMING.",
+                    "code": "CHECKIN_BEFORE_LIVE",
+                    "current_state": computed_status
+                })
+            elif computed_status == "ENDED":
+                conn.close()
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "Check-in window is closed. This Drop has already ended.",
+                    "code": "CHECKIN_AFTER_END",
+                    "current_state": computed_status
+                })
+            elif computed_status != "LIVE":
+                conn.close()
+                return self.send_json(400, {
+                    "success": False,
+                    "error": f"Check-in window is not currently open (Current state: {computed_status})",
                     "code": "CHECKIN_WINDOW_CLOSED",
-                    "current_state": lifecycle
+                    "current_state": computed_status
+                })
+
+            # Check host experience state
+            if host_state != "WALKING_LIVE":
+                conn.close()
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "The Host has not started the walk yet. Please wait for the Host to start.",
+                    "code": "WAITING_FOR_HOST",
+                    "host_experience_state": host_state
                 })
 
             # 5. Idempotent check-in
@@ -9643,6 +10194,38 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not drop:
                 conn.close()
                 return self.send_json(404, {"error": "Community drop not found"})
+
+            # Lifecycle gating: registration allowed ONLY while UPCOMING
+            drop_dict = compute_drop_lifecycle(dict(drop))
+            computed_status = drop_dict.get("computed_status")
+            if computed_status == "LIVE":
+                conn.close()
+                return self.send_json(400, {
+                    "error": "Registration is closed. This Drop is already live!",
+                    "code": "REGISTRATION_CLOSED_LIVE",
+                    "lifecycle": computed_status
+                })
+            elif computed_status == "ENDED":
+                conn.close()
+                return self.send_json(400, {
+                    "error": "Registration is closed. This Drop has ended.",
+                    "code": "REGISTRATION_CLOSED_ENDED",
+                    "lifecycle": computed_status
+                })
+            elif computed_status == "CANCELLED":
+                conn.close()
+                return self.send_json(400, {
+                    "error": "Registration is unavailable. This Drop was cancelled.",
+                    "code": "DROP_CANCELLED",
+                    "lifecycle": computed_status
+                })
+            elif computed_status != "UPCOMING":
+                conn.close()
+                return self.send_json(400, {
+                    "error": "Registration is only open while the Drop is UPCOMING.",
+                    "code": "REGISTRATION_NOT_OPEN",
+                    "lifecycle": computed_status
+                })
 
             if (drop["registered_count"] or 0) >= (drop["capacity"] or 20):
                 conn.close()
@@ -10378,7 +10961,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
             raw_pwd = (body.get("password") or "").strip()
 
             # Validate Handle format & uniqueness
-            import re
             if not handle or len(handle) < 2 or not re.match(r'^[a-zA-Z0-9_.]+$', handle):
                 conn.close()
                 return self.send_json(400, {"success": False, "error": "Invalid handle format. Use letters, numbers, underscores."})

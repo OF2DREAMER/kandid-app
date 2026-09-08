@@ -2533,13 +2533,40 @@
                 <!-- Dynamically rendered (CHECKED IN ✓, CHECK IN NOW, CHECK-IN CLOSED, etc.) -->
             </div>
 
-            <!-- 5. Host Minimal View (Visible if user is creator) -->
-            <div id="dropExperienceHostControls" class="p-3 rounded-2xl bg-zinc-950/80 border border-amber-500/20 space-y-1" style="display:none;">
-                <div class="flex items-center justify-between text-[10px] font-mono-tag">
-                    <span class="text-amber-400 font-bold uppercase">👑 HOST OVERVIEW</span>
-                    <span id="dropExperienceHostAttendanceTxt" class="text-zinc-300">8 / 20 Attending</span>
+            <!-- 5. Host Dedicated Controls & Live Walk Panel (Visible if user is host) -->
+            <div id="dropExperienceHostControls" class="p-4 rounded-2xl bg-zinc-950 border border-amber-500/30 space-y-3" style="display:none;">
+                <div class="flex items-center justify-between text-[10px] font-mono-tag border-b border-zinc-900 pb-2">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-amber-400 font-bold uppercase">👑 HOST CONTROL CENTER</span>
+                        <span id="dropExperienceHostStateBadge" class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">WAITING</span>
+                    </div>
+                    <span id="dropExperienceHostAttendanceTxt" class="text-zinc-300 font-bold">0 / 20 Attending</span>
                 </div>
-                <p class="text-[9px] text-zinc-500 font-mono-tag">Drop is running smoothly under server lifecycle rules.</p>
+
+                <!-- Host Action Buttons (Start Walk / End Walk) -->
+                <div id="dropExperienceHostActions" class="space-y-2">
+                    <!-- Injected dynamically based on LIVE / WAITING_FOR_HOST / WALKING_LIVE -->
+                </div>
+
+                <!-- Meetup Point Editor for Host -->
+                <div id="dropExperienceHostMeetupEditor" class="p-2.5 rounded-xl bg-zinc-900/60 border border-white/[.04] space-y-1.5">
+                    <label class="text-[9px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold block">Update Meetup Landmark</label>
+                    <div class="flex gap-1.5">
+                        <input type="text" id="dropExperienceMeetupInput" placeholder="e.g. Near Library Gate 2" class="flex-1 bg-zinc-950 border border-zinc-800 focus:border-amber-500/60 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none">
+                        <button onclick="submitHostMeetupUpdate()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white font-mono-tag text-[10px] font-bold rounded-lg cursor-pointer transition">UPDATE</button>
+                    </div>
+                </div>
+
+                <!-- Attendee Roster (Privacy Safe) -->
+                <div class="space-y-1.5 pt-1">
+                    <div class="flex items-center justify-between text-[9px] font-mono-tag text-zinc-400 font-bold uppercase">
+                        <span>CONFIRMED ATTENDEES</span>
+                        <span id="dropExperienceAttendeesCount" class="text-amber-400">0</span>
+                    </div>
+                    <div id="dropExperienceAttendeesList" class="max-h-36 overflow-y-auto space-y-1 no-scroll">
+                        <!-- Attendees populated dynamically -->
+                    </div>
+                </div>
             </div>
 
             <!-- 6. Memory Transition Notice (Visible when state is MEMORY) -->
@@ -2902,14 +2929,24 @@
                     </div>
                 </div>
 
+                <div class="space-y-1">
+                    <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Meetup Point / Landmark</label>
+                    <input type="text" id="newDropMeetupPoint" placeholder="e.g. Near Library Gate 2 (No raw GPS)" class="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/60 rounded-xl px-3 py-2 text-xs text-white outline-none">
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Date</label>
+                    <input type="date" id="newDropDate" class="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/60 rounded-xl px-3 py-2 text-xs text-white outline-none">
+                </div>
+
                 <div class="grid grid-cols-2 gap-2">
                     <div class="space-y-1">
-                        <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Date</label>
-                        <input type="text" id="newDropDate" placeholder="e.g. This Sunday" class="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/60 rounded-xl px-3 py-2 text-xs text-white outline-none">
+                        <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Start Time</label>
+                        <input type="time" id="newDropStartTime" class="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/60 rounded-xl px-3 py-2 text-xs text-white outline-none">
                     </div>
                     <div class="space-y-1">
-                        <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">Time</label>
-                        <input type="text" id="newDropTime" placeholder="e.g. 6:00 PM" class="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/60 rounded-xl px-3 py-2 text-xs text-white outline-none">
+                        <label class="text-[10px] font-mono-tag text-zinc-400 uppercase tracking-wider font-bold">End Time</label>
+                        <input type="time" id="newDropEndTime" class="w-full bg-zinc-900 border border-zinc-800 focus:border-amber-500/60 rounded-xl px-3 py-2 text-xs text-white outline-none">
                     </div>
                 </div>
 
@@ -4481,6 +4518,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.1.4"></script> 
+  <script src="app.js?v=5.1.5"></script> 
 </body>
 </html>
