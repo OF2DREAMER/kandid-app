@@ -5548,6 +5548,35 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 d["capacity"] = cap
                 d["registered_count"] = reg_cnt
                 d["remaining_capacity"] = max(0, cap - reg_cnt)
+                d["host_state"] = d.get("host_experience_state") or "WAITING_FOR_HOST"
+
+                # Authoritative host determination
+                is_host = False
+                if user_id:
+                    is_auth, _, _ = validate_drop_ownership(d["id"], user_id, cursor)
+                    is_host = bool(is_auth)
+                d["is_host"] = is_host
+                if is_host:
+                    d["viewer_role"] = "HOST"
+                    d["is_registered"] = False
+                    d["is_checked_in"] = False
+                    d["can_join"] = False
+                    d["can_check_in"] = False
+                    d["can_start_walk"] = bool(state_str == "LIVE" and d.get("host_experience_state") == "WAITING_FOR_HOST")
+                elif d.get("is_registered"):
+                    d["viewer_role"] = "PARTICIPANT"
+                    d["is_registered"] = True
+                    d["is_checked_in"] = bool(d.get("is_checked_in"))
+                    d["can_join"] = False
+                    d["can_check_in"] = bool(state_str == "LIVE" and d.get("host_experience_state") == "WALKING_LIVE" and not d.get("is_checked_in"))
+                    d["can_start_walk"] = False
+                else:
+                    d["viewer_role"] = "VISITOR"
+                    d["is_registered"] = False
+                    d["is_checked_in"] = False
+                    d["can_join"] = bool(state_str == "UPCOMING")
+                    d["can_check_in"] = False
+                    d["can_start_walk"] = False
 
                 # Contextual Labels & Continuity
                 if state_str == "LIVE":
@@ -5564,8 +5593,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 else:
                     d["contextual_label"] = "Community experience"
 
-                # Coordination Status for registered users
-                if d.get("is_registered"):
+                # Coordination Status
+                if is_host:
+                    if state_str == "LIVE":
+                        if d.get("host_experience_state") == "WALKING_LIVE":
+                            d["coordination_status"] = "Hosting live walk"
+                        else:
+                            d["coordination_status"] = "Host ready · Start walk"
+                    elif state_str == "UPCOMING":
+                        d["coordination_status"] = "Hosting this drop"
+                    else:
+                        d["coordination_status"] = "Drop ended"
+                elif d.get("is_registered"):
                     if d.get("is_checked_in"):
                         d["coordination_status"] = "Checked in ✓"
                     elif state_str == "LIVE":
@@ -5632,6 +5671,24 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 is_auth, _, _ = validate_drop_ownership(drop_id, user_id, cursor)
                 is_host = bool(is_auth)
             d["is_host"] = is_host
+
+            if is_host:
+                d["viewer_role"] = "HOST"
+                d["is_registered"] = False
+                d["is_checked_in"] = False
+                d["can_join"] = False
+                d["can_check_in"] = False
+                d["can_start_walk"] = bool(state_str == "LIVE" and d.get("host_experience_state") == "WAITING_FOR_HOST")
+            elif is_registered:
+                d["viewer_role"] = "PARTICIPANT"
+                d["can_join"] = False
+                d["can_check_in"] = bool(state_str == "LIVE" and d.get("host_experience_state") == "WALKING_LIVE" and not is_checked_in)
+                d["can_start_walk"] = False
+            else:
+                d["viewer_role"] = "VISITOR"
+                d["can_join"] = bool(state_str == "UPCOMING")
+                d["can_check_in"] = False
+                d["can_start_walk"] = False
 
             # If host, return privacy-safe attendees list
             if is_host:
@@ -5715,6 +5772,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {
                 "success": True,
+                "viewer_role": d.get("viewer_role") or "VISITOR",
+                "is_host": is_host,
+                "is_registered": d.get("is_registered", False),
+                "is_checked_in": d.get("is_checked_in", False),
                 "drop": d,
                 "moments": raw_moments,
                 "coordination": coordination
@@ -6303,8 +6364,33 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 dd["currency"] = dd.get("currency") or "INR"
                 state_str = dd.get("computed_status")
                 dd["lifecycle_state"] = dd.get("lifecycle_state") or state_str
-                dd["is_registered"] = dd["id"] in user_regs
-                dd["is_checked_in"] = user_regs.get(dd["id"], False)
+                is_host = False
+                if user:
+                    is_auth, _, _ = validate_drop_ownership(dd["id"], user["id"], cursor)
+                    is_host = bool(is_auth)
+                dd["is_host"] = is_host
+
+                if is_host:
+                    dd["viewer_role"] = "HOST"
+                    dd["is_registered"] = False
+                    dd["is_checked_in"] = False
+                    dd["can_join"] = False
+                    dd["can_check_in"] = False
+                    dd["can_start_walk"] = bool(state_str == "LIVE" and dd.get("host_experience_state") == "WAITING_FOR_HOST")
+                elif dd["id"] in user_regs:
+                    dd["viewer_role"] = "PARTICIPANT"
+                    dd["is_registered"] = True
+                    dd["is_checked_in"] = user_regs.get(dd["id"], False)
+                    dd["can_join"] = False
+                    dd["can_check_in"] = bool(state_str == "LIVE" and dd.get("host_experience_state") == "WALKING_LIVE" and not dd["is_checked_in"])
+                    dd["can_start_walk"] = False
+                else:
+                    dd["viewer_role"] = "VISITOR"
+                    dd["is_registered"] = False
+                    dd["is_checked_in"] = False
+                    dd["can_join"] = bool(state_str == "UPCOMING")
+                    dd["can_check_in"] = False
+                    dd["can_start_walk"] = False
 
                 # Contextual labels & memory links
                 if state_str == "LIVE":
@@ -6322,8 +6408,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 else:
                     dd["contextual_label"] = "Community experience"
 
-                if dd["is_registered"]:
-                    if dd["is_checked_in"]:
+                if is_host:
+                    if state_str == "LIVE":
+                        if dd.get("host_experience_state") == "WALKING_LIVE":
+                            dd["coordination_status"] = "Hosting live walk"
+                        else:
+                            dd["coordination_status"] = "Host ready · Start walk"
+                    elif state_str == "UPCOMING":
+                        dd["coordination_status"] = "Hosting this drop"
+                    else:
+                        dd["coordination_status"] = "Drop ended"
+                elif dd.get("is_registered"):
+                    if dd.get("is_checked_in"):
                         dd["coordination_status"] = "Checked in ✓"
                     elif state_str == "LIVE":
                         if dd.get("host_experience_state") == "WALKING_LIVE":
@@ -9016,9 +9112,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(401, {"error": "Authentication required", "code": "UNAUTHORIZED"})
             
             drop_id = ""
-            if path.startswith("/api/drops/") and path.endswith("/start"):
+            if path.startswith("/api/drops/") and path.endswith("/start") and path != "/api/drops/start":
                 parts = [p for p in path.split("/") if p]
-                if len(parts) >= 3:
+                if len(parts) >= 4:
                     drop_id = parts[2]
             if not drop_id:
                 drop_id = (body.get("drop_id") or body.get("id") or "").strip()
@@ -9089,9 +9185,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(401, {"error": "Authentication required", "code": "UNAUTHORIZED"})
             
             drop_id = ""
-            if path.startswith("/api/drops/") and path.endswith("/end"):
+            if path.startswith("/api/drops/") and path.endswith("/end") and path != "/api/drops/end":
                 parts = [p for p in path.split("/") if p]
-                if len(parts) >= 3:
+                if len(parts) >= 4:
                     drop_id = parts[2]
             if not drop_id:
                 drop_id = (body.get("drop_id") or body.get("id") or "").strip()
@@ -9587,6 +9683,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(404, {"error": "Community drop not found"})
 
+            # Host cannot join/order own drop
+            is_host, _, _ = validate_drop_ownership(drop_id, user["id"], cursor)
+            if is_host:
+                conn.close()
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "Hosts cannot join or register for their own Drop.",
+                    "code": "HOST_CANNOT_JOIN_OWN_DROP"
+                })
+
             # Lifecycle gating: registration allowed ONLY while UPCOMING
             drop_dict = compute_drop_lifecycle(dict(drop))
             computed_status = drop_dict.get("computed_status")
@@ -10079,12 +10185,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "event": event
                 })
 
-        if path == "/api/drops/check-in":
+        if path in ("/api/drops/check-in", "/api/community/drops/check-in") or (path.startswith("/api/drops/") and path.endswith("/check-in")):
             user = get_current_user(self.headers)
             if not user:
                 return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
             
             drop_id = (body.get("drop_id") or "").strip()
+            if not drop_id and path.startswith("/api/drops/") and path.endswith("/check-in"):
+                parts = [p for p in path.split("/") if p]
+                if len(parts) >= 3:
+                    drop_id = parts[2]
             if not drop_id:
                 return self.send_json(400, {"success": False, "error": "Drop ID is required", "code": "MISSING_DROP_ID"})
 
@@ -10096,6 +10206,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not drop:
                 conn.close()
                 return self.send_json(404, {"success": False, "error": "Drop not found", "code": "DROP_NOT_FOUND"})
+
+            # Host cannot check in as a participant
+            is_host, _, _ = validate_drop_ownership(drop_id, user["id"], cursor)
+            if is_host:
+                conn.close()
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "Hosts cannot check in as participants to their own Drop.",
+                    "code": "HOST_CANNOT_CHECK_IN"
+                })
 
             # 2. Registration exists & is confirmed
             cursor.execute("SELECT * FROM community_drop_registrations WHERE drop_id = ? AND user_id = ? AND status = 'confirmed'", (drop_id, user["id"]))
@@ -10179,11 +10299,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "message": "✓ Check-in confirmed! Welcome to the drop experience."
             })
 
-        if path in ["/api/drops/join", "/api/payments/community-drop"]:
+        if path in ["/api/drops/join", "/api/payments/community-drop"] or (path.startswith("/api/drops/") and path.endswith("/join")):
             user = get_current_user(self.headers)
             if not user:
                 return self.send_json(401, {"error": "Authentication required"})
             drop_id = (body.get("drop_id") or "").strip()
+            if not drop_id and path.startswith("/api/drops/") and path.endswith("/join"):
+                parts = [p for p in path.split("/") if p]
+                if len(parts) >= 3:
+                    drop_id = parts[2]
             if not drop_id:
                 return self.send_json(400, {"error": "Drop ID is required"})
 
@@ -10194,6 +10318,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not drop:
                 conn.close()
                 return self.send_json(404, {"error": "Community drop not found"})
+
+            # Host cannot join own drop
+            is_host, _, _ = validate_drop_ownership(drop_id, user["id"], cursor)
+            if is_host:
+                conn.close()
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "Hosts cannot join or register for their own Drop.",
+                    "code": "HOST_CANNOT_JOIN_OWN_DROP"
+                })
 
             # Lifecycle gating: registration allowed ONLY while UPCOMING
             drop_dict = compute_drop_lifecycle(dict(drop))

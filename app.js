@@ -1511,34 +1511,51 @@ async function loadCommunityDrops(communityName) {
   scheduleDropBoundaryTimer(res.drops);
 
   var renderDropCard = function(d) {
+    var isHost = !!(d.is_host || d.viewer_role === 'HOST' || (state.currentUser && (d.creator_id === state.currentUser.id || (d.creator_handle && state.currentUser.handle && d.creator_handle.toLowerCase() === state.currentUser.handle.toLowerCase()))));
     var spotsLeft = Math.max(0, (d.capacity || 20) - (d.registered_count || 0));
-    var isRegistered = !!d.is_registered;
+    var isRegistered = !isHost && !!d.is_registered;
     var lifecycle = (d.computed_status || d.lifecycle_state || 'UPCOMING').toUpperCase();
     var hostState = d.host_experience_state || 'WAITING_FOR_HOST';
     var stateInfo = getDropStateInfo(lifecycle);
 
     var btnHtml = '';
-    if (lifecycle === 'LIVE') {
-      if (isRegistered) {
-        if (d.is_checked_in) {
-          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-mono-tag text-[10px] font-bold border border-emerald-500/40 cursor-pointer flex items-center gap-1"><span>CHECKED IN ✓</span></button>';
-        } else if (hostState === 'WALKING_LIVE') {
-          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm animate-pulse">JOIN LIVE WALK</button>';
+    if (isHost) {
+      // HOST ACTIONS — NEVER SHOW PARTICIPANT JOIN OR CHECK-IN
+      if (lifecycle === 'LIVE') {
+        if (hostState === 'WALKING_LIVE') {
+          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3.5 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-mono-tag text-[10px] font-bold border border-emerald-500/40 cursor-pointer">HOSTING LIVE</button>';
         } else {
-          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-pointer">WAITING FOR HOST</button>';
+          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm animate-pulse">START WALK</button>';
         }
-      } else {
-        btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-500 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">REGISTRATION CLOSED</button>';
+      } else if (lifecycle === 'ENDED' || lifecycle === 'CLOSED' || lifecycle === 'MEMORY') {
+        btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 font-mono-tag text-[10px] font-bold border border-purple-500/40 cursor-pointer">VIEW RECAP</button>';
+      } else { // UPCOMING
+        btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-mono-tag text-[10px] font-bold border border-zinc-700 cursor-pointer">HOST CONTROLS</button>';
       }
-    } else if (lifecycle === 'ENDED' || lifecycle === 'CLOSED' || lifecycle === 'MEMORY') {
-      btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 font-mono-tag text-[10px] font-bold border border-purple-500/40 cursor-pointer">VIEW MEMORY</button>';
-    } else { // UPCOMING
-      if (isRegistered) {
-        btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-400 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-pointer flex items-center gap-1"><span>YOU\'RE IN ✓</span></button>';
-      } else if (spotsLeft <= 0) {
-        btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-500 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">FULL</button>';
-      } else {
-        btnHtml = '<button onclick="event.stopPropagation(); startDropOrderFlow(\'' + d.id + '\')" class="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm">JOIN FOR ₹' + (d.price || 19) + '</button>';
+    } else {
+      // PARTICIPANT ACTIONS
+      if (lifecycle === 'LIVE') {
+        if (isRegistered) {
+          if (d.is_checked_in) {
+            btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-mono-tag text-[10px] font-bold border border-emerald-500/40 cursor-pointer flex items-center gap-1"><span>CHECKED IN ✓</span></button>';
+          } else if (hostState === 'WALKING_LIVE') {
+            btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm animate-pulse">JOIN LIVE WALK</button>';
+          } else {
+            btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-pointer">WAITING FOR HOST</button>';
+          }
+        } else {
+          btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-500 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">REGISTRATION CLOSED</button>';
+        }
+      } else if (lifecycle === 'ENDED' || lifecycle === 'CLOSED' || lifecycle === 'MEMORY') {
+        btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-purple-500/20 text-purple-300 font-mono-tag text-[10px] font-bold border border-purple-500/40 cursor-pointer">VIEW MEMORY</button>';
+      } else { // UPCOMING
+        if (isRegistered) {
+          btnHtml = '<button onclick="event.stopPropagation(); openDropExperience(\'' + d.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-400 font-mono-tag text-[10px] font-bold border border-amber-500/40 cursor-pointer flex items-center gap-1"><span>YOU\'RE IN ✓</span></button>';
+        } else if (spotsLeft <= 0) {
+          btnHtml = '<button disabled class="px-3 py-1.5 rounded-xl bg-zinc-900 text-zinc-500 font-mono-tag text-[10px] font-bold border border-zinc-800 cursor-not-allowed">FULL</button>';
+        } else {
+          btnHtml = '<button onclick="event.stopPropagation(); startDropOrderFlow(\'' + d.id + '\')" class="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer active:scale-95 transition shadow-sm">JOIN FOR ₹' + (d.price || 19) + '</button>';
+        }
       }
     }
 
@@ -1560,7 +1577,12 @@ async function loadCommunityDrops(communityName) {
     }
 
     var contextBadge = d.contextual_label ? ('<span class="font-mono-tag text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">' + escapeHtml(d.contextual_label) + '</span>') : '';
-    var coordBadge = (isRegistered && d.coordination_status) ? ('<span class="font-mono-tag text-[8px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">' + escapeHtml(d.coordination_status) + '</span>') : '';
+    var coordBadge = '';
+    if (isHost) {
+      coordBadge = '<span class="font-mono-tag text-[8px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded">HOSTING</span>';
+    } else if (isRegistered && d.coordination_status) {
+      coordBadge = '<span class="font-mono-tag text-[8px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">' + escapeHtml(d.coordination_status) + '</span>';
+    }
 
     return '<div onclick="openDropExperience(\'' + d.id + '\')" class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/30 space-y-2.5 shadow-xl transition cursor-pointer">' +
       coverHtml +
@@ -1689,9 +1711,10 @@ function openDropDetail(dropId) {
     }
   }
 
-  var isRegistered = !!d.is_registered;
-  var isLiveOrCheckin = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf(d.state) !== -1;
-  var isEnded = ['CLOSED', 'SETTLEMENT', 'MEMORY'].indexOf(d.state) !== -1;
+  var isHost = !!(d.is_host || d.viewer_role === 'HOST' || (state.currentUser && (d.creator_id === state.currentUser.id || (d.creator_handle && state.currentUser.handle && d.creator_handle.toLowerCase() === state.currentUser.handle.toLowerCase()))));
+  var isRegistered = !isHost && !!d.is_registered;
+  var isLiveOrCheckin = ['CHECK_IN', 'LIVE', 'ACTIVE'].indexOf((d.computed_status || d.state || '').toUpperCase()) !== -1;
+  var isEnded = ['CLOSED', 'SETTLEMENT', 'MEMORY', 'ENDED'].indexOf((d.computed_status || d.state || '').toUpperCase()) !== -1;
 
   // Phase 17: Attendee Coordination Context
   if (coordSec) {
@@ -1714,14 +1737,28 @@ function openDropDetail(dropId) {
   }
 
   if (actionContainer) {
-    if (isRegistered) {
+    if (isHost) {
+      if (isLiveOrCheckin) {
+        if (d.host_experience_state === 'WALKING_LIVE') {
+          actionContainer.innerHTML = '<button onclick="closeDropDetailModal(); openDropExperience(\'' + d.id + '\')" class="w-full py-3.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer flex items-center justify-center gap-2"><span>HOST CONTROLS · WALKING LIVE</span></button>';
+        } else {
+          actionContainer.innerHTML = '<button onclick="closeDropDetailModal(); openDropExperience(\'' + d.id + '\')" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer flex items-center justify-center gap-2"><span>START WALK (HOST)</span></button>';
+        }
+      } else if (isEnded) {
+        actionContainer.innerHTML = '<button onclick="closeDropDetailModal(); openDropExperience(\'' + d.id + '\')" class="w-full py-3.5 bg-purple-500/20 border border-purple-500/40 text-purple-300 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer flex items-center justify-center gap-2"><span>VIEW RECAP</span></button>';
+      } else {
+        actionContainer.innerHTML = '<button onclick="closeDropDetailModal(); openDropExperience(\'' + d.id + '\')" class="w-full py-3.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer flex items-center justify-center gap-2"><span>HOST CONTROLS</span></button>';
+      }
+    } else if (isRegistered) {
       if (isLiveOrCheckin) {
         if (d.is_checked_in) {
           actionContainer.innerHTML = '<button disabled class="w-full py-3.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-default flex items-center justify-center gap-2"><span>CHECKED IN ✓</span></button>';
-        } else {
+        } else if (d.host_experience_state === 'WALKING_LIVE') {
           actionContainer.innerHTML = '<button onclick="checkinCommunityDrop(\'' + d.id + '\', this)" class="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>CHECK IN NOW</span></button>';
+        } else {
+          actionContainer.innerHTML = '<button disabled class="w-full py-3.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-default flex items-center justify-center gap-2"><span>WAITING FOR HOST</span></button>';
         }
-      } else if (d.state === 'MEMORY') {
+      } else if (d.state === 'MEMORY' || isEnded) {
         actionContainer.innerHTML = '<button onclick="showToast(\'✦ Drop Memory is archived for attendees.\')" class="w-full py-3.5 bg-purple-500/20 border border-purple-500/40 text-purple-300 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer flex items-center justify-center gap-2"><span>VIEW DROP ARCHIVE</span></button>';
       } else {
         actionContainer.innerHTML = '<button disabled class="w-full py-3.5 bg-amber-500/20 border border-amber-500/40 text-amber-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-default flex items-center justify-center gap-2"><span>YOU ARE REGISTERED ✓</span></button>';
@@ -1891,6 +1928,9 @@ async function openDropExperience(dropId) {
   }
 
   var d = res.drop;
+  var isHost = !!(d.is_host || d.viewer_role === 'HOST' || (state.currentUser && (d.creator_id === state.currentUser.id || (d.creator_handle && state.currentUser.handle && d.creator_handle.toLowerCase() === state.currentUser.handle.toLowerCase()))));
+  var spotsLeft = Math.max(0, (d.capacity || 20) - (d.registered_count || 0));
+  var isRegistered = !isHost && !!d.is_registered;
   var lifecycle = (d.computed_status || d.lifecycle_state || 'UPCOMING').toUpperCase();
   var hostState = d.host_experience_state || 'WAITING_FOR_HOST';
   var stateInfo = getDropStateInfo(lifecycle);
@@ -1933,13 +1973,27 @@ async function openDropExperience(dropId) {
     }
   }
 
-  // Dynamic Checkin & Attendee Action Container
+  // Dynamic Action Container (Strictly Role-Aware: Host vs Participant)
   if (checkinContainer) {
-    if (lifecycle === 'LIVE') {
-      if (d.is_checked_in) {
-        checkinContainer.innerHTML = '<div class="w-full py-3.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag text-center flex items-center justify-center gap-2"><span>✓ YOU\'RE CHECKED IN — ENJOY THE WALK!</span></div>';
-      } else if (d.is_registered) {
+    if (isHost) {
+      // HOST NEVER SEES PARTICIPANT JOIN OR CHECK-IN
+      if (lifecycle === 'LIVE') {
         if (hostState === 'WALKING_LIVE') {
+          checkinContainer.innerHTML = '<div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-center"><span class="text-xs font-bold text-emerald-400 uppercase font-mono-tag">● YOU ARE WALKING LIVE</span><p class="text-[11px] text-zinc-400 mt-0.5">Walk is in progress. Attendees can check in at the meetup landmark.</p></div>';
+        } else {
+          checkinContainer.innerHTML = '<div class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-2"><span class="text-xs font-bold text-amber-400 uppercase font-mono-tag">● DROP IS LIVE NOW</span><p class="text-[11px] text-zinc-300">Ready to begin the walk? Tap <strong>START WALK</strong> to alert attendees and open check-in.</p><button onclick="startHostDropWalk(\'' + d.id + '\')" class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl uppercase font-mono-tag cursor-pointer transition shadow-lg animate-pulse"><span>START WALK 🚶‍♂️</span></button></div>';
+        }
+      } else if (lifecycle === 'ENDED' || lifecycle === 'CLOSED' || lifecycle === 'MEMORY') {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-300 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center flex items-center justify-center gap-2"><span>✦ DROP COMPLETED · ' + (d.checked_in_count || 0) + ' ATTENDED</span></div>';
+      } else { // UPCOMING
+        checkinContainer.innerHTML = '<div class="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-center space-y-1"><span class="text-xs font-bold text-amber-400 uppercase font-mono-tag">★ YOU ARE HOSTING THIS DROP</span><p class="text-[11px] text-zinc-400">Scheduled for ' + escapeHtml(d.date_str || 'Today') + ' · ' + escapeHtml(d.time_str || '') + '. Walk can be started once scheduled start time is reached.</p></div>';
+      }
+    } else if (lifecycle === 'LIVE') {
+      // PARTICIPANT VIEW IN LIVE
+      if (isRegistered) {
+        if (d.is_checked_in) {
+          checkinContainer.innerHTML = '<div class="w-full py-3.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-extrabold text-xs rounded-2xl uppercase font-mono-tag text-center flex items-center justify-center gap-2"><span>✓ YOU\'RE CHECKED IN — ENJOY THE WALK!</span></div>';
+        } else if (hostState === 'WALKING_LIVE') {
           checkinContainer.innerHTML = '<div class="space-y-2">' +
             '<div class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-center">' +
               '<span class="text-xs font-bold text-emerald-400 uppercase font-mono-tag">● THE WALK IS LIVE!</span>' +
@@ -1957,10 +2011,20 @@ async function openDropExperience(dropId) {
         checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">REGISTRATION CLOSED · EXPERIENCE IS LIVE</div>';
       }
     } else if (lifecycle === 'ENDED' || lifecycle === 'CLOSED' || lifecycle === 'MEMORY') {
-      checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-purple-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">✦ EXPERIENCE COMPLETED</div>';
+      // PARTICIPANT VIEW IN ENDED
+      if (d.is_checked_in) {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-emerald-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">✓ YOU WERE HERE · VIEW MEMORY BELOW</div>';
+      } else if (isRegistered) {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">REGISTERED · NOT CHECKED IN</div>';
+      } else {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-purple-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">✦ EXPERIENCE COMPLETED</div>';
+      }
     } else { // UPCOMING
-      if (d.is_registered) {
+      // PARTICIPANT VIEW IN UPCOMING
+      if (isRegistered) {
         checkinContainer.innerHTML = '<div class="w-full py-3 bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">YOU\'RE REGISTERED ✓ · CHECK-IN OPENS WHEN LIVE</div>';
+      } else if (spotsLeft <= 0) {
+        checkinContainer.innerHTML = '<div class="w-full py-3 bg-zinc-900 border border-zinc-800 text-zinc-500 font-bold text-xs rounded-2xl uppercase font-mono-tag text-center">ALL SPOTS TAKEN</div>';
       } else {
         checkinContainer.innerHTML = '<button onclick="startDropOrderFlow(\'' + d.id + '\')" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag cursor-pointer transition shadow-lg flex items-center justify-center gap-2"><span>JOIN EXPERIENCE · ₹' + (d.price || 19) + '</span></button>';
       }
@@ -1969,7 +2033,7 @@ async function openDropExperience(dropId) {
 
   // Host Dedicated Control Center
   if (hostControls) {
-    if (d.is_host) {
+    if (isHost) {
       hostControls.style.display = 'block';
       var hostStateBadge = document.getElementById('dropExperienceHostStateBadge');
       var hostActions = document.getElementById('dropExperienceHostActions');
