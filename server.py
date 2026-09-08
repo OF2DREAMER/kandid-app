@@ -158,10 +158,15 @@ def get_user_community_role(community_id, user_id, cursor):
     if not community_id or not user_id:
         return None
     # 1. Check if user is community creator
-    cursor.execute("SELECT id, creator_id, name FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (community_id, str(community_id).lower(), community_id))
+    cursor.execute("SELECT id, creator_id, creator_handle, name FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (community_id, str(community_id).lower(), community_id))
     crow = cursor.fetchone()
-    if crow and crow["creator_id"] == user_id:
-        return "owner"
+    if crow:
+        if crow["creator_id"] and crow["creator_id"] == user_id:
+            return "owner"
+        cursor.execute("SELECT handle FROM users WHERE id = ?", (user_id,))
+        urow_h = cursor.fetchone()
+        if urow_h and urow_h["handle"] and crow["creator_handle"] and urow_h["handle"].strip().lower() == crow["creator_handle"].strip().lower():
+            return "owner"
     # 2. Check community_members table
     cursor.execute("SELECT role, status FROM community_members WHERE (community_id = ? OR community_id = ?) AND user_id = ?", 
                    (community_id, crow["id"] if crow else community_id, user_id))
@@ -6063,8 +6068,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
             is_joined = False
             user_role = None
             if user and comm_row:
-                user_role = get_user_community_role(comm_row["id"], user["id"], cursor)
-                is_joined = bool(user_role)
+                comm_dict = dict(comm_row)
+                user_role = get_user_community_role(comm_dict["id"], user["id"], cursor)
+                is_creator_user = bool(
+                    (comm_dict.get("creator_id") and comm_dict["creator_id"] == user["id"]) or
+                    (comm_dict.get("creator_handle") and user.get("handle") and comm_dict["creator_handle"].strip().lower() == user["handle"].strip().lower())
+                )
+                if is_creator_user:
+                    user_role = "owner"
+                    is_joined = True
+                else:
+                    is_joined = bool(user_role)
 
             # Query available Drops for this community
             cursor.execute("SELECT * FROM community_drops WHERE community_id = ? OR community_name = ? ORDER BY created_at DESC", (comm_id, comm_name))
@@ -6123,6 +6137,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "status": "Active now",
                 "description": comm_desc,
                 "icon": comm_icon,
+                "creator_id": comm_row["creator_id"] if comm_row else "",
                 "creator_handle": creator_handle,
                 "members_count": members_count,
                 "is_joined": is_joined,
@@ -8656,13 +8671,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # A user can create/host a new Host/hosted activity only inside a Community they personally created and own.
             # Direct API attempts to create a Host in another user's Community must be rejected server-side with 403.
             user_role = get_user_community_role(comm_id, user["id"], cursor)
+            crow_dict = dict(crow) if crow else {}
+            is_creator = bool(
+                (crow_dict.get("creator_id") and crow_dict["creator_id"] == user["id"]) or
+                (crow_dict.get("creator_handle") and user.get("handle") and crow_dict["creator_handle"].strip().lower() == user["handle"].strip().lower())
+            )
             is_owner = bool(
-                (crow and crow["creator_id"] and crow["creator_id"] == user["id"]) or
+                is_creator or
                 (user_role in ("owner", "creator")) or
                 (user.get("role") == "admin") or
                 (user.get("id") == "u_casey")
             )
-            if not is_owner or user_role == "member":
+            if not is_owner or (user_role == "member" and not is_creator):
                 conn.close()
                 return self.send_json(403, {"error": "Only the community owner can host drops in this community."})
 
