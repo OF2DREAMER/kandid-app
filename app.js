@@ -1500,10 +1500,22 @@ async function loadCommunityDrops(communityName) {
       }
     }
 
-    var coverHtml = (d.cover_img || d.image_url) ? 
-      ('<div class="w-full aspect-[16/9] rounded-xl overflow-hidden bg-black mb-2">' +
+    var coverHtml = '';
+    if (d.video_url) {
+      coverHtml = '<div class="relative w-full aspect-[16/9] rounded-xl overflow-hidden bg-black mb-2">' +
+        (d.cover_img ? '<img src="' + escapeHtml(d.cover_img) + '" class="w-full h-full object-cover drop-card-poster">' : '') +
+        '<video src="' + escapeHtml(d.video_url) + '" playsinline muted preload="metadata" class="w-full h-full object-cover ' + (d.cover_img ? 'hidden' : '') + '"></video>' +
+        '<div class="absolute bottom-2 right-2 flex items-center gap-1 z-10">' +
+          '<button type="button" onclick="event.stopPropagation(); toggleDropCardVideo(this);" class="px-2 py-0.5 rounded-full bg-black/80 hover:bg-black text-amber-400 text-[9px] font-mono-tag font-bold border border-white/20 flex items-center gap-1 cursor-pointer shadow-md active:scale-95 transition">' +
+            '<span>▶</span><span>3s</span>' +
+          '</button>' +
+        '</div>' +
+      '</div>';
+    } else if (d.cover_img || d.image_url) {
+      coverHtml = '<div class="w-full aspect-[16/9] rounded-xl overflow-hidden bg-black mb-2">' +
         '<img src="' + escapeHtml(d.cover_img || d.image_url) + '" class="w-full h-full object-cover">' +
-      '</div>') : '';
+      '</div>';
+    }
 
     var contextBadge = d.contextual_label ? ('<span class="font-mono-tag text-[8px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold uppercase tracking-wider">' + escapeHtml(d.contextual_label) + '</span>') : '';
     var coordBadge = (isRegistered && d.coordination_status) ? ('<span class="font-mono-tag text-[8px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">' + escapeHtml(d.coordination_status) + '</span>') : '';
@@ -1580,17 +1592,58 @@ function openDropDetail(dropId) {
   if (hostAvatarEl) hostAvatarEl.textContent = ((d.host_handle || d.created_by || 'K')[0] || 'K').toUpperCase();
   if (priceEl) priceEl.textContent = '₹' + (d.price || 19).toFixed(2);
 
-  // Cover Thumbnail in Drop Detail
+  // Cover Media (Thumbnail or Atmosphere Video) in Drop Detail
   var coverContainer = document.getElementById('dropDetailCoverContainer');
   var coverImgEl = document.getElementById('dropDetailCoverImg');
+  var videoEl = document.getElementById('dropDetailVideo');
+  var videoControls = document.getElementById('dropDetailVideoControls');
+  var playIcon = document.getElementById('dropDetailPlayIcon');
+  var playText = document.getElementById('dropDetailPlayText');
   var coverSrc = d.cover_img || d.image_url || '';
-  if (coverContainer && coverImgEl) {
-    if (coverSrc) {
-      coverImgEl.src = coverSrc;
+  var videoSrc = d.video_url || '';
+
+  if (coverContainer) {
+    if (videoEl) {
+      videoEl.pause();
+      videoEl.currentTime = 0;
+      videoEl.muted = true;
+    }
+    if (playIcon) playIcon.textContent = '▶';
+    if (playText) playText.textContent = '3s Atmosphere';
+
+    if (videoSrc) {
       coverContainer.style.display = 'block';
+      if (videoEl) {
+        videoEl.src = videoSrc;
+        videoEl.style.display = coverSrc ? 'none' : 'block';
+        if (!coverSrc) videoEl.classList.remove('hidden');
+      }
+      if (coverImgEl) {
+        if (coverSrc) {
+          coverImgEl.src = coverSrc;
+          coverImgEl.style.display = 'block';
+        } else {
+          coverImgEl.src = '';
+          coverImgEl.style.display = 'none';
+        }
+      }
+      if (videoControls) videoControls.style.display = 'flex';
+    } else if (coverSrc) {
+      coverContainer.style.display = 'block';
+      if (coverImgEl) {
+        coverImgEl.src = coverSrc;
+        coverImgEl.style.display = 'block';
+      }
+      if (videoEl) {
+        videoEl.src = '';
+        videoEl.style.display = 'none';
+      }
+      if (videoControls) videoControls.style.display = 'none';
     } else {
-      coverImgEl.src = '';
       coverContainer.style.display = 'none';
+      if (coverImgEl) coverImgEl.src = '';
+      if (videoEl) videoEl.src = '';
+      if (videoControls) videoControls.style.display = 'none';
     }
   }
 
@@ -1649,8 +1702,105 @@ window.openDropDetail = openDropDetail;
 function closeDropDetailModal() {
   var modal = document.getElementById('dropDetailModal');
   if (modal) modal.style.display = 'none';
+  var video = document.getElementById('dropDetailVideo');
+  if (video) {
+    video.pause();
+    video.currentTime = 0;
+  }
 }
 window.closeDropDetailModal = closeDropDetailModal;
+
+function toggleDropCardVideo(btn) {
+  if (!btn) return;
+  var container = btn.closest('.relative');
+  if (!container) return;
+  var video = container.querySelector('video');
+  var poster = container.querySelector('.drop-card-poster');
+  var icon = btn.querySelector('span:first-child');
+  var text = btn.querySelector('span:last-child');
+  if (!video) return;
+
+  if (video.paused || video.ended) {
+    document.querySelectorAll('#campusPageDropsContainer video, #feedCommunityDropsContainer video').forEach(function(v) {
+      if (v !== video && !v.paused) {
+        v.pause();
+        v.currentTime = 0;
+        var p = v.closest('.relative') && v.closest('.relative').querySelector('.drop-card-poster');
+        if (p) p.classList.remove('hidden');
+        var b = v.closest('.relative') && v.closest('.relative').querySelector('button');
+        if (b) {
+          var ic = b.querySelector('span:first-child');
+          var tx = b.querySelector('span:last-child');
+          if (ic) ic.textContent = '▶';
+          if (tx) tx.textContent = '3s';
+        }
+      }
+    });
+
+    if (poster) poster.classList.add('hidden');
+    video.classList.remove('hidden');
+    video.muted = true;
+    video.currentTime = 0;
+    var playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise.then(function() {
+        if (icon) icon.textContent = '❚❚';
+        if (text) text.textContent = 'Playing';
+      }).catch(function() {});
+    }
+
+    video.onended = function() {
+      if (poster) poster.classList.remove('hidden');
+      if (icon) icon.textContent = '▶';
+      if (text) text.textContent = '3s';
+      video.currentTime = 0;
+    };
+  } else {
+    video.pause();
+    video.currentTime = 0;
+    if (poster) poster.classList.remove('hidden');
+    if (icon) icon.textContent = '▶';
+    if (text) text.textContent = '3s';
+  }
+}
+window.toggleDropCardVideo = toggleDropCardVideo;
+
+function toggleDropDetailVideo() {
+  var video = document.getElementById('dropDetailVideo');
+  var poster = document.getElementById('dropDetailCoverImg');
+  var icon = document.getElementById('dropDetailPlayIcon');
+  var text = document.getElementById('dropDetailPlayText');
+  if (!video) return;
+
+  if (video.paused || video.ended) {
+    if (poster) poster.style.display = 'none';
+    video.classList.remove('hidden');
+    video.style.display = 'block';
+    video.muted = true;
+    video.currentTime = 0;
+    var p = video.play();
+    if (p !== undefined) {
+      p.then(function() {
+        if (icon) icon.textContent = '❚❚';
+        if (text) text.textContent = 'Playing (3s)';
+      }).catch(function() {});
+    }
+
+    video.onended = function() {
+      if (poster && poster.src) poster.style.display = 'block';
+      if (icon) icon.textContent = '▶';
+      if (text) text.textContent = '3s Atmosphere';
+      video.currentTime = 0;
+    };
+  } else {
+    video.pause();
+    video.currentTime = 0;
+    if (poster && poster.src) poster.style.display = 'block';
+    if (icon) icon.textContent = '▶';
+    if (text) text.textContent = '3s Atmosphere';
+  }
+}
+window.toggleDropDetailVideo = toggleDropDetailVideo;
 
 function closeDropPaymentModal() {
   var modal = document.getElementById('dropPaymentModal');
@@ -2046,10 +2196,109 @@ function removeDropThumbnail() {
 }
 window.removeDropThumbnail = removeDropThumbnail;
 
+var pendingDropVideoData = '';
+var pendingDropVideoDuration = 0.0;
+
+function handleDropVideoSelect(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (file.size > 25 * 1024 * 1024) {
+    showToast('Atmosphere video must be under 25MB.');
+    event.target.value = '';
+    return;
+  }
+  if (!file.type.startsWith('video/')) {
+    showToast('Please select a valid video file (MP4, WebM, QuickTime).');
+    event.target.value = '';
+    return;
+  }
+
+  // Pre-validate video duration client-side via video element
+  var tempVideo = document.createElement('video');
+  tempVideo.preload = 'metadata';
+  var objUrl = URL.createObjectURL(file);
+  tempVideo.src = objUrl;
+
+  tempVideo.onloadedmetadata = function() {
+    URL.revokeObjectURL(objUrl);
+    var duration = tempVideo.duration;
+    if (isNaN(duration) || duration <= 0) {
+      duration = 3.0; // fallback if metadata cannot be read
+    }
+    if (duration > 3.0) {
+      showToast('Atmosphere video must be 3.0 seconds or less (selected is ' + duration.toFixed(1) + 's).');
+      event.target.value = '';
+      removeDropVideo();
+      return;
+    }
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      pendingDropVideoData = e.target.result;
+      pendingDropVideoDuration = duration;
+
+      var preview = document.getElementById('newDropVideoPreview');
+      var placeholder = document.getElementById('newDropVideoPlaceholder');
+      var badge = document.getElementById('newDropVideoBadge');
+      var removeBtn = document.getElementById('newDropVideoRemoveBtn');
+
+      if (preview) {
+        preview.src = e.target.result;
+        preview.classList.remove('hidden');
+        preview.muted = true;
+        preview.pause();
+        preview.currentTime = 0;
+      }
+      if (placeholder) placeholder.classList.add('hidden');
+      if (badge) {
+        badge.classList.remove('hidden');
+        badge.textContent = duration.toFixed(1) + 's ATMOSPHERE';
+      }
+      if (removeBtn) {
+        removeBtn.classList.remove('hidden');
+        removeBtn.style.display = 'flex';
+      }
+      showToast('3-sec atmosphere video selected 🎥');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  tempVideo.onerror = function() {
+    URL.revokeObjectURL(objUrl);
+    showToast('Unable to read video file.');
+    event.target.value = '';
+  };
+}
+window.handleDropVideoSelect = handleDropVideoSelect;
+
+function removeDropVideo() {
+  pendingDropVideoData = '';
+  pendingDropVideoDuration = 0.0;
+  var input = document.getElementById('newDropVideoInput');
+  if (input) input.value = '';
+  var preview = document.getElementById('newDropVideoPreview');
+  var placeholder = document.getElementById('newDropVideoPlaceholder');
+  var badge = document.getElementById('newDropVideoBadge');
+  var removeBtn = document.getElementById('newDropVideoRemoveBtn');
+  if (preview) {
+    preview.pause();
+    preview.src = '';
+    preview.classList.add('hidden');
+  }
+  if (placeholder) placeholder.classList.remove('hidden');
+  if (badge) badge.classList.add('hidden');
+  if (removeBtn) {
+    removeBtn.classList.add('hidden');
+    removeBtn.style.display = 'none';
+  }
+}
+window.removeDropVideo = removeDropVideo;
+
 function closeCreateDropModal() {
   var modal = document.getElementById('createDropModal');
   if (modal) modal.style.display = 'none';
   removeDropThumbnail();
+  removeDropVideo();
 }
 window.closeCreateDropModal = closeCreateDropModal;
 
@@ -2081,6 +2330,8 @@ async function submitNewDrop() {
       time_str: timeStr,
       capacity: capacity,
       cover_img: pendingDropThumbnailData || '',
+      video: pendingDropVideoData || '',
+      video_duration: pendingDropVideoDuration || 0.0,
       price: 19.0
     })
   });
@@ -2092,6 +2343,7 @@ async function submitNewDrop() {
     if (titleInput) titleInput.value = '';
     if (descInput) descInput.value = '';
     removeDropThumbnail();
+    removeDropVideo();
     loadCommunityDrops(state.activeCommunity);
   } else {
     showToast('Failed to publish drop: ' + (res ? res.error : 'Error'));

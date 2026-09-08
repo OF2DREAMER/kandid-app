@@ -14,6 +14,7 @@ import hmac
 import secrets
 import mimetypes
 import socketserver
+import struct
 import time
 import threading
 import urllib.request
@@ -1387,8 +1388,9 @@ rate_limiter = RateLimiter()
 
 ALLOWED_IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 ALLOWED_AUDIO_MIMES = {"audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg", "audio/wav", "audio/x-m4a", "video/webm"}
-ALLOWED_VIDEO_MIMES = {"video/mp4", "video/webm"}
+ALLOWED_VIDEO_MIMES = {"video/mp4", "video/webm", "video/quicktime"}
 MAX_MEDIA_PAYLOAD_BYTES = 15 * 1024 * 1024  # 15 MB payload limit
+MAX_DROP_VIDEO_PAYLOAD_BYTES = 25 * 1024 * 1024  # 25 MB payload limit for 3s drop video
 
 def serialize_user(u_dict):
     """Sanitizes user dictionary, preventing sensitive credentials and hashes from leaking"""
@@ -1446,10 +1448,11 @@ def save_base64_audio(data_str, prefix="audio"):
         print(f"Error saving base64 audio: {e}")
         return ""
 
-def save_base64_video(data_str, prefix="motion"):
+def save_base64_video(data_str, prefix="motion", max_bytes=None):
     if not data_str or not isinstance(data_str, str):
         return ""
-    if len(data_str) > MAX_MEDIA_PAYLOAD_BYTES:
+    limit = max_bytes or MAX_MEDIA_PAYLOAD_BYTES
+    if len(data_str) > limit:
         return ""
     if data_str.startswith("http://") or data_str.startswith("https://") or data_str.startswith("/uploads/"):
         return data_str
@@ -1471,7 +1474,7 @@ def save_base64_video(data_str, prefix="motion"):
         if mime not in ALLOWED_VIDEO_MIMES and "application/octet-stream" not in mime:
             return ""
         ext = "webm"
-        if "mp4" in header:
+        if "mp4" in header or "quicktime" in header:
             ext = "mp4"
         file_bytes = base64.b64decode(encoded)
         safe_prefix = sanitize_prefix(prefix)
@@ -1484,6 +1487,200 @@ def save_base64_video(data_str, prefix="motion"):
     except Exception as e:
         print(f"Error saving base64 video: {e}")
         return ""
+
+def parse_video_container_duration(video_bytes: bytes):
+    """
+    Parses video container binary headers to extract exact video duration in seconds.
+    Supports MP4/QuickTime (ISOBMFF mvhd atom) and WebM/Matroska (EBML Duration & TimecodeScale).
+    Returns duration in float seconds, or None if unable to determine from container.
+    """
+    if not video_bytes or len(video_bytes) < 16:
+        return None
+
+    # 1. MP4 / QuickTime (ISOBMFF)
+    pos = 0
+    moov_data = None
+    data_len = len(video_bytes)
+    while pos < data_len - 8:
+        try:
+            atom_size = struct.unpack('>I', video_bytes[pos:pos+4])[0]
+            atom_type = video_bytes[pos+4:pos+8]
+            if atom_size == 1:
+                if pos + 16 > data_len:
+                    break
+                atom_size = struct.unpack('>Q', video_bytes[pos+8:pos+16])[0]
+                atom_header_size = 16
+            elif atom_size == 0:
+                atom_size = data_len - pos
+                atom_header_size = 8
+            else:
+                atom_header_size = 8
+
+            if atom_size < 8:
+                break
+
+            if atom_type == b'moov':
+                moov_data = video_bytes[pos+atom_header_size : pos+atom_size]
+                break
+            pos += atom_size
+        except Exception:
+            break
+
+    if moov_data:
+        mpos = 0
+        moov_len = len(moov_data)
+        while mpos < moov_len - 8:
+            try:
+                size = struct.unpack('>I', moov_data[mpos:mpos+4])[0]
+                atype = moov_data[mpos+4:mpos+8]
+                if size == 1:
+                    if mpos + 16 > moov_len:
+                        break
+                    size = struct.unpack('>Q', moov_data[mpos+8:mpos+16])[0]
+                    hsize = 16
+                else:
+                    hsize = 8
+                if size < 8:
+                    break
+                if atype == b'mvhd':
+                    mvhd_body = moov_data[mpos+hsize : mpos+size]
+                    version = mvhd_body[0]
+                    if version == 0 and len(mvhd_body) >= 20:
+                        timescale = struct.unpack('>I', mvhd_body[12:16])[0]
+                        duration = struct.unpack('>I', mvhd_body[16:20])[0]
+                    elif version == 1 and len(mvhd_body) >= 32:
+                        timescale = struct.unpack('>I', mvhd_body[20:24])[0]
+                        duration = struct.unpack('>Q', mvhd_body[24:32])[0]
+                    else:
+                        timescale = 0
+                        duration = 0
+                    if timescale > 0:
+                        return float(duration) / float(timescale)
+                mpos += size
+            except Exception:
+                break
+
+    # 2. WebM / Matroska EBML
+    info_idx = video_bytes.find(b'\x15\x49\xa9\x66')
+    if info_idx != -1:
+        window = video_bytes[info_idx : info_idx + 1500]
+        timecode_scale = 1000000.0  # default 1,000,000 ns = 1 ms
+        tc_idx = window.find(b'\x2a\xd7\xb1')
+        if tc_idx != -1:
+            try:
+                lbyte = window[tc_idx + 3]
+                length = lbyte & 0x7F
+                tc_val = 0
+                for b in window[tc_idx + 4 : tc_idx + 4 + length]:
+                    tc_val = (tc_val << 8) | b
+                if tc_val > 0:
+                    timecode_scale = float(tc_val)
+            except Exception:
+                pass
+
+        dur_idx = window.find(b'\x44\x89')
+        if dur_idx != -1:
+            try:
+                dur_len = window[dur_idx + 2] & 0x7F
+                raw_dur = window[dur_idx + 3 : dur_idx + 3 + dur_len]
+                if dur_len == 4:
+                    dur_float = struct.unpack('>f', raw_dur)[0]
+                elif dur_len == 8:
+                    dur_float = struct.unpack('>d', raw_dur)[0]
+                else:
+                    dur_float = None
+                if dur_float is not None:
+                    return (dur_float * timecode_scale) / 1000000000.0
+            except Exception:
+                pass
+
+    return None
+
+def validate_and_save_drop_video(raw_video: str, client_duration=None):
+    """
+    Validates and stores an optional 3-second Drop atmosphere video.
+    Returns (server_video_url, duration, error_message).
+    Rules:
+      1. STRICT 3-SECOND LIMIT: Enforce <= 3.0 seconds. Reject 3.01s+.
+      2. SERVER-GENERATED MEDIA ONLY: Reject arbitrary client-supplied URLs.
+      3. PAYLOAD SECURITY: 25MB max, MIME & container signature verification.
+    """
+    if not raw_video or not isinstance(raw_video, str) or not raw_video.strip():
+        return "", 0.0, None
+
+    raw_video = raw_video.strip()
+
+    # Rule 2: Server-generated media only. Reject arbitrary external URLs.
+    if raw_video.startswith("http://") or raw_video.startswith("https://") or raw_video.startswith("//"):
+        return "", 0.0, "Arbitrary video URLs are not allowed. Please upload video data directly."
+
+    # If it is already a trusted internal upload path on this server, verify format
+    if raw_video.startswith("/uploads/"):
+        if ".." in raw_video:
+            return "", 0.0, "Invalid video path."
+        c_dur = 0.0
+        if client_duration is not None:
+            try:
+                c_dur = float(client_duration)
+                if c_dur > 3.0:
+                    return "", 0.0, f"Video duration ({c_dur:.2f}s) exceeds the maximum allowed duration of 3.0 seconds."
+            except (ValueError, TypeError):
+                pass
+        return raw_video, round(c_dur, 2) if c_dur > 0 else 3.0, None
+
+    if not (raw_video.startswith("data:video/") or raw_video.startswith("data:application/octet-stream")):
+        return "", 0.0, "Invalid video format. Only MP4, WebM, or QuickTime videos are accepted."
+
+    # Rule 3: Payload security & size limit (25MB)
+    if len(raw_video) > MAX_DROP_VIDEO_PAYLOAD_BYTES:
+        return "", 0.0, "Video payload too large. Maximum allowed size is 25MB."
+
+    try:
+        header, encoded = raw_video.split(",", 1)
+        mime = header.split(";")[0].replace("data:", "").lower()
+        if mime not in ALLOWED_VIDEO_MIMES and "application/octet-stream" not in mime:
+            return "", 0.0, f"Unsupported video MIME type '{mime}'. Supported: MP4, WebM, QuickTime."
+        video_bytes = base64.b64decode(encoded)
+    except Exception:
+        return "", 0.0, "Malformed video data."
+
+    if len(video_bytes) < 32:
+        return "", 0.0, "Video file is empty or corrupted."
+
+    # Container signature verification to reject disguised files
+    is_mp4 = (b'ftyp' in video_bytes[:64] or b'moov' in video_bytes[:1024] or b'mdat' in video_bytes[:1024])
+    is_webm = video_bytes.startswith(b'\x1a\x45\xdf\xa3')
+    if not is_mp4 and not is_webm:
+        return "", 0.0, "Invalid or disguised video file. Valid MP4 or WebM container required."
+
+    # Rule 1: Strict 3-second limit. Never allow > 3.0 seconds.
+    # Check client-reported duration if supplied
+    parsed_client_dur = None
+    if client_duration is not None:
+        try:
+            parsed_client_dur = float(client_duration)
+            if parsed_client_dur > 3.0:
+                return "", 0.0, f"Video duration ({parsed_client_dur:.2f}s) exceeds the maximum allowed duration of 3.0 seconds."
+        except (ValueError, TypeError):
+            pass
+
+    # Extract container duration from binary atoms/elements
+    container_dur = parse_video_container_duration(video_bytes)
+    if container_dur is not None:
+        if container_dur > 3.0:
+            return "", 0.0, f"Video duration ({container_dur:.2f}s) exceeds the maximum allowed duration of 3.0 seconds."
+        final_duration = round(container_dur, 2)
+    elif parsed_client_dur is not None and parsed_client_dur > 0:
+        final_duration = round(parsed_client_dur, 2)
+    else:
+        final_duration = 3.0
+
+    # Save via secure media infrastructure with drop_video prefix
+    saved_url = save_base64_video(raw_video, prefix="drop_video", max_bytes=MAX_DROP_VIDEO_PAYLOAD_BYTES)
+    if not saved_url:
+        return "", 0.0, "Failed to store video media."
+
+    return saved_url, final_duration, None
 
 def save_base64_image(data_str, prefix="img"):
     if not data_str or not isinstance(data_str, str):
@@ -2097,6 +2294,8 @@ def init_db():
         price_paise INTEGER DEFAULT 1900,
         currency TEXT DEFAULT 'INR',
         cover_img TEXT DEFAULT '',
+        video_url TEXT DEFAULT '',
+        video_duration REAL DEFAULT 0.0,
         lifecycle_state TEXT DEFAULT 'DRAFT',
         scheduled_start TEXT,
         checkin_window_start TEXT,
@@ -2287,6 +2486,8 @@ def init_db():
         ("checkin_window_end", "TEXT DEFAULT ''"),
         ("closed_at", "TEXT DEFAULT ''"),
         ("settlement_at", "TEXT DEFAULT ''"),
+        ("video_url", "TEXT DEFAULT ''"),
+        ("video_duration", "REAL DEFAULT 0.0"),
         ("updated_at", "TEXT DEFAULT ''")
     ]:
         if col not in cd_cols:
@@ -8414,6 +8615,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 else:
                     return self.send_json(400, {"error": "Invalid cover thumbnail format."})
 
+            # Drop Atmosphere Video: server-side validation & server-generated storage
+            raw_video = (body.get("video") or body.get("video_data") or "").strip()
+            client_video_dur = body.get("video_duration")
+            video_url = ""
+            video_duration = 0.0
+            if raw_video:
+                v_url, v_dur, v_err = validate_and_save_drop_video(raw_video, client_video_dur)
+                if v_err:
+                    return self.send_json(400, {"error": v_err})
+                video_url = v_url
+                video_duration = v_dur
+
             scheduled_start = (body.get("scheduled_start") or "").strip()
             requested_state = (body.get("lifecycle_state") or LIFECYCLE_DRAFT).strip().upper()
             initial_state = LIFECYCLE_DRAFT if requested_state not in (LIFECYCLE_DRAFT, LIFECYCLE_SCHEDULED) else requested_state
@@ -8458,15 +8671,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
             economics = calculate_drop_economics(DROP_FIXED_PRICE_PAISE)
 
             cursor.execute("""
-                INSERT INTO community_drops (id, community_id, community_name, creator_id, creator_handle, title, description, date_str, time_str, capacity, registered_count, price, price_paise, currency, cover_img, lifecycle_state, scheduled_start, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'INR', ?, ?, ?, 'active')
-            """, (drop_id, comm_id, comm_name or "Community Drop", user["id"], user.get("handle", "user"), title, desc, date_str, time_str, capacity, economics["gross_rupees"], economics["gross_paise"], cover_img, initial_state, scheduled_start))
+                INSERT INTO community_drops (id, community_id, community_name, creator_id, creator_handle, title, description, date_str, time_str, capacity, registered_count, price, price_paise, currency, cover_img, video_url, video_duration, lifecycle_state, scheduled_start, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'INR', ?, ?, ?, ?, ?, 'active')
+            """, (drop_id, comm_id, comm_name or "Community Drop", user["id"], user.get("handle", "user"), title, desc, date_str, time_str, capacity, economics["gross_rupees"], economics["gross_paise"], cover_img, video_url, video_duration, initial_state, scheduled_start))
             conn.commit()
             conn.close()
             return self.send_json(201, {
                 "success": True,
                 "drop_id": drop_id,
                 "cover_img": cover_img,
+                "video_url": video_url,
+                "video_duration": video_duration,
                 "lifecycle_state": initial_state,
                 "price_paise": economics["gross_paise"],
                 "price": economics["gross_rupees"],
