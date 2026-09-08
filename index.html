@@ -27,7 +27,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="style.css?v=3.1.4">
+  <link rel="stylesheet" href="style.css?v=3.1.5">
   <style>
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
     .font-mono-tag, .mono { font-family: 'JetBrains Mono', monospace; }
@@ -67,6 +67,10 @@
       background: rgba(245, 158, 11, 0.12) !important;
       border-color: rgba(245, 158, 11, 0.4) !important;
       color: #f59e0b !important;
+    }
+    .kandid-philosophy-card {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.03) 0%, rgba(11, 11, 13, 0.9) 100%);
+      border: 1px solid rgba(245, 158, 11, 0.12);
     }
 
     /* Desktop & MacBook Chassis (Screens > 640px): Exact iPhone aspect ratio that auto-scales on smaller laptop screens */
@@ -3351,68 +3355,92 @@
         </div>
 
         <!-- SCREEN 3/3: EDITORIAL REVIEW & ACTIVATION -->
-        <div id="screen-review" class="kandid-screen flex-col justify-between p-7 h-full w-full" style="display:none;">
-            <div class="pt-4 flex justify-between items-center text-[10px] text-zinc-600 font-mono-tag">
-                <button onclick="switchScreen('world')" class="text-zinc-400 hover:text-white cursor-pointer font-bold">← Back</button>
-                <span class="text-amber-500 font-bold">3 / 3 · REVIEW & CONFIRM</span>
-            </div>
+        <div id="screen-review" class="kandid-screen flex-col justify-between pt-4 sm:pt-6 pb-6 px-6 sm:px-7 h-full w-full no-scroll" style="display:none; padding-top: max(12px, env(safe-area-inset-top)); padding-bottom: max(16px, env(safe-area-inset-bottom));">
 
-            <div class="space-y-4 my-auto">
-                <div class="space-y-1">
-                    <h2 class="text-2xl font-extrabold text-white tracking-tight">Review your Profile.</h2>
-                    <p class="text-xs text-zinc-400 font-normal leading-relaxed">Here is how you'll appear in your communities.</p>
+            <!-- Top Header Navigation -->
+            <header class="pt-2 flex justify-between items-center text-[10px] text-zinc-500 mono select-none shrink-0">
+                <button onclick="navigateBack()" aria-label="Back to world setup" class="hover:text-white cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-[#f59e0b]">← Back</button>
+                <span class="text-zinc-500 font-medium uppercase tracking-wider">3 / 3 · REVIEW & CONFIRM</span>
+            </header>
+
+            <!-- Content Area (Precision editorial layout, zero fake data, safe DOM rendering) -->
+            <div class="content space-y-5 my-auto py-2 overflow-y-auto no-scroll pr-0.5">
+                
+                <!-- Headline & Subtitle -->
+                <div class="space-y-1.5 select-none pt-1">
+                    <h1 class="text-[26px] font-bold text-white tracking-tight leading-[1.15]">Review & confirm.</h1>
+                    <p class="text-[12px] text-zinc-400 font-normal leading-relaxed">Make sure everything looks right before you enter Kandid.</p>
                 </div>
 
-                <!-- Editorial Review Summary Card -->
-                <div class="bg-zinc-950 border border-zinc-800 rounded-3xl p-5 space-y-4 shadow-xl">
-                    <div class="flex items-center gap-4 pb-3 border-b border-zinc-800/80">
-                        <div class="w-14 h-14 rounded-2xl bg-zinc-900 border border-amber-500/40 flex items-center justify-center text-amber-400 font-mono-tag text-lg font-bold overflow-hidden flex-shrink-0 shadow-md" id="reviewAvatarBox">
-                            <span id="reviewAvatarLetter">K</span>
-                        </div>
-                        <div class="min-w-0">
-                            <h3 id="reviewNameDisplay" class="text-base font-extrabold text-white truncate">Student Name</h3>
-                            <div class="flex items-center gap-1.5 mt-0.5">
-                                <span id="reviewHandleDisplay" class="text-xs text-amber-400 font-mono-tag font-bold">@handle</span>
-                                <span class="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full font-mono-tag">✓ VERIFIED</span>
+                <!-- Review Sections -->
+                <div class="space-y-4">
+                    
+                    <!-- IDENTITY SECTION -->
+                    <div class="space-y-2">
+                        <span class="mono text-[9px] text-zinc-500 uppercase tracking-widest block font-bold select-none">IDENTITY</span>
+                        <div class="flex items-center gap-3.5 pt-0.5">
+                            <div id="summaryAvatar" class="w-11 h-11 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-400 font-mono text-xs font-bold shadow-sm overflow-hidden shrink-0">
+                                <!-- Safe dynamic avatar rendering -->
                             </div>
-                            <p id="reviewEmailDisplay" class="text-[10px] text-zinc-500 font-mono-tag truncate mt-0.5">email@gmail.com</p>
+                            <div class="overflow-hidden">
+                                <h3 id="summaryName" class="text-xs font-bold text-white truncate">Not added</h3>
+                                <p id="summaryHandle" class="text-[11px] text-amber-400 font-mono truncate mt-0.5 hidden"></p>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="space-y-2 text-xs font-mono-tag">
-                        <div class="flex justify-between items-center bg-zinc-900/60 px-3.5 py-2.5 rounded-xl border border-zinc-800/60">
-                            <span class="text-zinc-500 text-[10px] uppercase font-bold">🌐 Community</span>
-                            <span id="reviewCampusDisplay" class="text-white font-medium text-right truncate max-w-[180px]">Indiranagar Coffee & Tech</span>
-                        </div>
-                        <div class="flex justify-between items-center bg-zinc-900/60 px-3.5 py-2.5 rounded-xl border border-zinc-800/60">
-                            <span class="text-zinc-500 text-[10px] uppercase font-bold">📍 Location</span>
-                            <span id="reviewCityDisplay" class="text-white font-medium text-right truncate max-w-[180px]">Bengaluru, KA</span>
+                    <!-- WORLD SECTION -->
+                    <div class="space-y-2 pt-1 border-t border-white/[.04]">
+                        <span class="mono text-[9px] text-zinc-500 uppercase tracking-widest block font-bold select-none pt-2">WORLD</span>
+                        <div class="space-y-2 text-xs">
+                            <div>
+                                <span class="text-[9px] text-zinc-500 font-mono uppercase tracking-wider block">CITY</span>
+                                <span id="summaryCityText" class="text-zinc-200 font-medium leading-relaxed">Not added</span>
+                            </div>
+                            <div>
+                                <span class="text-[9px] text-zinc-500 font-mono uppercase tracking-wider block">INTERESTS</span>
+                                <span id="summaryInterestsText" class="text-zinc-200 font-medium leading-relaxed">Not added</span>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="pt-1 flex items-center justify-between">
-                        <button type="button" onclick="editOnboardingStep(1)" class="text-[10px] text-zinc-400 hover:text-white font-mono-tag cursor-pointer">
-                            ✏️ Edit Identity
-                        </button>
-                        <button type="button" onclick="editOnboardingStep(2)" class="text-[10px] text-zinc-400 hover:text-white font-mono-tag cursor-pointer">
-                            ✏️ Edit Community
-                        </button>
+                    <!-- CAMPUS SECTION -->
+                    <div class="space-y-1.5 pt-1 border-t border-white/[.04]">
+                        <span class="mono text-[9px] text-zinc-500 uppercase tracking-widest block font-bold select-none pt-2">CAMPUS</span>
+                        <p id="summaryCampusText" class="text-xs text-zinc-200 font-medium leading-relaxed">Not added</p>
                     </div>
+
                 </div>
 
-                <div class="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-3 flex items-start gap-2.5">
-                    <span class="text-amber-400 text-sm">🔒</span>
-                    <p class="text-[10px] text-zinc-300 font-sans leading-relaxed">
-                        Kandid is built for authentic, unfiltered moments. No fake follower counts, no algorithmic vanity. Just real life.
-                    </p>
+                <!-- Edit Actions -->
+                <div class="flex items-center justify-between pt-1 border-t border-white/[.04] text-xs mono">
+                    <button onclick="editIdentity()" class="text-amber-400 hover:text-amber-300 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[#f59e0b]">
+                        Edit Identity
+                    </button>
+                    <button onclick="editWorld()" class="text-amber-400 hover:text-amber-300 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[#f59e0b]">
+                        Edit World
+                    </button>
                 </div>
+
+                <!-- Kandid Philosophy Signature Block (Locked Copy) -->
+                <div class="kandid-philosophy-card rounded-2xl p-4 space-y-1.5 shadow-lg select-none">
+                    <svg width="14" height="14" fill="none" stroke="#f59e0b" stroke-width="2" viewBox="0 0 24 24" class="opacity-80 mb-1" aria-hidden="true">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                    <p class="text-[11px] font-semibold text-zinc-200 leading-snug">Real people. Real places. Real moments.</p>
+                    <p class="text-[10px] text-zinc-400 leading-relaxed font-normal">Kandid is built to keep the things that matter feeling real.</p>
+                </div>
+
             </div>
 
-            <div class="space-y-3 pb-4">
-                <button id="finalJoinKandidBtn" onclick="submitFinalOnboarding()" class="w-full py-4 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag shadow-[0_4px_30px_rgba(245,158,11,0.4)] active:scale-[0.98]">
-                    Your world is ready.
+            <!-- Bottom Primary CTA -->
+            <div class="space-y-3 pb-1 pt-3 border-t border-white/[.04] shrink-0">
+                <button id="finalJoinKandidBtn" onclick="completeOnboarding()" aria-label="Enter Kandid" class="action-btn w-full py-3.5 bg-[#f59e0b] hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl tracking-widest uppercase mono shadow-[0_4px_16px_rgba(245,158,11,0.15)] cursor-pointer">
+                    ENTER KANDID →
                 </button>
             </div>
+
         </div>
 
         <!-- SCREEN 3/3: PEOPLE -->
@@ -4138,6 +4166,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.6"></script> 
+  <script src="app.js?v=5.2.7"></script> 
 </body>
 </html>
