@@ -941,7 +941,7 @@ function renderCommunityCards(moments, container) {
     }
 
     var iWasThereHtml = '';
-    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id);
+    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id || m.campus);
     if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       iWasThereHtml = '<button onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="px-2.5 py-1 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-bold cursor-pointer active:scale-95 transition shadow-sm" title="Self-assert contextual participation">+ I WAS THERE</button>';
     }
@@ -2076,7 +2076,7 @@ function renderFeedCards(moments, container) {
     }
 
     var iWasThereHtml = '';
-    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id);
+    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id || m.campus);
     if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       iWasThereHtml = '<button onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="px-2 py-0.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-bold cursor-pointer active:scale-95 transition shadow-sm" title="Self-assert contextual participation">+ I WAS THERE</button>';
     }
@@ -8057,11 +8057,39 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
       } else {
         openMomentClusterModal(res.cluster_id, momentId);
       }
+    } else if (res && res.code === 'CAMPUS_DISCOVERY_ONLY') {
+      var commId = res.community_id;
+      if (!commId && state.currentFeedMoments) {
+        var mMatch = state.currentFeedMoments.find(function(item) { return item.id === momentId; });
+        if (mMatch) commId = mMatch.primary_community_id || mMatch.context_community_id;
+      }
+      if (commId) {
+        var joinRes = await apiRequest('/api/community/join', {
+          method: 'POST',
+          body: JSON.stringify({ community_id: commId })
+        });
+        if (joinRes && (joinRes.success || joinRes.joined || joinRes.is_joined)) {
+          var retryRes = await apiRequest('/api/moment/' + encodeURIComponent(momentId) + '/i-was-there', {
+            method: 'POST',
+            body: JSON.stringify({ moment_id: momentId })
+          });
+          if (retryRes && retryRes.success) {
+            showToast('Participation recorded! ✦');
+            state.activeClusterContext = retryRes.cluster_id;
+            if (openCaptureAfter) {
+              closeMomentClusterModal();
+              openCameraStudio();
+            } else {
+              openMomentClusterModal(retryRes.cluster_id, momentId);
+            }
+            return;
+          }
+        }
+      }
+      showToast('Campus discovery: "I WAS THERE" is reserved for community members or event attendees.');
     } else {
       var err = 'Participation not authorized.';
-      if (res && res.code === 'CAMPUS_DISCOVERY_ONLY') {
-        err = 'Campus discovery: "I WAS THERE" is reserved for community members or event attendees.';
-      } else if (res && res.code === 'OWN_MOMENT') {
+      if (res && res.code === 'OWN_MOMENT') {
         err = 'You cannot assert participation in your own moment.';
       } else if (res && res.code === 'BLOCKED_USER') {
         err = 'Unable to participate in this moment.';
@@ -8078,6 +8106,17 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
   }
 }
 window.handleIWasThereClick = handleIWasThereClick;
+
+function handleAddPerspectiveClick() {
+  var c = state.currentViewingCluster;
+  if (c && c.id) {
+    openPerspectiveCapture(c.id, c.community_id, c.originating_context);
+  } else {
+    closeMomentClusterModal();
+    openCameraStudio();
+  }
+}
+window.handleAddPerspectiveClick = handleAddPerspectiveClick;
 
 function openPerspectiveCapture(clusterId, communityId, location) {
   state.activeClusterContext = clusterId;
