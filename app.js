@@ -932,8 +932,6 @@ function renderCommunityCards(moments, container) {
     var mainImgSrc = m.main_img || m.mainImg || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=85';
     var pipImgSrc = m.pip_img || m.pipImg || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80';
 
-    var dropContextHtml = '';
-
     var clusterBadgeHtml = '';
     if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
       var pCount = m.perspectives_count || 1;
@@ -978,7 +976,6 @@ function renderCommunityCards(moments, container) {
                   '<span class="text-amber-400 text-xs">⌖</span>' +
                   '<span class="text-[10px] text-zinc-200 font-medium">' + locName + '</span>' +
                 '</div>') +
-            dropContextHtml +
           '</div>' +
 
           '<p class="text-[13px] font-medium text-white leading-snug">"' + captionText + '"</p>' +
@@ -1382,19 +1379,17 @@ async function openCampusPage(campusName) {
       if (Array.isArray(data.collective_memories) && data.collective_memories.length > 0) {
         memoriesGridEl.innerHTML = data.collective_memories.map(function(m) {
           var attendeeCount = m.checked_in_count || m.moments_count || 0;
-          var attendeeTxt = attendeeCount > 0 ? (attendeeCount + ' people were there') : 'Archived experience';
-          var dropContextTag = '';
+          var attendeeTxt = attendeeCount > 0 ? (attendeeCount + ' people were there') : 'Archived memory';
           return '<div onclick="openCollectiveMemoryPage(\'' + (m.id || 'mem_1') + '\')" class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 shadow-md cursor-pointer transition active:scale-95 group">' +
             '<div class="w-full aspect-[4/3] rounded-xl overflow-hidden bg-black">' +
               '<img src="' + (m.cover_img || m.cover_image || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80') + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
             '</div>' +
             '<p class="text-xs font-bold text-white truncate group-hover:text-amber-400 transition-colors">' + escapeHtml(m.title) + '</p>' +
-            dropContextTag +
             '<p class="font-mono-tag text-[8px] text-zinc-400">' + attendeeTxt + '</p>' +
           '</div>';
         }).join('');
       } else {
-        memoriesGridEl.innerHTML = '<div class="col-span-2 py-6 text-center text-xs text-zinc-500 font-mono-tag">No preserved memories yet. Real-world drops become memories here.</div>';
+        memoriesGridEl.innerHTML = '<div class="col-span-2 py-6 text-center text-xs text-zinc-500 font-mono-tag">No collective memories yet. Shared moments will appear here.</div>';
       }
     }
 
@@ -1425,46 +1420,8 @@ function openCommunityMomentCapture(commId, commName) {
 window.openCommunityMomentCapture = openCommunityMomentCapture;
 
 
-async function openCreatorEarningsModal() {
-  var modal = document.getElementById('creatorEarningsModal');
-  if (modal) modal.style.display = 'flex';
-  
-  var titleEl = document.getElementById('earningsCommunityTitle');
-  if (titleEl) titleEl.textContent = (state.activeCommunity || 'Community') + ' Earnings';
-
-  var grossEl = document.getElementById('earningsGrossTxt');
-  var feeEl = document.getElementById('earningsPlatformFeeTxt');
-  var netEl = document.getElementById('earningsCreatorNetTxt');
-  var txCountEl = document.getElementById('earningsTxCountTxt');
-  var listEl = document.getElementById('creatorTransactionsLedgerList');
-
-  var res = await apiRequest('/api/community/earnings?community=' + encodeURIComponent(state.activeCommunity || ''));
-  if (res && res.success && res.earnings) {
-    var e = res.earnings;
-    if (grossEl) grossEl.textContent = '₹' + Number(e.gross_volume || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    if (feeEl) feeEl.textContent = '₹' + Number(e.platform_fee || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    if (netEl) netEl.textContent = '₹' + Number(e.creator_net || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    if (txCountEl) txCountEl.textContent = (e.transactions_count || 0) + ' confirmed registrations';
-
-    if (listEl && Array.isArray(e.transactions) && e.transactions.length > 0) {
-      listEl.innerHTML = e.transactions.map(function(t) {
-        var gross = t.gross_amount_paise ? (t.gross_amount_paise / 100) : (t.gross_amount || 19);
-        var creator = t.creator_amount_paise ? (t.creator_amount_paise / 100) : (t.creator_amount || 15.20);
-        return '<div class="p-2.5 rounded-xl bg-zinc-950 border border-white/[.04] flex items-center justify-between text-xs">' +
-          '<div class="space-y-0.5">' +
-            '<span class="text-white font-bold block truncate">Drop Registration #' + escapeHtml((t.id || t.order_id || 'reg').slice(0, 7)) + '</span>' +
-            '<span class="text-[9px] font-mono-tag text-zinc-500">' + escapeHtml(t.created_at || 'Recent') + '</span>' +
-          '</div>' +
-          '<div class="text-right">' +
-            '<span class="text-amber-400 font-mono-tag font-bold">+₹' + creator.toFixed(2) + '</span>' +
-            '<span class="text-[8px] font-mono-tag text-zinc-500 block">Gross ₹' + gross.toFixed(2) + '</span>' +
-          '</div>' +
-        '</div>';
-      }).join('');
-    } else if (listEl) {
-      listEl.innerHTML = '<div class="p-4 rounded-xl bg-zinc-950 border border-white/[.04] text-center text-xs text-zinc-500 font-mono-tag">No transactions recorded yet.</div>';
-    }
-  }
+ async function openCreatorEarningsModal() {
+  // Drop earnings removed — no-op
 }
 window.openCreatorEarningsModal = openCreatorEarningsModal;
 
@@ -1478,19 +1435,11 @@ async function openCreatorOperationsModal() {
   var modal = document.getElementById('creatorOperationsModal');
   if (modal) modal.style.display = 'flex';
 
-  var balanceEl = document.getElementById('opsCreatorBalanceTxt');
-  var setPendEl = document.getElementById('opsSettledPendingTxt');
   var commsListEl = document.getElementById('opsCommunitiesList');
-  var dropsListEl = document.getElementById('opsDropsList');
-  var checkinsListEl = document.getElementById('opsCheckinsList');
 
   var res = await apiRequest('/api/community/manage');
   if (res && res.success && res.operations) {
     var op = res.operations;
-    var earn = op.earnings || {};
-    
-    if (balanceEl) balanceEl.textContent = '₹' + Number(earn.creator_amount_rupees || 0).toFixed(2);
-    if (setPendEl) setPendEl.textContent = '₹' + Number(earn.settled_rupees || 0).toFixed(0) + ' / ₹' + Number(earn.pending_rupees || 0).toFixed(0);
 
     // Communities
     if (commsListEl) {
@@ -1612,7 +1561,6 @@ async function openCommunityModerationModal(communityId) {
               (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'review\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-amber-400 hover:underline cursor-pointer text-[10px]">Review</button>' : '') +
               (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'dismiss\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-zinc-400 hover:underline cursor-pointer text-[10px]">Dismiss</button>' : '') +
               (r.target_type === 'moment' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'hide\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-rose-400 hover:underline cursor-pointer text-[10px]">Hide Content</button>' : '') +
-              (r.target_type === 'drop' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'suspend\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-rose-400 hover:underline cursor-pointer text-[10px]">Suspend Drop</button>' : '') +
             '</div>' +
           '</div>';
         }).join('');
@@ -1696,11 +1644,10 @@ async function loadMoreAroundYou() {
 
   if (list && list.length > 0) {
     container.innerHTML = list.map(function(c) {
-      var badge = c.context_reason || (c.activity_state === 'UPCOMING' ? 'Upcoming Drop' : 'Active Community');
+      var badge = c.context_reason || 'Active Community';
       return '<div onclick="openCampusPage(\'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')" class="w-36 shrink-0 p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 cursor-pointer transition shadow-md active:scale-95 group">' +
         '<div class="flex items-center justify-between">' +
           '<div class="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-sm">' + (c.icon || '📍') + '</div>' +
-          (c.activity_state === 'UPCOMING' ? '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>' : '') +
         '</div>' +
         '<div>' +
           '<h3 class="text-xs font-bold text-white group-hover:text-amber-400 transition-colors truncate">' + escapeHtml(c.name) + '</h3>' +
@@ -4243,7 +4190,7 @@ function renderYouCommunitiesList(communities) {
     container.appendChild(row);
   });
 }
-function renderYouHostedDrops() {}
+
 
 async function loadProgressScreen() {
   var data = await apiRequest('/api/me/progress');
@@ -4945,7 +4892,7 @@ const aboutText = `
     <p>• <strong>Zero Vanity Metrics:</strong> No follower counts, no public like counts, no popularity rankings.</p>
     <p>• <strong>Authentic Moments:</strong> Unfiltered dual-camera photo captures with 3-second ambient audio.</p>
     <p>• <strong>Community Belonging:</strong> Campus, Place, and Interest hubs where members connect for free.</p>
-    <p>• <strong>Fair Creator Value:</strong> Real-world activities & drops with a fair 90% creator / 10% platform split.</p>
+    <p>• <strong>Fair Creator Value:</strong> Community creators shape real-world connections on campus.</p>
     <p class="pt-2 text-zinc-400">Operated by SolvarionX with pride.</p>
 `;
 
@@ -6535,13 +6482,10 @@ async function openCreatorDashboardModal() {
   if (modal) modal.style.display = 'flex';
 
   var spacesCountEl = document.getElementById('creatorDashSpacesCount');
-  var dropsCountEl = document.getElementById('creatorDashDropsCount');
-  var attendeesCountEl = document.getElementById('creatorDashAttendeesCount');
-  var checkinsCountEl = document.getElementById('creatorDashCheckinsCount');
-  var commsListEl = document.getElementById('creatorDashCommunitiesList');
-  var dropsListEl = document.getElementById('creatorDashDropsList');
-  var shareEl = document.getElementById('creatorDashEarningsShare');
-  var settledEl = document.getElementById('creatorDashEarningsSettled');
+  var membersCountEl = document.getElementById('creatorDashDropsCount');       // repurposed: TOTAL MEMBERS
+  var momentsCountEl = document.getElementById('creatorDashAttendeesCount');   // repurposed: MOMENTS SHARED
+  var pulseCountEl   = document.getElementById('creatorDashCheckinsCount');    // repurposed: LIVE PULSE
+  var commsListEl    = document.getElementById('creatorDashCommunitiesList');
 
   try {
     var res = await apiRequest('/api/creator/dashboard');
@@ -6557,15 +6501,11 @@ async function openCreatorDashboardModal() {
     }
 
     var ov = res.overview || {};
-    var earn = res.earnings || {};
 
     if (spacesCountEl) spacesCountEl.textContent = ov.spaces_managed || 0;
-    if (dropsCountEl) dropsCountEl.textContent = ov.active_drops || 0;
-    if (attendeesCountEl) attendeesCountEl.textContent = ov.total_attendees || 0;
-    if (checkinsCountEl) checkinsCountEl.textContent = ov.verified_checkins || 0;
-
-    if (shareEl) shareEl.textContent = '₹' + Number(earn.creator_earnings_rupees || 0).toFixed(2);
-    if (settledEl) settledEl.textContent = '₹' + Number(earn.settled_rupees || 0).toFixed(2);
+    if (membersCountEl) membersCountEl.textContent = ov.total_members || 0;
+    if (momentsCountEl) momentsCountEl.textContent = ov.total_moments || 0;
+    if (pulseCountEl)   pulseCountEl.textContent   = ov.live_pulse_count || 0;
 
     // Communities / Spaces
     if (commsListEl) {
@@ -6933,8 +6873,6 @@ async function loadNotifications() {
             switchScreenView('feed');
           }
         } else if (nType.includes('community') || nType.includes('campus')) {
-          openCampusPage(n.community_name || n.target_id || 'North City University');
-        } else if (nType.includes('drop')) {
           openCampusPage(n.community_name || n.target_id || 'North City University');
         } else if (nType.includes('memory')) {
           openCollectiveMemoryPage(n.memory_id || 'mem_1');
