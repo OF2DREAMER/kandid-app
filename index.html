@@ -27,7 +27,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="style.css?v=3.1.1">
+  <link rel="stylesheet" href="style.css?v=3.1.2">
   <style>
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
     .font-mono-tag, .mono { font-family: 'JetBrains Mono', monospace; }
@@ -47,8 +47,8 @@
       outline-offset: 2px;
     }
 
-    /* Desktop Mac Chassis (Screens > 640px): Exact 390x844 centered phone */
-    @media (min-width: 641px) {
+    /* Desktop & MacBook Chassis (Screens > 640px): Exact iPhone aspect ratio that auto-scales on smaller laptop screens */
+    @media screen and (min-width: 641px) {
       body {
         display: flex !important;
         align-items: center !important;
@@ -57,28 +57,34 @@
         height: 100vh !important;
         background: #000000 !important;
         overflow: hidden !important;
+        padding: 12px !important;
+        box-sizing: border-box !important;
       }
       #appContainer {
-        width: 390px !important;
-        height: 844px !important;
+        height: min(844px, calc(100vh - 24px)) !important;
+        max-height: calc(100vh - 24px) !important;
+        width: min(390px, calc((100vh - 24px) * 390 / 844)) !important;
         max-width: 390px !important;
-        max-height: 844px !important;
         border-radius: 40px !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        box-shadow: 0 25px 70px rgba(0, 0, 0, 0.95) !important;
+        box-shadow: 0 25px 70px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
         position: relative !important;
         overflow: hidden !important;
+        background: #09090b !important;
       }
     }
 
-    /* Mobile Phones (Samsung, iPhone, Android <= 640px): Full-bleed flush to top */
-    @media (max-width: 640px) {
+    /* All Mobile Phones (Samsung, Pixel, OnePlus, Android, iOS iPhone <= 640px): 100% full-bleed flush to top */
+    @media screen and (max-width: 640px) {
       html, body {
         width: 100% !important;
         height: 100% !important;
         min-height: 100% !important;
+        min-height: -webkit-fill-available !important;
         background: #09090b !important;
         overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
       body {
         display: flex !important;
@@ -89,6 +95,8 @@
         width: 100% !important;
         height: 100% !important;
         height: 100dvh !important;
+        min-height: 100dvh !important;
+        min-height: -webkit-fill-available !important;
         max-width: 100% !important;
         max-height: 100% !important;
         border-radius: 0 !important;
@@ -96,6 +104,7 @@
         box-shadow: none !important;
         position: relative !important;
         overflow: hidden !important;
+        background: #09090b !important;
       }
     }
   </style>
@@ -4066,6 +4075,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.3"></script> 
+  <script src="app.js?v=5.2.4"></script> 
 </body>
 </html>
