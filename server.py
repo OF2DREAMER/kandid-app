@@ -1548,37 +1548,102 @@ class PostgresCursorWrapper:
         self.raw_cursor = raw_cursor
 
     def execute(self, sql, params=None):
-        pg_sql = sql.replace("?", "%s")
-        if pg_sql.strip().upper().startswith("PRAGMA"):
+        if not sql or not sql.strip():
             return self
+
+        clean_sql = sql.strip()
+        clean_upper = clean_sql.upper()
+
+        # Handle SQLite PRAGMA table_info gracefully in PostgreSQL
+        if "PRAGMA TABLE_INFO" in clean_upper:
+            try:
+                tbl = clean_sql.split("(")[1].split(")")[0].strip().strip("'\"").lower()
+                self.raw_cursor.execute("""
+                    SELECT ordinal_position, column_name, data_type, is_nullable, column_default, 0
+                    FROM information_schema.columns
+                    WHERE LOWER(table_name) = %s
+                    ORDER BY ordinal_position
+                """, (tbl,))
+                return self
+            except Exception:
+                pass
+        elif clean_upper.startswith("PRAGMA"):
+            return self
+
+        # Convert SQLite ? placeholders to PostgreSQL %s
+        pg_sql = sql.replace("?", "%s")
+
+        # Handle ALTER TABLE ADD COLUMN IF NOT EXISTS in PostgreSQL
+        if "ALTER TABLE " in clean_upper and " ADD COLUMN " in clean_upper and " IF NOT EXISTS " not in clean_upper:
+            import re
+            pg_sql = re.sub(r'(?i)ADD\s+COLUMN\s+', 'ADD COLUMN IF NOT EXISTS ', pg_sql)
+
+        # Handle INSERT OR IGNORE in PostgreSQL
+        if "INSERT OR IGNORE INTO " in clean_upper:
+            import re
+            pg_sql = re.sub(r'(?i)INSERT\s+OR\s+IGNORE\s+INTO\s+', 'INSERT INTO ', pg_sql)
+            if "ON CONFLICT" not in pg_sql.upper():
+                pg_sql += " ON CONFLICT DO NOTHING"
+
+        # Handle INSERT OR REPLACE in PostgreSQL
+        if "INSERT OR REPLACE INTO " in clean_upper:
+            import re
+            pg_sql = re.sub(r'(?i)INSERT\s+OR\s+REPLACE\s+INTO\s+', 'INSERT INTO ', pg_sql)
+            if "ON CONFLICT" not in pg_sql.upper():
+                tbl_match = re.search(r'(?i)INSERT\s+INTO\s+([a-zA-Z0-9_]+)', pg_sql)
+                tbl_name = tbl_match.group(1).lower() if tbl_match else ""
+                if tbl_name == "sessions":
+                    pg_sql += " ON CONFLICT (token) DO UPDATE SET expires_at = EXCLUDED.expires_at"
+                elif tbl_name == "friendships":
+                    pg_sql += " ON CONFLICT (user_id, friend_id) DO UPDATE SET status = EXCLUDED.status"
+                elif tbl_name in ("reactions", "blocks", "community_mutes", "auth_identities"):
+                    pg_sql += " ON CONFLICT DO NOTHING"
+                else:
+                    pg_sql += " ON CONFLICT (id) DO NOTHING"
+
         if params is None:
             self.raw_cursor.execute(pg_sql)
         else:
             self.raw_cursor.execute(pg_sql, tuple(params))
         return self
 
+    def executemany(self, sql, seq_of_params):
+        for params in seq_of_params:
+            self.execute(sql, params)
+        return self
+
     def executescript(self, sql_script):
         for stmt in sql_script.split(";"):
             clean = stmt.strip()
             if clean and not clean.upper().startswith("PRAGMA"):
-                self.execute(clean)
+                try:
+                    self.execute(clean)
+                except Exception as e:
+                    if "already exists" not in str(e).lower():
+                        raise
         return self
 
     def fetchone(self):
+        if getattr(self.raw_cursor, "description", None) is None:
+            return None
         row = self.raw_cursor.fetchone()
         if row is None:
             return None
         return row
 
     def fetchall(self):
+        if getattr(self.raw_cursor, "description", None) is None:
+            return []
         return self.raw_cursor.fetchall()
 
     def __iter__(self):
+        if getattr(self.raw_cursor, "description", None) is None:
+            return iter([])
         return iter(self.raw_cursor)
 
     @property
     def rowcount(self):
-        return self.raw_cursor.rowcount
+        return getattr(self.raw_cursor, "rowcount", 0)
 
 class PostgresConnectionWrapper:
     def __init__(self, raw_conn):
