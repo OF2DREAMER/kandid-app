@@ -1211,12 +1211,15 @@ async function openCampusPage(campusName) {
       }
 
       // Creator Ownership Controls Visibility (Owner-Only)
-      var myId = state.currentUser ? state.currentUser.id : '';
-      var myHandle = state.currentUser ? state.currentUser.handle : '';
+      var myId = state.currentUser ? String(state.currentUser.id || '').trim() : '';
+      var myHandle = state.currentUser ? String(state.currentUser.handle || '').trim().toLowerCase() : '';
+      var cCreatorId = c.creator_id ? String(c.creator_id).trim() : '';
+      var cCreatorHandle = c.creator_handle ? String(c.creator_handle).trim().toLowerCase() : '';
+      var cUserRole = c.user_role ? String(c.user_role).trim().toLowerCase() : '';
       var isOwner = Boolean(
-        (c.creator_id && myId && c.creator_id === myId) || 
-        (c.creator_handle && myHandle && c.creator_handle === myHandle) || 
-        (c.user_role && c.user_role.toLowerCase() === 'owner') ||
+        (cCreatorId && myId && cCreatorId === myId) || 
+        (cCreatorHandle && myHandle && cCreatorHandle === myHandle) || 
+        (cUserRole === 'owner' || cUserRole === 'creator') ||
         (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
       );
 
@@ -2128,13 +2131,16 @@ window.checkinCommunityDrop = checkinCommunityDrop;
 
 function openCreateDropModal() {
   var c = state.activeCommunityData;
-  var myId = state.currentUser ? state.currentUser.id : '';
-  var myHandle = state.currentUser ? state.currentUser.handle : '';
+  var myId = state.currentUser ? String(state.currentUser.id || '').trim() : '';
+  var myHandle = state.currentUser ? String(state.currentUser.handle || '').trim().toLowerCase() : '';
   if (c) {
+    var cCreatorId = c.creator_id ? String(c.creator_id).trim() : '';
+    var cCreatorHandle = c.creator_handle ? String(c.creator_handle).trim().toLowerCase() : '';
+    var cUserRole = c.user_role ? String(c.user_role).trim().toLowerCase() : '';
     var isOwner = Boolean(
-      (c.creator_id && myId && c.creator_id === myId) || 
-      (c.creator_handle && myHandle && c.creator_handle === myHandle) || 
-      (c.user_role && c.user_role.toLowerCase() === 'owner') ||
+      (cCreatorId && myId && cCreatorId === myId) || 
+      (cCreatorHandle && myHandle && cCreatorHandle === myHandle) || 
+      (cUserRole === 'owner' || cUserRole === 'creator') ||
       (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
     );
     if (!isOwner) {
@@ -5249,7 +5255,16 @@ function renderYouCommunitiesList(communities) {
     row.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between hover:border-zinc-700 transition cursor-pointer shadow-md active:scale-95';
     var cType = (c.type || 'COMMUNITY').toUpperCase();
     var cIcon = c.icon || (cType === 'CAMPUS' ? '🎓' : cType === 'PLACE' ? '📍' : '📸');
-    var isHost = c.is_owner || c.role === 'owner' || (state.currentUser && (c.creator_id === state.currentUser.id || c.creator_handle === state.currentUser.handle));
+    var myId = state.currentUser ? String(state.currentUser.id || '').trim() : '';
+    var myHandle = state.currentUser ? String(state.currentUser.handle || '').trim().toLowerCase() : '';
+    var cCreatorId = c.creator_id ? String(c.creator_id).trim() : '';
+    var cCreatorHandle = c.creator_handle ? String(c.creator_handle).trim().toLowerCase() : '';
+    var isHost = c.is_owner || c.role === 'owner' || (
+      state.currentUser && (
+        (cCreatorId && myId && cCreatorId === myId) ||
+        (cCreatorHandle && myHandle && cCreatorHandle === myHandle)
+      )
+    );
 
     row.innerHTML =
       '<div class="flex items-center gap-3 min-w-0">' +
