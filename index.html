@@ -832,189 +832,236 @@
       </section>
 
       <!-- =================================================================
-           SECTION 4: YOU / PROFILE & PERSONAL ARCHIVE (PRODUCTION V4.3)
+      <!-- =================================================================
+           SECTION 4: YOU / PROFILE (EXACT PRODUCTION REPLICA OF REFERENCE)
            ================================================================= -->
-      <section class="app-screen px-4 py-4 space-y-4 pb-32" id="screen-you" style="display:none;">
-        
-        <!-- 1. Top Profile Hero Banner Card with Moody Background -->
-        <div class="bg-zinc-950 border border-zinc-800/80 rounded-3xl p-4 flex items-center justify-between relative overflow-hidden shadow-2xl">
-          <!-- Ambient Lighting Image Overlay on Right -->
-          <div class="absolute inset-0 bg-cover bg-right opacity-30 pointer-events-none" style="background-image: url('https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=600&q=80');"></div>
-          <div class="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-950/85 to-transparent pointer-events-none"></div>
+      <section class="app-screen px-4 pt-3 pb-32 space-y-5" id="screen-you" style="display:none;">
 
-          <!-- Left: Avatar Box & Identity Info -->
-          <div class="flex items-center gap-3.5 relative z-10 min-w-0">
-            <div class="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-700/80 flex items-center justify-center flex-shrink-0 text-amber-500 font-extrabold text-2xl font-mono-tag shadow-inner overflow-hidden" id="youProfileAvatarBox">
-              <span id="youProfileInitials" class="text-amber-400 font-bold font-mono-tag">AN</span>
-              <img src="" class="w-full h-full object-cover" id="youProfileAvatar" style="display:none;">
+        <!-- 1. Top Brand & Settings Header Bar (Matching Reference Exactly) -->
+        <div class="flex items-center justify-between px-0.5 pt-1 pb-1">
+          <!-- Left: [K] K A N D I D -->
+          <div class="flex items-center gap-2.5">
+            <div class="w-6 h-6 rounded-md bg-amber-500 flex items-center justify-center text-black font-black text-xs font-mono-tag shadow-md flex-shrink-0">
+              K
             </div>
-            <div class="space-y-0.5 min-w-0">
-              <h2 class="text-sm font-extrabold text-white tracking-wide uppercase font-mono-tag truncate" id="youProfileName">ANIL</h2>
-              <p class="text-xs text-amber-400 font-mono-tag truncate" id="youProfileUsername">@ANIL</p>
-              <p class="text-[9px] text-zinc-400 font-bold font-mono-tag tracking-wider uppercase pt-0.5 truncate" id="youProfileCampus">◉ INDIRANAGAR TECH HUB · BENGALURU</p>
-              <p class="text-[11px] text-zinc-300 font-normal truncate" id="youProfileBio">Capturing ordinary days.</p>
-            </div>
+            <span class="text-xs font-extrabold tracking-[0.25em] text-white uppercase font-mono-tag">K A N D I D</span>
           </div>
 
-          <!-- Top-Right: Edit Profile & Settings Gear Buttons -->
-          <div class="flex items-center gap-1.5 relative z-10 self-start mt-0.5">
-            <button class="w-8 h-8 rounded-full bg-black/60 border border-white/20 apple-blur flex items-center justify-center text-zinc-300 hover:text-white transition-all shadow-md cursor-pointer active:scale-95" onclick="openEditProfileModal()" title="Edit Profile">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+          <!-- Right: Settings Cog & Notification Bell with Amber Dot -->
+          <div class="flex items-center gap-2.5">
+            <button onclick="openSettings()" id="youSettingsBtn" class="text-zinc-300 hover:text-white transition-colors cursor-pointer p-1 active:scale-95" title="Settings">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                <circle cx="12" cy="12" r="3" stroke-width="1.8"></circle>
+              </svg>
             </button>
-            <button class="w-8 h-8 rounded-full bg-black/60 border border-white/20 apple-blur flex items-center justify-center text-zinc-300 hover:text-white transition-all shadow-md cursor-pointer active:scale-95" id="youSettingsBtn" onclick="openSettings()" title="Settings">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path></svg>
+            <button onclick="switchScreenView('notifications')" class="text-zinc-300 hover:text-white transition-colors relative cursor-pointer p-1 active:scale-95" title="Notifications">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+              </svg>
+              <span class="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-500 ring-2 ring-black"></span>
             </button>
           </div>
         </div>
 
-        <!-- 2. 4-Column Signals Card (STREAK | MOMENTS | MEMORIES | LEVEL) -->
-        <div class="bg-zinc-950 border border-zinc-800/80 rounded-3xl p-3.5 grid grid-cols-4 text-center shadow-lg font-mono-tag" id="youStatsBar">
-          <!-- Col 1: STREAK -->
-          <div class="space-y-0.5 border-r border-zinc-900 pr-1">
-            <div class="text-xs text-amber-500 mb-0.5">🔥</div>
-            <span class="text-[8px] text-zinc-500 tracking-widest block uppercase font-bold">STREAK</span>
-            <span class="text-xs font-black text-white block truncate" id="youStreakVal">1 DAY</span>
-            <span class="text-[7px] text-zinc-500 block truncate">Keep showing up.</span>
-          </div>
-
-          <!-- Col 2: MOMENTS -->
-          <div class="space-y-0.5 border-r border-zinc-900 px-1">
-            <div class="text-xs text-amber-400 mb-0.5">◌</div>
-            <span class="text-[8px] text-zinc-500 tracking-widest block uppercase font-bold">MOMENTS</span>
-            <span class="text-xs font-black text-white block truncate" id="youMomentsCountVal">1</span>
-            <span class="text-[7px] text-zinc-500 block truncate">Captured</span>
-          </div>
-
-          <!-- Col 3: MEMORIES -->
-          <div class="space-y-0.5 border-r border-zinc-900 px-1">
-            <div class="text-xs text-amber-400 mb-0.5">🔖</div>
-            <span class="text-[8px] text-zinc-500 tracking-widest block uppercase font-bold">MEMORIES</span>
-            <span class="text-xs font-black text-white block truncate" id="youMemoriesCountVal">1</span>
-            <span class="text-[7px] text-zinc-500 block truncate">Saved</span>
-          </div>
-
-          <!-- Col 4: LEVEL -->
-          <div class="space-y-0.5 pl-1 cursor-pointer hover:opacity-80" onclick="switchScreenView('progress')">
-            <div class="text-xs text-amber-400 mb-0.5">📈</div>
-            <span class="text-[8px] text-zinc-500 tracking-widest block uppercase font-bold">LEVEL</span>
-            <span class="text-xs font-black text-white block truncate" id="youLevelSnippet">01</span>
-            <span class="text-[7px] text-zinc-500 block truncate" id="youXpSnippet">50 XP</span>
-          </div>
-        </div>
-
-        <!-- 3. TODAY'S MOMENT (Dynamic Captured vs Prompt) -->
-        <div class="bg-zinc-950 border border-zinc-800/80 rounded-3xl p-4 shadow-lg" id="youTodayCaptureCard">
-          <div class="flex items-center justify-between">
-            <div class="space-y-1">
-              <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-widest uppercase block">TODAY</span>
-              <h3 class="text-xs font-extrabold text-white font-mono-tag leading-snug">You haven't captured<br>your Moment yet.</h3>
-              <p class="text-[10px] text-zinc-500 font-mono-tag pt-0.5">Every day is a new story.</p>
-            </div>
-            <div class="flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer active:scale-95 transition" onclick="openCameraStudio()">
-              <div class="w-14 h-14 rounded-full border-2 border-dashed border-amber-500/60 bg-amber-500/10 flex items-center justify-center text-amber-400 text-xl font-bold shadow-lg">
-                +
+        <!-- 2. Profile Identity Header Block -->
+        <div class="flex items-center justify-between gap-3 pt-1">
+          <!-- Left: Round Avatar + Name + Handle + Campus -->
+          <div class="flex items-center gap-3.5 min-w-0">
+            <!-- Circular Avatar with Gold/Amber ring & Camera icon badge -->
+            <div class="relative flex-shrink-0" id="youProfileAvatarBox">
+              <div class="w-18 h-18 sm:w-20 sm:h-20 rounded-full p-[2px] bg-gradient-to-tr from-amber-500 via-amber-400 to-amber-600 shadow-[0_0_16px_rgba(245,158,11,0.25)]">
+                <div class="w-full h-full rounded-full bg-zinc-900 overflow-hidden flex items-center justify-center">
+                  <span id="youProfileInitials" class="text-amber-400 font-bold font-mono-tag text-xl">AK</span>
+                  <img src="" class="w-full h-full object-cover" id="youProfileAvatar" style="display:none;" alt="Profile photo">
+                </div>
               </div>
-              <span class="text-[9px] text-amber-400 font-mono-tag font-extrabold tracking-wider uppercase">CAPTURE NOW</span>
+              <!-- Camera Icon Badge at bottom right -->
+              <button onclick="openEditProfileModal()" class="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-700 hover:border-amber-500/80 text-zinc-300 hover:text-white flex items-center justify-center shadow-lg transition cursor-pointer active:scale-95" title="Change photo">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+                  <circle cx="12" cy="13" r="3" stroke-width="2"></circle>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Name, Handle, Campus & City -->
+            <div class="space-y-0.5 min-w-0">
+              <div class="flex items-center gap-1.5">
+                <h2 class="text-base font-bold text-white tracking-normal truncate" id="youProfileName">Aman Kumar</h2>
+                <!-- Verified Gold Check Badge -->
+                <span class="inline-flex text-amber-500 flex-shrink-0" title="Verified Kandid">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                  </svg>
+                </span>
+              </div>
+              <p class="text-xs text-zinc-400 font-normal truncate" id="youProfileUsername">@aman.kumar</p>
+              <div class="flex items-center gap-1.5 text-[11px] text-zinc-400 pt-0.5 truncate" id="youProfileCampus">
+                <span class="flex items-center gap-1 flex-shrink-0">
+                  <span class="text-xs">🎓</span>
+                  <span class="truncate" id="youProfileCampusName">Guru Kashi University</span>
+                </span>
+                <span class="text-zinc-600 font-bold flex-shrink-0">·</span>
+                <span class="flex items-center gap-1 flex-shrink-0">
+                  <span class="text-xs text-amber-500">📍</span>
+                  <span class="truncate" id="youProfileCampusCity">Supaul</span>
+                </span>
+              </div>
+              <p class="text-[11px] text-zinc-500 truncate" id="youProfileBio" style="display:none;">Capturing ordinary days.</p>
             </div>
           </div>
-        </div>
 
-        <!-- 4. YOUR JOURNAL -->
-        <div class="bg-zinc-950 border border-zinc-800/80 rounded-3xl p-4 flex items-center justify-between shadow-lg relative overflow-hidden" id="youJournalCard">
-          <div class="space-y-1 max-w-[210px] z-10">
-            <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-widest uppercase block">YOUR JOURNAL</span>
-            <h3 class="text-sm font-extrabold text-white font-mono-tag leading-snug">Memories live here.</h3>
-            <p class="text-[10px] text-zinc-400 font-mono-tag pt-0.5 leading-relaxed">Your moments, exactly as they happened.</p>
-            <button class="mt-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[10px] font-mono-tag rounded-xl transition cursor-pointer shadow-md inline-flex items-center gap-1.5 active:scale-95 uppercase" onclick="openMemoryArchive()">
-              <span>OPEN ARCHIVE →</span>
+          <!-- Right: Edit Profile Pill Button -->
+          <div class="flex-shrink-0 self-start mt-0.5">
+            <button onclick="openEditProfileModal()" class="px-3.5 py-1.5 rounded-full border border-zinc-700/80 bg-zinc-900/70 hover:bg-zinc-800 text-zinc-200 text-[11px] font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm">
+              <svg class="w-3.5 h-3.5 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+              </svg>
+              <span>Edit Profile</span>
             </button>
           </div>
+        </div>
 
-          <!-- Polaroid Stacks Graphic -->
-          <div class="w-28 h-24 relative flex-shrink-0 flex items-center justify-center pointer-events-none">
-            <div class="w-16 h-20 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl transform -rotate-12 absolute left-1 overflow-hidden p-1">
-              <img src="https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=150&q=80" class="w-full h-14 object-cover rounded">
+        <!-- 3. Featured Card: "YOUR JOURNAL" -->
+        <div class="bg-zinc-950 border border-zinc-800/80 rounded-3xl p-5 relative overflow-hidden shadow-2xl space-y-4" id="youJournalCard">
+          <!-- Atmospheric Sunset Horizon Scenic Background on Right -->
+          <div class="absolute inset-0 bg-cover bg-right opacity-35 pointer-events-none rounded-3xl" style="background-image: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80');"></div>
+          <div class="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-950/90 to-transparent pointer-events-none"></div>
+          <div class="absolute inset-0 bg-gradient-to-t from-zinc-950/90 via-transparent to-transparent pointer-events-none"></div>
+
+          <div class="relative z-10 space-y-1.5">
+            <span class="text-[10px] text-amber-500 font-mono-tag font-bold tracking-[0.2em] uppercase block">YOUR JOURNAL</span>
+            <h3 class="text-xl sm:text-2xl font-bold text-white tracking-tight leading-snug">
+              A record of the life<br>you’ve lived.
+            </h3>
+            <p class="text-xs text-zinc-400 leading-relaxed max-w-[270px] pt-0.5">
+              Your moments, people and places —<br>kept as they happened.
+            </p>
+          </div>
+
+          <!-- Thumbnails Strip -->
+          <div class="relative z-10 flex items-center gap-2 overflow-x-auto no-scroll pt-1" id="youJournalThumbnailsStrip">
+            <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-xl overflow-hidden border border-white/10 flex-shrink-0 bg-zinc-900 shadow-md">
+              <img src="https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=150&q=80" class="w-full h-full object-cover" alt="Journal preview 1">
             </div>
-            <div class="w-16 h-20 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl transform rotate-6 absolute right-1 overflow-hidden p-1">
-              <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=150&q=80" class="w-full h-14 object-cover rounded">
+            <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-xl overflow-hidden border border-white/10 flex-shrink-0 bg-zinc-900 shadow-md">
+              <img src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=150&q=80" class="w-full h-full object-cover" alt="Journal preview 2">
             </div>
+            <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-xl overflow-hidden border border-white/10 flex-shrink-0 bg-zinc-900 shadow-md">
+              <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=150&q=80" class="w-full h-full object-cover" alt="Journal preview 3">
+            </div>
+            <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-xl overflow-hidden border border-white/10 flex-shrink-0 bg-zinc-900 shadow-md">
+              <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=150&q=80" class="w-full h-full object-cover" alt="Journal preview 4">
+            </div>
+            <!-- Count box: +18 -->
+            <div class="w-13 h-13 sm:w-14 sm:h-14 rounded-xl bg-zinc-900/90 border border-zinc-800 flex items-center justify-center text-white font-mono-tag text-xs font-bold flex-shrink-0 shadow-md" id="youJournalCountTile">
+              <span id="youJournalCountText">+18</span>
+            </div>
+          </div>
+
+          <!-- Action Button: OPEN JOURNAL → -->
+          <div class="relative z-10 pt-1">
+            <button onclick="openMemoryArchive()" id="youOpenArchiveBtn" class="w-full py-2.5 rounded-full border border-amber-500/90 hover:bg-amber-500/10 text-amber-500 font-mono-tag text-xs font-bold tracking-[0.18em] uppercase transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.99]">
+              <span>OPEN JOURNAL</span>
+              <span>→</span>
+            </button>
           </div>
         </div>
 
-        <!-- 5. YOUR MOMENTS (Horizontal Visual Scroll) -->
+        <!-- 4. Section: RECENT MOMENTS -->
         <div class="space-y-2.5 pt-1" id="youMomentsSection">
           <div class="flex justify-between items-center px-1">
-            <span class="text-[10px] text-amber-500 font-mono-tag tracking-widest uppercase font-bold">YOUR MOMENTS</span>
-            <button class="text-[9px] text-zinc-400 hover:text-white font-mono-tag cursor-pointer flex items-center gap-1 transition" onclick="openMemoryArchive()">
-              <span>VIEW ALL →</span>
+            <span class="text-[11px] text-zinc-300 font-mono-tag font-bold tracking-[0.18em] uppercase">RECENT MOMENTS</span>
+            <button onclick="openMemoryArchive()" class="text-[10px] text-amber-500 font-mono-tag font-bold tracking-wider hover:underline flex items-center gap-0.5 cursor-pointer">
+              <span>VIEW ALL</span>
+              <span>→</span>
             </button>
           </div>
           <div class="flex gap-2.5 overflow-x-auto no-scroll pb-1" id="youMomentsHorizontalContainer">
-            <!-- Dynamically populated via renderYouMomentsHorizontal() -->
+            <!-- Dynamically populated via renderMomentsHorizontal() -->
           </div>
         </div>
 
-        <!-- 6. "YOUR WORLD" (CONNECTIONS | COMMUNITIES | REQUESTS) -->
-        <div class="space-y-2 pt-1" id="youWorldSection">
-          <span class="text-[10px] text-amber-500 font-mono-tag font-bold tracking-widest uppercase px-1 block">YOUR WORLD</span>
-          <div class="grid grid-cols-3 gap-2">
-            <!-- Card 1: CONNECTIONS -->
-            <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex flex-col justify-between shadow-md cursor-pointer hover:border-zinc-700 transition active:scale-95" onclick="switchChatSubTab('friends'); switchScreenView('chat-home');">
-              <div class="w-7 h-7 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs text-zinc-300 mb-1.5">
-                👥
+        <!-- 5. Section: YOUR WORLD (PEOPLE | COMMUNITIES | PLACES) -->
+        <div class="space-y-2.5 pt-1" id="youWorldSection">
+          <div class="px-1">
+            <span class="text-[11px] text-zinc-300 font-mono-tag font-bold tracking-[0.18em] uppercase">YOUR WORLD</span>
+          </div>
+          <div class="space-y-2">
+            <!-- Card 1: PEOPLE -->
+            <div onclick="switchChatSubTab('friends'); switchScreenView('chat-home');" class="bg-zinc-950 border border-zinc-800/80 hover:border-zinc-700/90 rounded-2xl p-3.5 flex items-center justify-between shadow-md transition cursor-pointer active:scale-[0.99] group">
+              <div class="flex items-center gap-3.5">
+                <div class="w-11 h-11 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300 group-hover:border-amber-500/30 transition flex-shrink-0">
+                  <svg class="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-white tracking-wide uppercase font-mono-tag">PEOPLE</h4>
+                  <p class="text-[11px] text-zinc-400">People who matter.</p>
+                </div>
               </div>
-              <div class="space-y-0.5">
-                <h4 class="text-[10px] font-extrabold text-white font-mono-tag uppercase tracking-tight">CONNECTIONS</h4>
-                <p class="text-[8px] text-zinc-500 font-mono-tag">People who matter. →</p>
-              </div>
+              <svg class="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
             </div>
 
             <!-- Card 2: COMMUNITIES -->
-            <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex flex-col justify-between shadow-md cursor-pointer hover:border-zinc-700 transition active:scale-95" onclick="openCommunitySwitcher();">
-              <div class="w-7 h-7 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs text-amber-400 mb-1.5 font-mono-tag">
-                ◉
+            <div onclick="openCommunitySwitcher();" class="bg-zinc-950 border border-zinc-800/80 hover:border-zinc-700/90 rounded-2xl p-3.5 flex items-center justify-between shadow-md transition cursor-pointer active:scale-[0.99] group">
+              <div class="flex items-center gap-3.5">
+                <div class="w-11 h-11 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300 group-hover:border-amber-500/30 transition flex-shrink-0">
+                  <svg class="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-white tracking-wide uppercase font-mono-tag">COMMUNITIES</h4>
+                  <p class="text-[11px] text-zinc-400">Where you belong.</p>
+                </div>
               </div>
-              <div class="space-y-0.5">
-                <h4 class="text-[10px] font-extrabold text-white font-mono-tag uppercase tracking-tight">COMMUNITIES</h4>
-                <p class="text-[8px] text-zinc-500 font-mono-tag">Your circles. →</p>
-              </div>
+              <svg class="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
             </div>
 
-            <!-- Card 3: REQUESTS -->
-            <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex flex-col justify-between shadow-md cursor-pointer hover:border-zinc-700 transition active:scale-95 relative" onclick="switchScreenView('notifications');">
-              <span id="youRequestsBadge" style="display:none;" class="absolute top-2.5 right-2.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-black font-extrabold text-[8px] font-mono-tag flex items-center justify-center shadow-md">0</span>
-              <div class="w-7 h-7 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs text-zinc-300 mb-1.5">
-                👤+
+            <!-- Card 3: PLACES -->
+            <div onclick="if(typeof openCampusPage==='function'){openCampusPage();}else{switchScreenView('search');}" class="bg-zinc-950 border border-zinc-800/80 hover:border-zinc-700/90 rounded-2xl p-3.5 flex items-center justify-between shadow-md transition cursor-pointer active:scale-[0.99] group">
+              <div class="flex items-center gap-3.5">
+                <div class="w-11 h-11 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-300 group-hover:border-amber-500/30 transition flex-shrink-0">
+                  <svg class="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                  </svg>
+                </div>
+                <div>
+                  <h4 class="text-xs font-bold text-white tracking-wide uppercase font-mono-tag">PLACES</h4>
+                  <p class="text-[11px] text-zinc-400">Where life happened.</p>
+                </div>
               </div>
-              <div class="space-y-0.5">
-                <h4 class="text-[10px] font-extrabold text-white font-mono-tag uppercase tracking-tight">REQUESTS</h4>
-                <p class="text-[8px] text-zinc-500 font-mono-tag">Pending invites. →</p>
-              </div>
+              <svg class="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
             </div>
           </div>
         </div>
 
-        <!-- 7. YOUR COMMUNITIES -->
-        <div class="space-y-2 pt-1" id="youCommunitiesSection">
-          <div class="flex justify-between items-center px-1">
-            <span class="text-[10px] text-amber-500 font-mono-tag tracking-widest uppercase font-bold">YOUR COMMUNITIES</span>
-            <button class="text-[9px] text-zinc-400 hover:text-white font-mono-tag cursor-pointer transition" onclick="openCommunitySwitcher()">
-              <span>VIEW ALL →</span>
-            </button>
-          </div>
-          <div class="space-y-2" id="youCommunitiesContainer">
-            <!-- Populated dynamically via renderYouCommunitiesList() -->
-          </div>
+        <!-- Hidden legacy compatibility state targets (preserves JS without affecting UI) -->
+        <div style="display:none;" id="youStatsBar">
+          <span id="youStreakVal">1 DAY</span>
+          <span id="youMomentsCountVal">1</span>
+          <span id="youMemoriesCountVal">1</span>
+          <span id="youLevelSnippet">01</span>
+          <span id="youXpSnippet">50 XP</span>
         </div>
-
-        <!-- 8. YOUR COMMUNITY ACTIVITY (Conditional Creator Section) -->
-        <div class="space-y-2 pt-1" id="youCreatorActivitySection" style="display:none;">
-          <div class="flex justify-between items-center px-1">
-            <span class="text-[10px] text-amber-500 font-mono-tag tracking-widest uppercase font-bold">YOUR COMMUNITY ACTIVITY</span>
-            <button class="text-[9px] text-amber-400 hover:text-amber-300 font-mono-tag font-bold border border-amber-500/30 px-2 py-0.5 rounded cursor-pointer" onclick="openCreatorEarningsModal()">
-              <span>VIEW EARNINGS →</span>
-            </button>
-          </div>
+        <div style="display:none;" id="youTodayCaptureCard"></div>
+        <div style="display:none;" id="youRequestsBadge"></div>
+        <div style="display:none;" id="youCommunitiesSection"><div id="youCommunitiesContainer"></div></div>
+        <div style="display:none;" id="youCreatorActivitySection"></div>
+        <div style="display:none;" id="youMomentsGrid"></div>
+        <div style="display:none;" id="youCampusWidgetCard">
+          <span id="youCampusWidgetName"></span>
+          <span id="youCampusWidgetSummary"></span>
         </div>
 
       </section>
@@ -4277,6 +4324,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.12"></script> 
+  <script src="app.js?v=5.2.13"></script> 
 </body>
 </html>

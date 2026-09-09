@@ -297,8 +297,8 @@ class TestSearchScreen(unittest.TestCase):
     def test_18_cache_buster_updated(self):
         with open(os.path.join(PROJECT_DIR, "index.html"), "r") as f:
             html = f.read()
-        self.assertIn("app.js?v=5.2.12", html)
-        print("  ✅ PASS: 18. Cache buster updated to v=5.2.12")
+        self.assertIn("app.js?v=5.2.13", html)
+        print("  ✅ PASS: 18. Cache buster updated to v=5.2.13")
 
     def test_19_global_screen_navigation(self):
         with open(os.path.join(PROJECT_DIR, "index.html"), "r") as f:
