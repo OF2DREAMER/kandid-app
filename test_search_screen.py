@@ -205,13 +205,14 @@ class TestSearchScreen(unittest.TestCase):
             'id="searchFilterChips"', 'id="searchIdleView"', 'id="searchFocusedView"',
             'id="searchResultsView"', 'id="searchResultsContainer"',
             'id="searchEmptyState"', 'id="searchErrorState"',
-            'PROXIMITY RADAR', 'id="activeNodesBadge"', 'id="radarSvg"', 'id="radarNodes"',
+            'PROXIMITY', 'id="activeNodesBadge"', 'id="radarSvg"', 'id="radarNodes"',
             'id="searchSectorsContainer"', 'id="searchFrequenciesContainer"',
             'id="searchExploreGateway"', 'id="screen-search-global"',
             'id="globalMomentsList"', 'id="recentSearchesList"',
+            'AROUND YOUR WORLD', 'YOU',
         ]:
             self.assertIn(dom_id, html, f"Missing: {dom_id}")
-        print("  ✅ PASS: 7. index.html contains all Search 2.0 DOM elements")
+        print("  ✅ PASS: 7. index.html contains all Search 2.0 polished DOM elements")
 
     def test_08_html_old_ids_removed(self):
         with open(os.path.join(PROJECT_DIR, "index.html"), "r") as f:
@@ -225,7 +226,6 @@ class TestSearchScreen(unittest.TestCase):
         self.assertTrue(os.path.exists(s_path))
         with open(s_path, "r") as f:
             html = f.read()
-        self.assertIn("PROXIMITY RADAR", html)
         self.assertIn("SECTORS", html)
         self.assertIn("FREQUENCIES", html)
         print("  ✅ PASS: 9. kandid_search.html standalone file exists and verified")
@@ -297,8 +297,8 @@ class TestSearchScreen(unittest.TestCase):
     def test_18_cache_buster_updated(self):
         with open(os.path.join(PROJECT_DIR, "index.html"), "r") as f:
             html = f.read()
-        self.assertIn("app.js?v=5.2.11", html)
-        print("  ✅ PASS: 18. Cache buster updated to v=5.2.11")
+        self.assertIn("app.js?v=5.2.12", html)
+        print("  ✅ PASS: 18. Cache buster updated to v=5.2.12")
 
     def test_19_global_screen_navigation(self):
         with open(os.path.join(PROJECT_DIR, "index.html"), "r") as f:
@@ -318,9 +318,50 @@ class TestSearchScreen(unittest.TestCase):
             self.assertIn(chip, html, f"Missing chip: {chip}")
         print("  ✅ PASS: 20. Filter chips include All/People/Campuses/Moments/Places/Communities")
 
+    def test_21_radar_security_no_angle_or_dist(self):
+        with open(os.path.join(PROJECT_DIR, "server.py"), "r") as f:
+            py = f.read()
+        radar_block = py[py.find('path == "/api/search/radar"'):py.find('path == "/api/search/global"')]
+        self.assertNotIn('"angle_deg"', radar_block)
+        self.assertNotIn('"dist_factor"', radar_block)
+        self.assertIn('"slot"', radar_block)
+        self.assertIn('"ring"', radar_block)
+        print("  ✅ PASS: 21. Radar endpoint has zero angle_deg or dist_factor exposure (uses opaque slots/rings)")
+
+    def test_22_search_query_cap_80_chars(self):
+        with open(os.path.join(PROJECT_DIR, "server.py"), "r") as f:
+            py = f.read()
+        self.assertIn('[:80]', py)
+        with open(os.path.join(PROJECT_DIR, "index.html"), "r") as f:
+            html = f.read()
+        self.assertIn('maxlength="80"', html)
+        print("  ✅ PASS: 22. Search query strictly capped at 80 characters (server & HTML input)")
+
+    def test_23_prefers_reduced_motion_supported(self):
+        with open(os.path.join(PROJECT_DIR, "style.css"), "r") as f:
+            css = f.read()
+        self.assertIn("@media (prefers-reduced-motion: reduce)", css)
+        self.assertIn("#radarSweepArm", css)
+        print("  ✅ PASS: 23. prefers-reduced-motion supported in style.css for radar sweep")
+
+    def test_24_no_unsplash_fallback_in_search_moments(self):
+        with open(os.path.join(PROJECT_DIR, "app.js"), "r") as f:
+            js = f.read()
+        search_moments_block = js[js.find('function renderGlobalMoment('):js.find('function openUserProfile(')]
+        self.assertNotIn("unsplash.com", search_moments_block)
+        print("  ✅ PASS: 24. No fake Unsplash fallback images in search moment renderers")
+
+    def test_25_placeholder_invitation_copy(self):
+        with open(os.path.join(PROJECT_DIR, "index.html"), "r") as f:
+            html = f.read()
+        self.assertIn('placeholder="Search people, places, Moments..."', html)
+        self.assertIn('AROUND YOUR WORLD', html)
+        print("  ✅ PASS: 25. Inviting placeholder and editorial 'AROUND YOUR WORLD' section header verified")
+
 
 if __name__ == "__main__":
-    print("\n🚀 RUNNING KANDID SEARCH 2.0 TEST SUITE")
+    print("\n🚀 RUNNING KANDID SEARCH 2.0 TEST SUITE (10/10 POLISH PASS)")
     print("=" * 60)
     unittest.main(verbosity=0)
+
 

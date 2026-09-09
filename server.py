@@ -6500,7 +6500,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor = conn.cursor()
 
             # Radar derives coarse context nodes from active public communities/places/campuses
-            # Never returns GPS coords — angle/distance are deterministic from ID hash
+            # SECURITY: Never returns GPS, angle, distance, or any geographic data
+            # Uses opaque slot/ring visual positions only
             import hashlib
             nodes = []
 
@@ -6516,15 +6517,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if row["post_count"] < 1:
                     continue
                 h = int(hashlib.md5(row["id"].encode()).hexdigest(), 16)
-                angle = h % 360
-                dist_factor = 0.35 + (h % 100) / 200.0
                 nodes.append({
                     "id": row["id"],
                     "label": row["name"],
                     "sublabel": row["city"] or "Campus",
                     "type": "campus",
-                    "angle_deg": angle,
-                    "dist_factor": round(dist_factor, 2),
+                    "slot": h % 12,
+                    "ring": h % 3,
                     "post_count": row["post_count"]
                 })
 
@@ -6541,16 +6540,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if row["post_count"] < 1:
                     continue
                 h = int(hashlib.md5(row["id"].encode()).hexdigest(), 16)
-                angle = (h >> 4) % 360
-                dist_factor = 0.5 + (h % 80) / 200.0
                 node_type = "place" if row["type"] == "Place" else "community"
                 nodes.append({
                     "id": row["id"],
                     "label": row["name"],
                     "sublabel": row["city"] or row["type"],
                     "type": node_type,
-                    "angle_deg": angle,
-                    "dist_factor": round(min(dist_factor, 0.95), 2),
+                    "slot": (h >> 4) % 12,
+                    "ring": (h >> 8) % 3,
                     "post_count": row["post_count"]
                 })
 
@@ -6559,12 +6556,27 @@ class KandidHandler(SimpleHTTPRequestHandler):
             nodes = [n for n in nodes if n["post_count"] >= 3]
             quiet_count = len(private_nodes)
 
+            # Determine radar status
+            if len(nodes) == 0 and quiet_count > 0:
+                radar_status = "quiet"
+            elif len(nodes) == 0:
+                radar_status = "insufficient"
+            else:
+                radar_status = "active"
+
+            # Build real summary from data
+            total_moments = sum(n["post_count"] for n in nodes)
+            place_count = len([n for n in nodes if n["type"] in ("place", "campus")])
+            summary = f"{total_moments} Moments nearby · {place_count} places active" if nodes else "Quiet around here."
+
             conn.close()
             return self.send_json(200, {
                 "success": True,
                 "nodes": nodes[:15],
                 "total_nodes": len(nodes),
                 "quiet_areas": quiet_count,
+                "status": radar_status,
+                "summary": summary,
                 "privacy": "coarse_context_only"
             })
 
@@ -6642,7 +6654,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "searches": rows})
 
         if path == "/api/search":
-            q = query.get("q", [""])[0].strip().lower()
+            q = query.get("q", [""])[0].strip().lower()[:80]
             type_param = query.get("type", ["all"])[0].lower()
             user = get_current_user(self.headers)
             user_id = user["id"] if user else ""
