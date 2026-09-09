@@ -3410,6 +3410,10 @@ window.selectSearchFilter = selectSearchFilter;
 // ── Input handlers ────────────────────────────────────────────────────
 function handleSearchInput(event) {
   var val = (event.target.value || '').trim();
+  if (val.length > 80) {
+    val = val.substring(0, 80);
+    event.target.value = val;
+  }
   state.searchQuery = val;
   var clearBtn = document.getElementById('searchClearBtn');
   if (clearBtn) clearBtn.style.display = val ? 'block' : 'none';
@@ -3547,23 +3551,41 @@ async function loadRadar() {
   var badge = document.getElementById('activeNodesBadge');
   var nodesGroup = document.getElementById('radarNodes');
   var labelsDiv = document.getElementById('radarNodeLabels');
+  var summaryLine = document.getElementById('radarSummaryLine');
 
   var data = await apiRequest('/api/search/radar');
   if (!data || !data.success) {
     if (statusLabel) statusLabel.textContent = 'QUIET';
     if (badge) badge.textContent = '0 ACTIVE NODES';
+    if (summaryLine) summaryLine.textContent = 'Quiet around here.';
     return;
   }
 
   var nodes = data.nodes || [];
   if (badge) badge.textContent = nodes.length + ' ACTIVE NODE' + (nodes.length !== 1 ? 'S' : '');
-  if (statusLabel) statusLabel.textContent = nodes.length > 0 ? 'LIVE' : 'QUIET';
+
+  // Radar status states (§10)
+  var currentStatus = data.status || (nodes.length > 0 ? 'active' : 'quiet');
+  if (statusLabel) {
+    if (currentStatus === 'active') statusLabel.textContent = 'LIVE';
+    else if (currentStatus === 'quiet') statusLabel.textContent = 'QUIET';
+    else statusLabel.textContent = 'STANDBY';
+  }
+
+  // Summary line from real API data (§8)
+  if (summaryLine) {
+    summaryLine.textContent = data.summary || (nodes.length > 0 ? (nodes.length + ' places active') : 'Quiet around here.');
+  }
 
   if (nodesGroup) {
     nodesGroup.innerHTML = '';
+    // Fixed ring radii for opaque visual slot positioning (no geographic data)
+    var ringRadii = [0.38, 0.62, 0.82];
     nodes.slice(0, 12).forEach(function(n) {
-      var angleRad = (n.angle_deg - 90) * Math.PI / 180;
-      var r = n.dist_factor || 0.6;
+      var slot = typeof n.slot === 'number' ? n.slot : 0;
+      var ring = typeof n.ring === 'number' ? n.ring : 1;
+      var r = ringRadii[ring % 3];
+      var angleRad = ((slot % 12) * 30 - 90) * Math.PI / 180;
       var x = r * Math.cos(angleRad);
       var y = r * Math.sin(angleRad);
       var color = n.type === 'campus' ? '#f59e0b' : n.type === 'place' ? '#34d399' : '#a78bfa';
@@ -3612,6 +3634,8 @@ async function loadRadar() {
       more.textContent = '+' + (nodes.length - 5) + ' MORE';
       labelsDiv.appendChild(more);
     }
+  } else if (labelsDiv) {
+    labelsDiv.style.display = 'none';
   }
 }
 window.loadRadar = loadRadar;
@@ -3838,6 +3862,10 @@ window.renderCampusSearchResults = renderCampusSearchResults;
 
 // ── Global Search ─────────────────────────────────────────────────────
 function openGlobalSearch() {
+  var scrollBody = document.getElementById('searchScrollBody');
+  if (scrollBody) {
+    state.searchScrollPos = scrollBody.scrollTop;
+  }
   state.globalCursor = '';
   state.globalMoments = [];
   state.globalHasMore = false;
@@ -3848,6 +3876,10 @@ window.openGlobalSearch = openGlobalSearch;
 
 function closeGlobalSearch() {
   switchScreenView('search');
+  var scrollBody = document.getElementById('searchScrollBody');
+  if (scrollBody && typeof state.searchScrollPos === 'number') {
+    scrollBody.scrollTop = state.searchScrollPos;
+  }
 }
 window.closeGlobalSearch = closeGlobalSearch;
 
@@ -3913,20 +3945,28 @@ function renderGlobalMoment(m) {
   var card = document.createElement('article');
   card.className = 'bg-zinc-950 border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl';
 
-  var mainImg = m.main_img || m.mainImg || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=600&q=80';
-  var pipImg  = m.pip_img  || m.pipImg  || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80';
+  var mainImg = m.main_img || m.mainImg || '';
+  var pipImg  = m.pip_img  || m.pipImg  || '';
   var author  = escapeHtml(m.author_handle || m.user_handle || 'user');
   var campus  = escapeHtml((m.community_name || m.campus || 'GLOBAL').toUpperCase());
   var caption = escapeHtml(m.caption || '');
   var timeAgo = escapeHtml(m.timeAgo || 'JUST NOW');
   var locCity = m.location_city ? escapeHtml(m.location_city) : '';
 
+  var mainImgHtml = mainImg
+    ? '<img src="' + escapeHtml(mainImg) + '" class="w-full h-full object-cover">'
+    : '<div class="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-700 font-mono-tag text-xs"><span class="text-xl mb-1">📷</span>MOMENT ARCHIVE</div>';
+
+  var pipImgHtml = pipImg
+    ? '<div class="absolute top-3 left-3 w-16 h-24 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
+        '<img src="' + escapeHtml(pipImg) + '" class="w-full h-full object-cover">' +
+      '</div>'
+    : '';
+
   card.innerHTML =
-    '<div class="w-full aspect-[4/5] bg-black relative overflow-hidden group select-none">' +
-      '<img src="' + mainImg + '" class="w-full h-full object-cover">' +
-      '<div class="absolute top-3 left-3 w-16 h-24 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
-        '<img src="' + pipImg + '" class="w-full h-full object-cover">' +
-      '</div>' +
+    '<div class="w-full aspect-[4/5] bg-black relative overflow-hidden group select-none cursor-pointer">' +
+      mainImgHtml +
+      pipImgHtml +
       '<div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3.5 py-3">' +
         '<div class="flex items-end justify-between gap-2">' +
           '<div class="min-w-0">' +
@@ -4304,8 +4344,8 @@ function renderMomentsSearchResults(moments, container) {
     var card = document.createElement('article');
     card.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3 shadow-xl';
 
-    var mainImg = m.main_img || m.mainImg || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=600&q=80';
-    var pipImg = m.pip_img || m.pipImg || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80';
+    var mainImg = m.main_img || m.mainImg || '';
+    var pipImg = m.pip_img || m.pipImg || '';
     var author = escapeHtml(m.author_handle || m.user_handle || 'user');
     var rawComm = m.community_name || m.primary_community_name || m.campus || 'CAMPUS';
     var cleanComm = rawComm.replace(/^Near\s+/i, '');
@@ -4314,12 +4354,20 @@ function renderMomentsSearchResults(moments, container) {
     var caption = escapeHtml(m.caption || 'Captured moment');
     var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || 'JUST NOW'));
 
+    var mainImgHtml = mainImg
+      ? '<img src="' + escapeHtml(mainImg) + '" class="w-full h-full object-cover">'
+      : '<div class="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-700 font-mono-tag text-xs"><span class="text-xl mb-1">📷</span>MOMENT</div>';
+
+    var pipImgHtml = pipImg
+      ? '<div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
+          '<img src="' + escapeHtml(pipImg) + '" class="w-full h-full object-cover">' +
+        '</div>'
+      : '';
+
     card.innerHTML =
-      '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none">' +
-        '<img src="' + mainImg + '" class="w-full h-full object-cover">' +
-        '<div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
-          '<img src="' + pipImg + '" class="w-full h-full object-cover">' +
-        '</div>' +
+      '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none cursor-pointer">' +
+        mainImgHtml +
+        pipImgHtml +
       '</div>' +
       '<div class="space-y-1 px-0.5">' +
         '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag flex-wrap gap-1">' +

@@ -189,3 +189,20 @@ body {
   transition: transform 0.08s ease;
 }
 
+/* Respect reduced motion (§37) */
+@media (prefers-reduced-motion: reduce) {
+  #radarSweepArm animateTransform,
+  #radarSweepArm,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
+
+/* Scrollbar hide for filter chips and horizontal lists */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

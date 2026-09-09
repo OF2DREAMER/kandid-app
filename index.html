@@ -630,8 +630,10 @@
               autocorrect="off"
               autocapitalize="off"
               spellcheck="false"
-              placeholder="PEOPLE · PLACES · MOMENTS · CAMPUS"
-              class="bg-transparent outline-none w-full text-white placeholder-zinc-600 text-[11px] font-medium tracking-wide uppercase mono"
+              placeholder="Search people, places, Moments..."
+              aria-label="Search Kandid"
+              maxlength="80"
+              class="bg-transparent outline-none w-full text-white placeholder-zinc-500 text-[11px] font-medium tracking-wide"
               oninput="handleSearchInput(event)"
               onfocus="onSearchFocus()"
               onblur="onSearchBlur()"
@@ -659,7 +661,7 @@
             <!-- PROXIMITY RADAR -->
             <div class="bg-zinc-950 border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl mb-4" id="searchRadarCard">
               <div class="flex justify-between items-center px-4 pt-3.5 pb-2">
-                <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-[0.2em] uppercase">PROXIMITY RADAR</span>
+                <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-[0.2em] uppercase">PROXIMITY</span>
                 <span class="text-[9px] text-zinc-600 font-mono-tag" id="radarStatusLabel">SCANNING...</span>
               </div>
 
@@ -673,28 +675,32 @@
                   <!-- Cross-hair -->
                   <line x1="-0.95" y1="0" x2="0.95" y2="0" stroke="rgba(63,63,70,0.25)" stroke-width="0.006"/>
                   <line x1="0" y1="-0.95" x2="0" y2="0.95" stroke="rgba(63,63,70,0.25)" stroke-width="0.006"/>
-                  <!-- Sweep arm (animated) -->
-                  <line id="radarSweepArm" x1="0" y1="0" x2="0" y2="-0.9" stroke="rgba(245,158,11,0.55)" stroke-width="0.014" stroke-linecap="round">
-                    <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="4s" repeatCount="indefinite"/>
+                  <!-- Sweep arm (animated, calmer 6s) -->
+                  <line id="radarSweepArm" x1="0" y1="0" x2="0" y2="-0.9" stroke="rgba(245,158,11,0.45)" stroke-width="0.012" stroke-linecap="round">
+                    <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="6s" repeatCount="indefinite"/>
                   </line>
-                  <!-- Center dot -->
+                  <!-- Center dot + YOU label -->
                   <circle cx="0" cy="0" r="0.045" fill="#f59e0b"/>
                   <circle cx="0" cy="0" r="0.045" fill="#f59e0b" opacity="0.4">
-                    <animate attributeName="r" values="0.045;0.12;0.045" dur="2s" repeatCount="indefinite"/>
-                    <animate attributeName="opacity" values="0.4;0;0.4" dur="2s" repeatCount="indefinite"/>
+                    <animate attributeName="r" values="0.045;0.10;0.045" dur="3s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity" values="0.4;0;0.4" dur="3s" repeatCount="indefinite"/>
                   </circle>
+                  <text x="0" y="0.12" text-anchor="middle" fill="rgba(245,158,11,0.7)" font-size="0.08" font-family="'JetBrains Mono', monospace" font-weight="bold" letter-spacing="0.02">YOU</text>
                   <!-- Dynamic nodes injected by JS -->
                   <g id="radarNodes"></g>
                 </svg>
               </div>
 
-              <!-- Active Nodes Badge + Info -->
-              <div class="flex items-center justify-between px-4 pb-3.5 border-t border-zinc-900/60 pt-2.5">
-                <div class="flex items-center gap-2">
-                  <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block"></span>
-                  <span class="text-[9px] text-zinc-400 font-mono-tag" id="activeNodesBadge">0 ACTIVE NODES</span>
+              <!-- Active Nodes Badge + Summary + Privacy -->
+              <div class="px-4 pb-2.5 border-t border-zinc-900/60 pt-2.5 space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block"></span>
+                    <span class="text-[9px] text-zinc-400 font-mono-tag" id="activeNodesBadge">0 ACTIVE NODES</span>
+                  </div>
+                  <span class="text-[9px] text-zinc-600 font-mono-tag">CONTEXT ONLY · NO GPS</span>
                 </div>
-                <span class="text-[9px] text-zinc-600 font-mono-tag">CONTEXT ONLY · NO GPS</span>
+                <div class="text-[9px] text-zinc-500 font-mono-tag" id="radarSummaryLine"></div>
               </div>
 
               <!-- Node Labels List (injected by JS) -->
@@ -710,14 +716,14 @@
               <div class="h-10 bg-zinc-900 rounded-2xl animate-pulse"></div>
             </div>
 
-            <!-- ACTIVE SECTORS (community spaces with real moments) -->
+            <!-- AROUND YOUR WORLD (community spaces with real moments) -->
             <div class="space-y-2.5 mb-4" id="searchAroundYourWorld">
               <div class="flex items-center justify-between px-1">
-                <span class="text-[9px] text-zinc-500 font-mono-tag tracking-[0.2em] uppercase">ACTIVE SPACES</span>
+                <span class="text-[9px] text-zinc-500 font-mono-tag tracking-[0.2em] uppercase">AROUND YOUR WORLD</span>
                 <span class="text-[9px] text-zinc-700 font-mono-tag" id="sectorCountLabel"></span>
               </div>
               <div class="space-y-2" id="searchSectorsContainer">
-                <div class="text-center py-4 text-xs text-zinc-600 font-mono-tag animate-pulse">SYNCING ACTIVE SPACES...</div>
+                <div class="text-center py-4 text-xs text-zinc-600 font-mono-tag animate-pulse">SYNCING AROUND YOUR WORLD...</div>
               </div>
             </div>
 
@@ -786,9 +792,9 @@
           <!-- ── ERROR STATE ── -->
           <div class="text-center py-14 space-y-3" id="searchErrorState" style="display:none;">
             <div class="text-3xl mb-2">📡</div>
-            <h3 class="text-xs font-bold text-amber-500 font-mono-tag tracking-wider uppercase">SOMETHING WENT QUIET</h3>
+            <h3 class="text-xs font-bold text-amber-500 font-mono-tag tracking-wider uppercase">Couldn't load results.</h3>
             <p class="text-[11px] text-zinc-400">Check your connection and try again.</p>
-            <button class="mt-2 px-5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono-tag text-[10px] rounded-xl cursor-pointer active:scale-95 transition-all" onclick="performSearch()">RETRY</button>
+            <button class="mt-2 px-5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono-tag text-[10px] rounded-xl cursor-pointer active:scale-95 transition-all" onclick="performSearch()">TRY AGAIN →</button>
           </div>
 
         </div><!-- /searchScrollBody -->
@@ -4271,6 +4277,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.11"></script> 
+  <script src="app.js?v=5.2.12"></script> 
 </body>
 </html>
