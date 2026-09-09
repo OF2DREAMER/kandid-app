@@ -606,87 +606,223 @@
       </section>
 
       <!-- =================================================================
-           SECTION 2: SEARCH / EXPLORE
+           SECTION 2: SEARCH 2.0 — THE DOORWAY INTO THE KANDID WORLD
            ================================================================= -->
-      <section class="app-screen px-4 py-3 space-y-4" id="screen-search">
-        
-        <!-- Search Input Field -->
-        <div class="search-box border border-zinc-800 rounded-2xl px-3.5 py-3 flex items-center gap-3 shadow-inner">
-          <svg class="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-          <input type="text" id="searchInput" placeholder="SEARCH PEOPLE, PLACES, MOMENTS..." class="bg-transparent outline-none w-full text-white placeholder-zinc-500 text-[11px] font-medium font-mono-tag uppercase" oninput="handleSearchInput(event)">
-          <button class="text-zinc-500 hover:text-white text-xs cursor-pointer" id="searchClearBtn" onclick="clearSearchInput()" style="display:none;">✕</button>
+      <section class="app-screen flex flex-col" id="screen-search" style="overflow:hidden; height:100%;">
+
+        <!-- ── Search Header ── -->
+        <div class="flex-shrink-0 px-4 pt-4 pb-0 space-y-3" id="searchHeader">
+          <!-- Brand line -->
+          <div class="flex items-center justify-between">
+            <span class="text-[9px] font-mono-tag text-zinc-600 tracking-[0.25em] uppercase">KANDID · SEARCH</span>
+            <span class="text-[9px] font-mono-tag text-zinc-600 tracking-widest" id="searchStatusLine">READY</span>
+          </div>
+
+          <!-- Tactile Search Field -->
+          <div id="searchFieldWrap" class="relative flex items-center gap-2.5 bg-zinc-950 border border-zinc-800 rounded-2xl px-3.5 py-3 shadow-inner transition-all duration-200 focus-within:border-amber-500/60 focus-within:shadow-[0_0_0_2px_rgba(245,158,11,0.12)]">
+            <svg class="w-4 h-4 text-amber-500 flex-shrink-0 transition-transform duration-200" id="searchIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input
+              type="text"
+              id="searchInput"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="PEOPLE · PLACES · MOMENTS · CAMPUS"
+              class="bg-transparent outline-none w-full text-white placeholder-zinc-600 text-[11px] font-medium tracking-wide uppercase mono"
+              oninput="handleSearchInput(event)"
+              onfocus="onSearchFocus()"
+              onblur="onSearchBlur()"
+            >
+            <button class="text-zinc-500 hover:text-white text-xs cursor-pointer flex-shrink-0 transition-colors" id="searchClearBtn" onclick="clearSearchInput()" style="display:none;" aria-label="Clear search">✕</button>
+          </div>
+
+          <!-- Filter Chips -->
+          <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" id="searchFilterChips">
+            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 bg-amber-500 text-black border-amber-500" data-filter="all" onclick="selectSearchFilter('all')">ALL</button>
+            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="people" onclick="selectSearchFilter('people')">PEOPLE</button>
+            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="moments" onclick="selectSearchFilter('moments')">MOMENTS</button>
+            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="places" onclick="selectSearchFilter('places')">PLACES</button>
+            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="campuses" onclick="selectSearchFilter('campuses')">CAMPUS</button>
+            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="communities" onclick="selectSearchFilter('communities')">COMMUNITIES</button>
+          </div>
         </div>
 
-        <!-- Discovery Filters (LIVE NOW | PLACES | PEOPLE | MOMENTS) -->
-        <div class="flex justify-between items-center text-[10px] font-mono-tag text-zinc-400 px-1 pt-0.5 border-b border-zinc-900 pb-2.5" id="searchFilterTabs">
-          <button class="search-filter-btn text-amber-500 font-bold pb-1 border-b-2 border-amber-500 transition-all cursor-pointer" data-filter="live" onclick="selectSearchFilter('live')">LIVE NOW</button>
-          <button class="search-filter-btn hover:text-white transition-colors cursor-pointer" data-filter="places" onclick="selectSearchFilter('places')">PLACES</button>
-          <button class="search-filter-btn hover:text-white transition-colors cursor-pointer" data-filter="people" onclick="selectSearchFilter('people')">PEOPLE</button>
-          <button class="search-filter-btn hover:text-white transition-colors cursor-pointer" data-filter="moments" onclick="selectSearchFilter('moments')">MOMENTS</button>
-        </div>
+        <!-- ── Scrollable Body ── -->
+        <div class="flex-1 overflow-y-auto px-4 pb-32 pt-3 space-y-4" id="searchScrollBody">
 
-        <!-- Default Discovery View (Proximity Radar + Sectors + Frequencies) -->
-        <div class="space-y-5" id="searchDiscoveryDefault">
-          
-          <!-- Proximity / Discovery Radar Section -->
-          <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 space-y-3 shadow-xl">
-            <div class="flex justify-between items-center">
-              <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-widest uppercase">PROXIMITY RADAR</span>
-              <span class="text-[9px] text-zinc-500 font-mono-tag">LOCATION-BASED DISCOVERY</span>
-            </div>
-            <!-- Abstract Minimal Radar Graphic Representation -->
-            <div class="w-full h-24 bg-zinc-900/50 rounded-xl border border-zinc-800/80 relative flex items-center justify-center overflow-hidden">
-              <div class="absolute w-16 h-16 rounded-full border border-zinc-700/50 flex items-center justify-center">
-                <div class="w-8 h-8 rounded-full border border-amber-500/30 flex items-center justify-center">
-                  <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+          <!-- ── IDLE VIEW: Radar + Sectors + Frequencies + Global Gateway ── -->
+          <div id="searchIdleView">
+
+            <!-- PROXIMITY RADAR -->
+            <div class="bg-zinc-950 border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl mb-4" id="searchRadarCard">
+              <div class="flex justify-between items-center px-4 pt-3.5 pb-2">
+                <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-[0.2em] uppercase">PROXIMITY RADAR</span>
+                <span class="text-[9px] text-zinc-600 font-mono-tag" id="radarStatusLabel">SCANNING...</span>
+              </div>
+
+              <!-- SVG Radar Canvas -->
+              <div class="relative mx-4 mb-3" style="height:180px;">
+                <svg id="radarSvg" width="100%" height="180" viewBox="-1 -1 2 2" preserveAspectRatio="xMidYMid meet" style="overflow:visible;">
+                  <!-- Rings -->
+                  <circle cx="0" cy="0" r="0.33" fill="none" stroke="rgba(63,63,70,0.5)" stroke-width="0.012"/>
+                  <circle cx="0" cy="0" r="0.60" fill="none" stroke="rgba(63,63,70,0.35)" stroke-width="0.009"/>
+                  <circle cx="0" cy="0" r="0.87" fill="none" stroke="rgba(63,63,70,0.22)" stroke-width="0.007"/>
+                  <!-- Cross-hair -->
+                  <line x1="-0.95" y1="0" x2="0.95" y2="0" stroke="rgba(63,63,70,0.25)" stroke-width="0.006"/>
+                  <line x1="0" y1="-0.95" x2="0" y2="0.95" stroke="rgba(63,63,70,0.25)" stroke-width="0.006"/>
+                  <!-- Sweep arm (animated) -->
+                  <line id="radarSweepArm" x1="0" y1="0" x2="0" y2="-0.9" stroke="rgba(245,158,11,0.55)" stroke-width="0.014" stroke-linecap="round">
+                    <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="4s" repeatCount="indefinite"/>
+                  </line>
+                  <!-- Center dot -->
+                  <circle cx="0" cy="0" r="0.045" fill="#f59e0b"/>
+                  <circle cx="0" cy="0" r="0.045" fill="#f59e0b" opacity="0.4">
+                    <animate attributeName="r" values="0.045;0.12;0.045" dur="2s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity" values="0.4;0;0.4" dur="2s" repeatCount="indefinite"/>
+                  </circle>
+                  <!-- Dynamic nodes injected by JS -->
+                  <g id="radarNodes"></g>
+                </svg>
+              </div>
+
+              <!-- Active Nodes Badge + Info -->
+              <div class="flex items-center justify-between px-4 pb-3.5 border-t border-zinc-900/60 pt-2.5">
+                <div class="flex items-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block"></span>
+                  <span class="text-[9px] text-zinc-400 font-mono-tag" id="activeNodesBadge">0 ACTIVE NODES</span>
                 </div>
+                <span class="text-[9px] text-zinc-600 font-mono-tag">CONTEXT ONLY · NO GPS</span>
               </div>
-              <!-- Ambient Radar Dots -->
-              <span class="absolute top-4 left-10 w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
-              <span class="absolute bottom-6 right-12 w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
-              <span class="absolute top-8 right-16 w-1 h-1 rounded-full bg-amber-500/80"></span>
-              <span class="absolute bottom-5 left-14 w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
-              
-              <div class="absolute bottom-2.5 right-3 text-[9px] text-amber-400 font-mono-tag font-bold" id="activeNodesBadge">
-                3 ACTIVE NODES
-              </div>
-            </div>
-          </div>
 
-          <!-- Places / Discovery Sectors Section -->
-          <div class="space-y-2.5">
-            <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1">SECTORS</span>
-            <div class="space-y-2.5" id="searchSectorsContainer">
+              <!-- Node Labels List (injected by JS) -->
+              <div id="radarNodeLabels" class="px-4 pb-3 space-y-1.5 border-t border-zinc-900/40 pt-2.5" style="display:none;"></div>
+            </div>
+
+            <!-- Skeleton Loader (shown while loading) -->
+            <div id="searchSkeletonState" class="space-y-3" style="display:none;">
+              <div class="h-3 bg-zinc-900 rounded-xl w-2/3 animate-pulse"></div>
+              <div class="h-12 bg-zinc-900 rounded-2xl animate-pulse"></div>
+              <div class="h-12 bg-zinc-900 rounded-2xl animate-pulse"></div>
+              <div class="h-3 bg-zinc-900 rounded-xl w-1/2 animate-pulse mt-2"></div>
+              <div class="h-10 bg-zinc-900 rounded-2xl animate-pulse"></div>
+            </div>
+
+            <!-- ACTIVE SECTORS (community spaces with real moments) -->
+            <div class="space-y-2.5 mb-4" id="searchAroundYourWorld">
+              <div class="flex items-center justify-between px-1">
+                <span class="text-[9px] text-zinc-500 font-mono-tag tracking-[0.2em] uppercase">ACTIVE SPACES</span>
+                <span class="text-[9px] text-zinc-700 font-mono-tag" id="sectorCountLabel"></span>
+              </div>
+              <div class="space-y-2" id="searchSectorsContainer">
                 <div class="text-center py-4 text-xs text-zinc-600 font-mono-tag animate-pulse">SYNCING ACTIVE SPACES...</div>
+              </div>
             </div>
-          </div>
 
-          <!-- Trending Frequencies Section -->
-          <div class="space-y-2.5">
-            <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1">FREQUENCIES</span>
-            <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 space-y-3 shadow-lg" id="searchFrequenciesContainer">
+            <!-- TRENDING FREQUENCIES / TAGS -->
+            <div class="space-y-2.5 mb-4">
+              <div class="flex items-center justify-between px-1">
+                <span class="text-[9px] text-zinc-500 font-mono-tag tracking-[0.2em] uppercase">FREQUENCIES</span>
+              </div>
+              <div class="bg-zinc-950 border border-zinc-800/60 rounded-2xl p-4 space-y-3 shadow-lg" id="searchFrequenciesContainer">
                 <div class="text-center py-2 text-xs text-zinc-600 font-mono-tag animate-pulse">SYNCING TAGS...</div>
+              </div>
+            </div>
+
+            <!-- GLOBAL GATEWAY -->
+            <div id="searchExploreGateway" class="mb-4">
+              <button
+                onclick="openGlobalSearch()"
+                class="w-full bg-zinc-950 border border-zinc-800/60 hover:border-amber-500/40 rounded-2xl p-4 flex items-center justify-between shadow-xl transition-all duration-200 active:scale-[0.99] cursor-pointer group"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 group-hover:border-amber-500/30 flex items-center justify-center text-lg transition-colors flex-shrink-0">🌐</div>
+                  <div class="text-left">
+                    <h3 class="text-xs font-bold text-white tracking-wide">EXPLORE THE WORLD</h3>
+                    <p class="text-[9px] text-zinc-500 font-mono-tag uppercase">Global Kandid · Public Moments</p>
+                  </div>
+                </div>
+                <svg class="w-4 h-4 text-zinc-600 group-hover:text-amber-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                </svg>
+              </button>
+            </div>
+
+          </div><!-- /searchIdleView -->
+
+          <!-- ── FOCUSED VIEW: Recent Searches (shown when input focused, no query) ── -->
+          <div id="searchFocusedView" style="display:none;">
+            <div class="flex items-center justify-between px-1 mb-2.5">
+              <span class="text-[9px] text-zinc-500 font-mono-tag tracking-[0.2em] uppercase">RECENT</span>
+              <button class="text-[9px] text-zinc-600 hover:text-amber-500 font-mono-tag cursor-pointer transition-colors" onclick="clearAllRecentSearches()">CLEAR ALL</button>
+            </div>
+            <div id="recentSearchesList" class="space-y-1.5">
+              <div class="text-center py-6 text-xs text-zinc-700 font-mono-tag">No recent searches</div>
             </div>
           </div>
 
+          <!-- ── RESULTS VIEW: Search Results ── -->
+          <div id="searchResultsView" style="display:none;">
+            <!-- Skeleton while loading -->
+            <div id="searchResultsSkeleton" class="space-y-2.5" style="display:none;">
+              <div class="h-3 bg-zinc-900 rounded-xl w-1/3 animate-pulse"></div>
+              <div class="h-14 bg-zinc-900 rounded-2xl animate-pulse"></div>
+              <div class="h-14 bg-zinc-900 rounded-2xl animate-pulse"></div>
+              <div class="h-14 bg-zinc-900 rounded-2xl animate-pulse"></div>
+            </div>
+            <!-- Actual results -->
+            <div id="searchResultsContainer" class="space-y-4"></div>
+          </div>
+
+          <!-- ── EMPTY STATE ── -->
+          <div class="text-center py-14 space-y-2.5" id="searchEmptyState" style="display:none;">
+            <div class="text-3xl mb-2">🔍</div>
+            <h3 class="text-xs font-bold text-white font-mono-tag tracking-wider uppercase">NOTHING FOUND</h3>
+            <p class="text-[11px] text-zinc-500">Try another name, place, or Moment.</p>
+          </div>
+
+          <!-- ── ERROR STATE ── -->
+          <div class="text-center py-14 space-y-3" id="searchErrorState" style="display:none;">
+            <div class="text-3xl mb-2">📡</div>
+            <h3 class="text-xs font-bold text-amber-500 font-mono-tag tracking-wider uppercase">SOMETHING WENT QUIET</h3>
+            <p class="text-[11px] text-zinc-400">Check your connection and try again.</p>
+            <button class="mt-2 px-5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono-tag text-[10px] rounded-xl cursor-pointer active:scale-95 transition-all" onclick="performSearch()">RETRY</button>
+          </div>
+
+        </div><!-- /searchScrollBody -->
+      </section>
+
+      <!-- =================================================================
+           SECTION 2B: GLOBAL DISCOVERY (accessible via Search only)
+           ================================================================= -->
+      <section class="app-screen flex flex-col" id="screen-search-global" style="display:none; overflow:hidden; height:100%;">
+
+        <!-- Global Header -->
+        <div class="flex-shrink-0 px-4 pt-4 pb-3 border-b border-zinc-900 flex items-center gap-3">
+          <button onclick="closeGlobalSearch()" class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer active:scale-95 transition-all flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+          </button>
+          <div class="flex-1">
+            <h2 class="text-sm font-bold text-white tracking-wide">GLOBAL KANDID</h2>
+            <p class="text-[9px] text-zinc-500 font-mono-tag uppercase tracking-widest">Public Moments · Worldwide</p>
+          </div>
+          <div class="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0"></div>
         </div>
 
-        <!-- Filtered Dynamic Results Container (People / Places / Moments) -->
-        <div class="space-y-4" id="searchResultsContainer" style="display:none;"></div>
-
-        <!-- Empty Results State -->
-        <div class="empty-state-card text-center py-10 space-y-2" id="searchEmptyState" style="display:none;">
-          <h3 class="text-xs font-bold text-white font-mono-tag tracking-wider uppercase">NOTHING FOUND</h3>
-          <p class="text-[11px] text-zinc-500">Try another name, place, or Moment.</p>
+        <!-- Global Moments Feed -->
+        <div class="flex-1 overflow-y-auto px-4 pt-3 pb-32 space-y-4" id="globalMomentsScroll">
+          <div id="globalMomentsList" class="space-y-4">
+            <div class="text-center py-12 text-xs text-zinc-600 font-mono-tag animate-pulse">LOADING GLOBAL MOMENTS...</div>
+          </div>
+          <!-- Load More -->
+          <div id="globalLoadMoreWrap" class="text-center pb-4" style="display:none;">
+            <button onclick="loadMoreGlobalMoments()" class="px-5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 font-mono-tag text-[10px] rounded-xl cursor-pointer active:scale-95 transition-all">LOAD MORE</button>
+          </div>
+          <!-- End state -->
+          <div id="globalNoMoreState" class="text-center py-4 text-[10px] text-zinc-700 font-mono-tag" style="display:none;">— END OF GLOBAL FEED —</div>
         </div>
-
-        <!-- Error State -->
-        <div class="empty-state-card text-center py-10 space-y-3" id="searchErrorState" style="display:none;">
-          <h3 class="text-xs font-bold text-amber-500 font-mono-tag tracking-wider uppercase">SOMETHING WENT QUIET</h3>
-          <p class="text-[11px] text-zinc-400">Check your connection and try again.</p>
-          <button class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono-tag text-[10px] rounded-lg cursor-pointer" onclick="performSearch()">RETRY</button>
-        </div>
-
       </section>
 
       <!-- =================================================================
@@ -4135,6 +4271,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.10"></script> 
+  <script src="app.js?v=5.2.11"></script> 
 </body>
 </html>
