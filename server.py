@@ -2196,6 +2196,17 @@ def init_db():
         description TEXT DEFAULT '',
         moments_count INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS recent_searches (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        query TEXT NOT NULL,
+        search_type TEXT DEFAULT 'all',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_recent_searches_user ON recent_searches(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_users_name_handle ON users(name, handle);
+    CREATE INDEX IF NOT EXISTS idx_posts_search ON posts(is_private, created_at);
     """)
 
     # Check and migrate columns if missing
@@ -6480,6 +6491,156 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "resolved_chat_id": resolved_chat_id
             })
 
+        if path == "/api/search/radar":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthorized"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            # Radar derives coarse context nodes from active public communities/places/campuses
+            # Never returns GPS coords — angle/distance are deterministic from ID hash
+            import hashlib
+            nodes = []
+
+            # Active campuses with public posts
+            cursor.execute("""
+                SELECT c.id, c.name, c.city, COUNT(p.id) as post_count
+                FROM campuses c
+                LEFT JOIN posts p ON LOWER(p.campus) = LOWER(c.name) AND p.is_private = 0 AND p.moderation_status != 'removed'
+                GROUP BY c.id
+                ORDER BY post_count DESC
+            """)
+            for row in cursor.fetchall():
+                if row["post_count"] < 1:
+                    continue
+                h = int(hashlib.md5(row["id"].encode()).hexdigest(), 16)
+                angle = h % 360
+                dist_factor = 0.35 + (h % 100) / 200.0
+                nodes.append({
+                    "id": row["id"],
+                    "label": row["name"],
+                    "sublabel": row["city"] or "Campus",
+                    "type": "campus",
+                    "angle_deg": angle,
+                    "dist_factor": round(dist_factor, 2),
+                    "post_count": row["post_count"]
+                })
+
+            # Active public communities (Place/Interest type with recent posts)
+            cursor.execute("""
+                SELECT c.id, c.name, c.type, c.city, COUNT(p.id) as post_count
+                FROM communities c
+                LEFT JOIN posts p ON (LOWER(p.campus) = LOWER(c.name) OR p.primary_community_id = c.id) AND p.is_private = 0 AND p.moderation_status != 'removed'
+                WHERE (c.visibility IS NULL OR c.visibility != 'private') AND c.type != 'Campus'
+                GROUP BY c.id
+                ORDER BY post_count DESC LIMIT 12
+            """)
+            for row in cursor.fetchall():
+                if row["post_count"] < 1:
+                    continue
+                h = int(hashlib.md5(row["id"].encode()).hexdigest(), 16)
+                angle = (h >> 4) % 360
+                dist_factor = 0.5 + (h % 80) / 200.0
+                node_type = "place" if row["type"] == "Place" else "community"
+                nodes.append({
+                    "id": row["id"],
+                    "label": row["name"],
+                    "sublabel": row["city"] or row["type"],
+                    "type": node_type,
+                    "angle_deg": angle,
+                    "dist_factor": round(min(dist_factor, 0.95), 2),
+                    "post_count": row["post_count"]
+                })
+
+            # Privacy threshold: only return nodes with >= 3 public posts
+            private_nodes = [n for n in nodes if n["post_count"] < 3]
+            nodes = [n for n in nodes if n["post_count"] >= 3]
+            quiet_count = len(private_nodes)
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "nodes": nodes[:15],
+                "total_nodes": len(nodes),
+                "quiet_areas": quiet_count,
+                "privacy": "coarse_context_only"
+            })
+
+        if path == "/api/search/global":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthorized"})
+
+            cursor_param = query.get("cursor", [""])[0].strip()
+            limit = 20
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            if cursor_param:
+                cursor.execute("""
+                    SELECT p.*, u.name as author_name FROM posts p
+                    LEFT JOIN users u ON p.user_id = u.id
+                    WHERE p.is_private = 0 AND p.moderation_status != 'removed'
+                      AND p.region = 'global'
+                      AND p.created_at < ?
+                    ORDER BY p.created_at DESC LIMIT ?
+                """, (cursor_param, limit + 1))
+            else:
+                cursor.execute("""
+                    SELECT p.*, u.name as author_name FROM posts p
+                    LEFT JOIN users u ON p.user_id = u.id
+                    WHERE p.is_private = 0 AND p.moderation_status != 'removed'
+                      AND p.region = 'global'
+                    ORDER BY p.created_at DESC LIMIT ?
+                """, (limit + 1,))
+
+            rows = cursor.fetchall()
+            has_more = len(rows) > limit
+            moments = [dict(r) for r in rows[:limit]]
+
+            next_cursor = ""
+            if has_more and moments:
+                next_cursor = moments[-1]["created_at"]
+
+            for m in moments:
+                cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
+                m["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
+                m["timeAgo"] = format_time_ago(m.get("created_at", ""))
+                blocked = False
+                if user.get("id"):
+                    cursor.execute("SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)",
+                                   (user["id"], m.get("user_id"), m.get("user_id"), user["id"]))
+                    blocked = bool(cursor.fetchone())
+                m["blocked"] = blocked
+
+            moments = [m for m in moments if not m.get("blocked")]
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "moments": moments,
+                "next_cursor": next_cursor,
+                "has_more": has_more
+            })
+
+        if path == "/api/search/recent":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthorized"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, query, search_type, created_at FROM recent_searches
+                WHERE user_id = ?
+                ORDER BY created_at DESC LIMIT 10
+            """, (user["id"],))
+            rows = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+            return self.send_json(200, {"success": True, "searches": rows})
+
         if path == "/api/search":
             q = query.get("q", [""])[0].strip().lower()
             type_param = query.get("type", ["all"])[0].lower()
@@ -6489,14 +6650,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn = get_db()
             cursor = conn.cursor()
 
-            # Dynamic Community Spaces & Hubs from SQLite
+            # ---------- Discovery sectors from real DB (public posts by campus) ----------
             cursor.execute("""
                 SELECT campus as name, COUNT(*) as count FROM posts
-                WHERE is_private = 0 AND campus != ''
+                WHERE is_private = 0 AND moderation_status != 'removed' AND campus != ''
                 GROUP BY campus ORDER BY count DESC LIMIT 6
             """)
             db_sectors = cursor.fetchall()
-            
+
             icon_map = {
                 0: {"icon": "☕", "category": "Cafe & Creative Space"},
                 1: {"icon": "💻", "category": "Tech & Creator Hub"},
@@ -6516,11 +6677,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "momentsCount": r["count"],
                     "area": meta["category"]
                 })
-            
+
             if not sectors:
-                cursor.execute("SELECT name, city FROM communities WHERE type = 'Place' LIMIT 4")
-                place_rows = cursor.fetchall()
-                for idx, pr in enumerate(place_rows, 1):
+                cursor.execute("SELECT name, city FROM communities WHERE type = 'Place' AND (visibility IS NULL OR visibility != 'private') LIMIT 4")
+                for idx, pr in enumerate(cursor.fetchall(), 1):
                     cursor.execute("SELECT COUNT(*) FROM posts WHERE campus = ? AND is_private = 0", (pr[0],))
                     real_cnt = cursor.fetchone()[0]
                     sectors.append({
@@ -6532,8 +6692,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         "area": pr[1] or "Shared Space"
                     })
 
-            # Calculate real tag frequencies from actual posts
-            cursor.execute("SELECT caption FROM posts WHERE is_private = 0 AND caption IS NOT NULL")
+            # ---------- Tag frequencies from real posts ----------
+            cursor.execute("SELECT caption FROM posts WHERE is_private = 0 AND moderation_status != 'removed' AND caption IS NOT NULL")
             captions = [r[0] for r in cursor.fetchall()]
             tag_counts = {}
             for cap in captions:
@@ -6541,41 +6701,32 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     if w.startswith("#") and len(w) > 1:
                         ct = w.upper()
                         tag_counts[ct] = tag_counts.get(ct, 0) + 1
-            
+
             frequencies = []
             if tag_counts:
                 sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:4]
                 for idx, (t, c) in enumerate(sorted_tags, 1):
-                    frequencies.append({
-                        "number": f"0{idx}",
-                        "tag": t,
-                        "postsCount": c
-                    })
+                    frequencies.append({"number": f"0{idx}", "tag": t, "postsCount": c})
             else:
                 cursor.execute("SELECT COUNT(*) FROM posts WHERE is_private = 0")
                 total_real_posts = cursor.fetchone()[0]
-                if total_real_posts > 0:
-                    frequencies = [
-                        {"number": "01", "tag": "#AUTHENTIC", "postsCount": total_real_posts}
-                    ]
-                else:
-                    frequencies = [
-                        {"number": "01", "tag": "#CAMPUS", "postsCount": 0}
-                    ]
+                frequencies = [{"number": "01", "tag": "#CAMPUS", "postsCount": total_real_posts}]
 
-            # Calculate active nodes count
+            # ---------- Active nodes ----------
             cursor.execute("SELECT COUNT(DISTINCT user_id) FROM posts WHERE is_private = 0")
             node_cnt = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM users")
+            cursor.execute("SELECT COUNT(*) FROM users WHERE role != 'banned'")
             user_cnt = cursor.fetchone()[0]
             active_nodes = max(node_cnt, user_cnt, 3)
 
             people_results = []
             places_results = []
             moments_results = []
+            community_results = []
+            campus_results = []
 
-            # 1. Search People
-            if type_param in ["people", "all"]:
+            # ---------- 1. Search People ----------
+            if type_param in ["people", "all"] or (type_param not in ["campuses", "places", "communities", "moments"] and q):
                 if q:
                     q_clean = q.strip().lower()
                     q_alt = q_clean.replace("anum", "anam") if "anum" in q_clean else (q_clean.replace("anam", "anum") if "anam" in q_clean else q_clean)
@@ -6583,35 +6734,34 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         SELECT id, name, handle, avatar_url, avatar_letter, campus, bio FROM users
                         WHERE (LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?
                             OR LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?)
-                          AND (role != 'banned')
-                        ORDER BY name ASC
+                          AND (role IS NULL OR role != 'banned')
+                        ORDER BY name ASC LIMIT 20
                     """, (f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_alt}%", f"%{q_alt}%", f"%{q_alt}%"))
                 else:
                     cursor.execute("""
                         SELECT id, name, handle, avatar_url, avatar_letter, campus, bio FROM users
-                        WHERE role != 'banned'
+                        WHERE (role IS NULL OR role != 'banned')
                         ORDER BY streak_count DESC LIMIT 20
                     """)
                 people_results = [dict(r) for r in cursor.fetchall()]
                 for p in people_results:
                     p["avatar_url"] = p.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={p.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
 
-            # 2. Search Communities
-            community_results = []
-            if type_param in ["communities", "places", "all"] or (type_param == "live" and q):
+            # ---------- 2. Search Communities ----------
+            if type_param in ["communities", "places", "all"] or (type_param not in ["campuses", "people", "moments"] and q):
                 if q:
                     cursor.execute("""
-                        SELECT id, name, type, city, description, icon, members_count, creator_id
+                        SELECT id, name, type, city, description, icon, members_count, creator_id, visibility
                         FROM communities
-                        WHERE (visibility IS NULL OR visibility != 'private') AND (status IS NULL OR status = 'active')
+                        WHERE (visibility IS NULL OR visibility != 'private')
                           AND (LOWER(name) LIKE ? OR LOWER(city) LIKE ? OR LOWER(description) LIKE ?)
                         ORDER BY members_count DESC LIMIT 20
                     """, (f"%{q}%", f"%{q}%", f"%{q}%"))
                 else:
                     cursor.execute("""
-                        SELECT id, name, type, city, description, icon, members_count, creator_id
+                        SELECT id, name, type, city, description, icon, members_count, creator_id, visibility
                         FROM communities
-                        WHERE (visibility IS NULL OR visibility != 'private') AND (status IS NULL OR status = 'active')
+                        WHERE (visibility IS NULL OR visibility != 'private')
                         ORDER BY members_count DESC LIMIT 10
                     """)
                 for crow in cursor.fetchall():
@@ -6624,13 +6774,33 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     c_dict["is_community"] = True
                     community_results.append(c_dict)
 
-            # 3. Search Places
+            # ---------- 3. Search Campuses ----------
+            if type_param in ["campuses", "all"] or (q and type_param not in ["people", "places", "communities", "moments"]):
+                if q:
+                    cursor.execute("""
+                        SELECT id, name, city, state, country, verified
+                        FROM campuses
+                        WHERE LOWER(name) LIKE ? OR LOWER(city) LIKE ? OR LOWER(state) LIKE ?
+                        ORDER BY verified DESC, name ASC LIMIT 10
+                    """, (f"%{q}%", f"%{q}%", f"%{q}%"))
+                else:
+                    cursor.execute("""
+                        SELECT id, name, city, state, country, verified
+                        FROM campuses ORDER BY verified DESC, name ASC LIMIT 10
+                    """)
+                for cr in cursor.fetchall():
+                    c_dict = dict(cr)
+                    cursor.execute("SELECT COUNT(*) FROM posts WHERE campus = ? AND is_private = 0", (c_dict["name"],))
+                    c_dict["moments_count"] = cursor.fetchone()[0]
+                    campus_results.append(c_dict)
+
+            # ---------- 4. Search Places (from communities type=Place) ----------
             if type_param in ["places", "all"]:
                 if q:
                     places_results = [s for s in sectors if q in s["name"].lower() or q in s["area"].lower()]
                     cursor.execute("""
                         SELECT DISTINCT campus as name, COUNT(*) as momentsCount FROM posts
-                        WHERE is_private = 0 AND LOWER(campus) LIKE ?
+                        WHERE is_private = 0 AND moderation_status != 'removed' AND LOWER(campus) LIKE ?
                         GROUP BY campus
                     """, (f"%{q}%",))
                     for dp in cursor.fetchall():
@@ -6639,44 +6809,45 @@ class KandidHandler(SimpleHTTPRequestHandler):
                             places_results.append({
                                 "id": "p_" + dname.lower().replace(" ", "_"),
                                 "number": f"0{len(places_results)+1}",
-                                "name": dname,
-                                "momentsCount": dp["momentsCount"],
-                                "area": "Campus Location"
+                                "name": dname, "momentsCount": dp["momentsCount"], "area": "Campus Location"
                             })
                     for cr in community_results:
-                        cname = cr["name"].upper()
-                        if not any(cname == p["name"].upper() for p in places_results):
-                            places_results.append({
-                                "id": cr["id"],
-                                "number": f"0{len(places_results)+1}",
-                                "name": cname,
-                                "momentsCount": cr.get("members_count", 1),
-                                "area": cr.get("city") or cr.get("type") or "Community Space",
-                                "is_community": True,
-                                "is_joined": cr["is_joined"]
-                            })
+                        if cr.get("type") == "Place":
+                            cname = cr["name"].upper()
+                            if not any(cname == p["name"].upper() for p in places_results):
+                                places_results.append({
+                                    "id": cr["id"],
+                                    "number": f"0{len(places_results)+1}",
+                                    "name": cname,
+                                    "momentsCount": cr.get("members_count", 1),
+                                    "area": cr.get("city") or "Community Space",
+                                    "is_community": True,
+                                    "is_joined": cr["is_joined"]
+                                })
                 else:
                     places_results = sectors
 
-            # 4. Search Moments
-            if type_param in ["moments", "all"]:
+            # ---------- 5. Search Moments ----------
+            if type_param in ["moments", "all"] or (q and type_param not in ["campuses", "people", "places", "communities"]):
                 if q:
                     clean_q = q.replace("#", "")
                     cursor.execute("""
-                        SELECT * FROM posts
-                        WHERE is_private = 0 AND (
-                            LOWER(caption) LIKE ? OR
-                            LOWER(campus) LIKE ? OR
-                            LOWER(location_city) LIKE ? OR
-                            LOWER(author_handle) LIKE ?
+                        SELECT p.*, u.name as author_name FROM posts p
+                        LEFT JOIN users u ON p.user_id = u.id
+                        WHERE p.is_private = 0 AND p.moderation_status != 'removed' AND (
+                            LOWER(p.caption) LIKE ? OR
+                            LOWER(p.campus) LIKE ? OR
+                            LOWER(p.location_city) LIKE ? OR
+                            LOWER(p.author_handle) LIKE ?
                         )
-                        ORDER BY created_at DESC LIMIT 30
+                        ORDER BY p.created_at DESC LIMIT 30
                     """, (f"%{clean_q}%", f"%{clean_q}%", f"%{clean_q}%", f"%{clean_q}%"))
                 else:
                     cursor.execute("""
-                        SELECT * FROM posts
-                        WHERE is_private = 0
-                        ORDER BY created_at DESC LIMIT 20
+                        SELECT p.*, u.name as author_name FROM posts p
+                        LEFT JOIN users u ON p.user_id = u.id
+                        WHERE p.is_private = 0 AND p.moderation_status != 'removed'
+                        ORDER BY p.created_at DESC LIMIT 20
                     """)
                 moments_results = [dict(r) for r in cursor.fetchall()]
                 for m in moments_results:
@@ -6691,9 +6862,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "type": type_param,
                 "activeNodes": active_nodes,
                 "sectors": sectors,
+                "frequencies": frequencies,
                 "people": people_results,
                 "places": places_results,
                 "communities": community_results,
+                "campuses": campus_results,
                 "moments": moments_results
             })
 
@@ -8307,6 +8480,40 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(200, {"success": True, "token": token, "user": user_obj, "message": "Email verified successfully!"})
             conn.close()
             return self.send_json(200, {"success": True, "message": "Email verified successfully!"})
+
+        if path == "/api/search/recent":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthorized"})
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+            except:
+                body = {}
+            q = (body.get("query") or "").strip()
+            stype = (body.get("search_type") or "all").strip()
+            if not q:
+                return self.send_json(400, {"error": "query required"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            # Max 10 recent searches per user; remove oldest if over limit
+            cursor.execute("SELECT COUNT(*) FROM recent_searches WHERE user_id = ?", (user["id"],))
+            cnt = cursor.fetchone()[0]
+            if cnt >= 10:
+                cursor.execute("""
+                    DELETE FROM recent_searches WHERE id IN (
+                        SELECT id FROM recent_searches WHERE user_id = ? ORDER BY created_at ASC LIMIT ?
+                    )
+                """, (user["id"], cnt - 9))
+            # Remove duplicate if same query exists
+            cursor.execute("DELETE FROM recent_searches WHERE user_id = ? AND LOWER(query) = LOWER(?)", (user["id"], q))
+            import uuid
+            rec_id = "rs_" + str(uuid.uuid4())[:8]
+            cursor.execute("INSERT INTO recent_searches (id, user_id, query, search_type) VALUES (?, ?, ?, ?)",
+                           (rec_id, user["id"], q, stype))
+            conn.commit()
+            conn.close()
+            return self.send_json(200, {"success": True, "id": rec_id})
 
         if path == "/api/auth/logout" or path == "/api/logout":
             auth = self.headers.get("Authorization", "")
@@ -9969,6 +10176,31 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user = get_current_user(self.headers)
             if not user or user.get("role") != "founder":
                 return self.send_json(403, {"error": "Forbidden: Founder access required"})
+            return self.send_json(200, {"success": True})
+
+        return self.send_json(404, {"error": "Not Found"})
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
+
+        # ── DELETE /api/search/recent ────────────────────────────────
+        if path == "/api/search/recent":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthorized"})
+            rec_id = query.get("id", [""])[0].strip()
+            conn = get_db()
+            cursor = conn.cursor()
+            try:
+                if rec_id:
+                    cursor.execute("DELETE FROM recent_searches WHERE id = ? AND user_id = ?", (rec_id, user["id"]))
+                else:
+                    cursor.execute("DELETE FROM recent_searches WHERE user_id = ?", (user["id"],))
+                conn.commit()
+            finally:
+                conn.close()
             return self.send_json(200, {"success": True})
 
         return self.send_json(404, {"error": "Not Found"})

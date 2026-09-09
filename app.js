@@ -670,7 +670,7 @@ function switchScreenView(screenName) {
   }
 
   document.querySelectorAll('.dock-item').forEach(function(btn) {
-    if (btn.dataset.screen === screenName || ((screenName === 'memories' || screenName === 'progress' || screenName === 'settings' || screenName === 'report' || screenName === 'block') && btn.dataset.screen === 'you') || (screenName === 'empty-search' && btn.dataset.screen === 'search') || (screenName.startsWith('chat-') && btn.dataset.screen === 'chat-home')) {
+    if (btn.dataset.screen === screenName || ((screenName === 'memories' || screenName === 'progress' || screenName === 'settings' || screenName === 'report' || screenName === 'block') && btn.dataset.screen === 'you') || (screenName === 'empty-search' && btn.dataset.screen === 'search') || (screenName === 'search-global' && btn.dataset.screen === 'search') || (screenName.startsWith('chat-') && btn.dataset.screen === 'chat-home')) {
       btn.className = 'dock-item text-amber-500 flex flex-col items-center cursor-pointer active';
     } else {
       btn.className = 'dock-item text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer';
@@ -691,6 +691,8 @@ function switchScreenView(screenName) {
   if (statusMode) {
     if (screenName === 'search') {
       statusMode.textContent = 'SEARCH';
+    } else if (screenName === 'search-global') {
+      statusMode.textContent = 'GLOBAL';
     } else if (screenName === 'feed') {
       statusMode.textContent = (state.activeCircle === 'campus' || state.activeCircle === 'community') ? 'COMMUNITY' : (state.activeCircle === 'global' ? 'GLOBAL WINDOW' : (state.activeCircle === 'nearby' ? 'NEARBY' : 'LIVE'));
     } else if (screenName === 'memories') {
@@ -3354,26 +3356,99 @@ window.publishCapturedMoment = publishCapturedMoment;
 
 
 // =====================================================================
+// SEARCH 2.0 — THE DOORWAY INTO THE KANDID WORLD
+// =====================================================================
 
-// =====================================================================
-// PRODUCTION SEARCH & DISCOVERY ENGINE
-// =====================================================================
+// ── State ──────────────────────────────────────────────────────────────
 state.searchQuery = '';
-state.searchFilter = 'live';
-var searchDebounceTimer = null;
+state.searchFilter = 'all';
+state.searchFocused = false;
+state.globalCursor = '';
+state.globalMoments = [];
+state.globalHasMore = false;
+state.searchScrollPos = 0;
+state.globalScrollPos = 0;
 
+var searchDebounceTimer = null;
+var searchAbortCtrl = null;
+var _recentSearchesCache = null;
+
+// ── View helpers ──────────────────────────────────────────────────────
+function _searchShowView(viewName) {
+  // viewName: 'idle' | 'focused' | 'results' | 'empty' | 'error'
+  var idle    = document.getElementById('searchIdleView');
+  var focused = document.getElementById('searchFocusedView');
+  var results = document.getElementById('searchResultsView');
+  var empty   = document.getElementById('searchEmptyState');
+  var error   = document.getElementById('searchErrorState');
+  var skel    = document.getElementById('searchResultsSkeleton');
+
+  if (idle)    idle.style.display    = (viewName === 'idle')    ? 'block' : 'none';
+  if (focused) focused.style.display = (viewName === 'focused') ? 'block' : 'none';
+  if (results) results.style.display = (viewName === 'results' || viewName === 'skeleton') ? 'block' : 'none';
+  if (skel)    skel.style.display    = (viewName === 'skeleton') ? 'block' : 'none';
+  if (empty)   empty.style.display   = (viewName === 'empty')   ? 'block' : 'none';
+  if (error)   error.style.display   = (viewName === 'error')   ? 'block' : 'none';
+}
+
+// ── Filter Chips ──────────────────────────────────────────────────────
+function selectSearchFilter(filterType) {
+  state.searchFilter = filterType;
+  document.querySelectorAll('.search-chip-btn').forEach(function(btn) {
+    if (btn.dataset.filter === filterType) {
+      btn.className = 'search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 bg-amber-500 text-black border-amber-500';
+    } else {
+      btn.className = 'search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600';
+    }
+  });
+  if (state.searchQuery) {
+    performSearch();
+  }
+}
+window.selectSearchFilter = selectSearchFilter;
+
+// ── Input handlers ────────────────────────────────────────────────────
 function handleSearchInput(event) {
   var val = (event.target.value || '').trim();
   state.searchQuery = val;
   var clearBtn = document.getElementById('searchClearBtn');
   if (clearBtn) clearBtn.style.display = val ? 'block' : 'none';
 
+  if (!val) {
+    if (state.searchFocused) {
+      _searchShowView('focused');
+    } else {
+      _searchShowView('idle');
+    }
+    return;
+  }
+
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(function() {
     performSearch();
-  }, 200);
+  }, 300);
 }
 window.handleSearchInput = handleSearchInput;
+
+function onSearchFocus() {
+  state.searchFocused = true;
+  if (!state.searchQuery) {
+    _searchShowView('focused');
+    loadRecentSearches();
+  }
+}
+window.onSearchFocus = onSearchFocus;
+
+function onSearchBlur() {
+  state.searchFocused = false;
+  // Small delay so click on recent item registers first
+  setTimeout(function() {
+    if (!state.searchQuery) {
+      _searchShowView('idle');
+    }
+  }, 200);
+}
+window.onSearchBlur = onSearchBlur;
 
 function clearSearchInput() {
   var input = document.getElementById('searchInput');
@@ -3381,32 +3456,19 @@ function clearSearchInput() {
   state.searchQuery = '';
   var clearBtn = document.getElementById('searchClearBtn');
   if (clearBtn) clearBtn.style.display = 'none';
-  selectSearchFilter('live');
+  _searchShowView('idle');
+  loadSearchDiscovery();
 }
 window.clearSearchInput = clearSearchInput;
 
-function selectSearchFilter(filterType) {
-  state.searchFilter = filterType;
-
-  document.querySelectorAll('.search-filter-btn').forEach(function(btn) {
-    if (btn.dataset.filter === filterType) {
-      btn.className = 'search-filter-btn text-amber-500 font-bold pb-1 border-b-2 border-amber-500 transition-all cursor-pointer';
-    } else {
-      btn.className = 'search-filter-btn hover:text-white transition-colors cursor-pointer text-zinc-400';
-    }
-  });
-
-  performSearch();
-}
-window.selectSearchFilter = selectSearchFilter;
-
+// Legacy compat (old filter tabs reference)
 function filterBySector(sectorName) {
   var input = document.getElementById('searchInput');
   if (input) input.value = sectorName;
   state.searchQuery = sectorName;
   var clearBtn = document.getElementById('searchClearBtn');
   if (clearBtn) clearBtn.style.display = 'block';
-  selectSearchFilter('moments');
+  performSearch();
 }
 window.filterBySector = filterBySector;
 
@@ -3416,144 +3478,287 @@ function filterByFrequency(freqTag) {
   state.searchQuery = freqTag;
   var clearBtn = document.getElementById('searchClearBtn');
   if (clearBtn) clearBtn.style.display = 'block';
-  selectSearchFilter('moments');
+  performSearch();
 }
 window.filterByFrequency = filterByFrequency;
 
-async function loadSearchDiscovery() {
-  var defaultView = document.getElementById('searchDiscoveryDefault');
-  var resultsContainer = document.getElementById('searchResultsContainer');
-  var emptyState = document.getElementById('searchEmptyState');
-  var errorState = document.getElementById('searchErrorState');
+// ── Recent Searches ───────────────────────────────────────────────────
+async function loadRecentSearches() {
+  var list = document.getElementById('recentSearchesList');
+  if (!list) return;
 
-  if (resultsContainer) resultsContainer.style.display = 'none';
-  if (emptyState) emptyState.style.display = 'none';
-  if (errorState) errorState.style.display = 'none';
-  if (defaultView) defaultView.style.display = 'block';
+  var data = await apiRequest('/api/search/recent');
+  _recentSearchesCache = (data && data.success && Array.isArray(data.searches)) ? data.searches : [];
+
+  if (!_recentSearchesCache.length) {
+    list.innerHTML = '<div class="text-center py-6 text-xs text-zinc-700 font-mono-tag">No recent searches</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  _recentSearchesCache.forEach(function(rs) {
+    var item = document.createElement('button');
+    item.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900/60 transition-colors cursor-pointer text-left group';
+    item.innerHTML =
+      '<svg class="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
+      '<span class="text-xs text-zinc-300 font-mono-tag flex-1 uppercase truncate">' + escapeHtml(rs.query) + '</span>' +
+      '<button class="text-[9px] text-zinc-700 group-hover:text-zinc-500 font-mono-tag transition-colors" data-rs-id="' + escapeHtml(rs.id) + '" onclick="deleteRecentSearch(event, \'' + escapeHtml(rs.id) + '\')">✕</button>';
+    item.addEventListener('click', function(e) {
+      if (e.target.tagName === 'BUTTON' || e.target.closest('button[data-rs-id]')) return;
+      var searchInput = document.getElementById('searchInput');
+      if (searchInput) searchInput.value = rs.query;
+      state.searchQuery = rs.query;
+      var clearBtn = document.getElementById('searchClearBtn');
+      if (clearBtn) clearBtn.style.display = 'block';
+      performSearch();
+    });
+    list.appendChild(item);
+  });
+}
+window.loadRecentSearches = loadRecentSearches;
+
+async function saveRecentSearch(query, searchType) {
+  if (!query) return;
+  try {
+    await apiRequest('/api/search/recent', 'POST', { query: query, search_type: searchType || 'all' });
+    _recentSearchesCache = null; // invalidate cache
+  } catch(e) {}
+}
+
+async function deleteRecentSearch(e, rsId) {
+  e.stopPropagation();
+  if (!rsId) return;
+  await apiRequest('/api/search/recent?id=' + encodeURIComponent(rsId), 'DELETE');
+  _recentSearchesCache = null;
+  loadRecentSearches();
+}
+window.deleteRecentSearch = deleteRecentSearch;
+
+async function clearAllRecentSearches() {
+  await apiRequest('/api/search/recent', 'DELETE');
+  _recentSearchesCache = null;
+  loadRecentSearches();
+}
+window.clearAllRecentSearches = clearAllRecentSearches;
+
+// ── Radar ─────────────────────────────────────────────────────────────
+async function loadRadar() {
+  var statusLabel = document.getElementById('radarStatusLabel');
+  var badge = document.getElementById('activeNodesBadge');
+  var nodesGroup = document.getElementById('radarNodes');
+  var labelsDiv = document.getElementById('radarNodeLabels');
+
+  var data = await apiRequest('/api/search/radar');
+  if (!data || !data.success) {
+    if (statusLabel) statusLabel.textContent = 'QUIET';
+    if (badge) badge.textContent = '0 ACTIVE NODES';
+    return;
+  }
+
+  var nodes = data.nodes || [];
+  if (badge) badge.textContent = nodes.length + ' ACTIVE NODE' + (nodes.length !== 1 ? 'S' : '');
+  if (statusLabel) statusLabel.textContent = nodes.length > 0 ? 'LIVE' : 'QUIET';
+
+  if (nodesGroup) {
+    nodesGroup.innerHTML = '';
+    nodes.slice(0, 12).forEach(function(n) {
+      var angleRad = (n.angle_deg - 90) * Math.PI / 180;
+      var r = n.dist_factor || 0.6;
+      var x = r * Math.cos(angleRad);
+      var y = r * Math.sin(angleRad);
+      var color = n.type === 'campus' ? '#f59e0b' : n.type === 'place' ? '#34d399' : '#a78bfa';
+      var dotSize = n.type === 'campus' ? 0.055 : 0.042;
+
+      var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('transform', 'translate(' + x + ',' + y + ')');
+
+      var pulse = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      pulse.setAttribute('cx', '0'); pulse.setAttribute('cy', '0');
+      pulse.setAttribute('r', String(dotSize));
+      pulse.setAttribute('fill', color); pulse.setAttribute('opacity', '0.2');
+      var anim = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+      anim.setAttribute('attributeName', 'r');
+      anim.setAttribute('values', dotSize + ';' + (dotSize * 2.5) + ';' + dotSize);
+      anim.setAttribute('dur', '2.5s'); anim.setAttribute('repeatCount', 'indefinite');
+      pulse.appendChild(anim);
+
+      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', '0'); dot.setAttribute('cy', '0');
+      dot.setAttribute('r', String(dotSize));
+      dot.setAttribute('fill', color);
+
+      g.appendChild(pulse);
+      g.appendChild(dot);
+      nodesGroup.appendChild(g);
+    });
+  }
+
+  if (labelsDiv && nodes.length > 0) {
+    labelsDiv.style.display = 'block';
+    labelsDiv.innerHTML = '';
+    nodes.slice(0, 5).forEach(function(n) {
+      var color = n.type === 'campus' ? 'text-amber-500' : n.type === 'place' ? 'text-emerald-400' : 'text-violet-400';
+      var dot = document.createElement('div');
+      dot.className = 'flex items-center gap-2';
+      dot.innerHTML =
+        '<span class="w-1.5 h-1.5 rounded-full ' + color.replace('text-', 'bg-') + ' flex-shrink-0"></span>' +
+        '<span class="text-[9px] font-mono-tag text-zinc-400 truncate">' + escapeHtml(n.label) + '</span>' +
+        '<span class="text-[8px] font-mono-tag text-zinc-700 ml-auto flex-shrink-0">' + n.post_count + ' MOMENTS</span>';
+      labelsDiv.appendChild(dot);
+    });
+    if (nodes.length > 5) {
+      var more = document.createElement('div');
+      more.className = 'text-[9px] font-mono-tag text-zinc-600 text-center pt-0.5';
+      more.textContent = '+' + (nodes.length - 5) + ' MORE';
+      labelsDiv.appendChild(more);
+    }
+  }
+}
+window.loadRadar = loadRadar;
+
+// ── Discovery (Idle View) ─────────────────────────────────────────────
+async function loadSearchDiscovery() {
+  var skeleton = document.getElementById('searchSkeletonState');
+  if (skeleton) skeleton.style.display = 'block';
+
+  // Load radar in parallel
+  loadRadar();
 
   var data = await apiRequest('/api/search?type=all');
-  if (data && data.success) {
-    var nodesBadge = document.getElementById('activeNodesBadge');
-    if (nodesBadge && data.activeNodes) {
-      nodesBadge.textContent = data.activeNodes + ' ACTIVE NODES';
-    }
 
-    var sectorsContainer = document.getElementById('searchSectorsContainer');
-    if (sectorsContainer && Array.isArray(data.sectors) && data.sectors.length > 0) {
-      sectorsContainer.innerHTML = '';
-      data.sectors.forEach(function(s) {
-        var el = document.createElement('div');
-        el.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex justify-between items-center shadow-lg hover:border-amber-500/40 transition-colors cursor-pointer active:scale-[0.99]';
-        var icon = s.icon || '📍';
-        el.innerHTML =
-          '<div class="flex items-center gap-3">' +
-            '<div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm flex-shrink-0">' + icon + '</div>' +
-            '<div>' +
-              '<h3 class="text-xs font-bold text-white tracking-wide">' + escapeHtml(s.name) + '</h3>' +
-              '<span class="text-[9px] text-zinc-500 font-mono-tag uppercase">' + escapeHtml(s.area || 'Community Hub') + '</span>' +
-            '</div>' +
+  if (skeleton) skeleton.style.display = 'none';
+
+  if (!data || !data.success) return;
+
+  // Sectors
+  var sectorsContainer = document.getElementById('searchSectorsContainer');
+  var sectorLabel = document.getElementById('sectorCountLabel');
+  if (sectorsContainer && Array.isArray(data.sectors) && data.sectors.length > 0) {
+    if (sectorLabel) sectorLabel.textContent = data.sectors.length + ' ACTIVE';
+    sectorsContainer.innerHTML = '';
+    data.sectors.forEach(function(s) {
+      var el = document.createElement('div');
+      el.className = 'bg-zinc-950 border border-zinc-800/60 rounded-2xl p-3.5 flex justify-between items-center shadow-lg hover:border-amber-500/40 transition-colors cursor-pointer active:scale-[0.99]';
+      el.innerHTML =
+        '<div class="flex items-center gap-3">' +
+          '<div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-base flex-shrink-0">' + (s.icon || '📍') + '</div>' +
+          '<div>' +
+            '<h3 class="text-xs font-bold text-white tracking-wide">' + escapeHtml(s.name) + '</h3>' +
+            '<span class="text-[9px] text-zinc-500 font-mono-tag uppercase">' + escapeHtml(s.area || 'Community Hub') + '</span>' +
           '</div>' +
-          '<span class="text-[10px] text-zinc-400 font-mono-tag font-bold bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md">' + s.momentsCount + ' MOMENTS</span>';
-        el.addEventListener('click', function() {
-          filterBySector(s.name);
-        });
-        sectorsContainer.appendChild(el);
-      });
-    }
+        '</div>' +
+        '<span class="text-[9px] text-zinc-400 font-mono-tag font-bold bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-lg flex-shrink-0">' + s.momentsCount + ' MOMENTS</span>';
+      el.addEventListener('click', function() { filterBySector(s.name); });
+      sectorsContainer.appendChild(el);
+    });
+  } else if (sectorsContainer) {
+    sectorsContainer.innerHTML = '<div class="text-center py-4 text-xs text-zinc-600 font-mono-tag">No active spaces yet</div>';
+  }
 
-    var freqContainer = document.getElementById('searchFrequenciesContainer');
-    if (freqContainer && Array.isArray(data.frequencies) && data.frequencies.length > 0) {
-      freqContainer.innerHTML = '';
-      data.frequencies.forEach(function(f, idx) {
-        var el = document.createElement('div');
-        var borderClass = (idx < data.frequencies.length - 1) ? 'pb-2.5 border-b border-zinc-900' : '';
-        el.className = 'flex justify-between items-center text-xs font-mono-tag cursor-pointer hover:opacity-80 transition-opacity ' + borderClass;
-        el.innerHTML =
-          '<span class="text-amber-400 font-bold">' + f.number + ' ' + escapeHtml(f.tag) + '</span>' +
-          '<span class="text-zinc-500">' + f.postsCount + ' POSTS</span>';
-        el.addEventListener('click', function() {
-          filterByFrequency(f.tag);
-        });
-        freqContainer.appendChild(el);
-      });
-    }
+  // Frequencies
+  var freqContainer = document.getElementById('searchFrequenciesContainer');
+  if (freqContainer && Array.isArray(data.frequencies) && data.frequencies.length > 0) {
+    freqContainer.innerHTML = '';
+    data.frequencies.forEach(function(f, idx) {
+      var borderClass = (idx < data.frequencies.length - 1) ? 'pb-2.5 border-b border-zinc-900/60' : '';
+      var el = document.createElement('div');
+      el.className = 'flex justify-between items-center text-xs font-mono-tag cursor-pointer hover:opacity-80 transition-opacity ' + borderClass;
+      el.innerHTML =
+        '<span class="text-amber-400 font-bold">' + (f.number || ('0' + (idx+1))) + ' ' + escapeHtml(f.tag) + '</span>' +
+        '<span class="text-zinc-500">' + f.postsCount + ' POSTS</span>';
+      el.addEventListener('click', function() { filterByFrequency(f.tag); });
+      freqContainer.appendChild(el);
+    });
+  } else if (freqContainer) {
+    freqContainer.innerHTML = '<div class="text-center py-2 text-xs text-zinc-600 font-mono-tag">No trending tags yet</div>';
   }
 }
 window.loadSearchDiscovery = loadSearchDiscovery;
 
+// ── Search Execution ──────────────────────────────────────────────────
 async function performSearch(query, filter) {
   query = (typeof query === 'string') ? query : state.searchQuery;
-  filter = filter || state.searchFilter || 'live';
+  filter = filter || state.searchFilter || 'all';
 
-  var defaultView = document.getElementById('searchDiscoveryDefault');
-  var resultsContainer = document.getElementById('searchResultsContainer');
-  var emptyState = document.getElementById('searchEmptyState');
-  var errorState = document.getElementById('searchErrorState');
-
-  if (!resultsContainer) return;
-
-  if (errorState) errorState.style.display = 'none';
-
-  // If live filter and no search text, show the rich default discovery view
-  if (filter === 'live' && !query) {
-    if (defaultView) defaultView.style.display = 'block';
-    if (resultsContainer) resultsContainer.style.display = 'none';
-    if (emptyState) emptyState.style.display = 'none';
+  if (!query) {
+    _searchShowView('idle');
     loadSearchDiscovery();
     return;
   }
 
-  if (defaultView) defaultView.style.display = 'none';
-  if (emptyState) emptyState.style.display = 'none';
-  resultsContainer.style.display = 'block';
-  resultsContainer.innerHTML = '<div class="text-center py-8 text-xs text-zinc-500 font-mono-tag animate-pulse">DISCOVERING CAMPUS...</div>';
+  // Abort any in-flight request
+  if (searchAbortCtrl) {
+    try { searchAbortCtrl.abort(); } catch(e) {}
+  }
+  searchAbortCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+
+  _searchShowView('skeleton');
+  var resultsContainer = document.getElementById('searchResultsContainer');
+  if (resultsContainer) resultsContainer.innerHTML = '';
 
   var endpoint = '/api/search?q=' + encodeURIComponent(query) + '&type=' + encodeURIComponent(filter);
   var data = await apiRequest(endpoint);
 
   if (!data || !data.success) {
-    resultsContainer.style.display = 'none';
-    if (errorState) errorState.style.display = 'block';
+    _searchShowView('error');
     return;
   }
 
-  resultsContainer.innerHTML = '';
+  if (resultsContainer) resultsContainer.innerHTML = '';
+  _searchShowView('results');
+
   var hasResults = false;
 
-  if (filter === 'people' || filter === 'all' || (filter === 'live' && query)) {
-    if (Array.isArray(data.people) && data.people.length > 0) {
-      hasResults = true;
-      renderPeopleSearchResults(data.people, resultsContainer);
-    }
+  if (Array.isArray(data.people) && data.people.length > 0 &&
+      (filter === 'people' || filter === 'all')) {
+    hasResults = true;
+    renderPeopleSearchResults(data.people, resultsContainer);
   }
 
-  if (filter === 'communities' || filter === 'places' || filter === 'all' || (filter === 'live' && query)) {
-    if (Array.isArray(data.communities) && data.communities.length > 0) {
-      hasResults = true;
-      renderCommunitiesSearchResults(data.communities, resultsContainer);
-    }
+  if (Array.isArray(data.campuses) && data.campuses.length > 0 &&
+      (filter === 'campuses' || filter === 'all')) {
+    hasResults = true;
+    renderCampusSearchResults(data.campuses, resultsContainer);
   }
 
-  if (filter === 'places' || filter === 'all' || (filter === 'live' && query && !hasResults)) {
-    if (Array.isArray(data.places) && data.places.length > 0) {
-      hasResults = true;
-      renderPlacesSearchResults(data.places, resultsContainer);
-    }
+  if (Array.isArray(data.communities) && data.communities.length > 0 &&
+      (filter === 'communities' || filter === 'places' || filter === 'all')) {
+    hasResults = true;
+    renderCommunitiesSearchResults(data.communities, resultsContainer);
   }
 
-  if (filter === 'moments' || filter === 'all' || (filter === 'live' && query)) {
-    if (Array.isArray(data.moments) && data.moments.length > 0) {
-      hasResults = true;
-      renderMomentsSearchResults(data.moments, resultsContainer);
-    }
+  if (Array.isArray(data.places) && data.places.length > 0 &&
+      (filter === 'places' || filter === 'all')) {
+    hasResults = true;
+    renderPlacesSearchResults(data.places, resultsContainer);
+  }
+
+  if (Array.isArray(data.moments) && data.moments.length > 0 &&
+      (filter === 'moments' || filter === 'all')) {
+    hasResults = true;
+    renderMomentsSearchResults(data.moments, resultsContainer);
   }
 
   if (!hasResults) {
-    resultsContainer.style.display = 'none';
-    if (emptyState) emptyState.style.display = 'block';
+    _searchShowView('empty');
+    return;
   }
+
+  // Save to recent searches (fire-and-forget)
+  saveRecentSearch(query, filter);
 }
 window.performSearch = performSearch;
+
+// ── Result Renderers ──────────────────────────────────────────────────
+function _searchSectionHeader(label, count, container) {
+  var header = document.createElement('div');
+  header.className = 'flex items-center justify-between px-1 pt-2 pb-2';
+  header.innerHTML =
+    '<span class="text-[9px] text-zinc-500 font-mono-tag font-bold tracking-[0.2em] uppercase">' + label + '</span>' +
+    '<span class="text-[9px] text-zinc-700 font-mono-tag">' + count + '</span>';
+  container.appendChild(header);
+}
+
 
 function renderPeopleSearchResults(people, container) {
   var header = document.createElement('div');
@@ -3598,6 +3803,151 @@ function renderPeopleSearchResults(people, container) {
   });
 
   container.appendChild(group);
+}
+
+// ── Campus Search Results ─────────────────────────────────────────────
+function renderCampusSearchResults(campuses, container) {
+  _searchSectionHeader('CAMPUSES', campuses.length, container);
+  var group = document.createElement('div');
+  group.className = 'space-y-2';
+
+  campuses.forEach(function(c) {
+    var item = document.createElement('div');
+    item.className = 'bg-zinc-950 border border-zinc-800/60 rounded-2xl p-3.5 flex items-center justify-between shadow-lg hover:border-amber-500/40 transition cursor-pointer active:scale-[0.99]';
+    var momCnt = c.moments_count || 0;
+    item.innerHTML =
+      '<div class="flex items-center gap-3">' +
+        '<div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-lg flex-shrink-0">🎓</div>' +
+        '<div>' +
+          '<h3 class="text-xs font-bold text-white tracking-wide">' + escapeHtml(c.name || 'Campus') + '</h3>' +
+          '<span class="text-[9px] text-zinc-500 font-mono-tag uppercase">' + escapeHtml((c.city || '') + (c.state ? ', ' + c.state : '')) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="text-right flex-shrink-0">' +
+        '<div class="text-[9px] text-zinc-400 font-mono-tag font-bold bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-lg">' + momCnt + ' MOMENTS</div>' +
+      '</div>';
+    item.addEventListener('click', function() {
+      if (typeof openCampusPage === 'function') openCampusPage(c.name);
+    });
+    group.appendChild(item);
+  });
+
+  container.appendChild(group);
+}
+window.renderCampusSearchResults = renderCampusSearchResults;
+
+// ── Global Search ─────────────────────────────────────────────────────
+function openGlobalSearch() {
+  state.globalCursor = '';
+  state.globalMoments = [];
+  state.globalHasMore = false;
+  switchScreenView('search-global');
+  loadGlobalMoments(true);
+}
+window.openGlobalSearch = openGlobalSearch;
+
+function closeGlobalSearch() {
+  switchScreenView('search');
+}
+window.closeGlobalSearch = closeGlobalSearch;
+
+async function loadGlobalMoments(reset) {
+  if (reset) {
+    state.globalCursor = '';
+    state.globalMoments = [];
+    var list = document.getElementById('globalMomentsList');
+    if (list) list.innerHTML = '<div class="text-center py-12 text-xs text-zinc-600 font-mono-tag animate-pulse">LOADING GLOBAL MOMENTS...</div>';
+    var loadMoreWrap = document.getElementById('globalLoadMoreWrap');
+    if (loadMoreWrap) loadMoreWrap.style.display = 'none';
+  }
+
+  var url = '/api/search/global';
+  if (state.globalCursor) url += '?cursor=' + encodeURIComponent(state.globalCursor);
+
+  var data = await apiRequest(url);
+
+  var list = document.getElementById('globalMomentsList');
+  var loadMoreWrap = document.getElementById('globalLoadMoreWrap');
+  var noMoreState = document.getElementById('globalNoMoreState');
+
+  if (!data || !data.success) {
+    if (list && state.globalMoments.length === 0) {
+      list.innerHTML = '<div class="text-center py-12 text-xs text-zinc-600 font-mono-tag">Could not load moments.<br>Check your connection.</div>';
+    }
+    return;
+  }
+
+  var newMoments = data.moments || [];
+  state.globalHasMore = data.has_more;
+  if (data.next_cursor) state.globalCursor = data.next_cursor;
+
+  if (reset) {
+    state.globalMoments = newMoments;
+    if (list) list.innerHTML = '';
+    if (newMoments.length === 0) {
+      list.innerHTML = '<div class="text-center py-12 text-xs text-zinc-600 font-mono-tag">No global moments yet.<br>Be the first to share publicly!</div>';
+      return;
+    }
+  } else {
+    state.globalMoments = state.globalMoments.concat(newMoments);
+  }
+
+  if (list && newMoments.length > 0) {
+    if (reset) list.innerHTML = '';
+    newMoments.forEach(function(m) {
+      list.appendChild(renderGlobalMoment(m));
+    });
+  }
+
+  if (loadMoreWrap) loadMoreWrap.style.display = state.globalHasMore ? 'block' : 'none';
+  if (noMoreState) noMoreState.style.display = (!state.globalHasMore && state.globalMoments.length > 0) ? 'block' : 'none';
+}
+window.loadGlobalMoments = loadGlobalMoments;
+
+function loadMoreGlobalMoments() {
+  loadGlobalMoments(false);
+}
+window.loadMoreGlobalMoments = loadMoreGlobalMoments;
+
+function renderGlobalMoment(m) {
+  var card = document.createElement('article');
+  card.className = 'bg-zinc-950 border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl';
+
+  var mainImg = m.main_img || m.mainImg || 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=600&q=80';
+  var pipImg  = m.pip_img  || m.pipImg  || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&q=80';
+  var author  = escapeHtml(m.author_handle || m.user_handle || 'user');
+  var campus  = escapeHtml((m.community_name || m.campus || 'GLOBAL').toUpperCase());
+  var caption = escapeHtml(m.caption || '');
+  var timeAgo = escapeHtml(m.timeAgo || 'JUST NOW');
+  var locCity = m.location_city ? escapeHtml(m.location_city) : '';
+
+  card.innerHTML =
+    '<div class="w-full aspect-[4/5] bg-black relative overflow-hidden group select-none">' +
+      '<img src="' + mainImg + '" class="w-full h-full object-cover">' +
+      '<div class="absolute top-3 left-3 w-16 h-24 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
+        '<img src="' + pipImg + '" class="w-full h-full object-cover">' +
+      '</div>' +
+      '<div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3.5 py-3">' +
+        '<div class="flex items-end justify-between gap-2">' +
+          '<div class="min-w-0">' +
+            (caption ? '<p class="text-white text-xs font-medium leading-snug line-clamp-2 mb-1">' + caption + '</p>' : '') +
+            '<div class="flex items-center gap-1.5">' +
+              '<span class="text-amber-400 font-mono-tag text-[9px] font-bold">@' + author + '</span>' +
+              '<span class="text-zinc-500 font-mono-tag text-[9px]">·</span>' +
+              '<span class="text-zinc-400 font-mono-tag text-[9px] uppercase truncate">' + campus + '</span>' +
+              (locCity ? '<span class="text-zinc-600 font-mono-tag text-[8px]">· ' + locCity + '</span>' : '') +
+            '</div>' +
+          '</div>' +
+          '<span class="text-[9px] text-zinc-500 font-mono-tag flex-shrink-0">' + timeAgo + '</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  card.addEventListener('click', function() {
+    if (typeof openMomentDetail === 'function') openMomentDetail(m);
+  });
+
+  return card;
 }
 
 // =====================================================================
