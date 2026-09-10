@@ -4015,6 +4015,42 @@ async function openUserProfile(userId, preloadedData) {
   var emptyMoments = document.getElementById('peerPublicEmptyMoments') || document.getElementById('peerProfileEmptyMoments');
   var sharedWorldSec = document.getElementById('peerPublicSharedWorld') || document.getElementById('peerSharedWorldSection');
 
+  // Instant preview from preloadedData if available
+  if (preloadedData) {
+    var preName = preloadedData.name || preloadedData.author_name || 'User';
+    var preHandle = (preloadedData.handle || preloadedData.author_handle || preloadedData.username || 'user').replace('@', '');
+    var preCleanH = '@' + preHandle.toLowerCase();
+    var preParts = preName.trim().split(/\s+/);
+    var preInits = (preParts.length >= 2 ? (preParts[0][0] + preParts[1][0]) : preName.substring(0, 2)).toUpperCase();
+    var preAvatar = preloadedData.avatar_url || preloadedData.avatar;
+
+    var pubName = document.getElementById('peerPublicName') || document.getElementById('peerProfileName');
+    var pubUsername = document.getElementById('peerPublicUsername') || document.getElementById('peerProfileUsername');
+    var pubCampus = document.getElementById('peerPublicCampus') || document.getElementById('peerProfileCampus');
+    var pubCity = document.getElementById('peerPublicCity') || document.getElementById('peerProfileCity');
+    var pubBio = document.getElementById('peerPublicBio') || document.getElementById('peerProfileBio');
+    var pubInitials = document.getElementById('peerPublicInitials') || document.getElementById('peerProfileInitials');
+    var pubAvatar = document.getElementById('peerPublicAvatar') || document.getElementById('peerProfileAvatar');
+
+    if (pubName) pubName.textContent = preName;
+    if (pubUsername) pubUsername.textContent = preCleanH;
+    if (pubCampus) pubCampus.textContent = preloadedData.campus || preloadedData.community_name || 'Campus';
+    if (pubCity) pubCity.textContent = preloadedData.location_city || preloadedData.city || 'City';
+    if (pubBio) pubBio.textContent = preloadedData.bio || 'Building Kandid · Learning CS ·\nExploring real places, real people, real stories.';
+    if (pubInitials) pubInitials.textContent = preInits || 'K';
+
+    if (preAvatar && !preAvatar.includes('dicebear')) {
+      if (pubAvatar) { pubAvatar.src = preAvatar; pubAvatar.style.display = 'block'; }
+      if (pubInitials) pubInitials.style.display = 'none';
+    } else {
+      if (pubAvatar) pubAvatar.style.display = 'none';
+      if (pubInitials) pubInitials.style.display = 'block';
+    }
+
+    if (peerPublicView) peerPublicView.style.display = 'flex';
+    if (peerPrivateView) peerPrivateView.style.display = 'none';
+  }
+
   // Set loading state for moments
   if (momentsGrid) {
     momentsGrid.innerHTML = '<div class="col-span-2 text-center py-8 text-xs text-zinc-500 font-mono-tag animate-pulse">LOADING MOMENTS...</div>';

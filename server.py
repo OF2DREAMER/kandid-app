@@ -6340,18 +6340,25 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn = get_db()
             cursor = conn.cursor()
 
+            target_row = None
             if target_user_id:
                 cursor.execute("SELECT * FROM users WHERE id = ?", (target_user_id,))
+                target_row = cursor.fetchone()
+                if not target_row:
+                    clean_h = target_user_id.replace("@", "").strip()
+                    cursor.execute("SELECT * FROM users WHERE LOWER(handle) = LOWER(?) OR LOWER(email) = LOWER(?)", (clean_h, clean_h))
+                    target_row = cursor.fetchone()
             elif target_handle:
                 clean_h = target_handle.replace("@", "").strip()
-                cursor.execute("SELECT * FROM users WHERE handle = ? OR email = ?", (clean_h, clean_h))
+                cursor.execute("SELECT * FROM users WHERE LOWER(handle) = LOWER(?) OR LOWER(email) = LOWER(?)", (clean_h, clean_h))
+                target_row = cursor.fetchone()
             elif user:
                 cursor.execute("SELECT * FROM users WHERE id = ?", (user["id"],))
+                target_row = cursor.fetchone()
             else:
                 conn.close()
                 return self.send_json(401, {"error": "Unauthenticated", "success": False})
 
-            target_row = cursor.fetchone()
             if not target_row:
                 conn.close()
                 return self.send_json(404, {"error": "User not found", "success": False})
