@@ -1067,133 +1067,214 @@
       </section>
 
       <!-- =================================================================
-           SECTION: PEER / PUBLIC STUDENT PROFILE
+           SECTION: PEER / PUBLIC & PRIVATE OTHER USER PROFILE (APPROVED KANDID DESIGN)
            ================================================================= -->
-      <!-- =================================================================
-           SECTION: PEER / PUBLIC STUDENT PROFILE (MATCHING YOU PAGE DESIGN)
-           ================================================================= -->
-      <section class="app-screen px-4 py-3 space-y-3.5 pb-32" id="screen-peer-profile" style="display:none;">
+      <section class="app-screen bg-[#0b0b0c] text-white flex flex-col" id="screen-peer-profile" style="display:none;">
         
-        <!-- Back Navigation Bar -->
-        <div class="flex items-center justify-between px-0.5 pt-0.5 pb-1">
-          <button onclick="switchScreenView(lastScreenBeforeProfile || 'feed')" class="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-mono-tag cursor-pointer transition active:scale-95">
-            <span class="text-sm">←</span>
-            <span class="font-bold">BACK</span>
-          </button>
-          <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase">USER PROFILE</span>
-        </div>
+        <!-- Scrollable Content -->
+        <div class="flex-1 overflow-y-auto no-scroll pb-24" id="peerProfileScrollArea">
 
-        <!-- 1. Top Profile Hero Banner Card with Moody Background -->
-        <div class="bg-zinc-950 border border-zinc-800/80 rounded-3xl p-4 flex items-center justify-between relative overflow-hidden shadow-2xl">
-          <!-- Ambient Lighting Image Overlay on Right -->
-          <div class="absolute inset-0 bg-cover bg-right opacity-30 pointer-events-none" style="background-image: url('https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=600&q=80');"></div>
-          <div class="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-950/85 to-transparent pointer-events-none"></div>
+          <!-- Profile Cover Banner (Matched to 120px) -->
+          <div class="relative w-full h-[120px] bg-neutral-900 overflow-hidden flex-shrink-0" id="peerCoverBanner">
+            <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80" id="peerCoverImg" alt="" class="w-full h-full object-cover opacity-70">
+            <div class="absolute inset-0 bg-gradient-to-t from-[#0b0b0c] via-transparent to-black/30 pointer-events-none"></div>
 
-          <!-- Left: Avatar Box & Identity Info -->
-          <div class="flex items-center gap-3.5 relative z-10 min-w-0">
-            <div class="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-700/80 flex items-center justify-center flex-shrink-0 text-amber-500 font-extrabold text-2xl font-mono-tag shadow-inner overflow-hidden relative" id="peerProfileAvatarBox">
-              <span id="peerProfileInitials" class="text-amber-400 font-bold font-mono-tag">SU</span>
-              <img src="" class="w-full h-full object-cover" id="peerProfileAvatar" style="display:none;">
-              <div id="peerProfileOnlineDot" class="absolute bottom-1 right-1 w-3 h-3 rounded-full border-2 border-zinc-950 bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.9)] animate-pulse"></div>
-            </div>
-            <div class="space-y-0.5 min-w-0">
-              <div class="flex items-center gap-2">
-                <h2 class="text-sm font-extrabold text-white tracking-wide uppercase font-mono-tag truncate" id="peerProfileName">SUNIL</h2>
-                <span id="peerProfileStatusBadge" class="text-[8px] font-mono-tag text-zinc-500 font-bold px-1.5 py-0.5 rounded bg-zinc-900/80 border border-zinc-800">OFFLINE</span>
-              </div>
-              <p class="text-xs text-amber-400 font-mono-tag truncate" id="peerProfileUsername">@SUNIL</p>
-              <p class="text-[9px] text-zinc-400 font-bold font-mono-tag tracking-wider uppercase pt-0.5 truncate" id="peerProfileCampus">◉ GURU KASHI UNIVERSITY</p>
-              <p class="text-[11px] text-zinc-300 font-normal truncate" id="peerProfileBio">Capturing ordinary days.</p>
+            <!-- Top Navigation Bar -->
+            <div class="absolute top-2.5 left-4 right-4 flex justify-between items-center z-10 text-white">
+              <button type="button" onclick="handlePeerProfileBack()" aria-label="Back" class="hover:text-amber-400 transition p-1 text-zinc-300">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M15 19l-7-7 7-7"/></svg>
+              </button>
+              <button type="button" onclick="openProfileActionsMenu()" aria-label="Profile actions menu" class="hover:text-amber-400 transition p-1 text-zinc-300">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
+              </button>
             </div>
           </div>
 
-          <!-- Right: Quick Connect Icon Button -->
-          <div class="flex items-center gap-1.5 relative z-10 self-start mt-0.5">
-            <button onclick="togglePeerConnection()" id="peerConnectIconBtn" class="w-8 h-8 rounded-full bg-black/60 border border-white/20 apple-blur flex items-center justify-center text-amber-400 hover:text-white transition-all shadow-md cursor-pointer active:scale-95" title="Connect">
-              ✦
+          <!-- Profile Identity Section -->
+          <section class="px-5 -mt-10 relative z-20">
+            <div class="flex items-start justify-between">
+              <!-- Left: Avatar + Identity -->
+              <div class="flex items-center space-x-3.5 min-w-0">
+                <div class="relative flex-shrink-0">
+                  <div class="w-[82px] h-[82px] rounded-full p-[2.5px] bg-gradient-to-tr from-amber-600 via-amber-500 to-amber-300 shadow-lg shadow-amber-500/10">
+                    <div class="w-full h-full rounded-full bg-zinc-900 overflow-hidden flex items-center justify-center border-2 border-[#0b0b0c]" id="peerProfileAvatarBox">
+                      <span id="peerProfileInitials" class="text-amber-400 font-bold font-mono-tag text-2xl">U</span>
+                      <img src="" id="peerProfileAvatar" alt="" class="w-full h-full object-cover rounded-full" style="display:none;">
+                    </div>
+                  </div>
+                  <div id="peerProfileOnlineDot" class="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-[#0b0b0c] bg-zinc-600"></div>
+                </div>
+                <div class="pt-6 min-w-0">
+                  <h1 class="font-bold text-[19px] text-white tracking-tight leading-tight truncate" id="peerProfileName">User Name</h1>
+                  <p class="text-[11px] text-gray-400 font-medium mt-0.5 truncate" id="peerProfileUsername">@username</p>
+                </div>
+              </div>
+
+              <!-- Right: Connect & Message Actions (for Public Profile) -->
+              <div class="pt-6 flex items-center space-x-2 flex-shrink-0" id="peerPublicActionsBar">
+                <!-- Connect button state managed by JS -->
+                <button type="button" id="peerProfileConnectBtn" onclick="togglePeerConnection()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95" aria-label="Connect with user">
+                  <span id="peerProfileConnectIcon" class="text-[10px]">✦</span>
+                  <span id="peerProfileConnectText">CONNECT</span>
+                </button>
+                <button type="button" id="peerProfileDeclineBtn" onclick="declinePeerConnection()" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-full text-[11px] font-semibold tracking-wide transition cursor-pointer active:scale-95" style="display:none;" aria-label="Decline request">
+                  DECLINE
+                </button>
+                <button type="button" id="peerProfileMessageBtn" class="px-3 py-1.5 bg-transparent border border-neutral-700 hover:border-neutral-500 rounded-full text-[11px] font-semibold text-gray-200 flex items-center space-x-1 transition cursor-pointer active:scale-95" aria-label="Message user">
+                  <svg class="w-3 h-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                  <span id="peerProfileMessageBtnText">MESSAGE</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Privacy-Safe Campus & Location Context (Hidden for Private profiles) -->
+            <div class="flex flex-col text-[11px] text-gray-300 mt-2.5 space-y-1" id="peerProfileLocationRow" aria-label="Contextual location">
+              <div class="flex items-center space-x-1.5" id="peerCampusContainer">
+                <svg class="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 14l9-5-9-5-9 5 9 5z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg>
+                <span id="peerProfileCampus">Campus</span>
+              </div>
+              <div class="flex items-center space-x-1.5" id="peerCityContainer">
+                <svg class="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span id="peerProfileCity">City</span>
+              </div>
+            </div>
+
+            <!-- Bio (Always visible in both Public and Private states) -->
+            <div class="text-[11px] text-gray-300 mt-2.5 leading-relaxed font-normal" id="peerProfileBio" aria-label="Biography">
+              Capturing ordinary days.
+            </div>
+          </section>
+
+          <!-- ============================================================
+               PRIVATE OTHER USER PROFILE STATE (Strictly approved design)
+               ============================================================ -->
+          <div id="peerPrivateOverlay" class="px-5 mt-5 text-center flex flex-col items-center" style="display:none;">
+            <!-- Restrained Private Profile Indicator -->
+            <div class="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-neutral-900/90 border border-neutral-800" aria-label="Private profile status">
+              <svg class="w-2.5 h-2.5 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg>
+              <span class="font-mono-tag text-[9px] tracking-[0.15em] text-gray-400 uppercase font-semibold">PRIVATE PROFILE</span>
+            </div>
+
+            <!-- Approved Privacy Message -->
+            <div class="mt-4 max-w-[260px] mx-auto space-y-1">
+              <p class="text-xs font-semibold text-gray-200">This profile is private.</p>
+              <p class="text-[11px] text-gray-400 leading-relaxed">Connect to see what they've chosen to share.</p>
+            </div>
+
+            <!-- Primary Action: Connect button inside Private state -->
+            <div class="mt-5 w-full max-w-[180px]" id="peerPrivateConnectContainer">
+              <button type="button" id="peerPrivateConnectBtn" onclick="togglePeerConnection()" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95" aria-label="Connect with user">
+                <span class="text-[10px]">✦</span>
+                <span id="peerPrivateConnectText">CONNECT</span>
+              </button>
+            </div>
+
+            <!-- Negative space editorial detail -->
+            <div class="pt-16 pb-8 text-center flex items-center justify-center px-4">
+              <p class="text-[11px] font-normal text-neutral-500 tracking-wide italic">Their world, shared by choice.</p>
+            </div>
+          </div>
+
+          <!-- ============================================================
+               PUBLIC OTHER USER PROFILE CONTENT (Approved design)
+               ============================================================ -->
+          <div id="peerPublicContent">
+            
+            <!-- Recent Moments Header -->
+            <section class="px-5 mt-6 flex justify-between items-center" aria-labelledby="recent-moments-heading">
+              <h3 id="recent-moments-heading" class="text-[11px] font-bold tracking-[0.15em] text-gray-400 uppercase font-mono-tag">RECENT MOMENTS</h3>
+              <button type="button" id="peerMomentsViewAllBtn" class="text-[11px] font-bold text-amber-500 hover:underline flex items-center space-x-1 transition cursor-pointer">
+                <span>VIEW ALL</span>
+                <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+              </button>
+            </section>
+
+            <!-- Recent Moments Grid (2-column approved grid) -->
+            <section class="px-5 mt-3 grid grid-cols-2 gap-2.5" id="peerProfileMomentsGrid" aria-label="Recent public moments">
+              <!-- Populated dynamically via openUserProfile() -->
+            </section>
+
+            <!-- Empty Moments fallback -->
+            <div id="peerProfileEmptyMoments" class="mx-5 mt-3 bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-6 text-center space-y-1 font-mono-tag" style="display:none;">
+              <p class="text-xs text-white font-bold uppercase tracking-wide">NO MOMENTS YET</p>
+              <p class="text-[10px] text-zinc-500">No public Moments shared yet.</p>
+            </div>
+
+            <!-- Shared World Section (Appears ONLY when actual shared context exists) -->
+            <section class="px-5 mt-6 pb-6" id="peerSharedWorldSection" style="display:none;" aria-labelledby="shared-world-heading">
+              <h3 id="shared-world-heading" class="text-[11px] font-bold tracking-[0.15em] text-gray-400 uppercase mb-3 font-mono-tag">SHARED WORLD</h3>
+              
+              <div class="space-y-2.5">
+                <!-- Shared Communities Card -->
+                <div id="peerSharedCommunitiesCard" class="bg-[#121215] border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-3.5 flex items-center justify-between transition cursor-pointer" style="display:none;">
+                  <div class="flex items-center space-x-3.5 min-w-0">
+                    <div class="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-gray-300 text-xs flex-shrink-0" aria-hidden="true">
+                      <svg class="w-4 h-4 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                    </div>
+                    <div class="min-w-0">
+                      <h4 class="text-[11px] font-bold text-white tracking-wide font-mono-tag">SHARED COMMUNITIES</h4>
+                      <p class="text-[10px] text-gray-400 mt-0.5 truncate" id="peerSharedCommunitiesText">Shared spaces</p>
+                    </div>
+                  </div>
+                  <svg class="w-3 h-3 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </div>
+
+                <!-- Mutual Connections Card -->
+                <div id="peerMutualConnectionsCard" class="bg-[#121215] border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-3.5 flex items-center justify-between transition cursor-pointer" style="display:none;">
+                  <div class="flex items-center space-x-3.5 min-w-0">
+                    <div class="w-8 h-8 rounded-full bg-neutral-800 flex items-center justify-center text-gray-300 text-xs flex-shrink-0" aria-hidden="true">
+                      <svg class="w-4 h-4 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    </div>
+                    <div class="min-w-0">
+                      <h4 class="text-[11px] font-bold text-white tracking-wide font-mono-tag">MUTUAL CONNECTIONS</h4>
+                      <p class="text-[10px] text-gray-400 mt-0.5 truncate" id="peerMutualConnectionsText">You both know these people</p>
+                    </div>
+                  </div>
+                  <svg class="w-3 h-3 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </div>
+              </div>
+            </section>
+
+            <!-- Fallback Public Communities Section (if no shared communities, but user has public communities) -->
+            <section class="px-5 mt-4 pb-6" id="peerProfileCommunitiesSection" style="display:none;">
+              <h3 class="text-[11px] font-bold tracking-[0.15em] text-gray-400 uppercase mb-3 font-mono-tag">COMMUNITIES</h3>
+              <div class="space-y-2" id="peerProfileCommunitiesContainer"></div>
+              <div id="peerProfileEmptyCommunities" class="bg-neutral-900/60 border border-neutral-800/80 rounded-2xl p-4 text-center space-y-1 font-mono-tag" style="display:none;">
+                <p class="text-[10px] text-zinc-500">NO PUBLIC COMMUNITIES</p>
+              </div>
+            </section>
+
+          </div><!-- end peerPublicContent -->
+        </div><!-- end scrollable -->
+      </section>
+
+      <!-- Profile Actions Bottom Sheet Modal -->
+      <div id="profileActionsOverlay" class="fixed inset-0 bg-black/70 z-[200] flex items-end justify-center" style="display:none;" onclick="closeProfileActionsMenu()">
+        <div class="w-full max-w-sm bg-neutral-950 border-t border-neutral-800 rounded-t-3xl p-4 space-y-1.5 pb-10" onclick="event.stopPropagation()">
+          <div class="w-10 h-1 bg-neutral-700 rounded-full mx-auto mb-4"></div>
+          <button type="button" id="profileActionMessage" onclick="messageFromActionsMenu()" class="w-full py-3 text-left px-4 rounded-xl text-xs font-semibold text-gray-200 hover:bg-neutral-900 transition flex items-center justify-between cursor-pointer">
+            <span>Message</span>
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          </button>
+          <button type="button" id="profileActionRemoveConnection" onclick="removePeerConnection()" class="w-full py-3 text-left px-4 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-neutral-900 transition flex items-center justify-between cursor-pointer" style="display:none;">
+            <span>Remove Connection</span>
+            <svg class="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6zM21 12h-6"/></svg>
+          </button>
+          <button type="button" onclick="blockPeerUser()" class="w-full py-3 text-left px-4 rounded-xl text-xs font-semibold text-red-400 hover:bg-neutral-900 transition flex items-center justify-between cursor-pointer">
+            <span>Block</span>
+            <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+          </button>
+          <button type="button" onclick="reportPeerUser()" class="w-full py-3 text-left px-4 rounded-xl text-xs font-semibold text-gray-400 hover:bg-neutral-900 transition flex items-center justify-between cursor-pointer">
+            <span>Report</span>
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          </button>
+          <div class="pt-2">
+            <button type="button" onclick="closeProfileActionsMenu()" class="w-full py-3 text-center rounded-xl text-xs font-bold text-gray-400 bg-neutral-900 hover:bg-neutral-800 transition cursor-pointer">
+              Cancel
             </button>
           </div>
         </div>
-
-        <!-- 2. 4-Column Stats Card (STREAK | MOMENTS | MEMORIES | AUTHENTIC) -->
-        <div class="bg-zinc-950 border border-zinc-800/80 rounded-3xl p-3.5 grid grid-cols-4 text-center shadow-lg font-mono-tag" id="peerStatsBar">
-          <!-- Col 1: STREAK -->
-          <div class="space-y-0.5 border-r border-zinc-900 pr-1">
-            <div class="text-xs text-amber-500 mb-0.5">🔥</div>
-            <span class="text-[8px] text-zinc-500 tracking-widest block uppercase font-bold">STREAK</span>
-            <span class="text-xs font-black text-white block truncate" id="peerProfileStreakVal">1 DAY</span>
-            <span class="text-[7px] text-zinc-500 block truncate">Active</span>
-          </div>
-
-          <!-- Col 2: MOMENTS -->
-          <div class="space-y-0.5 border-r border-zinc-900 px-1">
-            <div class="text-xs text-amber-400 mb-0.5">◌</div>
-            <span class="text-[8px] text-zinc-500 tracking-widest block uppercase font-bold">MOMENTS</span>
-            <span class="text-xs font-black text-white block truncate" id="peerProfileMomentsCountVal">2</span>
-            <span class="text-[7px] text-zinc-500 block truncate">Captured</span>
-          </div>
-
-          <!-- Col 3: MEMORIES -->
-          <div class="space-y-0.5 border-r border-zinc-900 px-1">
-            <div class="text-xs text-amber-400 mb-0.5">🔖</div>
-            <span class="text-[8px] text-zinc-500 tracking-widest block uppercase font-bold">MEMORIES</span>
-            <span class="text-xs font-black text-white block truncate" id="peerProfileMemoriesVal">1</span>
-            <span class="text-[7px] text-zinc-500 block truncate">Saved</span>
-          </div>
-
-          <!-- Col 4: AUTHENTIC -->
-          <div class="space-y-0.5 pl-1">
-            <div class="text-xs text-amber-400 mb-0.5">✦</div>
-            <span class="text-[8px] text-zinc-500 tracking-widest block uppercase font-bold">AUTHENTIC</span>
-            <span class="text-xs font-black text-amber-400 block truncate" id="peerProfileScoreVal">100%</span>
-            <span class="text-[7px] text-zinc-500 block truncate">Verified</span>
-          </div>
-        </div>
-
-        <!-- 3. Dual Action Bar: MESSAGE & CONNECT -->
-        <div class="grid grid-cols-2 gap-2.5 pt-0.5">
-          <button id="peerProfileMessageBtn" class="py-3 px-4 bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-black font-extrabold text-[11px] rounded-2xl tracking-wider transition uppercase cursor-pointer font-mono-tag shadow-[0_4px_20px_rgba(245,158,11,0.35)] flex items-center justify-center gap-1.5">
-            <span>💬</span>
-            <span id="peerProfileMessageBtnText">MESSAGE</span>
-          </button>
-          <button id="peerProfileConnectBtn" onclick="togglePeerConnection()" class="py-3 px-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 active:scale-[0.98] text-amber-400 font-extrabold text-[11px] rounded-2xl tracking-wider transition uppercase cursor-pointer font-mono-tag shadow-md flex items-center justify-center gap-1.5">
-            <span id="peerProfileConnectIcon">✦</span>
-            <span id="peerProfileConnectText">CONNECT</span>
-          </button>
-        </div>
-
-        <!-- 4. Moments Stream -->
-        <div class="space-y-2.5 pt-1">
-          <div class="flex justify-between items-center px-1">
-            <span class="text-[10px] text-white font-mono-tag tracking-widest uppercase font-bold" id="peerProfileMomentsHeaderTitle">THEIR MOMENTS</span>
-            <span class="text-[9px] text-zinc-400 font-mono-tag font-bold cursor-pointer hover:text-white transition" id="peerProfileMomentsSubtitle">VIEW ALL →</span>
-          </div>
-          
-          <div id="peerProfileMomentsGrid" class="grid grid-cols-3 gap-2">
-            <!-- Populated dynamically by openUserProfile() -->
-          </div>
-
-          <div id="peerProfileEmptyMoments" class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-1.5 font-mono-tag" style="display:none;">
-            <p class="text-xs text-white font-bold uppercase tracking-wide">NO MOMENTS YET</p>
-            <p class="text-[10px] text-zinc-500">This person hasn't shared any public Moments yet.</p>
-          </div>
-        </div>
-
-        <!-- 5. THEIR COMMUNITIES (New Section) -->
-        <div class="space-y-2 pt-1" id="peerProfileCommunitiesSection">
-          <div class="flex justify-between items-center px-1">
-            <span class="text-[10px] text-amber-500 font-mono-tag tracking-widest uppercase font-bold">THEIR COMMUNITIES</span>
-            <span class="text-[9px] text-zinc-500 font-mono-tag">VIEW COMMUNITIES →</span>
-          </div>
-          <div class="space-y-2" id="peerProfileCommunitiesContainer">
-            <!-- Populated dynamically via renderPeerCommunities() -->
-          </div>
-          <div id="peerProfileEmptyCommunities" class="bg-zinc-950 border border-zinc-800/60 rounded-2xl p-4 text-center space-y-1 font-mono-tag" style="display:none;">
-            <p class="text-[10px] text-zinc-500">NO PUBLIC COMMUNITIES YET</p>
-          </div>
-        </div>
-
-      </section>
+      </div>
 
       <!-- =================================================================
            SECTION 5: MEMORIES / ARCHIVE
@@ -1727,222 +1808,276 @@
            ================================================================= -->
       <section class="app-screen bg-[#09090b]" id="screen-settings" style="display:none;">
           <div class="px-4 py-4 space-y-5 pb-32">
+
+              <!-- § 1. ACCOUNT -->
               <div class="space-y-2">
                   <div class="flex justify-between items-center px-1">
                       <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold">ACCOUNT</span>
                       <button class="text-[10px] text-amber-500 font-mono-tag font-bold cursor-pointer" onclick="switchScreenView('you')">DONE</button>
                   </div>
                   <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md">
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openEditProfileModal()">
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openEditProfileModal()">
                           <div>
-                              <h3 class="text-xs font-bold text-white tracking-wide">EDIT PROFILE</h3>
-                              <p class="text-[10px] text-amber-400 font-mono-tag">Change Name, Bio, Community & City</p>
+                              <h3 class="text-xs font-bold text-white tracking-wide">EDIT IDENTITY</h3>
+                              <p class="text-[10px] text-zinc-400">Name, Bio, Avatar, Community &amp; City</p>
                           </div>
-                          <span class="text-amber-500 font-mono-tag font-bold">EDIT</span>
+                          <span class="text-amber-500 font-mono-tag font-bold text-[10px]">EDIT</span>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer">
+                      <div class="p-3.5 flex justify-between items-center">
                           <div>
                               <h3 class="text-xs font-bold text-white tracking-wide">USERNAME</h3>
                               <p class="text-[10px] text-amber-400 font-mono-tag" id="settingsUsername">@user</p>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
+                          <span class="text-zinc-600 font-mono-tag text-[10px]">via Edit Identity</span>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openEditProfileModal()">
+                      <div class="p-3.5 flex justify-between items-center">
                           <div>
-                              <h3 class="text-xs font-bold text-white tracking-wide">COMMUNITY & CITY</h3>
-                              <p class="text-[10px] text-zinc-400" id="settingsCampus">North City Community</p>
+                              <h3 class="text-xs font-bold text-white tracking-wide">EMAIL</h3>
+                              <p class="text-[10px] text-zinc-400 font-mono-tag" id="settingsEmail">&mdash;</p>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
+                          <span class="text-[9px] text-emerald-400 font-mono-tag font-bold" id="settingsEmailVerified">VERIFIED &#10003;</span>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer">
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openChangePasswordModal()">
                           <div>
-                              <h3 class="text-xs font-bold text-white tracking-wide">ACCOUNT</h3>
-                              <p class="text-[10px] text-zinc-400">Account information</p>
+                              <h3 class="text-xs font-bold text-white tracking-wide">CHANGE PASSWORD</h3>
+                              <p class="text-[10px] text-zinc-500">Update your account password</p>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">ACCOUNT SECURITY</h3>
+                              <p class="text-[10px] text-zinc-500">Session-based auth &middot; PBKDF2 hashed</p>
+                          </div>
+                          <span class="text-[9px] text-emerald-400 font-mono-tag font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">&#9679; SECURE</span>
                       </div>
                   </div>
               </div>
 
+              <!-- § 2. PRIVACY -->
               <div class="space-y-2">
                   <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">PRIVACY</span>
                   <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md">
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openPrivacyModal()">
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openPrivacyModal()">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">LOCATION &amp; DISCOVERY</h3>
+                              <p class="text-[10px] text-amber-400 font-mono-tag">Approximate: ON &middot; Exact GPS: NEVER PUBLIC</p>
+                          </div>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openPrivacyModal()">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">WHO CAN CONNECT WITH ME</h3>
+                              <p class="text-[10px] text-zinc-400">Messages &amp; connection request permissions</p>
+                          </div>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="switchScreenView('block')">
+                          <h3 class="text-xs font-bold text-white tracking-wide">BLOCKED PEOPLE</h3>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openPrivacyModal()">
                           <div>
                               <h3 class="text-xs font-bold text-white tracking-wide">MOMENT VISIBILITY</h3>
                               <p class="text-[10px] text-zinc-400">Control who can discover your Moments</p>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openPrivacyModal()">
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openPrivacyModal()">
                           <div>
-                              <h3 class="text-xs font-bold text-white tracking-wide">LOCATION PRIVACY</h3>
-                              <p class="text-[10px] text-amber-400 font-mono-tag">Approx: ON · Live GPS: NEVER PUBLIC</p>
+                              <h3 class="text-xs font-bold text-white tracking-wide">COMMUNITY PRIVACY</h3>
+                              <p class="text-[10px] text-zinc-400">Community membership &amp; activity visibility</p>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openPrivacyModal()">
-                          <div>
-                              <h3 class="text-xs font-bold text-white tracking-wide">COMMUNICATION PRIVACY</h3>
-                              <p class="text-[10px] text-zinc-400">Messages & connection requests permissions</p>
-                          </div>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openPrivacyModal()">
-                          <div>
-                              <h3 class="text-xs font-bold text-white tracking-wide">DISCOVERABILITY</h3>
-                              <p class="text-[10px] text-zinc-400">Control who can find you through Search</p>
-                          </div>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
                       </div>
                   </div>
+                  <p class="text-[9px] text-zinc-600 font-mono-tag px-1 leading-relaxed">Your exact live location is never stored, shared, or made public. Kandid uses coarse approximate positioning only for Nearby/Radar discovery.</p>
               </div>
 
-              <!-- Phase 18: Community & Creation Section -->
-              <div class="space-y-2" id="settingsCommunityCreationSection">
-                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">COMMUNITY & CREATION</span>
-                  <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md" id="settingsCreatorContainer">
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openCreatorOnboardingModal()" id="settingsBecomeCreatorRow">
-                          <div>
-                              <h3 class="text-xs font-bold text-white tracking-wide">BECOME A COMMUNITY CREATOR</h3>
-                              <p class="text-[10px] text-zinc-400">Create spaces, host experiences, and build something meaningful</p>
-                          </div>
-                          <span class="text-[9px] text-amber-500 font-mono-tag font-bold bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/20">ACTIVATE ›</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openCreatorDashboardModal()" id="settingsCreatorDashboardRow" style="display:none;">
-                          <div>
-                              <h3 class="text-xs font-bold text-white tracking-wide flex items-center gap-1.5">
-                                  <span>CREATOR DASHBOARD</span>
-                                  <span class="text-[8px] text-emerald-400 font-mono-tag font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">● ACTIVE</span>
-                              </h3>
-                              <p class="text-[10px] text-zinc-400">Manage spaces and community operations</p>
-                          </div>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openCreateCommunityModal()" id="settingsCreateCommunityRow" style="display:none;">
-                          <div>
-                              <h3 class="text-xs font-bold text-amber-400 tracking-wide">+ CREATE NEW SPACE</h3>
-                              <p class="text-[10px] text-zinc-500">Launch a verified community space</p>
-                          </div>
-                          <span class="text-amber-500 font-mono-tag font-bold">›</span>
-                      </div>
-                  </div>
-              </div>
-
-              <div class="space-y-2">
-                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">SAFETY</span>
-                  <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md">
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="switchScreenView('block')">
-                          <h3 class="text-xs font-bold text-white tracking-wide">BLOCKED PEOPLE</h3>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="switchScreenView('report')">
-                          <h3 class="text-xs font-bold text-white tracking-wide">REPORTS & SAFETY</h3>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick="openHiddenContentModal()">
-                          <h3 class="text-xs font-bold text-white tracking-wide">HIDDEN CONTENT</h3>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
-                      </div>
-                  </div>
-              </div>
-
+              <!-- § 3. NOTIFICATIONS -->
               <div class="space-y-2">
                   <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">NOTIFICATIONS</span>
                   <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md">
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('moment_reminders')">
-                          <h3 class="text-xs font-bold text-white tracking-wide">MOMENT REMINDERS</h3>
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">MOMENTS &amp; CONNECTIONS</h3>
+                              <p class="text-[10px] text-zinc-500">Daily capture reminder &amp; connection activity</p>
+                          </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_moment_reminders">
                               <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_moment_reminders"></div>
                           </div>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('messages')">
-                          <h3 class="text-xs font-bold text-white tracking-wide">MESSAGES</h3>
-                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_messages">
-                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_messages"></div>
-                          </div>
-                      </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('community_activity')">
-                          <h3 class="text-xs font-bold text-white tracking-wide">COMMUNITY ACTIVITY</h3>
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">COMMUNITY UPDATES</h3>
+                              <p class="text-[10px] text-zinc-500">Drops, events &amp; community moments</p>
+                          </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_community_activity">
                               <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_community_activity"></div>
+                          </div>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('messages')">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">DIRECT CHAT</h3>
+                              <p class="text-[10px] text-zinc-500">New messages &amp; chat requests</p>
+                          </div>
+                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_messages">
+                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_messages"></div>
                           </div>
                       </div>
                   </div>
               </div>
 
+              <!-- § 4. CREATION & MEDIA -->
               <div class="space-y-2">
-                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">PREFERENCES</span>
+                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">CREATION &amp; MEDIA</span>
                   <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md">
+                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('camera_access')">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">CAMERA ACCESS</h3>
+                              <p class="text-[10px] text-zinc-500">Dual-camera capture for Moments</p>
+                          </div>
+                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_camera_access">
+                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_camera_access"></div>
+                          </div>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('ambient_audio')">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">AMBIENT AUDIO</h3>
+                              <p class="text-[10px] text-zinc-500">Microphone for audio context in Moments</p>
+                          </div>
+                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_ambient_audio">
+                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_ambient_audio"></div>
+                          </div>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('high_quality_media')">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">HIGH QUALITY MEDIA</h3>
+                              <p class="text-[10px] text-zinc-500">Save Moments at full resolution (uses more data)</p>
+                          </div>
+                          <div class="w-10 h-6 bg-zinc-800 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_high_quality_media">
+                              <div class="w-5 h-5 bg-zinc-500 rounded-full transition-transform transform translate-x-0" id="toggleThumb_high_quality_media"></div>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+
+              <!-- § 5. APPEARANCE & APP -->
+              <div class="space-y-2">
+                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">APPEARANCE &amp; APP</span>
+                  <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md">
+                      <div class="p-3.5 flex justify-between items-center">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">APPEARANCE</h3>
+                              <p class="text-[10px] text-zinc-500">Dark mode &middot; OLED optimized</p>
+                          </div>
+                          <span class="text-[9px] text-amber-400 font-mono-tag font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">DARK</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('reduced_motion')">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">REDUCED MOTION</h3>
+                              <p class="text-[10px] text-zinc-500">Minimize animations &amp; transitions</p>
+                          </div>
+                          <div class="w-10 h-6 bg-zinc-800 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_reduced_motion">
+                              <div class="w-5 h-5 bg-zinc-500 rounded-full transition-transform transform translate-x-0" id="toggleThumb_reduced_motion"></div>
+                          </div>
+                      </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('sound')">
-                          <h3 class="text-xs font-bold text-white tracking-wide">SOUND</h3>
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">SOUND</h3>
+                              <p class="text-[10px] text-zinc-500">UI feedback sounds</p>
+                          </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_sound">
                               <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_sound"></div>
                           </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('haptics')">
-                          <h3 class="text-xs font-bold text-white tracking-wide">HAPTICS</h3>
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">HAPTICS</h3>
+                              <p class="text-[10px] text-zinc-500">Tactile vibration feedback</p>
+                          </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_haptics">
                               <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_haptics"></div>
                           </div>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('data_saver')">
-                          <h3 class="text-xs font-bold text-white tracking-wide">DATA SAVER</h3>
-                          <div class="w-10 h-6 bg-zinc-800 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_data_saver">
-                              <div class="w-5 h-5 bg-zinc-500 rounded-full transition-transform transform translate-x-0" id="toggleThumb_data_saver"></div>
-                          </div>
+                      <div class="p-3.5 flex justify-between items-center">
+                          <h3 class="text-xs font-bold text-white tracking-wide">LANGUAGE</h3>
+                          <span class="text-[10px] text-zinc-400 font-mono-tag">English</span>
                       </div>
                   </div>
               </div>
 
+              <!-- § 6. SUPPORT & LEGAL -->
               <div class="space-y-2">
-                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">DATA & ACCOUNT</span>
+                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">SUPPORT &amp; LEGAL</span>
                   <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md">
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-95" onclick="downloadUserData()">
-                          <h3 class="text-xs font-bold text-white tracking-wide">DOWNLOAD YOUR DATA</h3>
-                          <span class="text-amber-500 font-mono-tag text-[10px] font-bold">EXPORT JSON</span>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openAboutKandidModal()">
+                          <h3 class="text-xs font-bold text-white tracking-wide">HELP &amp; FAQ</h3>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-red-500/10 transition-colors cursor-pointer active:scale-95" onclick="logoutUser()">
-                          <h3 class="text-xs font-bold text-red-400 tracking-wide">LOG OUT / SWITCH ACCOUNT</h3>
-                          <span class="text-red-400 font-mono-tag">›</span>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="switchScreenView('report')">
+                          <h3 class="text-xs font-bold text-white tracking-wide">REPORT A PROBLEM</h3>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openAboutKandidModal()">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">ABOUT KANDID</h3>
+                              <p class="text-[10px] text-zinc-500">Authentic social without vanity</p>
+                          </div>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openLegalModal('terms')">
+                          <h3 class="text-xs font-bold text-white tracking-wide">TERMS OF SERVICE</h3>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openLegalModal('privacy')">
+                          <h3 class="text-xs font-bold text-white tracking-wide">PRIVACY POLICY</h3>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="openCommunityGuidelinesModal()">
+                          <h3 class="text-xs font-bold text-white tracking-wide">COMMUNITY GUIDELINES</h3>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center">
+                          <span class="text-xs text-zinc-400 tracking-wide">APP VERSION</span>
+                          <span class="text-[10px] text-amber-500 font-mono-tag font-bold">2.0.0 (V2 LOCKED)</span>
                       </div>
                   </div>
               </div>
 
+              <!-- § 7. ACCOUNT ACTIONS -->
               <div class="space-y-2">
-                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">ABOUT</span>
-                  <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md font-mono-tag text-xs">
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer font-sans active:scale-95" onclick="openAboutKandidModal()">
-                          <span class="font-bold text-white">ABOUT KANDID</span>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
+                  <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">ACCOUNT ACTIONS</span>
+                  <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-md">
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="downloadUserData()">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">DOWNLOAD YOUR DATA</h3>
+                              <p class="text-[10px] text-zinc-500">Export a JSON archive of your account</p>
+                          </div>
+                          <span class="text-amber-500 font-mono-tag text-[10px] font-bold">EXPORT</span>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer font-sans active:scale-95" onclick="openCommunityGuidelinesModal()">
-                          <span class="font-bold text-white">COMMUNITY GUIDELINES</span>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/30 transition-colors cursor-pointer active:scale-[0.98]" onclick="logoutUser()">
+                          <h3 class="text-xs font-bold text-zinc-300 tracking-wide">LOG OUT</h3>
+                          <span class="text-zinc-500 font-mono-tag">&rsaquo;</span>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer font-sans active:scale-95" onclick="openLegalModal('privacy')">
-                          <span class="font-bold text-white">PRIVACY POLICY</span>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer font-sans active:scale-95" onclick="openLegalModal('terms')">
-                          <span class="font-bold text-white">TERMS</span>
-                          <span class="text-zinc-600 font-mono-tag">›</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center text-zinc-400">
-                          <span>APP VERSION</span>
-                          <span class="text-amber-500 font-mono-tag font-bold">2.0.0 (V2 LOCKED)</span>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-red-500/10 transition-colors cursor-pointer active:scale-[0.98]" onclick="confirmDeleteAccount()">
+                          <h3 class="text-xs font-bold text-red-400 tracking-wide">DELETE ACCOUNT</h3>
+                          <span class="text-red-400/60 font-mono-tag text-[10px]">PERMANENT</span>
                       </div>
                   </div>
               </div>
 
-              <div class="text-center pt-4 pb-6 space-y-1">
+              <!-- Privacy footer -->
+              <div class="text-center pt-4 pb-6 space-y-1.5">
                   <h4 class="text-xs font-bold text-white font-mono-tag tracking-wider uppercase">Your Moments belong to you.</h4>
-                  <p class="text-[10px] text-zinc-500 font-mono-tag">Kandid only shares what you choose to make discoverable.</p>
+                  <p class="text-[10px] text-zinc-500 font-mono-tag leading-relaxed">Kandid only shares what you choose to make discoverable.<br>Zero tracking. Zero vanity metrics. Zero data selling.</p>
               </div>
           </div>
       </section>
 
+
     
+
       <!-- =================================================================
            SECTION 11: EMPTY SEARCH STATE
            ================================================================= -->
@@ -3988,6 +4123,21 @@
             </div>
 
             <div class="space-y-4 text-xs">
+                <!-- 0. Profile Privacy (Public vs Private) -->
+                <div class="space-y-1.5 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3">
+                    <span class="text-[9px] text-amber-500 uppercase tracking-widest block font-bold">PROFILE PRIVACY</span>
+                    <p class="text-[10px] text-zinc-400">Control who can discover your profile and moments</p>
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <label class="flex items-center gap-1.5 text-[10px] text-zinc-300 cursor-pointer">
+                            <input type="radio" name="privacyProfile" value="public" checked class="accent-amber-500"> Public Profile
+                        </label>
+                        <label class="flex items-center gap-1.5 text-[10px] text-zinc-300 cursor-pointer">
+                            <input type="radio" name="privacyProfile" value="private" class="accent-amber-500"> Private Profile
+                        </label>
+                    </div>
+                    <p class="text-[9px] text-zinc-500 pt-0.5">Private: Only identity & bio visible until connected.</p>
+                </div>
+
                 <!-- 1. Moments Visibility -->
                 <div class="space-y-1.5 bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-3">
                     <span class="text-[9px] text-amber-500 uppercase tracking-widest block font-bold">MOMENTS</span>
@@ -4041,7 +4191,7 @@
                             <input type="radio" name="privacyConnections" value="everyone" checked class="accent-amber-500"> Everyone
                         </label>
                         <label class="flex items-center gap-1.5 text-[10px] text-zinc-300 cursor-pointer">
-                            <input type="radio" name="privacyConnections" value="suggested" class="accent-amber-500"> Suggested only
+                            <input type="radio" name="privacyConnections" value="no_one" class="accent-amber-500"> No one
                         </label>
                     </div>
                 </div>
@@ -4055,6 +4205,39 @@
         </div>
     </div>
 
+    <!-- ===================================================================
+         CHANGE PASSWORD MODAL
+         =================================================================== -->
+    <div id="changePasswordModal" class="fixed inset-0 z-50 bg-black/85 apple-blur flex items-center justify-center p-4" style="display:none;">
+        <div class="w-full max-w-sm bg-zinc-950 border border-zinc-800 rounded-3xl p-6 space-y-4 shadow-2xl font-mono-tag">
+            <div class="flex justify-between items-center border-b border-zinc-900 pb-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-amber-500 font-bold">🔑</span>
+                    <h3 class="text-xs font-black text-white tracking-wider uppercase">CHANGE PASSWORD</h3>
+                </div>
+                <button class="text-zinc-400 hover:text-white text-xs cursor-pointer" onclick="closeChangePasswordModal()">✕</button>
+            </div>
+
+            <form onsubmit="submitChangePassword(event)" class="space-y-3.5 text-xs">
+                <div>
+                    <label class="text-[9px] text-zinc-400 font-mono-tag uppercase tracking-wider block mb-1">Current Password</label>
+                    <input type="password" id="inputCurrentPassword" required placeholder="••••••••" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-amber-500 transition">
+                </div>
+                <div>
+                    <label class="text-[9px] text-zinc-400 font-mono-tag uppercase tracking-wider block mb-1">New Password (min 6 chars)</label>
+                    <input type="password" id="inputNewPassword" required minlength="6" placeholder="••••••••" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-amber-500 transition">
+                </div>
+                <div>
+                    <label class="text-[9px] text-zinc-400 font-mono-tag uppercase tracking-wider block mb-1">Confirm New Password</label>
+                    <input type="password" id="inputConfirmNewPassword" required minlength="6" placeholder="••••••••" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-amber-500 transition">
+                </div>
+                <div class="pt-2">
+                    <button type="submit" id="btnSubmitChangePassword" class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag shadow-lg shadow-amber-500/20">
+                        UPDATE PASSWORD
+                    </button>
+                </div>
+            </form>
+        </div>
     <!-- ===================================================================
          EXCLUSIVE FOUNDER WELCOME MODAL OVERLAY (FIRST LOGIN ONLY)
          =================================================================== -->
