@@ -662,7 +662,7 @@ function switchScreenView(screenName) {
   var target = document.getElementById('screen-' + screenName);
   if (target) {
     target.classList.add('active');
-    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'offline' || screenName === 'block' || screenName === 'report' || screenName.includes('confirm')) {
+    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'offline' || screenName === 'block' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile') {
         target.style.display = 'flex';
     } else {
         target.style.display = 'block';
@@ -827,7 +827,7 @@ function switchScreenView(screenName) {
       if (headerChatSettings) headerChatSettings.style.display = "flex";
       statusText = "SETTINGS";
     } else if (screenName === "peer-profile") {
-      if (headerPeerProfile) headerPeerProfile.style.display = "flex";
+      if (headerPeerProfile) headerPeerProfile.style.display = "none";
       statusText = "USER PROFILE";
     } else if (screenName === "campus-page") {
       var headerCampus = document.getElementById("headerCampusPage");
@@ -4005,56 +4005,15 @@ async function openUserProfile(userId, preloadedData) {
   }
   switchScreenView('peer-profile');
 
-  // DOM Elements
-  var nameEl = document.getElementById('peerProfileName');
-  var usernameEl = document.getElementById('peerProfileUsername');
-  var campusEl = document.getElementById('peerProfileCampus');
-  var cityEl = document.getElementById('peerProfileCity');
-  var locationRow = document.getElementById('peerProfileLocationRow');
-  var bioEl = document.getElementById('peerProfileBio');
-  var avatarEl = document.getElementById('peerProfileAvatar');
-  var initialsEl = document.getElementById('peerProfileInitials');
-  var onlineDot = document.getElementById('peerProfileOnlineDot');
-  var statusBadge = document.getElementById('peerProfileStatusBadge');
-  var coverImg = document.getElementById('peerCoverImg');
-
-  var msgBtn = document.getElementById('peerProfileMessageBtn');
-  var msgBtnText = document.getElementById('peerProfileMessageBtnText');
-  var publicActionsBar = document.getElementById('peerPublicActionsBar');
-  var privateOverlay = document.getElementById('peerPrivateOverlay');
-  var publicContent = document.getElementById('peerPublicContent');
-
-  var momentsGrid = document.getElementById('peerProfileMomentsGrid');
-  var emptyMoments = document.getElementById('peerProfileEmptyMoments');
-  var sharedWorldSec = document.getElementById('peerSharedWorldSection');
-  var sharedCommCard = document.getElementById('peerSharedCommunitiesCard');
-  var sharedCommText = document.getElementById('peerSharedCommunitiesText');
-  var mutualConnCard = document.getElementById('peerMutualConnectionsCard');
-  var mutualConnText = document.getElementById('peerMutualConnectionsText');
-
   state.activePeerUserId = userId;
   state.activePeerConnectionStatus = 'none';
 
-  // 1. Instant preview from preloaded data
-  if (preloadedData) {
-    var rawName = preloadedData.name || 'User';
-    if (nameEl) nameEl.textContent = rawName;
-    if (initialsEl) initialsEl.textContent = (rawName.substring(0, 2)).toUpperCase();
-    var rawH = (preloadedData.handle || 'user').replace('@', '');
-    if (usernameEl) usernameEl.textContent = '@' + rawH.toLowerCase();
-    if (campusEl) campusEl.textContent = preloadedData.campus || 'Campus';
-    if (cityEl) cityEl.textContent = preloadedData.location_city || preloadedData.city || 'City';
-    if (preloadedData.avatar_url && !preloadedData.avatar_url.includes('dicebear')) {
-      if (avatarEl) {
-        avatarEl.src = preloadedData.avatar_url;
-        avatarEl.style.display = 'block';
-      }
-      if (initialsEl) initialsEl.style.display = 'none';
-    } else {
-      if (avatarEl) avatarEl.style.display = 'none';
-      if (initialsEl) initialsEl.style.display = 'block';
-    }
-  }
+  var peerPublicView = document.getElementById('peerPublicView');
+  var peerPrivateView = document.getElementById('peerPrivateView');
+
+  var momentsGrid = document.getElementById('peerPublicMomentsGrid') || document.getElementById('peerProfileMomentsGrid');
+  var emptyMoments = document.getElementById('peerPublicEmptyMoments') || document.getElementById('peerProfileEmptyMoments');
+  var sharedWorldSec = document.getElementById('peerPublicSharedWorld') || document.getElementById('peerSharedWorldSection');
 
   // Set loading state for moments
   if (momentsGrid) {
@@ -4062,7 +4021,7 @@ async function openUserProfile(userId, preloadedData) {
   }
   if (emptyMoments) emptyMoments.style.display = 'none';
 
-  // 2. Fetch authoritative user profile data from server
+  // 1. Fetch authoritative user profile data from server
   var res = await apiRequest('/api/user/profile?user_id=' + encodeURIComponent(userId));
   if (!res || !res.success || !res.user) {
     showToast(res && res.error ? res.error : 'User profile not found.');
@@ -4081,76 +4040,82 @@ async function openUserProfile(userId, preloadedData) {
   var finalHandle = (u.handle || u.username || 'user').replace('@', '');
   var cleanHandle = '@' + finalHandle.toLowerCase();
 
-  if (nameEl) nameEl.textContent = finalName;
-  if (usernameEl) usernameEl.textContent = cleanHandle;
-  if (bioEl) bioEl.textContent = u.bio || 'Capturing ordinary days.';
-
   // Initials & Avatar
   var parts = finalName.trim().split(/\s+/);
   var inits = (parts.length >= 2 ? (parts[0][0] + parts[1][0]) : finalName.substring(0, 2)).toUpperCase();
-  if (initialsEl) initialsEl.textContent = inits || 'K';
-
   var avatarUrl = u.avatar || u.avatar_url;
-  if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
-    if (avatarEl) {
-      avatarEl.src = avatarUrl;
-      avatarEl.style.display = 'block';
-    }
-    if (initialsEl) initialsEl.style.display = 'none';
-  } else {
-    if (avatarEl) avatarEl.style.display = 'none';
-    if (initialsEl) initialsEl.style.display = 'block';
-  }
 
-  // Cover image
-  if (coverImg) {
-    if (u.cover_url) {
-      coverImg.src = u.cover_url;
-      coverImg.style.display = 'block';
-    } else {
-      coverImg.src = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80';
-      coverImg.style.display = 'block';
-    }
-  }
-
-  // Online indicator
-  if (onlineDot) {
-    onlineDot.className = u.is_online
-      ? 'absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-[#0b0b0c] bg-amber-500 animate-pulse'
-      : 'absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-[#0b0b0c] bg-zinc-600';
-  }
-
-  // 3. ENFORCE SERVER-AUTHORITATIVE PRIVACY GATE
   if (isPrivate) {
     // ─── PRIVATE PROFILE STATE ───
-    if (privateOverlay) privateOverlay.style.display = 'flex';
-    if (publicContent) publicContent.style.display = 'none';
-    if (publicActionsBar) publicActionsBar.style.display = 'none';
-    if (locationRow) locationRow.style.display = 'none';
-    if (sharedWorldSec) sharedWorldSec.style.display = 'none';
+    if (peerPrivateView) peerPrivateView.style.display = 'flex';
+    if (peerPublicView) peerPublicView.style.display = 'none';
+
+    var privName = document.getElementById('peerPrivateName');
+    var privUsername = document.getElementById('peerPrivateUsername');
+    var privBio = document.getElementById('peerPrivateBio');
+    var privInitials = document.getElementById('peerPrivateInitials');
+    var privAvatar = document.getElementById('peerPrivateAvatar');
+    var privCover = document.getElementById('peerPrivateCoverImg');
+
+    if (privName) privName.textContent = finalName;
+    if (privUsername) privUsername.textContent = cleanHandle;
+    if (privBio) privBio.textContent = u.bio || 'Building Kandid · Learning CS ·\nExploring real places, real people, real stories.';
+    if (privInitials) privInitials.textContent = inits || 'K';
+
+    if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
+      if (privAvatar) { privAvatar.src = avatarUrl; privAvatar.style.display = 'block'; }
+      if (privInitials) privInitials.style.display = 'none';
+    } else {
+      if (privAvatar) privAvatar.style.display = 'none';
+      if (privInitials) privInitials.style.display = 'block';
+    }
+    if (privCover && u.cover_url) {
+      privCover.src = u.cover_url;
+    }
 
     updatePeerConnectionUI(connStatus);
   } else {
     // ─── PUBLIC PROFILE STATE ───
-    if (privateOverlay) privateOverlay.style.display = 'none';
-    if (publicContent) publicContent.style.display = 'block';
-    if (publicActionsBar) publicActionsBar.style.display = 'flex';
-    if (locationRow) locationRow.style.display = 'flex';
+    if (peerPublicView) peerPublicView.style.display = 'flex';
+    if (peerPrivateView) peerPrivateView.style.display = 'none';
 
-    // Campus & City
-    if (campusEl) campusEl.textContent = u.campus || 'North City University';
-    if (cityEl) cityEl.textContent = u.location_city || u.city || 'Delhi';
+    var pubName = document.getElementById('peerPublicName') || document.getElementById('peerProfileName');
+    var pubUsername = document.getElementById('peerPublicUsername') || document.getElementById('peerProfileUsername');
+    var pubCampus = document.getElementById('peerPublicCampus') || document.getElementById('peerProfileCampus');
+    var pubCity = document.getElementById('peerPublicCity') || document.getElementById('peerProfileCity');
+    var pubBio = document.getElementById('peerPublicBio') || document.getElementById('peerProfileBio');
+    var pubInitials = document.getElementById('peerPublicInitials') || document.getElementById('peerProfileInitials');
+    var pubAvatar = document.getElementById('peerPublicAvatar') || document.getElementById('peerProfileAvatar');
+    var pubCover = document.getElementById('peerPublicCoverImg') || document.getElementById('peerCoverImg');
 
-    // Message action
-    if (msgBtn) {
-      msgBtn.onclick = function() {
+    if (pubName) pubName.textContent = finalName;
+    if (pubUsername) pubUsername.textContent = cleanHandle;
+    if (pubBio) pubBio.textContent = u.bio || 'Building Kandid · Learning CS ·\nExploring real places, real people, real stories.';
+    if (pubCampus) pubCampus.textContent = u.campus || 'Guru Kashi University';
+    if (pubCity) pubCity.textContent = u.location_city || u.city || 'Supaul';
+    if (pubInitials) pubInitials.textContent = inits || 'K';
+
+    if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
+      if (pubAvatar) { pubAvatar.src = avatarUrl; pubAvatar.style.display = 'block'; }
+      if (pubInitials) pubInitials.style.display = 'none';
+    } else {
+      if (pubAvatar) pubAvatar.style.display = 'none';
+      if (pubInitials) pubInitials.style.display = 'block';
+    }
+    if (pubCover && u.cover_url) {
+      pubCover.src = u.cover_url;
+    }
+
+    var pubMsgBtn = document.getElementById('peerPublicMessageBtn') || document.getElementById('peerProfileMessageBtn');
+    if (pubMsgBtn) {
+      pubMsgBtn.onclick = function() {
         openChatThread(u.id, finalName, cleanHandle, avatarUrl, u.is_online);
       };
     }
 
     updatePeerConnectionUI(connStatus);
 
-    // Render 2-column Moments Grid
+    // 2-column Moments Grid
     if (momentsGrid) {
       momentsGrid.innerHTML = '';
       var moments = res.moments || [];
@@ -4186,49 +4151,51 @@ async function openUserProfile(userId, preloadedData) {
       }
     }
 
-    // 4. Load SHARED WORLD Context (Only render when genuine context exists)
+    // Shared World
+    var pubSharedWorld = document.getElementById('peerPublicSharedWorld') || document.getElementById('peerSharedWorldSection');
+    var pubSharedCommCard = document.getElementById('peerPublicSharedCommCard') || document.getElementById('peerSharedCommunitiesCard');
+    var pubSharedCommText = document.getElementById('peerPublicSharedCommText') || document.getElementById('peerSharedCommunitiesText');
+    var pubMutualConnCard = document.getElementById('peerPublicMutualConnCard') || document.getElementById('peerMutualConnectionsCard');
+    var pubMutualConnText = document.getElementById('peerPublicMutualConnText') || document.getElementById('peerMutualConnectionsText');
+
     try {
       var sharedRes = await apiRequest('/api/user/shared-context?target_id=' + encodeURIComponent(userId));
       if (sharedRes && sharedRes.success) {
         var sharedComms = sharedRes.shared_communities || [];
         var mutualConns = sharedRes.mutual_connections || [];
-
         var hasSharedWorld = (sharedComms.length > 0 || mutualConns.length > 0);
 
-        if (hasSharedWorld && sharedWorldSec) {
-          sharedWorldSec.style.display = 'block';
+        if (hasSharedWorld && pubSharedWorld) {
+          pubSharedWorld.style.display = 'block';
 
-          // Shared communities
-          if (sharedComms.length > 0 && sharedCommCard && sharedCommText) {
-            sharedCommCard.style.display = 'flex';
+          if (sharedComms.length > 0 && pubSharedCommCard && pubSharedCommText) {
+            pubSharedCommCard.style.display = 'flex';
             var firstComm = sharedComms[0].name;
             var extraComm = sharedComms.length - 1;
-            sharedCommText.textContent = firstComm + (extraComm > 0 ? ' + ' + extraComm + ' more' : '');
-            sharedCommCard.onclick = function() {
+            pubSharedCommText.textContent = firstComm + (extraComm > 0 ? ' + ' + extraComm + ' more' : '');
+            pubSharedCommCard.onclick = function() {
               if (typeof openCampusPage === 'function') openCampusPage(sharedComms[0].name);
             };
-          } else if (sharedCommCard) {
-            sharedCommCard.style.display = 'none';
+          } else if (pubSharedCommCard) {
+            pubSharedCommCard.style.display = 'none';
           }
 
-          // Mutual connections
-          if (mutualConns.length > 0 && mutualConnCard && mutualConnText) {
-            mutualConnCard.style.display = 'flex';
+          if (mutualConns.length > 0 && pubMutualConnCard && pubMutualConnText) {
+            pubMutualConnCard.style.display = 'flex';
             var firstNames = mutualConns.slice(0, 2).map(function(c) { return c.name; }).join(', ');
             var extraConn = mutualConns.length - 2;
-            mutualConnText.textContent = firstNames + (extraConn > 0 ? ' +' + extraConn : '');
-          } else if (mutualConnCard) {
-            mutualConnCard.style.display = 'none';
+            pubMutualConnText.textContent = firstNames + (extraConn > 0 ? ' +' + extraConn : '');
+          } else if (pubMutualConnCard) {
+            pubMutualConnCard.style.display = 'none';
           }
-        } else if (sharedWorldSec) {
-          // Strictly per specification: Hide Shared World completely if no context exists
-          sharedWorldSec.style.display = 'none';
+        } else if (pubSharedWorld) {
+          pubSharedWorld.style.display = 'none';
         }
-      } else if (sharedWorldSec) {
-        sharedWorldSec.style.display = 'none';
+      } else if (pubSharedWorld) {
+        pubSharedWorld.style.display = 'none';
       }
     } catch (e) {
-      if (sharedWorldSec) sharedWorldSec.style.display = 'none';
+      if (pubSharedWorld) pubSharedWorld.style.display = 'none';
     }
   }
 }
@@ -4236,17 +4203,16 @@ window.openUserProfile = openUserProfile;
 
 // ─── CONNECTION STATE UI ENGINE ───
 function updatePeerConnectionUI(status) {
-  var connectText = document.getElementById('peerProfileConnectText');
-  var connectBtn = document.getElementById('peerProfileConnectBtn');
-  var connectIcon = document.getElementById('peerProfileConnectIcon');
-  var declineBtn = document.getElementById('peerProfileDeclineBtn');
-  var msgBtn = document.getElementById('peerProfileMessageBtn');
+  var connectText = document.getElementById('peerPublicConnectText') || document.getElementById('peerProfileConnectText');
+  var connectBtn = document.getElementById('peerPublicConnectBtn') || document.getElementById('peerProfileConnectBtn');
+  var connectIcon = document.getElementById('peerPublicConnectIcon') || document.getElementById('peerProfileConnectIcon');
+  var declineBtn = document.getElementById('peerPublicDeclineBtn') || document.getElementById('peerProfileDeclineBtn');
+  var msgBtn = document.getElementById('peerPublicMessageBtn') || document.getElementById('peerProfileMessageBtn');
 
-  // Private state connect button
   var privBtn = document.getElementById('peerPrivateConnectBtn');
   var privText = document.getElementById('peerPrivateConnectText');
+  var privIcon = document.getElementById('peerPrivateConnectIcon');
 
-  // Reset display
   if (connectBtn) connectBtn.style.display = 'flex';
   if (declineBtn) declineBtn.style.display = 'none';
   if (msgBtn) msgBtn.style.display = 'flex';
@@ -4254,33 +4220,36 @@ function updatePeerConnectionUI(status) {
 
   if (status === 'connected') {
     if (connectText) connectText.textContent = 'CONNECTED';
-    if (connectIcon) connectIcon.textContent = '✦';
+    if (connectIcon) { connectIcon.className = 'fa-solid fa-check text-[9px]'; connectIcon.textContent = ''; }
     if (connectBtn) {
       connectBtn.className = 'px-3 py-1.5 bg-neutral-900 border border-neutral-700 text-amber-400 rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow cursor-pointer active:scale-95';
     }
     if (privText) privText.textContent = 'CONNECTED';
+    if (privIcon) { privIcon.className = 'fa-solid fa-check text-[10px]'; privIcon.textContent = ''; }
     if (privBtn) {
       privBtn.className = 'w-full py-2.5 bg-neutral-900 border border-neutral-700 text-amber-400 rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition cursor-pointer';
     }
   } else if (status === 'pending_sent') {
     if (connectText) connectText.textContent = 'REQUESTED';
-    if (connectIcon) connectIcon.textContent = '⏳';
+    if (connectIcon) { connectIcon.className = 'fa-solid fa-clock text-[9px]'; connectIcon.textContent = ''; }
     if (connectBtn) {
       connectBtn.className = 'px-3 py-1.5 bg-neutral-900 border border-amber-500/50 text-amber-400 rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow cursor-pointer active:scale-95';
     }
     if (privText) privText.textContent = 'REQUESTED';
+    if (privIcon) { privIcon.className = 'fa-solid fa-clock text-[10px]'; privIcon.textContent = ''; }
     if (privBtn) {
       privBtn.className = 'w-full py-2.5 bg-neutral-900 border border-amber-500/50 text-amber-400 rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition cursor-pointer';
     }
   } else if (status === 'pending_received') {
     if (connectText) connectText.textContent = 'ACCEPT';
-    if (connectIcon) connectIcon.textContent = '✓';
+    if (connectIcon) { connectIcon.className = 'fa-solid fa-user-check text-[9px]'; connectIcon.textContent = ''; }
     if (connectBtn) {
       connectBtn.className = 'px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95';
     }
-    if (declineBtn) declineBtn.style.display = 'block';
+    if (declineBtn) declineBtn.style.display = 'inline-block';
 
     if (privText) privText.textContent = 'ACCEPT';
+    if (privIcon) { privIcon.className = 'fa-solid fa-user-check text-[10px]'; privIcon.textContent = ''; }
     if (privBtn) {
       privBtn.className = 'w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95';
     }
@@ -4291,11 +4260,12 @@ function updatePeerConnectionUI(status) {
   } else {
     // NOT_CONNECTED / 'none'
     if (connectText) connectText.textContent = 'CONNECT';
-    if (connectIcon) connectIcon.textContent = '✦';
+    if (connectIcon) { connectIcon.className = 'fa-solid fa-user-plus text-[9px]'; connectIcon.textContent = ''; }
     if (connectBtn) {
       connectBtn.className = 'px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95';
     }
     if (privText) privText.textContent = 'CONNECT';
+    if (privIcon) { privIcon.className = 'fa-solid fa-user-plus text-[10px]'; privIcon.textContent = ''; }
     if (privBtn) {
       privBtn.className = 'w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95';
     }
