@@ -4095,7 +4095,14 @@ async function openUserProfile(userId, preloadedData) {
 
     if (privName) privName.textContent = finalName;
     if (privUsername) privUsername.textContent = cleanHandle;
-    if (privBio) privBio.textContent = u.bio || 'Building Kandid · Learning CS ·\nExploring real places, real people, real stories.';
+    if (privBio) {
+      if (u.bio) {
+        privBio.textContent = u.bio;
+        privBio.style.display = 'block';
+      } else {
+        privBio.style.display = 'none';
+      }
+    }
     if (privInitials) privInitials.textContent = inits || 'K';
 
     if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
@@ -4105,8 +4112,8 @@ async function openUserProfile(userId, preloadedData) {
       if (privAvatar) privAvatar.style.display = 'none';
       if (privInitials) privInitials.style.display = 'block';
     }
-    if (privCover && u.cover_url) {
-      privCover.src = u.cover_url;
+    if (privCover) {
+      privCover.src = u.cover_url || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80';
     }
 
     updatePeerConnectionUI(connStatus);
@@ -4126,9 +4133,31 @@ async function openUserProfile(userId, preloadedData) {
 
     if (pubName) pubName.textContent = finalName;
     if (pubUsername) pubUsername.textContent = cleanHandle;
-    if (pubBio) pubBio.textContent = u.bio || 'Building Kandid · Learning CS ·\nExploring real places, real people, real stories.';
-    if (pubCampus) pubCampus.textContent = u.campus || 'Guru Kashi University';
-    if (pubCity) pubCity.textContent = u.location_city || u.city || 'Supaul';
+    if (pubBio) {
+      if (u.bio) {
+        pubBio.textContent = u.bio;
+        pubBio.style.display = 'block';
+      } else {
+        pubBio.style.display = 'none';
+      }
+    }
+    if (pubCampus) {
+      if (u.campus) {
+        pubCampus.textContent = u.campus;
+        if (pubCampus.parentElement) pubCampus.parentElement.style.display = 'flex';
+      } else if (pubCampus.parentElement) {
+        pubCampus.parentElement.style.display = 'none';
+      }
+    }
+    if (pubCity) {
+      var cityVal = u.location_city || u.city;
+      if (cityVal) {
+        pubCity.textContent = cityVal;
+        if (pubCity.parentElement) pubCity.parentElement.style.display = 'flex';
+      } else if (pubCity.parentElement) {
+        pubCity.parentElement.style.display = 'none';
+      }
+    }
     if (pubInitials) pubInitials.textContent = inits || 'K';
 
     if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
@@ -4138,8 +4167,8 @@ async function openUserProfile(userId, preloadedData) {
       if (pubAvatar) pubAvatar.style.display = 'none';
       if (pubInitials) pubInitials.style.display = 'block';
     }
-    if (pubCover && u.cover_url) {
-      pubCover.src = u.cover_url;
+    if (pubCover) {
+      pubCover.src = u.cover_url || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80';
     }
 
     var pubMsgBtn = document.getElementById('peerPublicMessageBtn') || document.getElementById('peerProfileMessageBtn');
