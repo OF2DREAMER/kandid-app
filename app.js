@@ -297,16 +297,23 @@ function getActiveUserId() {
 }
 window.getActiveUserId = getActiveUserId;
 
+function sanitizeHeaderValue(val) {
+  if (!val) return '';
+  return String(val).replace(/[^\x20-\x7E]/g, '').trim();
+}
+
 async function apiRequest(endpoint, options) {
   options = options || {};
   var headers = options.headers || {};
   headers['Content-Type'] = 'application/json';
   if (state.token && state.token !== 'null' && state.token !== 'undefined') {
-    headers['Authorization'] = 'Bearer ' + state.token;
+    var cleanTok = sanitizeHeaderValue(state.token);
+    if (cleanTok) headers['Authorization'] = 'Bearer ' + cleanTok;
   }
   var uid = getActiveUserId();
   if (uid) {
-    headers['X-User-Id'] = uid;
+    var cleanUid = sanitizeHeaderValue(uid);
+    if (cleanUid) headers['X-User-Id'] = cleanUid;
   }
   options.headers = headers;
 
@@ -318,6 +325,23 @@ async function apiRequest(endpoint, options) {
     // Offline / local file / network fallback
     if (endpoint.indexOf('/api/feed') !== -1) {
       return { success: true, feed: MOCK_DATA.feed };
+    }
+    if (endpoint.indexOf('/api/user/profile') !== -1) {
+      var uidMatch = endpoint.match(/user_id=([^&]+)/);
+      var targetId = uidMatch ? decodeURIComponent(uidMatch[1]) : '';
+      return {
+        success: true,
+        user: {
+          id: targetId || 'u_target',
+          name: 'Student',
+          handle: 'user',
+          campus: 'Campus',
+          location_city: 'City',
+          bio: ''
+        },
+        moments: [],
+        connection_status: 'none'
+      };
     }
     if (endpoint.indexOf('/api/campus') !== -1) {
       return {
@@ -392,7 +416,7 @@ async function apiRequest(endpoint, options) {
     if (endpoint.indexOf('/api/moments/capture') !== -1) {
       return { success: true, message: 'Captured moment saved' };
     }
-    return { success: false, error: err.message };
+    return { success: false, error: (err && err.message) ? err.message : 'Network error' };
   }
 }
 
