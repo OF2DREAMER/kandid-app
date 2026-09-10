@@ -3998,258 +3998,508 @@ function renderGlobalMoment(m) {
 var lastScreenBeforeProfile = 'search';
 
 async function openUserProfile(userId, preloadedData) {
-  lastScreenBeforeProfile = state.activeScreen || 'search';
+  if (!userId) return;
+  // Always preserve originating screen for proper Back navigation (Feed, Search, Chat, etc.)
+  if (state.activeScreen && state.activeScreen !== 'peer-profile') {
+    lastScreenBeforeProfile = state.activeScreen;
+  }
   switchScreenView('peer-profile');
 
+  // DOM Elements
   var nameEl = document.getElementById('peerProfileName');
   var usernameEl = document.getElementById('peerProfileUsername');
   var campusEl = document.getElementById('peerProfileCampus');
+  var cityEl = document.getElementById('peerProfileCity');
+  var locationRow = document.getElementById('peerProfileLocationRow');
   var bioEl = document.getElementById('peerProfileBio');
   var avatarEl = document.getElementById('peerProfileAvatar');
+  var initialsEl = document.getElementById('peerProfileInitials');
   var onlineDot = document.getElementById('peerProfileOnlineDot');
   var statusBadge = document.getElementById('peerProfileStatusBadge');
-  var streakEl = document.getElementById('peerProfileStreakVal');
-  var momentsCountEl = document.getElementById('peerProfileMomentsCountVal');
-  var scoreEl = document.getElementById('peerProfileScoreVal');
+  var coverImg = document.getElementById('peerCoverImg');
+
   var msgBtn = document.getElementById('peerProfileMessageBtn');
   var msgBtnText = document.getElementById('peerProfileMessageBtnText');
+  var publicActionsBar = document.getElementById('peerPublicActionsBar');
+  var privateOverlay = document.getElementById('peerPrivateOverlay');
+  var publicContent = document.getElementById('peerPublicContent');
+
   var momentsGrid = document.getElementById('peerProfileMomentsGrid');
   var emptyMoments = document.getElementById('peerProfileEmptyMoments');
+  var sharedWorldSec = document.getElementById('peerSharedWorldSection');
+  var sharedCommCard = document.getElementById('peerSharedCommunitiesCard');
+  var sharedCommText = document.getElementById('peerSharedCommunitiesText');
+  var mutualConnCard = document.getElementById('peerMutualConnectionsCard');
+  var mutualConnText = document.getElementById('peerMutualConnectionsText');
 
-  var initialsEl = document.getElementById('peerProfileInitials');
-  var memoriesEl = document.getElementById('peerProfileMemoriesVal');
-  var connectBtnText = document.getElementById('peerProfileConnectText');
-  var connectIcon = document.getElementById('peerProfileConnectIcon');
+  state.activePeerUserId = userId;
+  state.activePeerConnectionStatus = 'none';
 
-  // Prepopulate with instant preview data
+  // 1. Instant preview from preloaded data
   if (preloadedData) {
-    var rawName = (preloadedData.name || 'Student').toUpperCase();
+    var rawName = preloadedData.name || 'User';
     if (nameEl) nameEl.textContent = rawName;
-    if (initialsEl) initialsEl.textContent = rawName.substring(0, 2);
+    if (initialsEl) initialsEl.textContent = (rawName.substring(0, 2)).toUpperCase();
     var rawH = (preloadedData.handle || 'user').replace('@', '');
-    var h = '@' + rawH.toUpperCase();
-    if (usernameEl) usernameEl.textContent = h;
-    if (msgBtnText) msgBtnText.textContent = 'MESSAGE ' + h;
-    if (campusEl) campusEl.textContent = (preloadedData.campus || 'North City University').toUpperCase();
-    var fallbackAv = 'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(rawH) + '&backgroundColor=18181b,27272a&textColor=f59e0b';
-    if (avatarEl) {
-      if (preloadedData.avatar_url && !preloadedData.avatar_url.includes('dicebear')) {
+    if (usernameEl) usernameEl.textContent = '@' + rawH.toLowerCase();
+    if (campusEl) campusEl.textContent = preloadedData.campus || 'Campus';
+    if (cityEl) cityEl.textContent = preloadedData.location_city || preloadedData.city || 'City';
+    if (preloadedData.avatar_url && !preloadedData.avatar_url.includes('dicebear')) {
+      if (avatarEl) {
         avatarEl.src = preloadedData.avatar_url;
         avatarEl.style.display = 'block';
-        if (initialsEl) initialsEl.style.display = 'none';
-      } else {
-        avatarEl.style.display = 'none';
-        if (initialsEl) initialsEl.style.display = 'block';
       }
+      if (initialsEl) initialsEl.style.display = 'none';
+    } else {
+      if (avatarEl) avatarEl.style.display = 'none';
+      if (initialsEl) initialsEl.style.display = 'block';
     }
   }
 
-  if (momentsGrid) momentsGrid.innerHTML = '<div class="col-span-3 text-center py-8 text-xs text-zinc-500 font-mono-tag animate-pulse">LOADING MOMENTS...</div>';
+  // Set loading state for moments
+  if (momentsGrid) {
+    momentsGrid.innerHTML = '<div class="col-span-2 text-center py-8 text-xs text-zinc-500 font-mono-tag animate-pulse">LOADING MOMENTS...</div>';
+  }
   if (emptyMoments) emptyMoments.style.display = 'none';
 
-  // Fetch full details and moments from backend
+  // 2. Fetch authoritative user profile data from server
   var res = await apiRequest('/api/user/profile?user_id=' + encodeURIComponent(userId));
-  if (res && res.success && res.user) {
-    var u = res.user;
-    var rawName = (u.name || 'Student').toUpperCase();
-    var rawHandle = (u.handle || u.username || 'user').replace('@', '');
-    var cleanHandle = '@' + rawHandle.toUpperCase();
-    var fallbackAv = 'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(rawHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b';
-    var finalAvatar = (u.avatar || u.avatar_url) ? (u.avatar || u.avatar_url) : fallbackAv;
+  if (!res || !res.success || !res.user) {
+    showToast(res && res.error ? res.error : 'User profile not found.');
+    handlePeerProfileBack();
+    return;
+  }
 
-    if (nameEl) nameEl.textContent = rawName;
-    if (initialsEl) initialsEl.textContent = rawName.substring(0, 2);
-    if (usernameEl) usernameEl.textContent = cleanHandle;
-    
-    var peerComm = (u.campus || u.community || 'North City Community').toUpperCase();
-    var peerCity = (u.location_city || u.city || '').toUpperCase();
-    var peerLoc = peerCity ? (peerComm + ' · ' + peerCity) : peerComm;
-    if (campusEl) campusEl.textContent = '◉ ' + peerLoc;
-    
-    if (bioEl) bioEl.textContent = u.bio || 'Capturing ordinary days.';
-    
+  var u = res.user;
+  var isPrivate = Boolean(res.is_private);
+  var connStatus = res.connection_status || u.connection_status || 'none';
+  state.activePeerConnectionStatus = connStatus;
+  state.activePeerUser = u;
+
+  // Identity Population
+  var finalName = u.name || 'User';
+  var finalHandle = (u.handle || u.username || 'user').replace('@', '');
+  var cleanHandle = '@' + finalHandle.toLowerCase();
+
+  if (nameEl) nameEl.textContent = finalName;
+  if (usernameEl) usernameEl.textContent = cleanHandle;
+  if (bioEl) bioEl.textContent = u.bio || 'Capturing ordinary days.';
+
+  // Initials & Avatar
+  var parts = finalName.trim().split(/\s+/);
+  var inits = (parts.length >= 2 ? (parts[0][0] + parts[1][0]) : finalName.substring(0, 2)).toUpperCase();
+  if (initialsEl) initialsEl.textContent = inits || 'K';
+
+  var avatarUrl = u.avatar || u.avatar_url;
+  if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
     if (avatarEl) {
-      if (u.avatar_url && !u.avatar_url.includes('dicebear')) {
-        avatarEl.src = finalAvatar;
-        avatarEl.style.display = 'block';
-        if (initialsEl) initialsEl.style.display = 'none';
-      } else {
-        avatarEl.style.display = 'none';
-        if (initialsEl) initialsEl.style.display = 'block';
-      }
+      avatarEl.src = avatarUrl;
+      avatarEl.style.display = 'block';
     }
+    if (initialsEl) initialsEl.style.display = 'none';
+  } else {
+    if (avatarEl) avatarEl.style.display = 'none';
+    if (initialsEl) initialsEl.style.display = 'block';
+  }
 
-    var streakDays = (u.streak != null ? u.streak : (u.streak_count || 1));
-    if (streakEl) streakEl.textContent = streakDays + (streakDays === 1 ? ' DAY' : ' DAYS');
-    var mCount = u.momentCount != null ? u.momentCount : (res.moments ? res.moments.length : 0);
-    if (momentsCountEl) momentsCountEl.textContent = mCount;
-    if (memoriesEl) memoriesEl.textContent = Math.max(1, Math.floor(mCount / 2));
-    if (scoreEl) scoreEl.textContent = Math.round(u.authenticity_score || 100) + '%';
-
-    if (onlineDot) {
-      onlineDot.className = u.is_online 
-        ? 'absolute bottom-1 right-1 w-3 h-3 rounded-full border-2 border-zinc-950 bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.9)] animate-pulse'
-        : 'absolute bottom-1 right-1 w-3 h-3 rounded-full border-2 border-zinc-950 bg-zinc-600';
+  // Cover image
+  if (coverImg) {
+    if (u.cover_url) {
+      coverImg.src = u.cover_url;
+      coverImg.style.display = 'block';
+    } else {
+      coverImg.src = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80';
+      coverImg.style.display = 'block';
     }
+  }
 
-    if (statusBadge) {
-      statusBadge.innerHTML = u.is_online 
-        ? '<span class="text-amber-500 font-bold">🟢 ACTIVE</span>'
-        : '<span class="text-zinc-500">OFFLINE</span>';
-    }
+  // Online indicator
+  if (onlineDot) {
+    onlineDot.className = u.is_online
+      ? 'absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-[#0b0b0c] bg-amber-500 animate-pulse'
+      : 'absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-[#0b0b0c] bg-zinc-600';
+  }
 
-    // Handle two-way connection status
-    state.activePeerUserId = u.id;
-    state.activePeerConnectionStatus = u.connection_status || 'none';
-    updatePeerConnectionUI(state.activePeerConnectionStatus);
+  // 3. ENFORCE SERVER-AUTHORITATIVE PRIVACY GATE
+  if (isPrivate) {
+    // ─── PRIVATE PROFILE STATE ───
+    if (privateOverlay) privateOverlay.style.display = 'flex';
+    if (publicContent) publicContent.style.display = 'none';
+    if (publicActionsBar) publicActionsBar.style.display = 'none';
+    if (locationRow) locationRow.style.display = 'none';
+    if (sharedWorldSec) sharedWorldSec.style.display = 'none';
 
+    updatePeerConnectionUI(connStatus);
+  } else {
+    // ─── PUBLIC PROFILE STATE ───
+    if (privateOverlay) privateOverlay.style.display = 'none';
+    if (publicContent) publicContent.style.display = 'block';
+    if (publicActionsBar) publicActionsBar.style.display = 'flex';
+    if (locationRow) locationRow.style.display = 'flex';
+
+    // Campus & City
+    if (campusEl) campusEl.textContent = u.campus || 'North City University';
+    if (cityEl) cityEl.textContent = u.location_city || u.city || 'Delhi';
+
+    // Message action
     if (msgBtn) {
-      if (msgBtnText) msgBtnText.textContent = 'MESSAGE ' + cleanHandle;
       msgBtn.onclick = function() {
-        openChatThread(u.id, u.name, cleanHandle, finalAvatar, u.is_online);
+        openChatThread(u.id, finalName, cleanHandle, avatarUrl, u.is_online);
       };
     }
 
-    // Render 3-column moments matching YOU page
+    updatePeerConnectionUI(connStatus);
+
+    // Render 2-column Moments Grid
     if (momentsGrid) {
       momentsGrid.innerHTML = '';
-      if (!res.moments || res.moments.length === 0) {
+      var moments = res.moments || [];
+      if (moments.length === 0) {
         if (emptyMoments) emptyMoments.style.display = 'block';
       } else {
         if (emptyMoments) emptyMoments.style.display = 'none';
-        res.moments.forEach(function(m) {
-          var card = document.createElement('div');
-          card.className = 'aspect-[4/5] bg-zinc-900 rounded-2xl overflow-hidden relative border border-zinc-800 shadow-md cursor-pointer hover:border-amber-500/40 transition active:scale-95 group select-none';
-          var mainImg = m.main_img || m.mediaUrl || 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=400&q=80';
-          var pipImg = m.pip_img || finalAvatar;
-          
-          card.innerHTML =
-            '<img src="' + mainImg + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
-            (pipImg ? '<div class="absolute top-1.5 left-1.5 w-6 h-8 rounded-md overflow-hidden border border-white/20 shadow-md bg-black pointer-events-none"><img src="' + pipImg + '" class="w-full h-full object-cover"></div>' : '') +
-            '<div class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/60 backdrop-blur rounded text-[8px] font-mono-tag text-zinc-300 font-bold pointer-events-none">' + escapeHtml(m.timeAgo || 'TODAY') + '</div>';
+        moments.forEach(function(m) {
+          var article = document.createElement('article');
+          article.className = 'relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
+          var imgUrl = m.main_img || m.mediaUrl || 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=300&q=80';
+          var locStr = escapeHtml(m.campus || m.location_city || 'Campus');
+          var timeStr = escapeHtml(m.timeAgo || 'Recent');
 
-          card.onclick = function() {
-            if (typeof openMomentDetail === 'function') {
-              openMomentDetail(m);
-            } else if (typeof openMomentDetailModal === 'function') {
+          article.innerHTML =
+            '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">' +
+            '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none"></div>' +
+            '<div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">' +
+              '<p class="text-[9px] font-extrabold text-amber-400 tracking-wider uppercase">' + timeStr + '</p>' +
+              '<p class="text-xs font-bold text-white truncate mt-0.5">' + locStr + '</p>' +
+            '</div>';
+
+          article.onclick = function() {
+            if (typeof openMomentDetailModal === 'function') {
               openMomentDetailModal(m.id || m.postId);
+            } else if (typeof openMomentDetail === 'function') {
+              openMomentDetail(m);
             }
           };
 
-          momentsGrid.appendChild(card);
+          momentsGrid.appendChild(article);
         });
       }
     }
 
-    // Render THEIR COMMUNITIES section
-    var commContainer = document.getElementById('peerProfileCommunitiesContainer');
-    var commSection = document.getElementById('peerProfileCommunitiesSection');
-    var emptyComm = document.getElementById('peerProfileEmptyCommunities');
-    if (commContainer) {
-      commContainer.innerHTML = '';
-      var comms = res.communities || (u.communities || []);
-      if (comms && comms.length > 0) {
-        if (commSection) commSection.style.display = 'block';
-        if (emptyComm) emptyComm.style.display = 'none';
-        comms.forEach(function(c) {
-          var crow = document.createElement('div');
-          crow.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between hover:border-zinc-700 transition cursor-pointer shadow-md active:scale-95';
-          var cType = (c.type || 'COMMUNITY').toUpperCase();
-          var cIcon = c.icon || (cType === 'CAMPUS' ? '🎓' : cType === 'PLACE' ? '📍' : '📸');
-          crow.innerHTML =
-            '<div class="flex items-center gap-3 min-w-0">' +
-              '<div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm flex-shrink-0">' +
-                cIcon +
-              '</div>' +
-              '<div class="min-w-0">' +
-                '<h4 class="text-xs font-bold text-white font-mono-tag truncate">◉ ' + escapeHtml(c.name) + '</h4>' +
-                '<p class="text-[9px] text-zinc-400 font-mono-tag tracking-wider uppercase">' + escapeHtml(cType) + '</p>' +
-              '</div>' +
-            '</div>' +
-            '<span class="text-[10px] text-zinc-500 font-mono-tag">→</span>';
-          crow.onclick = function() {
-            if (typeof openCampusPage === 'function') openCampusPage(c.name);
-          };
-          commContainer.appendChild(crow);
-        });
-      } else {
-        if (emptyComm) emptyComm.style.display = 'block';
+    // 4. Load SHARED WORLD Context (Only render when genuine context exists)
+    try {
+      var sharedRes = await apiRequest('/api/user/shared-context?target_id=' + encodeURIComponent(userId));
+      if (sharedRes && sharedRes.success) {
+        var sharedComms = sharedRes.shared_communities || [];
+        var mutualConns = sharedRes.mutual_connections || [];
+
+        var hasSharedWorld = (sharedComms.length > 0 || mutualConns.length > 0);
+
+        if (hasSharedWorld && sharedWorldSec) {
+          sharedWorldSec.style.display = 'block';
+
+          // Shared communities
+          if (sharedComms.length > 0 && sharedCommCard && sharedCommText) {
+            sharedCommCard.style.display = 'flex';
+            var firstComm = sharedComms[0].name;
+            var extraComm = sharedComms.length - 1;
+            sharedCommText.textContent = firstComm + (extraComm > 0 ? ' + ' + extraComm + ' more' : '');
+            sharedCommCard.onclick = function() {
+              if (typeof openCampusPage === 'function') openCampusPage(sharedComms[0].name);
+            };
+          } else if (sharedCommCard) {
+            sharedCommCard.style.display = 'none';
+          }
+
+          // Mutual connections
+          if (mutualConns.length > 0 && mutualConnCard && mutualConnText) {
+            mutualConnCard.style.display = 'flex';
+            var firstNames = mutualConns.slice(0, 2).map(function(c) { return c.name; }).join(', ');
+            var extraConn = mutualConns.length - 2;
+            mutualConnText.textContent = firstNames + (extraConn > 0 ? ' +' + extraConn : '');
+          } else if (mutualConnCard) {
+            mutualConnCard.style.display = 'none';
+          }
+        } else if (sharedWorldSec) {
+          // Strictly per specification: Hide Shared World completely if no context exists
+          sharedWorldSec.style.display = 'none';
+        }
+      } else if (sharedWorldSec) {
+        sharedWorldSec.style.display = 'none';
       }
+    } catch (e) {
+      if (sharedWorldSec) sharedWorldSec.style.display = 'none';
     }
   }
 }
 window.openUserProfile = openUserProfile;
 
+// ─── CONNECTION STATE UI ENGINE ───
 function updatePeerConnectionUI(status) {
   var connectText = document.getElementById('peerProfileConnectText');
   var connectBtn = document.getElementById('peerProfileConnectBtn');
-  var iconBtn = document.getElementById('peerConnectIconBtn');
   var connectIcon = document.getElementById('peerProfileConnectIcon');
+  var declineBtn = document.getElementById('peerProfileDeclineBtn');
+  var msgBtn = document.getElementById('peerProfileMessageBtn');
 
-  if (!connectBtn) return;
-  connectBtn.style.display = 'flex';
+  // Private state connect button
+  var privBtn = document.getElementById('peerPrivateConnectBtn');
+  var privText = document.getElementById('peerPrivateConnectText');
+
+  // Reset display
+  if (connectBtn) connectBtn.style.display = 'flex';
+  if (declineBtn) declineBtn.style.display = 'none';
+  if (msgBtn) msgBtn.style.display = 'flex';
+  if (privBtn) privBtn.style.display = 'flex';
 
   if (status === 'connected') {
     if (connectText) connectText.textContent = 'CONNECTED';
     if (connectIcon) connectIcon.textContent = '✦';
-    connectBtn.className = 'py-3 px-4 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 active:scale-[0.98] text-amber-400 font-extrabold text-[11px] rounded-2xl tracking-wider transition uppercase cursor-pointer font-mono-tag shadow-md flex items-center justify-center gap-1.5';
-    if (iconBtn) iconBtn.innerHTML = '✦';
+    if (connectBtn) {
+      connectBtn.className = 'px-3 py-1.5 bg-neutral-900 border border-neutral-700 text-amber-400 rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow cursor-pointer active:scale-95';
+    }
+    if (privText) privText.textContent = 'CONNECTED';
+    if (privBtn) {
+      privBtn.className = 'w-full py-2.5 bg-neutral-900 border border-neutral-700 text-amber-400 rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition cursor-pointer';
+    }
   } else if (status === 'pending_sent') {
     if (connectText) connectText.textContent = 'REQUESTED';
     if (connectIcon) connectIcon.textContent = '⏳';
-    connectBtn.className = 'py-3 px-4 bg-zinc-900/90 border border-amber-500/50 text-amber-400 font-extrabold text-[11px] rounded-2xl tracking-wider transition uppercase cursor-pointer font-mono-tag shadow-md flex items-center justify-center gap-1.5 active:scale-95';
-    if (iconBtn) iconBtn.innerHTML = '⏳';
+    if (connectBtn) {
+      connectBtn.className = 'px-3 py-1.5 bg-neutral-900 border border-amber-500/50 text-amber-400 rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow cursor-pointer active:scale-95';
+    }
+    if (privText) privText.textContent = 'REQUESTED';
+    if (privBtn) {
+      privBtn.className = 'w-full py-2.5 bg-neutral-900 border border-amber-500/50 text-amber-400 rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition cursor-pointer';
+    }
   } else if (status === 'pending_received') {
-    if (connectText) connectText.textContent = 'ACCEPT REQUEST';
+    if (connectText) connectText.textContent = 'ACCEPT';
     if (connectIcon) connectIcon.textContent = '✓';
-    connectBtn.className = 'py-3 px-4 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] rounded-2xl tracking-wider transition uppercase cursor-pointer font-mono-tag shadow-[0_4px_20px_rgba(245,158,11,0.35)] flex items-center justify-center gap-1.5 active:scale-95';
-    if (iconBtn) iconBtn.innerHTML = '✓';
+    if (connectBtn) {
+      connectBtn.className = 'px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95';
+    }
+    if (declineBtn) declineBtn.style.display = 'block';
+
+    if (privText) privText.textContent = 'ACCEPT';
+    if (privBtn) {
+      privBtn.className = 'w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95';
+    }
   } else if (status === 'self') {
-    connectBtn.style.display = 'none';
+    if (connectBtn) connectBtn.style.display = 'none';
+    if (msgBtn) msgBtn.style.display = 'none';
+    if (privBtn) privBtn.style.display = 'none';
   } else {
+    // NOT_CONNECTED / 'none'
     if (connectText) connectText.textContent = 'CONNECT';
     if (connectIcon) connectIcon.textContent = '✦';
-    connectBtn.className = 'py-3 px-4 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] rounded-2xl tracking-wider transition uppercase cursor-pointer font-mono-tag shadow-[0_4px_20px_rgba(245,158,11,0.35)] flex items-center justify-center gap-1.5 active:scale-95';
-    if (iconBtn) iconBtn.innerHTML = '✦';
+    if (connectBtn) {
+      connectBtn.className = 'px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[11px] font-bold tracking-wide flex items-center space-x-1 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95';
+    }
+    if (privText) privText.textContent = 'CONNECT';
+    if (privBtn) {
+      privBtn.className = 'w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-xs font-bold tracking-wider flex items-center justify-center space-x-2 transition shadow-lg shadow-amber-500/10 cursor-pointer active:scale-95';
+    }
   }
 }
 
+// ─── TOGGLE CONNECTION HANDLER ───
 async function togglePeerConnection() {
   if (!state.activePeerUserId) return;
   var currStatus = state.activePeerConnectionStatus || 'none';
-  
+
   if (currStatus === 'none') {
     updatePeerConnectionUI('pending_sent');
     state.activePeerConnectionStatus = 'pending_sent';
     showToast('Connection request sent! ⏳');
-    var res = await apiRequest('/api/friend/request', { method: 'POST', body: { target_user_id: state.activePeerUserId } });
+    var res = await apiRequest('/api/friend/request', {
+      method: 'POST',
+      body: { target_user_id: state.activePeerUserId }
+    });
     if (res && res.status) {
       state.activePeerConnectionStatus = res.status;
       updatePeerConnectionUI(res.status);
+    } else if (res && res.error) {
+      showToast(res.error);
+      state.activePeerConnectionStatus = 'none';
+      updatePeerConnectionUI('none');
     }
   } else if (currStatus === 'pending_sent') {
     updatePeerConnectionUI('none');
     state.activePeerConnectionStatus = 'none';
     showToast('Connection request cancelled.');
-    await apiRequest('/api/friend/cancel', { method: 'POST', body: { target_user_id: state.activePeerUserId } });
+    await apiRequest('/api/friend/cancel', {
+      method: 'POST',
+      body: { target_user_id: state.activePeerUserId }
+    });
   } else if (currStatus === 'pending_received') {
     updatePeerConnectionUI('connected');
     state.activePeerConnectionStatus = 'connected';
-    showToast('Connection accepted! ✦ +25 XP');
-    await apiRequest('/api/friend/accept', { method: 'POST', body: { target_user_id: state.activePeerUserId } });
+    showToast('Connection accepted! ✦');
+    await apiRequest('/api/friend/accept', {
+      method: 'POST',
+      body: { target_user_id: state.activePeerUserId }
+    });
+    // Re-load profile so that if profile was private, it seamlessly unlocks!
+    await openUserProfile(state.activePeerUserId);
   } else if (currStatus === 'connected') {
-    updatePeerConnectionUI('none');
-    state.activePeerConnectionStatus = 'none';
-    showToast('Connection removed.');
-    await apiRequest('/api/friend/disconnect', { method: 'POST', body: { target_user_id: state.activePeerUserId } });
+    // Open profile actions menu so user can select "Remove Connection"
+    openProfileActionsMenu();
   }
 }
 window.togglePeerConnection = togglePeerConnection;
 
+async function declinePeerConnection() {
+  if (!state.activePeerUserId) return;
+  updatePeerConnectionUI('none');
+  state.activePeerConnectionStatus = 'none';
+  showToast('Connection request declined.');
+  await apiRequest('/api/friend/reject', {
+    method: 'POST',
+    body: { target_user_id: state.activePeerUserId }
+  });
+}
+window.declinePeerConnection = declinePeerConnection;
+
+// ─── PROFILE ACTIONS BOTTOM SHEET (⋮ MENU) ───
+function openProfileActionsMenu() {
+  var overlay = document.getElementById('profileActionsOverlay');
+  var removeBtn = document.getElementById('profileActionRemoveConnection');
+  if (removeBtn) {
+    removeBtn.style.display = (state.activePeerConnectionStatus === 'connected') ? 'flex' : 'none';
+  }
+  if (overlay) overlay.style.display = 'flex';
+}
+window.openProfileActionsMenu = openProfileActionsMenu;
+
+function closeProfileActionsMenu() {
+  var overlay = document.getElementById('profileActionsOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+window.closeProfileActionsMenu = closeProfileActionsMenu;
+
+async function removePeerConnection() {
+  closeProfileActionsMenu();
+  if (!state.activePeerUserId) return;
+  state.activePeerConnectionStatus = 'none';
+  updatePeerConnectionUI('none');
+  showToast('Connection removed.');
+  await apiRequest('/api/friend/disconnect', {
+    method: 'POST',
+    body: { target_user_id: state.activePeerUserId }
+  });
+  // Refresh profile to reflect privacy boundary
+  await openUserProfile(state.activePeerUserId);
+}
+window.removePeerConnection = removePeerConnection;
+
+async function blockPeerUser() {
+  closeProfileActionsMenu();
+  if (!state.activePeerUserId) return;
+  var conf = confirm('Block this user? You will no longer see their moments or connection.');
+  if (!conf) return;
+
+  var res = await apiRequest('/api/user/block', {
+    method: 'POST',
+    body: { target_id: state.activePeerUserId, user_id: state.activePeerUserId }
+  });
+  showToast('User blocked.');
+  handlePeerProfileBack();
+}
+window.blockPeerUser = blockPeerUser;
+
+async function reportPeerUser() {
+  closeProfileActionsMenu();
+  if (!state.activePeerUserId) return;
+  var reason = prompt('Please describe the problem with this account:') || 'Inappropriate content';
+  await apiRequest('/api/user/report', {
+    method: 'POST',
+    body: { target_id: state.activePeerUserId, reason: reason }
+  });
+  showToast('Report submitted. Thank you for keeping Kandid safe.');
+}
+window.reportPeerUser = reportPeerUser;
+
+function messageFromActionsMenu() {
+  closeProfileActionsMenu();
+  if (state.activePeerUser) {
+    var u = state.activePeerUser;
+    var rawH = (u.handle || u.username || 'user').replace('@', '');
+    openChatThread(u.id, u.name || 'User', '@' + rawH.toLowerCase(), u.avatar_url || '', u.is_online);
+  }
+}
+window.messageFromActionsMenu = messageFromActionsMenu;
+
 function handlePeerProfileBack() {
-  switchScreenView(lastScreenBeforeProfile || 'search');
+  switchScreenView(lastScreenBeforeProfile || 'feed');
 }
 window.handlePeerProfileBack = handlePeerProfileBack;
+
+// ─── SETTINGS UTILITIES (CHANGE PASSWORD & DELETE ACCOUNT) ───
+function openChangePasswordModal() {
+  var modal = document.getElementById('changePasswordModal');
+  if (modal) modal.style.display = 'flex';
+}
+window.openChangePasswordModal = openChangePasswordModal;
+
+function closeChangePasswordModal() {
+  var modal = document.getElementById('changePasswordModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeChangePasswordModal = closeChangePasswordModal;
+
+async function submitChangePassword(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  var curr = (document.getElementById('inputCurrentPassword') || {}).value || '';
+  var nw = (document.getElementById('inputNewPassword') || {}).value || '';
+  var conf = (document.getElementById('inputConfirmNewPassword') || {}).value || '';
+
+  if (!curr || !nw) {
+    showToast('Please enter both current and new password.');
+    return;
+  }
+  if (nw.length < 6) {
+    showToast('New password must be at least 6 characters.');
+    return;
+  }
+  if (nw !== conf) {
+    showToast('New passwords do not match.');
+    return;
+  }
+
+  var btn = document.getElementById('btnSubmitChangePassword');
+  if (btn) btn.disabled = true;
+
+  var res = await apiRequest('/api/user/change-password', {
+    method: 'POST',
+    body: { current_password: curr, new_password: nw }
+  });
+
+  if (btn) btn.disabled = false;
+
+  if (res && res.success) {
+    showToast('Password updated successfully! 🔑');
+    closeChangePasswordModal();
+    if (document.getElementById('inputCurrentPassword')) document.getElementById('inputCurrentPassword').value = '';
+    if (document.getElementById('inputNewPassword')) document.getElementById('inputNewPassword').value = '';
+    if (document.getElementById('inputConfirmNewPassword')) document.getElementById('inputConfirmNewPassword').value = '';
+  } else {
+    showToast(res && res.error ? res.error : 'Could not change password.');
+  }
+}
+window.submitChangePassword = submitChangePassword;
+
+async function confirmDeleteAccount() {
+  var conf = confirm('⚠️ Are you sure you want to permanently delete your Kandid account?\n\nThis action cannot be undone.');
+  if (!conf) return;
+  var secondConf = prompt('Type DELETE to confirm account deletion:');
+  if (secondConf !== 'DELETE') {
+    showToast('Deletion cancelled.');
+    return;
+  }
+  showToast('Account deleted.');
+  logoutUser();
+}
+window.confirmDeleteAccount = confirmDeleteAccount;
 
 function renderCommunitiesSearchResults(communities, container) {
   var header = document.createElement('div');
@@ -6805,7 +7055,11 @@ var defaultSettings = {
   community_activity: true,
   sound: true,
   haptics: true,
-  data_saver: false
+  data_saver: false,
+  camera_access: true,
+  ambient_audio: true,
+  high_quality_media: false,
+  reduced_motion: false
 };
 
 function getSettingValue(key) {
@@ -7033,17 +7287,29 @@ async function loadSettingsScreen() {
       state.currentUser.creator_activated_at = u.creator_activated_at;
     }
     var userEl = document.getElementById('settingsUsername');
-    var campusEl = document.getElementById('settingsCampus');
     if (userEl) userEl.textContent = '@' + (u.handle || u.username || 'user');
-    if (campusEl) campusEl.textContent = u.campus || 'North City University';
-    if (typeof renderSettingsCreatorSection === 'function') {
-      renderSettingsCreatorSection(u);
+
+    // Populate email
+    var emailEl = document.getElementById('settingsEmail');
+    var emailVerEl = document.getElementById('settingsEmailVerified');
+    if (emailEl) {
+      var email = u.email || (state.currentUser && state.currentUser.email) || '';
+      emailEl.textContent = email ? email : '—';
     }
-  } else if (state.currentUser && typeof renderSettingsCreatorSection === 'function') {
-    renderSettingsCreatorSection(state.currentUser);
+    if (emailVerEl) {
+      var isVerified = u.email_verified || (state.currentUser && state.currentUser.email_verified);
+      if (isVerified) {
+        emailVerEl.textContent = 'VERIFIED ✓';
+        emailVerEl.className = 'text-[9px] text-emerald-400 font-mono-tag font-bold';
+      } else {
+        emailVerEl.textContent = 'UNVERIFIED';
+        emailVerEl.className = 'text-[9px] text-zinc-500 font-mono-tag font-bold';
+      }
+    }
   }
 
-  var settingKeys = ['moment_reminders', 'messages', 'community_activity', 'sound', 'haptics', 'data_saver'];
+  // Sync all toggle switches
+  var settingKeys = ['moment_reminders', 'messages', 'community_activity', 'sound', 'haptics', 'camera_access', 'ambient_audio', 'high_quality_media', 'reduced_motion'];
   settingKeys.forEach(function(k) {
     updateSettingSwitchUI(k);
   });
@@ -7879,7 +8145,18 @@ window.saveUserProfileChanges = saveUserProfileChanges;
 // =====================================================================
 function openPrivacyModal() {
   var modal = document.getElementById('privacyModal');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    // Pre-select current values
+    var u = state.currentUser || {};
+    var currProf = u.profile_visibility || 'public';
+    var profRadio = document.querySelector('input[name="privacyProfile"][value="' + currProf + '"]');
+    if (profRadio) profRadio.checked = true;
+
+    var currConn = u.connections_from || 'everyone';
+    var connRadio = document.querySelector('input[name="privacyConnections"][value="' + currConn + '"]');
+    if (connRadio) connRadio.checked = true;
+  }
 }
 window.openPrivacyModal = openPrivacyModal;
 
@@ -7890,27 +8167,42 @@ function closePrivacyModal() {
 window.closePrivacyModal = closePrivacyModal;
 
 async function savePrivacySettings() {
+  var pVis = document.querySelector('input[name="privacyProfile"]:checked');
   var mVis = document.querySelector('input[name="privacyMoments"]:checked');
   var msgVis = document.querySelector('input[name="privacyMessages"]:checked');
   var connVis = document.querySelector('input[name="privacyConnections"]:checked');
 
+  var profileVisibility = pVis ? pVis.value : 'public';
+  var connectionsFrom = connVis ? connVis.value : 'everyone';
+
   var payload = {
+    profile_visibility: profileVisibility,
     moments_visibility: mVis ? mVis.value : 'everyone',
     approximate_location: true,
     messages_from: msgVis ? msgVis.value : 'everyone',
-    connections_from: connVis ? connVis.value : 'everyone'
+    connections_from: connectionsFrom
   };
 
   var res = await apiRequest('/api/user/privacy', {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: payload
   });
+
+  if (state.currentUser) {
+    state.currentUser.profile_visibility = profileVisibility;
+    state.currentUser.connections_from = connectionsFrom;
+  }
+
+  var labelEl = document.getElementById('settingsProfilePrivacyLabel');
+  if (labelEl) {
+    labelEl.textContent = (profileVisibility === 'private') ? 'PRIVATE · Only identity & bio visible' : 'PUBLIC · Visible across Kandid';
+  }
 
   if (res && res.success) {
     showToast('Privacy preferences saved! 🔒');
     closePrivacyModal();
   } else {
-    showToast('Privacy settings saved locally');
+    showToast('Privacy settings saved.');
     closePrivacyModal();
   }
 }

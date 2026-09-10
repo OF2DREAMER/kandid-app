@@ -2233,6 +2233,12 @@ def init_db():
         cursor.execute("ALTER TABLE users ADD COLUMN location_city TEXT DEFAULT ''")
     if "vibe" not in users_columns:
         cursor.execute("ALTER TABLE users ADD COLUMN vibe TEXT DEFAULT ''")
+    if "profile_visibility" not in users_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN profile_visibility TEXT DEFAULT 'public'")
+    if "cover_url" not in users_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN cover_url TEXT DEFAULT ''")
+    if "connections_from" not in users_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN connections_from TEXT DEFAULT 'everyone'")
 
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS campus_events (
@@ -6194,7 +6200,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "authenticity_score": user.get("authenticity_score", 98.8),
                 "role": user.get("role", "student"),
                 "is_creator": int(user.get("is_creator") or 0),
-                "creator_activated_at": user.get("creator_activated_at") or ""
+                "creator_activated_at": user.get("creator_activated_at") or "",
+                "email": user.get("email", ""),
+                "email_verified": bool(user.get("email_verified", 1)),
+                "profile_visibility": user.get("profile_visibility", "public"),
+                "connections_from": user.get("connections_from", "everyone")
             }
 
             return self.send_json(200, {
@@ -6271,6 +6281,55 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {
                 "success": True,
                 "memories": memories_rows
+            })
+
+        if path == "/api/user/shared-context":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {'error': 'Unauthenticated'})
+            target_id = (query.get('target_id') or [''])[0]
+            if not target_id:
+                return self.send_json(400, {'error': 'target_id required'})
+            conn = get_db()
+            cursor = conn.cursor()
+            # Shared communities: both users are members
+            try:
+                cursor.execute("""
+                    SELECT c.id, c.name, c.icon, c.type
+                    FROM communities c
+                    JOIN community_members cm1 ON c.id = cm1.community_id AND cm1.user_id = ?
+                    JOIN community_members cm2 ON c.id = cm2.community_id AND cm2.user_id = ?
+                    WHERE c.visibility = 'public'
+                    LIMIT 5
+                """, (user['id'], target_id))
+                shared_communities = [dict(r) for r in cursor.fetchall()]
+            except:
+                shared_communities = []
+            # Mutual connections
+            try:
+                cursor.execute("""
+                    SELECT u.id, u.name, u.handle, u.avatar_url, u.avatar_letter
+                    FROM users u
+                    WHERE u.id IN (
+                        SELECT friend_id FROM friendships WHERE user_id = ? AND status IN ('accepted','connected')
+                        UNION
+                        SELECT user_id FROM friendships WHERE friend_id = ? AND status IN ('accepted','connected')
+                    )
+                    AND u.id IN (
+                        SELECT friend_id FROM friendships WHERE user_id = ? AND status IN ('accepted','connected')
+                        UNION
+                        SELECT user_id FROM friendships WHERE friend_id = ? AND status IN ('accepted','connected')
+                    )
+                    LIMIT 5
+                """, (user['id'], user['id'], target_id, target_id))
+                mutual_connections = [dict(r) for r in cursor.fetchall()]
+            except:
+                mutual_connections = []
+            conn.close()
+            return self.send_json(200, {
+                'success': True,
+                'shared_communities': shared_communities,
+                'mutual_connections': mutual_connections
             })
 
         if path == "/api/user/profile":
@@ -6350,6 +6409,31 @@ class KandidHandler(SimpleHTTPRequestHandler):
             elif curr_id == target_user["id"]:
                 connection_status = "self"
 
+            # Privacy gate: if profile is private and viewer is not connected/self
+            profile_visibility = target_user.get('profile_visibility', 'public')
+            if profile_visibility == 'private' and connection_status not in ('connected', 'self'):
+                target_user.pop('password_hash', None)
+                target_user.pop('salt', None)
+                conn.close()
+                return self.send_json(200, {
+                    'success': True,
+                    'is_private': True,
+                    'user': {
+                        'id': target_user['id'],
+                        'name': target_user.get('name', ''),
+                        'handle': target_user.get('handle', ''),
+                        'bio': target_user.get('bio', ''),
+                        'avatar_url': target_user.get('avatar_url', ''),
+                        'avatar_letter': target_user.get('avatar_letter', 'K'),
+                        'cover_url': target_user.get('cover_url', ''),
+                        'profile_visibility': 'private',
+                        'is_online': target_user.get('is_online', False),
+                    },
+                    'connection_status': connection_status,
+                    'moments': [],
+                    'communities': []
+                })
+
             # Public communities this target user belongs to
             cursor.execute("""
                 SELECT DISTINCT c.id, c.name, c.type, c.description, c.icon, c.city, c.location_context
@@ -6370,13 +6454,20 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Don't expose sensitive fields
             target_user.pop("password_hash", None)
             target_user.pop("salt", None)
-            
+
+            # Ensure new profile fields are present
+            target_user.setdefault("profile_visibility", "public")
+            target_user.setdefault("cover_url", "")
+            target_user.setdefault("location_city", "")
+            target_user["email_verified"] = bool(target_user.get("email_verified", 1))
+
             conn.close()
             return self.send_json(200, {
                 "success": True,
                 "user": target_user,
                 "moments": moments,
-                "communities": user_communities
+                "communities": user_communities,
+                "connection_status": connection_status
             })
 
         if path == "/api/friend/requests":
@@ -9430,6 +9521,19 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn = get_db()
             cursor = conn.cursor()
 
+            # Safety: Check if either user has blocked the other
+            cursor.execute("SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)", (user_id, friend_id, friend_id, user_id))
+            if cursor.fetchone():
+                conn.close()
+                return self.send_json(403, {"error": "Unable to connect with this user.", "success": False})
+
+            # Check if target user allows connection requests
+            cursor.execute("SELECT connections_from FROM users WHERE id = ?", (friend_id,))
+            t_user_row = cursor.fetchone()
+            if t_user_row and t_user_row["connections_from"] == "no_one":
+                conn.close()
+                return self.send_json(403, {"error": "This user is not accepting connection requests.", "success": False})
+
             # Check if reverse request already pending (if friend already requested me, auto-accept!)
             cursor.execute("SELECT * FROM friendships WHERE user_id = ? AND friend_id = ? AND status = 'pending'", (friend_id, user_id))
             reverse_req = cursor.fetchone()
@@ -9463,10 +9567,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.execute("INSERT OR REPLACE INTO friendships (id, user_id, friend_id, status) VALUES (?, ?, ?, 'pending')",
                          (f_id, user_id, friend_id))
             actor_name = user.get("name", "Student")
+            actor_handle = user.get("handle", "user")
+            actor_avatar = user.get("avatar_url", "")
             conn.execute("""
-                INSERT INTO notifications (id, user_id, title, body, type, is_read)
-                VALUES (?, ?, ?, ?, 'connection_request', 0)
-            """, ("notif_" + secrets.token_hex(6), friend_id, f"{actor_name} sent you a connection request", "Tap to view profile and accept."))
+                INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar, target_id)
+                VALUES (?, ?, ?, ?, 'connection_request', 0, ?, ?, ?, ?, ?)
+            """, ("notif_" + secrets.token_hex(6), friend_id, f"{actor_name} wants to connect with you", "Connect to see what they've chosen to share.", user_id, actor_name, actor_handle, actor_avatar, user_id))
             conn.commit()
             conn.close()
             return self.send_json(200, {"success": True, "status": "pending_sent", "message": "Connection request sent!"})
@@ -9784,6 +9890,19 @@ class KandidHandler(SimpleHTTPRequestHandler):
             messages_from = body.get("messages_from", "everyone")
             connections_from = body.get("connections_from", "everyone")
 
+            profile_visibility = body.get('profile_visibility', '').strip()
+            if profile_visibility in ('public', 'private'):
+                conn = get_db()
+                conn.execute('UPDATE users SET profile_visibility = ? WHERE id = ?', (profile_visibility, user['id']))
+                conn.commit()
+                conn.close()
+
+            if connections_from in ('everyone', 'no_one'):
+                conn = get_db()
+                conn.execute('UPDATE users SET connections_from = ? WHERE id = ?', (connections_from, user['id']))
+                conn.commit()
+                conn.close()
+
             return self.send_json(200, {
                 "success": True,
                 "privacy": {
@@ -9791,10 +9910,36 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "approximate_location": approx_loc,
                     "exact_location": "NEVER PUBLIC",
                     "messages_from": messages_from,
-                    "connections_from": connections_from
+                    "connections_from": connections_from,
+                    "profile_visibility": profile_visibility or "public"
                 },
                 "message": "Privacy settings saved."
             })
+
+        if path == "/api/user/change-password":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthenticated"})
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
+            except:
+                body = {}
+            current_pw = body.get("current_password", "")
+            new_pw = body.get("new_password", "")
+            if not current_pw or not new_pw or len(new_pw) < 6:
+                return self.send_json(400, {"error": "New password must be at least 6 characters."})
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT password_hash, salt FROM users WHERE id = ?", (user["id"],))
+            row = cursor.fetchone()
+            if not row or not verify_password(current_pw, row["password_hash"], row["salt"]):
+                conn.close()
+                return self.send_json(400, {"error": "Current password is incorrect."})
+            new_hash, new_salt = hash_password(new_pw)
+            conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?", (new_hash, new_salt, user["id"]))
+            conn.commit()
+            conn.close()
+            return self.send_json(200, {"success": True, "message": "Password changed successfully."})
 
         if path == "/api/auth/switch":
             handle = body.get("handle", "casey.rx").lower()
