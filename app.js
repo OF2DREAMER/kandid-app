@@ -4651,6 +4651,142 @@ async function handleDirectAvatarUpload(event) {
 }
 window.handleDirectAvatarUpload = handleDirectAvatarUpload;
 
+// YOU / PROFILE COVER PHOTO INTERACTION
+state.stagedCoverBase64 = null;
+state.previousCoverSrc = '';
+state.previousCoverDisplay = 'none';
+
+function triggerDirectCoverUpload() {
+  var input = document.getElementById('youDirectCoverInput');
+  if (input) {
+    input.value = '';
+    input.click();
+  }
+}
+window.triggerDirectCoverUpload = triggerDirectCoverUpload;
+
+function handleDirectCoverUpload(event) {
+  var file = event && event.target && event.target.files && event.target.files[0];
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) {
+    showToast('Please select a valid image file (JPG, PNG, WebP).');
+    return;
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    showToast('Cover photo exceeds maximum size limit (15MB).');
+    return;
+  }
+
+  var coverImg = document.getElementById('youCoverImg');
+  state.previousCoverSrc = coverImg ? (coverImg.getAttribute('src') || '') : '';
+  state.previousCoverDisplay = coverImg ? coverImg.style.display : 'none';
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var base64Data = e.target.result;
+    state.stagedCoverBase64 = base64Data;
+
+    // Show preview in cover area
+    if (coverImg) {
+      coverImg.src = base64Data;
+      coverImg.style.display = 'block';
+    }
+
+    // Reveal Action Bar [Cancel / Save], hide edit trigger
+    var editBtn = document.getElementById('youCoverEditBtn');
+    var actionBar = document.getElementById('youCoverActionBar');
+    if (editBtn) editBtn.style.display = 'none';
+    if (actionBar) actionBar.style.display = 'flex';
+  };
+  reader.readAsDataURL(file);
+}
+window.handleDirectCoverUpload = handleDirectCoverUpload;
+
+function cancelCoverUpload() {
+  var coverImg = document.getElementById('youCoverImg');
+  if (coverImg) {
+    if (state.previousCoverSrc && !state.previousCoverSrc.includes('unsplash.com')) {
+      coverImg.src = state.previousCoverSrc;
+      coverImg.style.display = state.previousCoverDisplay || 'block';
+    } else {
+      coverImg.style.display = 'none';
+      coverImg.removeAttribute('src');
+    }
+  }
+
+  state.stagedCoverBase64 = null;
+  var input = document.getElementById('youDirectCoverInput');
+  if (input) input.value = '';
+
+  var editBtn = document.getElementById('youCoverEditBtn');
+  var actionBar = document.getElementById('youCoverActionBar');
+  if (editBtn) editBtn.style.display = 'inline-flex';
+  if (actionBar) actionBar.style.display = 'none';
+}
+window.cancelCoverUpload = cancelCoverUpload;
+
+async function saveCoverUpload() {
+  if (!state.stagedCoverBase64) return;
+  var saveBtn = document.getElementById('youSaveCoverBtn');
+  var origText = saveBtn ? saveBtn.textContent : 'Save';
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+  }
+  showToast('Updating cover photo...');
+
+  try {
+    var res = await apiRequest('/api/user/cover', {
+      method: 'POST',
+      body: { cover: state.stagedCoverBase64 }
+    });
+
+    if (!res || !res.success) {
+      res = await apiRequest('/api/user/update', {
+        method: 'POST',
+        body: { cover_url: state.stagedCoverBase64 }
+      });
+    }
+
+    if (res && (res.success || res.cover_url || (res.user && res.user.cover_url))) {
+      var newUrl = res.cover_url || (res.user && res.user.cover_url) || state.stagedCoverBase64;
+      if (state.currentUser) {
+        state.currentUser.cover_url = newUrl;
+        try {
+          localStorage.setItem('kandid_user', JSON.stringify(state.currentUser));
+        } catch(err) {}
+      }
+
+      var coverImg = document.getElementById('youCoverImg');
+      if (coverImg) {
+        coverImg.src = newUrl;
+        coverImg.style.display = 'block';
+      }
+
+      state.stagedCoverBase64 = null;
+      var editBtn = document.getElementById('youCoverEditBtn');
+      var actionBar = document.getElementById('youCoverActionBar');
+      if (editBtn) editBtn.style.display = 'inline-flex';
+      if (actionBar) actionBar.style.display = 'none';
+
+      showToast('Cover photo updated! ✨');
+    } else {
+      showToast('Could not update cover photo. Please try again.');
+      cancelCoverUpload();
+    }
+  } catch(err) {
+    console.warn('[Cover] upload error:', err);
+    showToast('Cover photo upload failed. Please try again.');
+    cancelCoverUpload();
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = origText;
+    }
+  }
+}
+window.saveCoverUpload = saveCoverUpload;
+
 function applyUserToYouScreen(u) {
   if (!u) return;
   var avatarEl = document.getElementById('youProfileAvatar');
