@@ -4106,9 +4106,13 @@ async function openUserProfile(userId, preloadedData) {
     console.warn('[Profile] API request failed:', err);
   }
 
-  // If server returned 502/error or user not found, do NOT kick user out! Keep the screen open gracefully.
+  // If server returned error or user not found, keep graceful view without crashing
   if (!res || !res.success || !res.user) {
     console.warn('[Profile] Server unavailable or user not found, keeping preloaded/default view');
+    if (preloadedData && (preloadedData.profile_visibility === 'private' || preloadedData.is_private)) {
+      if (peerPrivateView) peerPrivateView.style.display = 'flex';
+      if (peerPublicView) peerPublicView.style.display = 'none';
+    }
     updatePeerConnectionUI(state.activePeerConnectionStatus || 'none');
     return;
   }
@@ -4182,34 +4186,41 @@ async function openUserProfile(userId, preloadedData) {
 
     updatePeerConnectionUI(connStatus);
 
-    // 2-column Moments Grid (real moments if available, else keep default design cards)
-    if (momentsGrid && res.moments && res.moments.length > 0) {
+    // 2-column Moments Grid
+    if (momentsGrid) {
       momentsGrid.innerHTML = '';
-      res.moments.forEach(function(m) {
-        var article = document.createElement('article');
-        article.className = 'relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
-        var imgUrl = m.main_img || m.mediaUrl || 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=300&q=80';
-        var locStr = escapeHtml(m.campus || m.location_city || finalCampus || 'GKU Campus');
-        var timeStr = escapeHtml(m.timeAgo || 'Recent');
+      if (res.moments && res.moments.length > 0) {
+        res.moments.forEach(function(m) {
+          var article = document.createElement('article');
+          article.className = 'relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
+          var imgUrl = m.main_img || m.mediaUrl || 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=300&q=80';
+          var locStr = escapeHtml(m.campus || m.location_city || finalCampus || 'GKU Campus');
+          var timeStr = escapeHtml(m.timeAgo || 'Recent');
 
-        article.innerHTML =
-          '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">' +
-          '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>' +
-          '<div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">' +
-            '<p class="text-[9px] font-extrabold text-amber-400 tracking-wider uppercase">' + timeStr + '</p>' +
-            '<p class="text-xs font-bold text-white truncate mt-0.5"><i class="fa-solid fa-location-dot text-[8px] mr-1 text-gray-400" aria-hidden="true"></i>' + locStr + '</p>' +
-          '</div>';
+          article.innerHTML =
+            '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">' +
+            '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>' +
+            '<div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">' +
+              '<p class="text-[9px] font-extrabold text-amber-400 tracking-wider uppercase">' + timeStr + '</p>' +
+              '<p class="text-xs font-bold text-white truncate mt-0.5"><i class="fa-solid fa-location-dot text-[8px] mr-1 text-gray-400" aria-hidden="true"></i>' + locStr + '</p>' +
+            '</div>';
 
-        article.onclick = function() {
-          if (typeof openMomentDetailModal === 'function') {
-            openMomentDetailModal(m.id || m.postId);
-          } else if (typeof openMomentDetail === 'function') {
-            openMomentDetail(m);
-          }
-        };
+          article.onclick = function() {
+            if (typeof openMomentDetailModal === 'function') {
+              openMomentDetailModal(m.id || m.postId);
+            } else if (typeof openMomentDetail === 'function') {
+              openMomentDetail(m);
+            }
+          };
 
-        momentsGrid.appendChild(article);
-      });
+          momentsGrid.appendChild(article);
+        });
+      } else {
+        var emptyDiv = document.createElement('div');
+        emptyDiv.className = 'col-span-2 py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider';
+        emptyDiv.textContent = 'NO PUBLIC MOMENTS YET';
+        momentsGrid.appendChild(emptyDiv);
+      }
     }
 
     // Shared World Section

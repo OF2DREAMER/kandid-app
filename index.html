@@ -1114,25 +1114,9 @@
 
             <!-- Recent Moments Grid -->
             <section class="px-5 mt-3 grid grid-cols-2 gap-2.5" id="peerPublicMomentsGrid" aria-label="Recent public moments">
-                <!-- Moment 1 -->
-                <article class="relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer">
-                    <img src="https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&w=300&q=80" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="Moment at GKU Campus">
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>
-                    <div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">
-                        <p class="text-[9px] font-extrabold text-amber-400 tracking-wider">2 HR AGO</p>
-                        <p class="text-xs font-bold text-white truncate mt-0.5"><i class="fa-solid fa-location-dot text-[8px] mr-1 text-gray-400" aria-hidden="true"></i>GKU Campus</p>
-                    </div>
-                </article>
-
-                <!-- Moment 2 -->
-                <article class="relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer">
-                    <img src="https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=300&q=80" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="Moment at GKU Campus">
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>
-                    <div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">
-                        <p class="text-[9px] font-extrabold text-amber-400 tracking-wider">1 DAY AGO</p>
-                        <p class="text-xs font-bold text-white truncate mt-0.5"><i class="fa-solid fa-location-dot text-[8px] mr-1 text-gray-400" aria-hidden="true"></i>GKU Campus</p>
-                    </div>
-                </article>
+                <div class="col-span-2 py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider" id="peerPublicEmptyMoments">
+                    NO PUBLIC MOMENTS YET
+                </div>
             </section>
 
             <!-- Shared World Section -->
@@ -4489,6 +4473,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.20"></script> 
+  <script src="app.js?v=5.2.21"></script> 
 </body>
 </html>
