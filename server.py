@@ -2233,12 +2233,21 @@ def init_db():
         cursor.execute("ALTER TABLE users ADD COLUMN location_city TEXT DEFAULT ''")
     if "vibe" not in users_columns:
         cursor.execute("ALTER TABLE users ADD COLUMN vibe TEXT DEFAULT ''")
-    if "profile_visibility" not in users_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN profile_visibility TEXT DEFAULT 'public'")
-    if "cover_url" not in users_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN cover_url TEXT DEFAULT ''")
-    if "connections_from" not in users_columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN connections_from TEXT DEFAULT 'everyone'")
+    try:
+        if "profile_visibility" not in users_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN profile_visibility TEXT DEFAULT 'public'")
+    except Exception:
+        pass
+    try:
+        if "cover_url" not in users_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN cover_url TEXT DEFAULT ''")
+    except Exception:
+        pass
+    try:
+        if "connections_from" not in users_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN connections_from TEXT DEFAULT 'everyone'")
+    except Exception:
+        pass
 
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS campus_events (
@@ -6417,7 +6426,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 connection_status = "self"
 
             # Privacy gate: if profile is private and viewer is not connected/self
-            profile_visibility = target_user.get('profile_visibility', 'public')
+            profile_visibility = str(target_user.get('profile_visibility') or 'public').strip().lower()
             if profile_visibility == 'private' and connection_status not in ('connected', 'self'):
                 target_user.pop('password_hash', None)
                 target_user.pop('salt', None)
@@ -6471,6 +6480,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {
                 "success": True,
+                "is_private": False,
                 "user": target_user,
                 "moments": moments,
                 "communities": user_communities,
@@ -6841,7 +6851,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     q_clean = q.strip().lower()
                     q_alt = q_clean.replace("anum", "anam") if "anum" in q_clean else (q_clean.replace("anam", "anum") if "anam" in q_clean else q_clean)
                     cursor.execute("""
-                        SELECT id, name, handle, avatar_url, avatar_letter, campus, bio FROM users
+                        SELECT id, name, handle, avatar_url, avatar_letter, campus, bio, profile_visibility FROM users
                         WHERE (LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?
                             OR LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?)
                           AND (role IS NULL OR role != 'banned')
@@ -6849,7 +6859,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     """, (f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_alt}%", f"%{q_alt}%", f"%{q_alt}%"))
                 else:
                     cursor.execute("""
-                        SELECT id, name, handle, avatar_url, avatar_letter, campus, bio FROM users
+                        SELECT id, name, handle, avatar_url, avatar_letter, campus, bio, profile_visibility FROM users
                         WHERE (role IS NULL OR role != 'banned')
                         ORDER BY streak_count DESC LIMIT 20
                     """)
@@ -9897,18 +9907,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
             messages_from = body.get("messages_from", "everyone")
             connections_from = body.get("connections_from", "everyone")
 
-            profile_visibility = body.get('profile_visibility', '').strip()
+            profile_visibility = str(body.get('profile_visibility', '')).strip().lower()
+            conn = get_db()
+            cursor = conn.cursor()
             if profile_visibility in ('public', 'private'):
-                conn = get_db()
-                conn.execute('UPDATE users SET profile_visibility = ? WHERE id = ?', (profile_visibility, user['id']))
-                conn.commit()
-                conn.close()
+                cursor.execute('UPDATE users SET profile_visibility = ? WHERE id = ?', (profile_visibility, user['id']))
 
             if connections_from in ('everyone', 'no_one'):
-                conn = get_db()
-                conn.execute('UPDATE users SET connections_from = ? WHERE id = ?', (connections_from, user['id']))
-                conn.commit()
-                conn.close()
+                cursor.execute('UPDATE users SET connections_from = ? WHERE id = ?', (connections_from, user['id']))
+            conn.commit()
+
+            cursor.execute('SELECT profile_visibility, connections_from FROM users WHERE id = ?', (user['id'],))
+            row = cursor.fetchone()
+            persisted_pv = row['profile_visibility'] if row else (profile_visibility or 'public')
+            persisted_conn = row['connections_from'] if row else connections_from
+            conn.close()
 
             return self.send_json(200, {
                 "success": True,
@@ -9917,8 +9930,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "approximate_location": approx_loc,
                     "exact_location": "NEVER PUBLIC",
                     "messages_from": messages_from,
-                    "connections_from": connections_from,
-                    "profile_visibility": profile_visibility or "public"
+                    "connections_from": persisted_conn or "everyone",
+                    "profile_visibility": persisted_pv or "public"
                 },
                 "message": "Privacy settings saved."
             })

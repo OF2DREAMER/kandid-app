@@ -316,6 +316,9 @@ async function apiRequest(endpoint, options) {
     if (cleanUid) headers['X-User-Id'] = cleanUid;
   }
   options.headers = headers;
+  if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData) && !(options.body instanceof Blob)) {
+    options.body = JSON.stringify(options.body);
+  }
 
   try {
     var res = await fetch(endpoint, options);
@@ -4115,10 +4118,10 @@ async function openUserProfile(userId, preloadedData) {
   }
 
   var u = res.user;
-  var isPrivate = Boolean(res.is_private);
-  var connStatus = res.connection_status || u.connection_status || 'none';
+  var connStatus = res.connection_status || (u && u.connection_status) || 'none';
   state.activePeerConnectionStatus = connStatus;
   state.activePeerUser = u;
+  var isPrivate = (res.is_private === true) || (u && u.profile_visibility === 'private' && connStatus !== 'connected' && connStatus !== 'self');
 
   // Real user data with graceful fallbacks so design is 100% stable
   var finalName = u.name || 'Karan Kumar';
@@ -7324,6 +7327,13 @@ async function loadSettingsScreen() {
     if (state.currentUser) {
       state.currentUser.is_creator = u.is_creator;
       state.currentUser.creator_activated_at = u.creator_activated_at;
+      if (u.profile_visibility) state.currentUser.profile_visibility = u.profile_visibility;
+      if (u.connections_from) state.currentUser.connections_from = u.connections_from;
+    }
+    var privLabel = document.getElementById('settingsProfilePrivacyLabel');
+    if (privLabel) {
+      var isPriv = (u.profile_visibility === 'private');
+      privLabel.textContent = isPriv ? 'PRIVATE · Only identity & bio visible' : 'PUBLIC · Visible across Kandid';
     }
     var userEl = document.getElementById('settingsUsername');
     if (userEl) userEl.textContent = '@' + (u.handle || u.username || 'user');
@@ -8188,11 +8198,11 @@ function openPrivacyModal() {
     modal.style.display = 'flex';
     // Pre-select current values
     var u = state.currentUser || {};
-    var currProf = u.profile_visibility || 'public';
+    var currProf = (u.profile_visibility || 'public').toLowerCase();
     var profRadio = document.querySelector('input[name="privacyProfile"][value="' + currProf + '"]');
     if (profRadio) profRadio.checked = true;
 
-    var currConn = u.connections_from || 'everyone';
+    var currConn = (u.connections_from || 'everyone').toLowerCase();
     var connRadio = document.querySelector('input[name="privacyConnections"][value="' + currConn + '"]');
     if (connRadio) connRadio.checked = true;
   }
@@ -8211,8 +8221,8 @@ async function savePrivacySettings() {
   var msgVis = document.querySelector('input[name="privacyMessages"]:checked');
   var connVis = document.querySelector('input[name="privacyConnections"]:checked');
 
-  var profileVisibility = pVis ? pVis.value : 'public';
-  var connectionsFrom = connVis ? connVis.value : 'everyone';
+  var profileVisibility = pVis ? pVis.value.toLowerCase() : 'public';
+  var connectionsFrom = connVis ? connVis.value.toLowerCase() : 'everyone';
 
   var payload = {
     profile_visibility: profileVisibility,
@@ -8222,14 +8232,17 @@ async function savePrivacySettings() {
     connections_from: connectionsFrom
   };
 
+  showToast('Saving privacy preferences...');
+
   var res = await apiRequest('/api/user/privacy', {
     method: 'POST',
-    body: payload
+    body: JSON.stringify(payload)
   });
 
   if (state.currentUser) {
     state.currentUser.profile_visibility = profileVisibility;
     state.currentUser.connections_from = connectionsFrom;
+    localStorage.setItem('kandid_user', JSON.stringify(state.currentUser));
   }
 
   var labelEl = document.getElementById('settingsProfilePrivacyLabel');
@@ -8238,10 +8251,10 @@ async function savePrivacySettings() {
   }
 
   if (res && res.success) {
-    showToast('Privacy preferences saved! 🔒');
+    showToast(profileVisibility === 'private' ? 'Profile is now PRIVATE 🔒' : 'Profile is now PUBLIC 🌐');
     closePrivacyModal();
   } else {
-    showToast('Privacy settings saved.');
+    showToast(res && res.error ? res.error : 'Privacy settings saved.');
     closePrivacyModal();
   }
 }
