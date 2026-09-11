@@ -1027,6 +1027,7 @@ def start_drop_lifecycle_scheduler(interval_seconds=15):
     pass
 
 os.makedirs(os.path.join(STATIC_DIR, "data"), exist_ok=True)
+os.makedirs(os.path.join(STATIC_DIR, "data", "chat_attachments"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "uploads", "moments"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "uploads", "audio"), exist_ok=True)
 os.makedirs(os.path.join(STATIC_DIR, "uploads", "avatars"), exist_ok=True)
@@ -2215,6 +2216,40 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_recent_searches_user ON recent_searches(user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_users_name_handle ON users(name, handle);
     CREATE INDEX IF NOT EXISTS idx_posts_search ON posts(is_private, created_at);
+
+    CREATE TABLE IF NOT EXISTS user_public_keys (
+        user_id TEXT PRIMARY KEY,
+        device_id TEXT NOT NULL,
+        public_key_jwk TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_reactions (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        media_url TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(message_id, user_id),
+        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_attachments (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        uploader_id TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (uploader_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_reactions_msg ON chat_reactions(message_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_attachments_conv ON chat_attachments(conversation_id);
     """)
 
     # Check and migrate columns if missing
@@ -2734,6 +2769,17 @@ def init_db():
             cursor.execute("ALTER TABLE messages ADD COLUMN media_url TEXT DEFAULT NULL")
         except Exception:
             pass
+    for col, col_type in [
+        ("ciphertext", "TEXT DEFAULT NULL"),
+        ("iv", "TEXT DEFAULT NULL"),
+        ("reply_to_id", "TEXT DEFAULT NULL"),
+        ("is_encrypted", "INTEGER DEFAULT 1")
+    ]:
+        if col not in msg_cols:
+            try:
+                cursor.execute(f"ALTER TABLE messages ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
 
     # Seed Default Collective Memories
     cursor.execute("SELECT COUNT(*) FROM collective_memories")
@@ -4492,6 +4538,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
+
+        # Enforce privacy: Never serve raw database or chat attachments via static file handler
+        if path.startswith("/data") or path.startswith("/data/") or "chat_attachments" in path:
+            return self.send_json(403, {"error": "Access denied"})
 
         if path in ["/health", "/healthz", "/api/health"]:
             db_engine = "postgresql" if DATABASE_URL else "sqlite"
@@ -6755,18 +6805,140 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.commit()
 
             cursor.execute("""
-                SELECT id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url
+                SELECT id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id
                 FROM messages
                 WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
                 ORDER BY created_at ASC
             """, (user_id, resolved_partner_id, resolved_partner_id, user_id))
             msgs = [dict(r) for r in cursor.fetchall()]
+
+            for m in msgs:
+                # 1. Resolve quoted reply from authorized conversation data
+                m["reply_to"] = None
+                if m.get("reply_to_id"):
+                    cursor.execute("""
+                        SELECT m.id, m.sender_id, m.content, m.message_type, u.name, u.handle
+                        FROM messages m
+                        LEFT JOIN users u ON m.sender_id = u.id
+                        WHERE m.id = ? AND ((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))
+                    """, (m["reply_to_id"], user_id, resolved_partner_id, resolved_partner_id, user_id))
+                    r_row = cursor.fetchone()
+                    if r_row:
+                        c_text = r_row["content"] or ""
+                        preview_text = (c_text[:80] + "...") if len(c_text) > 80 else c_text
+                        if not preview_text:
+                            preview_text = "Photo" if r_row["message_type"] == "photo" else ("Moment" if r_row["message_type"] == "moment" else "Attachment")
+                        m["reply_to"] = {
+                            "id": r_row["id"],
+                            "sender_id": r_row["sender_id"],
+                            "sender_name": r_row["name"] or "Student",
+                            "sender_handle": r_row["handle"] or "user",
+                            "content": preview_text,
+                            "message_type": r_row.get("message_type", "text")
+                        }
+
+                # 2. Resolve Moment details if moment_id is present
+                m["moment"] = None
+                if m.get("moment_id"):
+                    cursor.execute("""
+                        SELECT p.id, p.main_img as image_url, p.pip_img, p.caption, p.campus, p.user_id, p.created_at, u.name as author_name, u.handle as author_handle
+                        FROM posts p
+                        LEFT JOIN users u ON p.user_id = u.id
+                        WHERE p.id = ? AND (p.moderation_status IS NULL OR p.moderation_status != 'removed')
+                    """, (m["moment_id"],))
+                    m_row = cursor.fetchone()
+                    if m_row:
+                        m["moment"] = dict(m_row)
+
+                # 3. Resolve RealMoji reactions
+                cursor.execute("""
+                    SELECT r.id, r.user_id, r.emoji, r.media_url, r.created_at, u.name, u.handle
+                    FROM chat_reactions r
+                    LEFT JOIN users u ON r.user_id = u.id
+                    WHERE r.message_id = ?
+                    ORDER BY r.created_at ASC
+                """, (m["id"],))
+                m["reactions"] = [dict(r) for r in cursor.fetchall()]
+
             conn.close()
             return self.send_json(200, {
                 "success": True,
                 "messages": msgs,
                 "resolved_chat_id": resolved_partner_id
             })
+
+        if path.startswith("/api/chat/attachments/"):
+            user = get_current_user(self.headers, query=query)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Unauthorized"})
+            user_id = user["id"]
+
+            att_id = path.replace("/api/chat/attachments/", "").strip()
+            if not att_id or "/" in att_id or ".." in att_id:
+                return self.send_json(400, {"success": False, "error": "Invalid attachment ID"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, conversation_id, uploader_id, file_path, mime_type FROM chat_attachments WHERE id = ?", (att_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Attachment not found"})
+
+            att = dict(row)
+            conv_id = att.get("conversation_id", "")
+            # conv_id format is conv_<uid1>:<uid2> or conv_<uid1>__<uid2>
+            if ":" in conv_id:
+                participants = conv_id.replace("conv_", "").split(":")
+            elif "__" in conv_id:
+                participants = conv_id.replace("conv_", "").split("__")
+            else:
+                participants = [p for p in conv_id.replace("conv_", "").split("_") if p]
+            is_participant = (user_id in participants) or (user_id == att.get("uploader_id")) or (f"_{user_id}_" in f"_{conv_id}_")
+
+            if not is_participant:
+                # Also check if a message referencing this attachment was between user_id and someone else
+                cursor.execute("""
+                    SELECT 1 FROM messages
+                    WHERE (sender_id = ? OR receiver_id = ?) AND (media_url LIKE ? OR media_url = ?)
+                """, (user_id, user_id, f"%{att_id}%", att_id))
+                if cursor.fetchone():
+                    is_participant = True
+
+            if not is_participant:
+                conn.close()
+                return self.send_json(403, {"success": False, "error": "Access denied: You are not a participant in this conversation"})
+
+            # Check if user is blocked by or has blocked the other participant
+            other_id = [p for p in participants if p != user_id]
+            if other_id:
+                cursor.execute("""
+                    SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+                """, (user_id, other_id[0], other_id[0], user_id))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json(403, {"success": False, "error": "Access denied: User is blocked"})
+
+            conn.close()
+
+            # Path traversal prevention
+            safe_dir = os.path.abspath(os.path.join(STATIC_DIR, "data", "chat_attachments"))
+            real_path = os.path.abspath(att["file_path"])
+            if not real_path.startswith(safe_dir) or not os.path.exists(real_path):
+                return self.send_json(404, {"success": False, "error": "Attachment file not found on disk"})
+
+            try:
+                with open(real_path, "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", att.get("mime_type", "image/jpeg"))
+                self.send_header("Content-Length", str(len(content)))
+                self.send_header("Cache-Control", "private, no-transform, max-age=86400")
+                self.end_headers()
+                self.wfile.write(content)
+                return
+            except Exception as e:
+                return self.send_json(500, {"success": False, "error": str(e)})
 
         if path == "/api/search/radar":
             user = get_current_user(self.headers)
@@ -9955,33 +10127,249 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 })
             return self.send_json(401, {"error": "Unauthorized"})
 
-        if path == "/api/user/block" or path == "/api/block":
-            user = get_current_user(self.headers)
-            user_id = user["id"] if user else "u_casey"
-            target_id = body.get("targetUserId") or body.get("target_id")
+        if path in ["/api/user/block", "/api/chat/block", "/api/block"]:
+            user = get_current_user(self.headers, body)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            user_id = user["id"]
+            target_id = body.get("targetUserId") or body.get("target_id") or body.get("user_id") or body.get("blocked_id")
             if not target_id:
-                return self.send_json(400, {"error": "Target user ID required"})
+                return self.send_json(400, {"error": "Target user ID required", "success": False})
+            if target_id == user_id:
+                return self.send_json(400, {"error": "Cannot block yourself", "success": False})
+
             conn = get_db()
+            resolved_target = resolve_user_id(target_id, conn) or target_id
             conn.execute("INSERT OR REPLACE INTO blocks (id, user_id, blocked_user_id) VALUES (?, ?, ?)",
-                         ("blk_" + secrets.token_hex(6), user_id, target_id))
+                         ("blk_" + secrets.token_hex(6), user_id, resolved_target))
             conn.commit()
             conn.close()
             return self.send_json(200, {"success": True, "message": "User blocked successfully"})
 
-        if path == "/api/user/report" or path == "/api/report":
-            user = get_current_user(self.headers)
-            reporter_id = user["id"] if user else "u_casey"
-            reported_id = body.get("reportedUserId") or body.get("reported_id")
+        if path in ["/api/user/report", "/api/chat/report", "/api/report"]:
+            user = get_current_user(self.headers, body)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            reporter_id = user["id"]
+            reported_id = body.get("reportedUserId") or body.get("reported_id") or body.get("user_id") or body.get("target_id")
             reason = body.get("reason", "Inappropriate content")
             details = body.get("details", "")
             if not reported_id:
-                return self.send_json(400, {"error": "Reported user ID required"})
+                return self.send_json(400, {"error": "Reported user ID required", "success": False})
+
             conn = get_db()
+            resolved_reported = resolve_user_id(reported_id, conn) or reported_id
             conn.execute("INSERT INTO reports (id, reporter_id, reported_user_id, reason, details) VALUES (?, ?, ?, ?, ?)",
-                         ("rep_" + secrets.token_hex(6), reporter_id, reported_id, reason, details))
+                         ("rep_" + secrets.token_hex(6), reporter_id, resolved_reported, reason, details))
             conn.commit()
             conn.close()
             return self.send_json(200, {"success": True, "message": "Report submitted. Safety team will review."})
+
+        if path == "/api/auth/revoke-session":
+            user = get_current_user(self.headers, body)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            
+            auth = self.headers.get("Authorization", "")
+            token = None
+            if auth.startswith("Bearer "):
+                token = auth[7:].strip()
+            if not token:
+                cookie = self.headers.get("Cookie", "")
+                for item in cookie.split(";"):
+                    item_s = item.strip()
+                    if item_s.startswith("kandid_token="):
+                        token = item_s.split("=")[1].strip()
+                    elif item_s.startswith("kandid_session="):
+                        token = item_s.split("=")[1].strip()
+
+            conn = get_db()
+            if token:
+                conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            conn.commit()
+            conn.close()
+            return self.send_json(200, {"success": True, "message": "Session revoked successfully"})
+
+        if path == "/api/chat/attachments":
+            user = get_current_user(self.headers, body)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            uploader_id = user["id"]
+
+            raw_partner_id = body.get("partner_id") or body.get("recipientId") or body.get("receiver_id") or body.get("chat_id")
+            if not raw_partner_id:
+                return self.send_json(400, {"error": "partner_id is required", "success": False})
+
+            conn = get_db()
+            partner_id = resolve_user_id(raw_partner_id, conn) or raw_partner_id
+
+            partner = conn.execute("SELECT id FROM users WHERE id = ?", (partner_id,)).fetchone()
+            if not partner:
+                conn.close()
+                return self.send_json(404, {"error": "Partner user not found", "success": False})
+
+            # Check blocks
+            blocked = conn.execute("""
+                SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+            """, (uploader_id, partner_id, partner_id, uploader_id)).fetchone()
+            if blocked:
+                conn.close()
+                return self.send_json(403, {"error": "Cannot send attachments to this user", "success": False})
+
+            file_data_b64 = body.get("data") or body.get("file_base64")
+            if not file_data_b64:
+                conn.close()
+                return self.send_json(400, {"error": "Attachment data is required", "success": False})
+
+            mime_type = body.get("mime_type") or "image/jpeg"
+            if "base64," in file_data_b64:
+                header, base64_str = file_data_b64.split("base64,", 1)
+                if "data:" in header:
+                    mime_type = header.replace("data:", "").replace(";", "")
+            else:
+                base64_str = file_data_b64
+
+            try:
+                raw_bytes = base64.b64decode(base64_str)
+            except Exception:
+                conn.close()
+                return self.send_json(400, {"error": "Invalid base64 data", "success": False})
+
+            file_size = len(raw_bytes)
+            if file_size > 10 * 1024 * 1024:
+                conn.close()
+                return self.send_json(400, {"error": "Attachment exceeds 10MB limit", "success": False})
+
+            # Magic bytes validation
+            is_image = False
+            ext = "jpg"
+            if raw_bytes.startswith(b"\xff\xd8\xff"):
+                is_image = True
+                ext = "jpg"
+                mime_type = "image/jpeg"
+            elif raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                is_image = True
+                ext = "png"
+                mime_type = "image/png"
+            elif raw_bytes.startswith(b"GIF87a") or raw_bytes.startswith(b"GIF89a"):
+                is_image = True
+                ext = "gif"
+                mime_type = "image/gif"
+            elif raw_bytes.startswith(b"RIFF") and b"WEBP" in raw_bytes[:12]:
+                is_image = True
+                ext = "webp"
+                mime_type = "image/webp"
+
+            if not is_image:
+                conn.close()
+                return self.send_json(400, {"error": "Only valid image files (JPEG, PNG, GIF, WEBP) are supported", "success": False})
+
+            att_id = "att_" + secrets.token_hex(8)
+            sorted_ids = sorted([uploader_id, partner_id])
+            conv_id = f"conv_{sorted_ids[0]}:{sorted_ids[1]}"
+
+            attach_dir = os.path.join(STATIC_DIR, "data", "chat_attachments")
+            os.makedirs(attach_dir, exist_ok=True)
+            filename = f"{att_id}.{ext}"
+            filepath = os.path.join(attach_dir, filename)
+
+            with open(filepath, "wb") as f:
+                f.write(raw_bytes)
+
+            conn.execute("""
+                INSERT INTO chat_attachments (id, conversation_id, uploader_id, file_path, mime_type, file_size, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (att_id, conv_id, uploader_id, filepath, mime_type, file_size, datetime.now().isoformat()))
+            conn.commit()
+            conn.close()
+
+            return self.send_json(201, {
+                "success": True,
+                "attachment": {
+                    "id": att_id,
+                    "conversation_id": conv_id,
+                    "mime_type": mime_type,
+                    "file_size": file_size,
+                    "url": f"/api/chat/attachments/{att_id}"
+                }
+            })
+
+        if path == "/api/chat/reactions":
+            user = get_current_user(self.headers, body)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            user_id = user["id"]
+
+            msg_id = body.get("message_id")
+            emoji = (body.get("emoji") or "").strip()
+            media_url = body.get("media_url") or ""
+
+            if not msg_id or not emoji:
+                return self.send_json(400, {"error": "message_id and emoji are required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            # Check message exists and caller is authorized participant (Anti-IDOR)
+            cursor.execute("SELECT id, sender_id, receiver_id FROM messages WHERE id = ?", (msg_id,))
+            msg = cursor.fetchone()
+            if not msg:
+                conn.close()
+                return self.send_json(404, {"error": "Message not found", "success": False})
+
+            if user_id != msg["sender_id"] and user_id != msg["receiver_id"]:
+                conn.close()
+                return self.send_json(403, {"error": "Unauthorized to react to this message", "success": False})
+
+            # Check block status between participants
+            partner_id = msg["receiver_id"] if user_id == msg["sender_id"] else msg["sender_id"]
+            cursor.execute("SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)",
+                           (user_id, partner_id, partner_id, user_id))
+            if cursor.fetchone():
+                conn.close()
+                return self.send_json(403, {"error": "Cannot react: User is blocked", "success": False})
+
+            # Check existing reaction
+            cursor.execute("SELECT id, emoji FROM chat_reactions WHERE message_id = ? AND user_id = ?", (msg_id, user_id))
+            existing = cursor.fetchone()
+
+            action = "added"
+            if existing:
+                if existing["emoji"] == emoji:
+                    # Untoggle
+                    cursor.execute("DELETE FROM chat_reactions WHERE message_id = ? AND user_id = ?", (msg_id, user_id))
+                    action = "removed"
+                else:
+                    # Update emoji
+                    cursor.execute("UPDATE chat_reactions SET emoji = ?, media_url = ?, created_at = ? WHERE message_id = ? AND user_id = ?",
+                                   (emoji, media_url, datetime.now().isoformat(), msg_id, user_id))
+                    action = "updated"
+            else:
+                rx_id = "rx_" + secrets.token_hex(6)
+                cursor.execute("""
+                    INSERT INTO chat_reactions (id, message_id, user_id, emoji, media_url, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (rx_id, msg_id, user_id, emoji, media_url, datetime.now().isoformat()))
+                action = "added"
+
+            conn.commit()
+
+            cursor.execute("""
+                SELECT r.id, r.user_id, r.emoji, r.media_url, r.created_at, u.name, u.handle
+                FROM chat_reactions r
+                LEFT JOIN users u ON r.user_id = u.id
+                WHERE r.message_id = ?
+                ORDER BY r.created_at ASC
+            """, (msg_id,))
+            all_reactions = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "action": action,
+                "message_id": msg_id,
+                "reactions": all_reactions
+            })
 
         if path == "/api/chat/send":
             try:
@@ -9998,6 +10386,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 msg_type = body.get("message_type") or body.get("type") or "text"
                 moment_id = body.get("moment_id")
                 media_url = body.get("media_url")
+                reply_to_id = body.get("reply_to_id") or body.get("replyToId")
 
                 if not content and not moment_id and not media_url:
                     return self.send_json(400, {"error": "Message content cannot be empty", "success": False})
@@ -10033,12 +10422,35 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     conn.close()
                     return self.send_json(403, {"error": "Cannot send message to this user", "success": False})
 
+                # Validate reply_to_id belongs to this conversation
+                if reply_to_id:
+                    orig_msg = conn.execute("""
+                        SELECT id, sender_id, receiver_id FROM messages
+                        WHERE id = ? AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+                    """, (reply_to_id, sender_id, receiver_id, receiver_id, sender_id)).fetchone()
+                    if not orig_msg:
+                        conn.close()
+                        return self.send_json(400, {"error": "Invalid reply_to message for this conversation", "success": False})
+
+                # Validate moment sharing permissions
+                if moment_id:
+                    moment_row = conn.execute("SELECT id, user_id, is_private, moderation_status FROM posts WHERE id = ?", (moment_id,)).fetchone()
+                    if not moment_row:
+                        conn.close()
+                        return self.send_json(404, {"error": "Moment not found", "success": False})
+                    if moment_row["moderation_status"] == "removed":
+                        conn.close()
+                        return self.send_json(400, {"error": "Moment is no longer available", "success": False})
+                    if moment_row["is_private"] and moment_row["user_id"] != sender_id:
+                        conn.close()
+                        return self.send_json(403, {"error": "Cannot share private moment from another user", "success": False})
+
                 msg_id = "m_" + secrets.token_hex(6)
                 created = datetime.now().isoformat()
                 conn.execute("""
-                    INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url)
-                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
-                """, (msg_id, sender_id, receiver_id, content, created, msg_type, moment_id, media_url))
+                    INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id)
+                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
+                """, (msg_id, sender_id, receiver_id, content, created, msg_type, moment_id, media_url, reply_to_id))
                 
                 # Update last_active for sender
                 conn.execute("UPDATE users SET last_active = ? WHERE id = ?", (created, sender_id))
@@ -10046,12 +10458,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 actor_name = user.get("name", "Student")
                 actor_handle = user.get("handle", "user")
                 actor_avatar = user.get("avatar_url", "")
-                preview = (content[:28] + '...') if len(content) > 28 else content
+                
+                # Generic push notification without message plaintext
+                generic_body = f"New message from @{actor_handle}"
                 try:
                     conn.execute("""
                         INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar, action_screen, target_id)
                         VALUES (?, ?, ?, ?, 'message', 0, ?, ?, ?, ?, 'chat-conversation', ?)
-                    """, ("notif_" + secrets.token_hex(6), receiver_id, f"Message from @{actor_handle}", preview, sender_id, actor_name, actor_handle, actor_avatar, sender_id))
+                    """, ("notif_" + secrets.token_hex(6), receiver_id, f"Message from @{actor_handle}", generic_body, sender_id, actor_name, actor_handle, actor_avatar, sender_id))
                 except Exception as e:
                     print("Chat notification error:", e)
 
@@ -10068,7 +10482,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         "read_at": None,
                         "message_type": msg_type,
                         "moment_id": moment_id,
-                        "media_url": media_url
+                        "media_url": media_url,
+                        "reply_to_id": reply_to_id
                     }
                 })
             except Exception as e:

@@ -56,7 +56,10 @@ KANDID_TABLES = [
     "moment_clusters",
     "moment_cluster_members",
     "viral_graph_events",
-    "recent_searches"
+    "recent_searches",
+    "user_public_keys",
+    "chat_reactions",
+    "chat_attachments"
 ]
 
 def migrate_database(sqlite_path=DEFAULT_SQLITE_PATH, target_pg_url=None, dry_run=False):

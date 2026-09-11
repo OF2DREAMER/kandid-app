@@ -291,18 +291,30 @@
           <div class="w-10"></div>
       </header>
 
-      <header id="headerChatConversation" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
-          <div class="flex items-center gap-3">
-              <button class="text-zinc-400 hover:text-white font-mono-tag cursor-pointer" onclick="switchScreenView('chat-home')">←</button>
-              <div class="w-9 h-9 rounded-full overflow-hidden border border-zinc-700 bg-zinc-900">
+      <header id="headerChatConversation" style="display:none;" class="bg-[#09090b]/90 apple-blur px-4 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
+          <div class="flex items-center gap-2.5 overflow-hidden">
+              <button class="text-zinc-400 hover:text-white font-mono-tag cursor-pointer p-1" onclick="switchScreenView('chat-home')">←</button>
+              <div class="w-9 h-9 rounded-full overflow-hidden border border-zinc-700 bg-zinc-900 shrink-0 cursor-pointer" onclick="viewChatPartnerProfile()">
                   <img id="headerChatAvatar" src="https://api.dicebear.com/7.x/initials/svg?seed=K&backgroundColor=18181b,27272a&textColor=f59e0b" class="w-full h-full object-cover">
               </div>
-              <div>
-                  <h2 id="headerChatName" class="text-xs font-bold text-white">Student</h2>
-                  <p id="headerChatHandle" class="text-[9px] text-zinc-500 font-mono-tag">@student</p>
+              <div class="cursor-pointer overflow-hidden" onclick="viewChatPartnerProfile()">
+                  <div class="flex items-center gap-1.5">
+                      <h2 id="headerChatName" class="text-xs font-bold text-white truncate max-w-[140px]">Student</h2>
+                      <span id="headerChatCampus" class="text-[8px] text-zinc-500 font-mono-tag hidden truncate"></span>
+                  </div>
+                  <div class="flex items-center gap-1.5 pt-0.5">
+                      <span id="headerChatHandle" class="text-[9px] text-zinc-500 font-mono-tag truncate">@student</span>
+                      <span class="text-[8px] text-zinc-600 font-mono-tag">·</span>
+                      <span class="text-[8px] text-emerald-400/90 font-mono-tag flex items-center gap-0.5 shrink-0" title="Private Conversation · Encrypted in Transit">
+                          <svg class="w-2.5 h-2.5 text-emerald-400 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                          <span>Private · In Transit</span>
+                      </span>
+                  </div>
               </div>
           </div>
-          <button class="text-zinc-400 font-mono-tag cursor-pointer hover:text-white" onclick="switchScreenView('chat-settings')">•••</button>
+          <div class="flex items-center gap-1 shrink-0">
+              <button class="text-zinc-400 font-mono-tag cursor-pointer hover:text-white p-2 text-sm" onclick="openChatActionMenu()" title="Options">•••</button>
+          </div>
       </header>
 
       <header id="headerChatShared" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
@@ -2468,10 +2480,44 @@
     <!-- ===================================================================
          CHAT V2 COMPOSERS
          =================================================================== -->
-    <div id="chatComposerMain" class="absolute bottom-0 left-0 right-0 p-4 bg-zinc-950 border-t border-zinc-800/80 flex items-center gap-2 z-40" style="display:none;">
-        <input id="chatComposerInput" type="text" onkeydown="if(event.key==='Enter') sendChatMessageV2()" placeholder="Message..." class="bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none w-full placeholder-zinc-500 font-sans">
-        <button class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 hover:bg-zinc-800 cursor-pointer active:scale-95" onclick="openCameraForActiveChat()" title="Camera Moment">📷</button>
-        <button class="w-9 h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center cursor-pointer active:scale-95" onclick="sendChatMessageV2()">↑</button>
+    <div id="chatComposerMain" class="absolute bottom-0 left-0 right-0 bg-zinc-950 border-t border-zinc-800/80 flex flex-col z-40" style="display:none;">
+        <!-- Reply preview banner -->
+        <div id="chatReplyBanner" class="hidden bg-zinc-900/95 border-b border-zinc-800 px-4 py-2 flex items-center justify-between transition-all">
+            <div class="flex items-center gap-2 overflow-hidden">
+                <div class="w-1 h-7 bg-amber-500 rounded-full shrink-0"></div>
+                <div class="text-xs truncate">
+                    <p id="chatReplyAuthor" class="text-[10px] font-bold text-amber-400 font-mono-tag truncate">Replying to...</p>
+                    <p id="chatReplySnippet" class="text-zinc-300 truncate text-[11px]">Quoted text preview</p>
+                </div>
+            </div>
+            <button onclick="clearChatReplyTo()" class="text-zinc-500 hover:text-white text-xs px-2 py-1 font-mono-tag cursor-pointer">✕</button>
+        </div>
+
+        <!-- Attachment Menu Popover -->
+        <div id="chatAttachmentMenu" class="hidden absolute bottom-16 left-4 bg-zinc-900/95 apple-blur border border-zinc-800 rounded-2xl p-2 shadow-2xl space-y-1 w-48 text-xs font-mono-tag z-50">
+            <button onclick="triggerChatPhotoUpload()" class="w-full py-2 px-3 rounded-xl hover:bg-zinc-800 flex items-center gap-2.5 text-left text-zinc-200 cursor-pointer">
+                <span>🖼️</span>
+                <span>Send Photo</span>
+            </button>
+            <button onclick="openCameraForActiveChat(); closeChatAttachmentMenu();" class="w-full py-2 px-3 rounded-xl hover:bg-zinc-800 flex items-center gap-2.5 text-left text-zinc-200 cursor-pointer">
+                <span>📷</span>
+                <span>Snap Moment</span>
+            </button>
+            <button onclick="openChatMomentPicker(); closeChatAttachmentMenu();" class="w-full py-2 px-3 rounded-xl hover:bg-zinc-800 flex items-center gap-2.5 text-left text-amber-400 cursor-pointer">
+                <span>🌟</span>
+                <span>Share Moment</span>
+            </button>
+        </div>
+
+        <!-- Hidden file input for photo upload -->
+        <input type="file" id="chatPhotoFileInput" accept="image/jpeg,image/png,image/gif,image/webp" class="hidden" onchange="handleChatPhotoSelected(event)">
+
+        <!-- Composer input row -->
+        <div class="p-3.5 flex items-center gap-2">
+            <button type="button" class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white hover:bg-zinc-800 cursor-pointer active:scale-95 text-base font-bold shrink-0" onclick="toggleChatAttachmentMenu()" title="Add attachment">+</button>
+            <input id="chatComposerInput" type="text" onkeydown="if(event.key==='Enter') sendChatMessageV2()" placeholder="Private message..." class="bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none w-full placeholder-zinc-500 font-sans">
+            <button type="button" class="w-9 h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center cursor-pointer active:scale-95 shrink-0" onclick="sendChatMessageV2()" title="Send">↑</button>
+        </div>
     </div>
 
     <div id="chatComposerShared" class="absolute bottom-0 left-0 right-0 p-4 bg-zinc-950 border-t border-zinc-800/80 flex items-center gap-2 z-40" style="display:none;">
@@ -4004,6 +4050,89 @@
 
   
     <!-- ===================================================================
+         CHAT V1 PRIVACY & INTERACTION MODALS
+         =================================================================== -->
+    <!-- CHAT ACTION SHEET MODAL -->
+    <div id="chatActionSheetModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-end justify-center hidden" onclick="if(event.target === this) closeChatActionMenu()">
+        <div class="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-5 space-y-3 pb-8">
+            <div class="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-1"></div>
+            <div class="flex items-center gap-3 px-2 pb-3 border-b border-zinc-900">
+                <div class="w-10 h-10 rounded-full overflow-hidden border border-zinc-700 bg-zinc-900 shrink-0">
+                    <img id="chatActionAvatar" src="" class="w-full h-full object-cover">
+                </div>
+                <div class="overflow-hidden">
+                    <h3 id="chatActionName" class="text-sm font-bold text-white truncate">Student</h3>
+                    <p id="chatActionHandle" class="text-xs text-zinc-500 font-mono-tag truncate">@student</p>
+                </div>
+            </div>
+            <div class="space-y-1 text-xs">
+                <button onclick="viewChatPartnerProfile(); closeChatActionMenu();" class="w-full py-3 px-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-left text-white flex items-center justify-between font-medium cursor-pointer">
+                    <span>View Profile</span>
+                    <span class="text-zinc-500 font-mono-tag">›</span>
+                </button>
+                <button onclick="toggleChatMute(); closeChatActionMenu();" class="w-full py-3 px-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-left text-white flex items-center justify-between font-medium cursor-pointer">
+                    <span id="chatMuteBtnText">Mute Notifications</span>
+                    <span class="text-zinc-500 font-mono-tag">🔔</span>
+                </button>
+                <button onclick="promptChatReport(); closeChatActionMenu();" class="w-full py-3 px-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-left text-amber-400 flex items-center justify-between font-medium cursor-pointer">
+                    <span>Report User</span>
+                    <span class="text-zinc-500 font-mono-tag">⚠️</span>
+                </button>
+                <button onclick="promptChatBlock(); closeChatActionMenu();" class="w-full py-3 px-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-left text-red-400 flex items-center justify-between font-medium cursor-pointer">
+                    <span>Block User</span>
+                    <span class="text-zinc-500 font-mono-tag">🚫</span>
+                </button>
+            </div>
+            <button onclick="closeChatActionMenu()" class="w-full py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white text-xs font-bold uppercase tracking-wider font-mono-tag cursor-pointer">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- CHAT REACTION SHEET MODAL -->
+    <div id="chatReactionSheetModal" class="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-end justify-center hidden" onclick="if(event.target === this) closeChatReactionSheet()">
+        <div class="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-5 space-y-4 pb-8">
+            <div class="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-1"></div>
+            <div class="text-center">
+                <h4 class="text-xs font-bold text-white font-mono-tag uppercase tracking-wider">React to Message</h4>
+            </div>
+            <div class="flex items-center justify-around py-3 bg-zinc-900/80 border border-zinc-800/80 rounded-2xl text-2xl">
+                <button onclick="submitMessageReaction('❤️')" class="hover:scale-125 active:scale-95 transition-transform p-1 cursor-pointer">❤️</button>
+                <button onclick="submitMessageReaction('🔥')" class="hover:scale-125 active:scale-95 transition-transform p-1 cursor-pointer">🔥</button>
+                <button onclick="submitMessageReaction('😂')" class="hover:scale-125 active:scale-95 transition-transform p-1 cursor-pointer">😂</button>
+                <button onclick="submitMessageReaction('😮')" class="hover:scale-125 active:scale-95 transition-transform p-1 cursor-pointer">😮</button>
+                <button onclick="submitMessageReaction('👏')" class="hover:scale-125 active:scale-95 transition-transform p-1 cursor-pointer">👏</button>
+                <button onclick="submitMessageReaction('💯')" class="hover:scale-125 active:scale-95 transition-transform p-1 cursor-pointer">💯</button>
+            </div>
+            <div class="flex items-center justify-between gap-2 pt-1">
+                <button onclick="replyToTargetReactionMessage()" class="flex-1 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-white text-xs font-mono-tag flex items-center justify-center gap-1.5 cursor-pointer">
+                    <span>↩ Reply</span>
+                </button>
+                <button onclick="closeChatReactionSheet()" class="flex-1 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 text-xs font-mono-tag cursor-pointer">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHAT MOMENT PICKER MODAL -->
+    <div id="chatMomentPickerModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end justify-center hidden" onclick="if(event.target === this) closeChatMomentPicker()">
+        <div class="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-5 space-y-4 pb-8 max-h-[80vh] flex flex-col">
+            <div class="w-10 h-1 bg-zinc-700 rounded-full mx-auto shrink-0"></div>
+            <div class="flex items-center justify-between shrink-0">
+                <div>
+                    <h3 class="text-xs font-extrabold text-white font-mono-tag tracking-wider uppercase">Share a Moment</h3>
+                    <p class="text-[10px] text-zinc-500 font-mono-tag">Pick an authentic moment from your feed</p>
+                </div>
+                <button onclick="closeChatMomentPicker()" class="text-zinc-500 hover:text-white text-xs px-2 py-1 font-mono-tag cursor-pointer">✕</button>
+            </div>
+            <div id="chatMomentPickerGrid" class="grid grid-cols-3 gap-2 overflow-y-auto flex-1 py-2 min-h-[160px]">
+                <div class="col-span-3 text-center py-8 text-zinc-500 font-mono-tag text-xs">Loading moments...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================
          REALMOJI SELFIE REACTION MODAL
          =================================================================== -->
     <div id="realmojiCaptureModal" class="fixed inset-0 z-50 bg-black/85 apple-blur flex items-center justify-center p-4" style="display:none;">
@@ -4488,6 +4617,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.23"></script> 
+  <script src="app.js?v=5.2.24"></script> 
 </body>
 </html>

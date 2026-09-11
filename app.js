@@ -8114,29 +8114,47 @@ function clearChatSearch() {
 }
 window.clearChatSearch = clearChatSearch;
 
-function openChatThread(userId, name, handle, avatarUrl, isOnline) {
+function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
   state.activeChatUser = userId;
+  state.activeChatPartner = {
+    id: userId,
+    name: name || 'Student',
+    handle: handle ? (handle.startsWith('@') ? handle : '@' + handle) : '@student',
+    avatarUrl: avatarUrl || '',
+    isOnline: !!isOnline,
+    campus: campus || ''
+  };
+
+  clearChatReplyTo();
+  closeChatAttachmentMenu();
+  closeChatActionMenu();
+  closeChatReactionSheet();
+  closeChatMomentPicker();
 
   var headerAvatar = document.getElementById('headerChatAvatar');
   var headerName = document.getElementById('headerChatName');
-  var headerHandle = document.getElementById('headerChatHandle') || document.getElementById('headerChatStatus');
+  var headerHandle = document.getElementById('headerChatHandle');
+  var headerCampus = document.getElementById('headerChatCampus');
   
-  var cleanHandle = handle ? (handle.startsWith('@') ? handle : '@' + handle) : '@student';
+  var cleanHandle = state.activeChatPartner.handle;
   var fallbackAvatar = 'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(cleanHandle.replace('@', '') || name || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b';
 
   if (headerAvatar) {
     headerAvatar.src = (avatarUrl && avatarUrl.trim()) ? avatarUrl : fallbackAvatar;
   }
   if (headerName) {
-    headerName.textContent = name || 'Student';
+    headerName.textContent = state.activeChatPartner.name;
   }
-  
+  if (headerCampus) {
+    if (campus) {
+      headerCampus.textContent = campus;
+      headerCampus.classList.remove('hidden');
+    } else {
+      headerCampus.classList.add('hidden');
+    }
+  }
   if (headerHandle) {
-      if (isOnline) {
-          headerHandle.innerHTML = '<span class="text-amber-500 font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block"></span>ACTIVE</span> <span class="text-zinc-600">·</span> <span class="text-zinc-400">' + escapeHtml(cleanHandle) + '</span>';
-      } else {
-          headerHandle.innerHTML = '<span class="text-zinc-500 font-mono-tag">OFFLINE</span> <span class="text-zinc-600">·</span> <span class="text-zinc-400 font-mono-tag">' + escapeHtml(cleanHandle) + '</span>';
-      }
+    headerHandle.textContent = cleanHandle;
   }
 
   switchScreenView('chat-conversation');
@@ -8145,12 +8163,379 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline) {
 }
 window.openChatThread = openChatThread;
 
+function viewChatPartnerProfile() {
+  if (state.activeChatUser) {
+    openUserProfile(state.activeChatUser);
+  }
+}
+window.viewChatPartnerProfile = viewChatPartnerProfile;
+
+function openChatActionMenu() {
+  var modal = document.getElementById('chatActionSheetModal');
+  if (!modal) return;
+  var partner = state.activeChatPartner || { name: 'Student', handle: '@student', avatarUrl: '' };
+  var av = document.getElementById('chatActionAvatar');
+  var nm = document.getElementById('chatActionName');
+  var hd = document.getElementById('chatActionHandle');
+  if (av) {
+    av.src = partner.avatarUrl || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(partner.handle.replace('@', '')) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+  }
+  if (nm) nm.textContent = partner.name;
+  if (hd) hd.textContent = partner.handle;
+
+  var mutedList = JSON.parse(localStorage.getItem('kandid_muted_convs') || '[]');
+  var isMuted = state.activeChatUser && mutedList.includes(state.activeChatUser);
+  var muteBtnText = document.getElementById('chatMuteBtnText');
+  if (muteBtnText) {
+    muteBtnText.textContent = isMuted ? 'Unmute Notifications' : 'Mute Notifications';
+  }
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+}
+window.openChatActionMenu = openChatActionMenu;
+
+function closeChatActionMenu() {
+  var modal = document.getElementById('chatActionSheetModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+}
+window.closeChatActionMenu = closeChatActionMenu;
+
+function toggleChatMute() {
+  if (!state.activeChatUser) return;
+  var mutedList = JSON.parse(localStorage.getItem('kandid_muted_convs') || '[]');
+  var idx = mutedList.indexOf(state.activeChatUser);
+  if (idx > -1) {
+    mutedList.splice(idx, 1);
+    showToast('Notifications unmuted for this chat');
+  } else {
+    mutedList.push(state.activeChatUser);
+    showToast('Notifications muted for this chat 🔕');
+  }
+  localStorage.setItem('kandid_muted_convs', JSON.stringify(mutedList));
+}
+window.toggleChatMute = toggleChatMute;
+
+async function promptChatReport() {
+  if (!state.activeChatUser) return;
+  var reason = prompt('Reason for reporting this conversation / user:', 'Harassment or Inappropriate behavior');
+  if (!reason) return;
+  try {
+    var res = await apiRequest('/api/chat/report', {
+      method: 'POST',
+      body: JSON.stringify({
+        reportedUserId: state.activeChatUser,
+        reason: reason,
+        details: 'Reported via Chat Action Menu'
+      })
+    });
+    if (res && res.success) {
+      showToast('Report submitted. Safety team will review.');
+    } else {
+      showToast(res ? res.error : 'Failed to submit report');
+    }
+  } catch (err) {
+    showToast('Failed to submit report');
+  }
+}
+window.promptChatReport = promptChatReport;
+
+async function promptChatBlock() {
+  if (!state.activeChatUser) return;
+  var partnerName = state.activeChatPartner ? state.activeChatPartner.name : 'this user';
+  if (!confirm('Block ' + partnerName + '? You will no longer be able to message each other.')) {
+    return;
+  }
+  try {
+    var res = await apiRequest('/api/chat/block', {
+      method: 'POST',
+      body: JSON.stringify({
+        targetUserId: state.activeChatUser
+      })
+    });
+    if (res && res.success) {
+      showToast('User blocked');
+      switchScreenView('chat-home');
+      loadChatConversations();
+    } else {
+      showToast(res ? res.error : 'Failed to block user');
+    }
+  } catch (err) {
+    showToast('Failed to block user');
+  }
+}
+window.promptChatBlock = promptChatBlock;
+
+// Reply banner management
+function setChatReplyTo(msgId, authorName, textSnippet) {
+  state.activeChatReplyTo = {
+    id: msgId,
+    authorName: authorName || 'Student',
+    content: textSnippet || 'Quoted message'
+  };
+  var banner = document.getElementById('chatReplyBanner');
+  var authorEl = document.getElementById('chatReplyAuthor');
+  var snippetEl = document.getElementById('chatReplySnippet');
+  if (authorEl) authorEl.textContent = 'Replying to ' + state.activeChatReplyTo.authorName;
+  if (snippetEl) snippetEl.textContent = state.activeChatReplyTo.content;
+  if (banner) {
+    banner.classList.remove('hidden');
+    banner.classList.add('flex');
+  }
+  var input = document.getElementById('chatComposerInput');
+  if (input) input.focus();
+}
+window.setChatReplyTo = setChatReplyTo;
+
+function clearChatReplyTo() {
+  state.activeChatReplyTo = null;
+  var banner = document.getElementById('chatReplyBanner');
+  if (banner) {
+    banner.classList.add('hidden');
+    banner.classList.remove('flex');
+  }
+}
+window.clearChatReplyTo = clearChatReplyTo;
+
+// Reactions sheet management
+function openChatReactionSheet(msgId) {
+  state.targetReactionMsgId = msgId;
+  var modal = document.getElementById('chatReactionSheetModal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+}
+window.openChatReactionSheet = openChatReactionSheet;
+
+function closeChatReactionSheet() {
+  state.targetReactionMsgId = null;
+  var modal = document.getElementById('chatReactionSheetModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+}
+window.closeChatReactionSheet = closeChatReactionSheet;
+
+async function submitMessageReaction(emoji) {
+  if (!state.targetReactionMsgId) return;
+  var msgId = state.targetReactionMsgId;
+  closeChatReactionSheet();
+  await toggleChatReaction(msgId, emoji);
+}
+window.submitMessageReaction = submitMessageReaction;
+
+function replyToTargetReactionMessage() {
+  if (!state.targetReactionMsgId || !state.chatLoadedMessages) {
+    closeChatReactionSheet();
+    return;
+  }
+  var msgId = state.targetReactionMsgId;
+  var targetMsg = state.chatLoadedMessages.find(function(m){ return m.id === msgId; });
+  closeChatReactionSheet();
+  if (targetMsg) {
+    var myUid = getActiveUserId();
+    var isMe = targetMsg.sender_id === myUid;
+    var name = isMe ? 'You' : (state.activeChatPartner ? state.activeChatPartner.name : 'Student');
+    var snippet = targetMsg.content || (targetMsg.message_type === 'photo' ? 'Photo' : 'Moment');
+    setChatReplyTo(targetMsg.id, name, snippet);
+  }
+}
+window.replyToTargetReactionMessage = replyToTargetReactionMessage;
+
+async function toggleChatReaction(msgId, emoji) {
+  try {
+    var res = await apiRequest('/api/chat/reactions', {
+      method: 'POST',
+      body: JSON.stringify({
+        message_id: msgId,
+        emoji: emoji
+      })
+    });
+    if (res && res.success) {
+      await loadChatMessages(state.activeChatUser, true);
+    }
+  } catch (err) {
+    console.error('Reaction error:', err);
+  }
+}
+window.toggleChatReaction = toggleChatReaction;
+
+// Attachment drawer management
+function toggleChatAttachmentMenu() {
+  var menu = document.getElementById('chatAttachmentMenu');
+  if (menu) {
+    menu.classList.toggle('hidden');
+  }
+}
+window.toggleChatAttachmentMenu = toggleChatAttachmentMenu;
+
+function closeChatAttachmentMenu() {
+  var menu = document.getElementById('chatAttachmentMenu');
+  if (menu) {
+    menu.classList.add('hidden');
+  }
+}
+window.closeChatAttachmentMenu = closeChatAttachmentMenu;
+
+function triggerChatPhotoUpload() {
+  closeChatAttachmentMenu();
+  var fileInp = document.getElementById('chatPhotoFileInput');
+  if (fileInp) fileInp.click();
+}
+window.triggerChatPhotoUpload = triggerChatPhotoUpload;
+
+async function handleChatPhotoSelected(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+
+  if (!state.activeChatUser) {
+    showToast('Select a conversation first');
+    return;
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    showToast('Photo must be smaller than 10MB');
+    return;
+  }
+
+  showToast('Uploading attachment...');
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    var base64Data = e.target.result;
+    try {
+      var uploadRes = await apiRequest('/api/chat/attachments', {
+        method: 'POST',
+        body: JSON.stringify({
+          partner_id: state.activeChatUser,
+          data: base64Data,
+          mime_type: file.type || 'image/jpeg'
+        })
+      });
+
+      if (!uploadRes || !uploadRes.success || !uploadRes.attachment) {
+        showToast(uploadRes ? uploadRes.error : 'Attachment upload failed');
+        return;
+      }
+
+      var replyId = state.activeChatReplyTo ? state.activeChatReplyTo.id : null;
+      clearChatReplyTo();
+
+      var sendRes = await apiRequest('/api/chat/send', {
+        method: 'POST',
+        body: JSON.stringify({
+          receiverId: state.activeChatUser,
+          message_type: 'photo',
+          media_url: uploadRes.attachment.url,
+          content: 'Sent a photo',
+          reply_to_id: replyId
+        })
+      });
+
+      if (sendRes && sendRes.success) {
+        showToast('Photo sent 🔒');
+        await loadChatMessages(state.activeChatUser, false);
+      } else {
+        showToast('Failed to send photo');
+      }
+    } catch (err) {
+      console.error('Chat photo upload error:', err);
+      showToast('Error uploading photo');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+window.handleChatPhotoSelected = handleChatPhotoSelected;
+
+// Moment picker modal management
+async function openChatMomentPicker() {
+  var modal = document.getElementById('chatMomentPickerModal');
+  var grid = document.getElementById('chatMomentPickerGrid');
+  if (!modal || !grid) return;
+
+  grid.innerHTML = '<div class="col-span-3 text-center py-8 text-zinc-500 font-mono-tag text-xs">Loading moments...</div>';
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  try {
+    var res = await apiRequest('/api/feed?circle=all');
+    var moments = (res && res.moments) ? res.moments : [];
+    if (!moments.length) {
+      grid.innerHTML = '<div class="col-span-3 text-center py-8 text-zinc-500 font-mono-tag text-xs">No moments found to share</div>';
+      return;
+    }
+    grid.innerHTML = '';
+    moments.slice(0, 15).forEach(function(m) {
+      var item = document.createElement('div');
+      item.className = 'aspect-[3/4] bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800 relative cursor-pointer group hover:border-amber-500 transition-all';
+      item.onclick = function() {
+        shareMomentToActiveChat(m.id);
+      };
+      var imgUrl = m.image_url || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=400&q=80';
+      item.innerHTML = 
+        '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
+        '<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 p-1.5 flex flex-col justify-between">' +
+          '<span class="text-[8px] font-mono-tag text-amber-400 font-bold uppercase truncate">' + escapeHtml(m.campus || 'CAMPUS') + '</span>' +
+          '<span class="text-[8px] text-zinc-200 line-clamp-1 font-sans">' + escapeHtml(m.caption || '') + '</span>' +
+        '</div>';
+      grid.appendChild(item);
+    });
+  } catch (err) {
+    grid.innerHTML = '<div class="col-span-3 text-center py-8 text-red-400 font-mono-tag text-xs">Failed to load moments</div>';
+  }
+}
+window.openChatMomentPicker = openChatMomentPicker;
+
+function closeChatMomentPicker() {
+  var modal = document.getElementById('chatMomentPickerModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+}
+window.closeChatMomentPicker = closeChatMomentPicker;
+
+async function shareMomentToActiveChat(momentId) {
+  if (!state.activeChatUser || !momentId) return;
+  closeChatMomentPicker();
+  showToast('Sharing moment...');
+  try {
+    var replyId = state.activeChatReplyTo ? state.activeChatReplyTo.id : null;
+    clearChatReplyTo();
+    var res = await apiRequest('/api/chat/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        receiverId: state.activeChatUser,
+        message_type: 'moment',
+        moment_id: momentId,
+        content: 'Shared a Moment',
+        reply_to_id: replyId
+      })
+    });
+    if (res && res.success) {
+      showToast('Moment shared to conversation ✨');
+      await loadChatMessages(state.activeChatUser, false);
+    } else {
+      showToast(res ? res.error : 'Failed to share moment');
+    }
+  } catch (err) {
+    console.error('Share moment error:', err);
+    showToast('Failed to share moment');
+  }
+}
+window.shareMomentToActiveChat = shareMomentToActiveChat;
+
 async function loadChatMessages(userId, isSilent = false) {
   var container = document.getElementById('chatMessageHistoryV2');
   if (!container) return;
 
   if (!isSilent && (!container.children.length || container.innerText.includes('LOADING'))) {
-      container.innerHTML = '<div class="text-center py-4 text-[10px] text-zinc-500 font-mono-tag">ENCRYPTED CAMPUS CHAT • LOADING...</div>';
+      container.innerHTML = '<div class="text-center py-4 text-[10px] text-zinc-500 font-mono-tag">PRIVATE CONVERSATION • LOADING...</div>';
   }
 
   var myUid = getActiveUserId();
@@ -8159,8 +8544,13 @@ async function loadChatMessages(userId, isSilent = false) {
     if (state.currentUser && state.currentUser.id) {
       localStorage.setItem('kandid_active_uid', state.currentUser.id);
     }
-    // Only rebuild DOM if new messages or read receipts state changed
-    var msgSignature = JSON.stringify(data.messages.map(function(m){ return m.id + '_' + (m.read_at ? '1' : '0'); }));
+    state.chatLoadedMessages = data.messages;
+
+    // Build signature to check if DOM needs re-rendering
+    var msgSignature = JSON.stringify(data.messages.map(function(m){
+      var rxCnt = (m.reactions || []).length;
+      return m.id + '_' + (m.read_at ? '1' : '0') + '_' + rxCnt;
+    }));
     if (isSilent && container.dataset.msgSig === msgSignature) {
         return; 
     }
@@ -8171,7 +8561,7 @@ async function loadChatMessages(userId, isSilent = false) {
         '<div class="text-center py-10 space-y-1 my-auto">' +
           '<span class="text-2xl block">👋</span>' +
           '<p class="text-xs text-white font-bold font-mono-tag uppercase">START OF THE CONVERSATION</p>' +
-          '<p class="text-[10px] text-zinc-500 font-mono-tag">Say hi! Messages are private to you two.</p>' +
+          '<p class="text-[10px] text-zinc-500 font-mono-tag">Messages are private & encrypted in transit.</p>' +
         '</div>';
       return;
     }
@@ -8185,7 +8575,7 @@ async function loadChatMessages(userId, isSilent = false) {
       var senderId = String(m.sender_id || '').toLowerCase();
       var isMe = (senderId === myId) || (senderId !== activePartnerId);
       
-      // Calculate date divider
+      // Date divider
       var dateStr = 'TODAY';
       if (m.created_at) {
         var d = new Date(m.created_at);
@@ -8207,9 +8597,9 @@ async function loadChatMessages(userId, isSilent = false) {
         container.appendChild(dateDivider);
       }
 
-      var bubble = document.createElement('div');
-      bubble.className = isMe ? 'flex justify-end' : 'flex justify-start';
-      bubble.dataset.msgId = m.id;
+      var bubbleWrap = document.createElement('div');
+      bubbleWrap.className = isMe ? 'flex flex-col items-end space-y-1 group' : 'flex flex-col items-start space-y-1 group';
+      bubbleWrap.dataset.msgId = m.id;
 
       var bubbleStyle = isMe 
         ? 'bg-amber-500 text-black font-medium' 
@@ -8223,7 +8613,6 @@ async function loadChatMessages(userId, isSilent = false) {
         }
       }
       
-      // Single Tick (✓) for Sent, Double Tick (✓✓) for Seen/Read
       var statusIcon = '';
       if (isMe) {
         if (m.read_at) {
@@ -8233,16 +8622,94 @@ async function loadChatMessages(userId, isSilent = false) {
         }
       }
 
-      bubble.innerHTML = 
-        '<div class="max-w-[78%] rounded-2xl px-4 py-2 text-xs ' + bubbleStyle + ' shadow-sm space-y-0.5">' +
-          '<p class="leading-relaxed">' + escapeHtml(m.content) + '</p>' +
-          '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
-            '<span class="text-[8px] font-mono-tag">' + timeOnly + '</span>' +
-            statusIcon +
+      // Quoted Reply Block
+      var replyHtml = '';
+      if (m.reply_to) {
+        var replyBg = isMe ? 'bg-black/15 border-amber-600' : 'bg-zinc-950 border-amber-500';
+        replyHtml = 
+          '<div class="rounded-xl ' + replyBg + ' px-2.5 py-1 mb-1.5 border-l-2 text-[10px] space-y-0.5 max-w-full overflow-hidden">' +
+            '<span class="font-bold ' + (isMe ? 'text-black font-mono-tag' : 'text-amber-400 font-mono-tag') + ' block truncate">@' + escapeHtml(m.reply_to.sender_handle || 'user') + '</span>' +
+            '<span class="truncate block ' + (isMe ? 'text-black/80' : 'text-zinc-300') + '">' + escapeHtml(m.reply_to.content || '') + '</span>' +
+          '</div>';
+      }
+
+      // Photo Attachment Block
+      var photoHtml = '';
+      if (m.message_type === 'photo' || (m.media_url && !m.moment)) {
+        photoHtml = 
+          '<div class="rounded-xl overflow-hidden border ' + (isMe ? 'border-amber-600/30' : 'border-zinc-800') + ' my-1 max-w-[240px]">' +
+            '<img src="' + escapeHtml(m.media_url) + '" class="w-full h-auto max-h-60 object-cover rounded-lg" loading="lazy" onclick="window.open(\'' + escapeHtml(m.media_url) + '\', \'_blank\')">' +
+          '</div>';
+      }
+
+      // Moment Card Block
+      var momentHtml = '';
+      if (m.message_type === 'moment' && m.moment) {
+        momentHtml = 
+          '<div class="rounded-xl overflow-hidden border border-zinc-700 bg-black/40 my-1 max-w-[240px] cursor-pointer shadow-md" onclick="switchScreenView(\'feed\')">' +
+            '<img src="' + escapeHtml(m.moment.image_url) + '" class="w-full aspect-[4/3] object-cover">' +
+            '<div class="p-2 space-y-0.5 bg-zinc-950/90 border-t border-zinc-800">' +
+              '<span class="text-[8px] text-amber-400 font-mono-tag font-bold uppercase tracking-wider block">SHARED A MOMENT · ' + escapeHtml(m.moment.campus || 'CAMPUS') + '</span>' +
+              (m.moment.caption ? ('<p class="text-[11px] text-zinc-200 truncate font-sans">"' + escapeHtml(m.moment.caption) + '"</p>') : '') +
+            '</div>' +
+          '</div>';
+      }
+
+      // Text body
+      var textHtml = '';
+      var hasCustomText = m.content && m.content !== 'Shared a Moment' && m.content !== 'Sent a photo';
+      if (hasCustomText || (!photoHtml && !momentHtml)) {
+        textHtml = '<p class="leading-relaxed break-words">' + escapeHtml(m.content || '') + '</p>';
+      }
+
+      // Action buttons row (visible on hover / active)
+      var senderLabel = isMe ? 'You' : (state.activeChatPartner ? state.activeChatPartner.name : 'Student');
+      var quoteText = m.content || (m.message_type === 'photo' ? 'Photo' : 'Moment');
+
+      bubbleWrap.innerHTML = 
+        '<div class="flex items-end gap-1.5 ' + (isMe ? 'flex-row-reverse' : 'flex-row') + ' max-w-[85%]">' +
+          '<div class="rounded-2xl px-3.5 py-2 text-xs ' + bubbleStyle + ' shadow-sm space-y-0.5 max-w-full">' +
+            replyHtml +
+            photoHtml +
+            momentHtml +
+            textHtml +
+            '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
+              '<span class="text-[8px] font-mono-tag">' + timeOnly + '</span>' +
+              statusIcon +
+            '</div>' +
+          '</div>' +
+          '<div class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 pb-1">' +
+            '<button onclick="setChatReplyTo(\'' + m.id + '\', \'' + escapeHtml(senderLabel) + '\', \'' + escapeHtml(quoteText.replace(/'/g, '')) + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="Reply">↩</button>' +
+            '<button onclick="openChatReactionSheet(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="React">☺</button>' +
           '</div>' +
         '</div>';
 
-      container.appendChild(bubble);
+      // Render reaction pills if any
+      if (m.reactions && m.reactions.length) {
+        var rxMap = {};
+        m.reactions.forEach(function(r) {
+          if (!rxMap[r.emoji]) rxMap[r.emoji] = { count: 0, me: false };
+          rxMap[r.emoji].count++;
+          if (String(r.user_id).toLowerCase() === myId) rxMap[r.emoji].me = true;
+        });
+
+        var rxContainer = document.createElement('div');
+        rxContainer.className = 'flex flex-wrap gap-1 px-1 ' + (isMe ? 'justify-end' : 'justify-start');
+        Object.keys(rxMap).forEach(function(em) {
+          var item = rxMap[em];
+          var pillBtn = document.createElement('button');
+          var cls = item.me ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold' : 'bg-zinc-850 text-zinc-300 border-zinc-800';
+          pillBtn.className = 'text-[10px] px-2 py-0.5 rounded-full border ' + cls + ' font-mono-tag flex items-center gap-1 active:scale-95 transition-all cursor-pointer';
+          pillBtn.innerHTML = em + ' <span class="text-[9px]">' + item.count + '</span>';
+          pillBtn.onclick = function() {
+            toggleChatReaction(m.id, em);
+          };
+          rxContainer.appendChild(pillBtn);
+        });
+        bubbleWrap.appendChild(rxContainer);
+      }
+
+      container.appendChild(bubbleWrap);
     });
 
     container.scrollTop = container.scrollHeight;
@@ -8268,21 +8735,24 @@ async function sendChatMessageV2() {
     showToast('Please select a user to message.');
     return;
   }
+
+  var replyId = state.activeChatReplyTo ? state.activeChatReplyTo.id : null;
+  clearChatReplyTo();
   input.value = '';
 
   var myUid = getActiveUserId();
   var container = document.getElementById('chatMessageHistoryV2');
   var tempBubble = null;
   if (container) {
-    if (container.innerText.includes('START OF THE CONVERSATION') || container.innerText.includes('ENCRYPTED CAMPUS CHAT')) {
+    if (container.innerText.includes('START OF THE CONVERSATION') || container.innerText.includes('PRIVATE CONVERSATION')) {
       container.innerHTML = '';
     }
 
     tempBubble = document.createElement('div');
-    tempBubble.className = 'flex justify-end';
+    tempBubble.className = 'flex flex-col items-end space-y-1';
     var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     tempBubble.innerHTML = 
-      '<div class="max-w-[78%] rounded-2xl px-4 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
+      '<div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
         '<p class="leading-relaxed">' + escapeHtml(text) + '</p>' +
         '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
           '<span class="text-[8px] font-mono-tag">' + timeNow + '</span>' +
@@ -8301,7 +8771,9 @@ async function sendChatMessageV2() {
         sender_id: myUid,
         receiverId: state.activeChatUser,
         receiver_id: state.activeChatUser,
-        content: text
+        content: text,
+        reply_to_id: replyId,
+        message_type: 'text'
       })
     });
 
@@ -8312,11 +8784,13 @@ async function sendChatMessageV2() {
       await loadChatMessages(state.activeChatUser, true);
       checkChatUnreadBadge();
     } else {
-      showToast('Message send failed. Please check connection.');
+      showToast(res ? res.error : 'Message send failed. Please check connection.');
+      if (tempBubble) tempBubble.remove();
     }
   } catch (err) {
     console.error('Chat send error:', err);
     showToast('Failed to send message.');
+    if (tempBubble) tempBubble.remove();
   }
 }
 window.sendChatMessageV2 = sendChatMessageV2;

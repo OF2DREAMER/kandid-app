@@ -14,3 +14,5 @@ uploads/
 *.db-shm
 *.db-wal
 kandid.db
+data/chat_attachments/*
+!data/chat_attachments/.gitkeep
