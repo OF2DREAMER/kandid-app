@@ -283,20 +283,7 @@
       <!-- =================================================================
            CHAT V2 HEADERS
            ================================================================= -->
-      <header id="headerChatHome" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-3.5 pb-3 border-b border-zinc-800/80 z-30 space-y-2">
-          <div class="flex justify-between items-center">
-              <div class="flex items-center gap-2.5">
-                  <img src="favicon.svg" class="w-7 h-7 rounded-lg shadow-md flex-shrink-0" alt="Kandid Logo">
-                  <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KANDID</h1>
-              </div>
-          </div>
-          <div class="flex justify-between items-end">
-              <div>
-                  <h2 class="text-xl font-extrabold text-white tracking-tight font-mono-tag">CHAT</h2>
-                  <p class="text-[11px] text-zinc-400 font-normal">Private conversations with people you know.</p>
-              </div>
-          </div>
-      </header>
+      <header id="headerChatHome" style="display:none !important;" class="hidden"></header>
 
       <header id="headerChatNew" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <button class="text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer" onclick="switchScreenView('chat-home')">← BACK</button>
@@ -963,7 +950,7 @@
                 
                 <div class="space-y-2.5">
                     <!-- People Card -->
-                    <div onclick="switchChatSubTab('friends'); switchScreenView('chat-home');" class="bg-[#121215] border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition">
+                    <div onclick="switchScreenView('chat-home'); startNewChatFromConnections();" class="bg-[#121215] border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition">
                         <div class="flex items-center space-x-3.5">
                             <div class="w-8 h-8 rounded-full bg-neutral-800/90 flex items-center justify-center text-gray-300 text-xs" aria-hidden="true">
                                 <i class="fa-solid fa-user-group"></i>
@@ -2251,21 +2238,88 @@
            ================================================================= -->
       
       <!-- SCREEN 1: CHAT HOME -->
-      <section class="app-screen bg-[#09090b] flex flex-col h-full" id="screen-chat-home" style="display:none;">
-          <div class="px-4 py-3 space-y-2.5 pb-32 flex-1">
-              <!-- Sub-tabs: CHATS vs FRIENDS -->
-              <div class="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[10px] font-mono-tag mb-2" id="chatSubTabsBar">
-                  <button class="flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm transition-all cursor-pointer" id="tabBtnChats" onclick="switchChatSubTab('chats')">CHATS</button>
-                  <button class="flex-1 py-1.5 text-zinc-400 hover:text-white font-medium rounded-lg transition-all cursor-pointer" id="tabBtnFriends" onclick="switchChatSubTab('friends')">CONNECTED FRIENDS 👥</button>
+      <section class="app-screen bg-[#0b0b0c] flex flex-col h-full overflow-y-auto no-scrollbar" id="screen-chat-home" style="display:none;" role="region" aria-label="Chat Home">
+          <!-- Header Section (Kandid Brand + Notification Action Only) -->
+          <header class="px-5 pt-3 pb-2 flex justify-between items-center sticky top-0 bg-[#0b0b0c]/90 backdrop-blur-md z-40">
+              <div class="flex items-center space-x-2">
+                  <h1 class="text-sm font-bold tracking-[0.25em] text-white">KANDID</h1>
+              </div>
+              <div class="flex items-center">
+                  <button type="button" onclick="switchScreenView('notifications')" aria-label="Notifications" class="relative w-8 h-8 rounded-full bg-neutral-900/80 border border-neutral-800/80 flex items-center justify-center text-gray-300 hover:text-amber-400 hover:border-neutral-700 transition cursor-pointer">
+                      <i class="fa-regular fa-bell text-xs" aria-hidden="true"></i>
+                      <span id="chatNotifDot" class="hidden absolute top-2 right-2 w-1.5 h-1.5 bg-amber-500 rounded-full" aria-hidden="true"></span>
+                  </button>
+              </div>
+          </header>
+
+          <!-- CHAT Editorial Heading & Single Main Search Field -->
+          <div class="px-5 pt-3 pb-3">
+              <div class="flex justify-between items-center mb-3">
+                  <h2 class="text-lg font-bold text-white tracking-tight">Chat</h2>
+                  <button type="button" id="chatNewMsgBtn" onclick="startNewChatFromConnections()" class="text-[10px] font-mono-meta font-bold text-amber-500 hover:text-amber-400 uppercase tracking-wider flex items-center gap-1 cursor-pointer">
+                      <span>+ NEW</span>
+                  </button>
+              </div>
+              
+              <div class="relative">
+                  <span class="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-gray-500 text-xs">
+                      <i class="fa-solid fa-magnifying-glass"></i>
+                  </span>
+                  <input type="text" id="chatSearchInput" oninput="handleChatSearchInput(event)" placeholder="Search conversations" class="w-full bg-[#121215] border border-neutral-800/80 rounded-xl pl-9 pr-8 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-neutral-600 transition shadow-inner font-sans" aria-label="Search conversations">
+                  <button type="button" id="chatSearchClearBtn" onclick="clearChatSearch()" class="hidden absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-white text-xs cursor-pointer">
+                      <i class="fa-solid fa-xmark"></i>
+                  </button>
+              </div>
+          </div>
+
+          <!-- ================= STATE A: POPULATED CHAT HOME ================= -->
+          <div id="state-populated" class="flex flex-col flex-grow">
+              <!-- Section Label -->
+              <div class="px-5 pt-2 pb-1">
+                  <h3 class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase">MESSAGES</h3>
               </div>
 
-              <div class="bg-zinc-950 border border-zinc-800 focus-within:border-amber-500/50 rounded-xl px-3.5 py-2.5 flex items-center gap-2.5 transition-colors mb-2">
-                  <svg class="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                  <input type="text" id="chatSearchInput" oninput="filterChatConversations(event)" placeholder="Search conversations or friends..." class="bg-transparent outline-none w-full text-white placeholder-zinc-500 text-xs font-sans">
+              <!-- Conversation List -->
+              <div id="chatConversationsList" class="px-5 divide-y divide-neutral-800/40 pb-32" role="feed" aria-label="Conversations">
+                  <!-- Dynamically populated from /api/chat/conversations -->
+              </div>
+          </div>
+
+          <!-- ================= STATE B: EMPTY CHAT HOME ================= -->
+          <div id="state-empty" class="hidden flex-col flex-grow items-center justify-center px-6 text-center py-16 pb-32">
+              <div class="w-12 h-12 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-gray-500 mb-4">
+                  <i class="fa-regular fa-comment text-lg"></i>
+              </div>
+              <h3 class="text-sm font-bold text-white tracking-tight">Your conversations will live here.</h3>
+              <p class="text-xs text-gray-400 mt-1.5 leading-relaxed max-w-[240px]">
+                  Connect with someone,<br>share a Moment,<br>start a conversation.
+              </p>
+              <div class="mt-6">
+                  <button type="button" onclick="switchScreenView('search')" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-xs font-bold tracking-wide inline-flex items-center space-x-2 transition shadow-lg shadow-amber-500/10 cursor-pointer">
+                      <span>FIND PEOPLE</span>
+                      <i class="fa-solid fa-arrow-right text-[9px]"></i>
+                  </button>
+              </div>
+          </div>
+
+          <!-- ================= STATE C: NEW MESSAGE ENTRY STATE ================= -->
+          <div id="state-newmsg" class="hidden flex-col flex-grow px-5 pt-3 pb-32">
+              <div class="mb-4">
+                  <h3 class="text-xs font-bold tracking-[0.2em] text-gray-400 uppercase mb-1">NEW MESSAGE</h3>
+                  <p class="text-[11px] text-gray-400 leading-relaxed">
+                      Find someone to talk to.<br>Use Chat Search above to find a person.
+                  </p>
               </div>
 
-              <div id="chatHomeList" class="space-y-2.5"></div>
-              <div id="connectedFriendsList" class="space-y-2.5" style="display:none;"></div>
+              <div class="mt-2">
+                  <div class="flex justify-between items-center mb-3">
+                      <h4 class="text-[10px] font-bold tracking-[0.2em] text-gray-500 uppercase">YOUR CONNECTIONS</h4>
+                      <button type="button" onclick="exitChatNewMsgState()" class="text-[10px] font-mono-meta text-zinc-400 hover:text-white cursor-pointer">CANCEL</button>
+                  </div>
+                  <div id="chatConnectionsList" class="space-y-1">
+                      <!-- Dynamically populated from /api/chat/connections -->
+                  </div>
+              </div>
           </div>
       </section>
 
@@ -4434,6 +4488,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.22"></script> 
+  <script src="app.js?v=5.2.23"></script> 
 </body>
 </html>

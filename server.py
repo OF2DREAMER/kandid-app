@@ -2711,12 +2711,27 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_rem_sched ON drop_reminders(scheduled_for);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_rem_status ON drop_reminders(delivery_status);")
 
-    # Auto-migrations for messages table (read_at)
+    # Auto-migrations for messages table (read_at, message_type, moment_id, media_url)
     cursor.execute("PRAGMA table_info(messages)")
     msg_cols = [row[1] for row in cursor.fetchall()]
     if "read_at" not in msg_cols:
         try:
             cursor.execute("ALTER TABLE messages ADD COLUMN read_at TEXT DEFAULT NULL")
+        except Exception:
+            pass
+    if "message_type" not in msg_cols:
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN message_type TEXT DEFAULT 'text'")
+        except Exception:
+            pass
+    if "moment_id" not in msg_cols:
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN moment_id TEXT DEFAULT NULL")
+        except Exception:
+            pass
+    if "media_url" not in msg_cols:
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN media_url TEXT DEFAULT NULL")
         except Exception:
             pass
 
@@ -4529,16 +4544,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/chat/unread-count":
             user = get_current_user(self.headers, query=query)
-            explicit_uid = (query.get("user_id", [""])[0] or self.headers.get("X-User-Id", "")).strip()
-            raw_uid = explicit_uid or (user["id"] if user else None)
+            if not user:
+                return self.send_json(200, {"success": True, "count": 0})
+            user_id = user["id"]
             conn = get_db()
             cursor = conn.cursor()
-            resolved_uid = resolve_user_id(raw_uid, conn) if raw_uid else None
-            if resolved_uid:
-                cursor.execute("SELECT COUNT(*) FROM messages WHERE (receiver_id = ? OR receiver_id = ?) AND read_at IS NULL", (resolved_uid, raw_uid))
-                unread_total = cursor.fetchone()[0]
-            else:
-                unread_total = 0
+            cursor.execute("SELECT COUNT(*) FROM messages WHERE (receiver_id = ? OR receiver_id = ?) AND read_at IS NULL", (user_id, user.get("handle", "")))
+            unread_total = cursor.fetchone()[0]
             conn.close()
             return self.send_json(200, {"success": True, "count": unread_total})
 
@@ -6530,99 +6542,230 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True, "requests": requests})
         if path == "/api/chat/conversations":
-            explicit_uid = (query.get("user_id", [""])[0] or self.headers.get("X-User-Id", "")).strip()
             user = get_current_user(self.headers, query=query)
-            user_id = (user["id"] if user else None) or explicit_uid
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Unauthorized", "conversations": []})
+            user_id = user["id"]
+
             conn = get_db()
             cursor = conn.cursor()
-            resolved_uid = resolve_user_id(user_id, conn) or user_id or (user["id"] if user else "")
+
+            # Find all distinct partners with whom user_id has exchanged messages
             cursor.execute("""
-                SELECT u.id, u.name, u.handle, u.avatar_url, u.avatar_letter, u.campus, u.last_active, u.created_at
-                FROM users u
-                WHERE u.id != ? AND u.role != 'banned'
-                ORDER BY u.created_at DESC
-            """, (resolved_uid,))
-            users_list = [dict(r) for r in cursor.fetchall()]
+                SELECT DISTINCT CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as partner_id
+                FROM messages
+                WHERE sender_id = ? OR receiver_id = ?
+            """, (user_id, user_id, user_id))
+            raw_partner_ids = [r[0] for r in cursor.fetchall() if r[0] and r[0] != user_id]
+            unique_partner_ids = list(dict.fromkeys(raw_partner_ids))
+
             convos = []
             now_dt = datetime.now()
-            for u in users_list:
-                cursor.execute("""
-                    SELECT content, created_at, sender_id, read_at FROM messages
-                    WHERE (sender_id IN (?, ?) AND receiver_id IN (?, ?))
-                       OR (sender_id IN (?, ?) AND receiver_id IN (?, ?))
-                    ORDER BY created_at DESC LIMIT 1
-                """, (resolved_uid, user_id, u["id"], u.get("handle", ""),
-                      u["id"], u.get("handle", ""), resolved_uid, user_id))
-                last_m = cursor.fetchone()
-                
-                # Only include in active chat list if message history exists
-                if last_m:
-                    is_online = False
-                    if u.get("last_active"):
-                        try:
-                            la_dt = datetime.fromisoformat(u["last_active"])
-                            if (now_dt - la_dt).total_seconds() < 120:
-                                is_online = True
-                        except Exception:
-                            pass
-                    
-                    # Unread count from this specific user
-                    cursor.execute("""
-                        SELECT COUNT(*) FROM messages 
-                        WHERE sender_id IN (?, ?) AND receiver_id IN (?, ?) AND read_at IS NULL
-                    """, (u["id"], u.get("handle", ""), resolved_uid, user_id))
-                    unread_cnt = cursor.fetchone()[0]
-                            
-                    u["lastMessage"] = last_m[0]
-                    u["lastTimestamp"] = last_m[1]
-                    u["lastSenderId"] = last_m[2]
-                    u["lastReadAt"] = last_m[3]
-                    u["unreadCount"] = unread_cnt
-                    u["hasHistory"] = True
-                    u["is_online"] = is_online
-                    convos.append(u)
-            
-            # Sort by latest message timestamp
-            convos.sort(key=lambda x: x["lastTimestamp"], reverse=True)
-            
-            conn.close()
-            return self.send_json(200, {"success": True, "conversations": convos, "resolved_user_id": resolved_uid})
 
-        if path == "/api/chat/messages":
-            raw_chat_id = query.get("chat_id", [""])[0].strip()
-            explicit_uid = (query.get("user_id", [""])[0] or self.headers.get("X-User-Id", "")).strip()
+            for pid in unique_partner_ids:
+                # Check blocks
+                cursor.execute("""
+                    SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+                """, (user_id, pid, pid, user_id))
+                if cursor.fetchone():
+                    continue
+
+                # Fetch partner profile
+                cursor.execute("""
+                    SELECT id, name, handle, avatar_url, avatar_letter, campus, last_active
+                    FROM users WHERE id = ? AND (role IS NULL OR role != 'banned')
+                """, (pid,))
+                p_row = cursor.fetchone()
+                if not p_row:
+                    continue
+                partner = dict(p_row)
+
+                # Determine online status
+                is_online = False
+                if partner.get("last_active"):
+                    try:
+                        la_dt = datetime.fromisoformat(partner["last_active"])
+                        if (now_dt - la_dt).total_seconds() < 120:
+                            is_online = True
+                    except Exception:
+                        pass
+
+                # Fetch latest message
+                cursor.execute("""
+                    SELECT id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id
+                    FROM messages
+                    WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+                    ORDER BY created_at DESC LIMIT 1
+                """, (user_id, pid, pid, user_id))
+                last_m_row = cursor.fetchone()
+                if not last_m_row:
+                    continue
+                last_m = dict(last_m_row)
+
+                # Format preview
+                m_type = last_m.get("message_type") or ("moment" if last_m.get("moment_id") else "text")
+                preview_text = last_m.get("content") or ""
+                if m_type == "moment" or last_m.get("moment_id"):
+                    preview_text = "Shared a Moment · Campus"
+                    if last_m.get("moment_id"):
+                        cursor.execute("SELECT campus FROM posts WHERE id = ?", (last_m["moment_id"],))
+                        m_post = cursor.fetchone()
+                        if m_post and m_post[0]:
+                            preview_text = f"Shared a Moment · {m_post[0]}"
+                elif m_type == "photo":
+                    preview_text = "Sent a photo"
+                elif m_type == "reaction":
+                    preview_text = last_m.get("content") or "Reacted to your Moment"
+
+                # Unread count (incoming to user_id where read_at is NULL)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM messages 
+                    WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
+                """, (pid, user_id))
+                unread_cnt = cursor.fetchone()[0]
+
+                convos.append({
+                    "id": partner["id"],
+                    "conversation_id": f"conv_{user_id}_{partner['id']}",
+                    "participant": {
+                        "id": partner["id"],
+                        "name": partner["name"] or "Student",
+                        "username": partner["handle"] or "user",
+                        "handle": partner["handle"] or "user",
+                        "avatar_url": partner["avatar_url"] or "",
+                        "avatar_letter": partner["avatar_letter"] or "K",
+                        "campus": partner["campus"] or "North City University",
+                        "is_online": is_online
+                    },
+                    "last_message": {
+                        "id": last_m["id"],
+                        "type": m_type,
+                        "preview": preview_text,
+                        "created_at": last_m["created_at"],
+                        "sender_id": last_m["sender_id"],
+                        "read_at": last_m["read_at"],
+                        "moment_id": last_m.get("moment_id")
+                    },
+                    "unread": bool(unread_cnt > 0),
+                    "unread_count": unread_cnt,
+                    # Backwards compatibility flat properties
+                    "name": partner["name"] or "Student",
+                    "handle": partner["handle"] or "user",
+                    "avatar_url": partner["avatar_url"] or "",
+                    "campus": partner["campus"] or "North City University",
+                    "lastMessage": preview_text,
+                    "lastTimestamp": last_m["created_at"],
+                    "lastSenderId": last_m["sender_id"],
+                    "unreadCount": unread_cnt,
+                    "is_online": is_online
+                })
+
+            # Sort by latest message timestamp descending
+            convos.sort(key=lambda x: x["last_message"]["created_at"] or "", reverse=True)
+
+            conn.close()
+            return self.send_json(200, {"success": True, "conversations": convos})
+
+        if path == "/api/chat/connections":
             user = get_current_user(self.headers, query=query)
-            user_id = (user["id"] if user else None) or explicit_uid
-            
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Unauthorized", "connections": []})
+            user_id = user["id"]
+
             conn = get_db()
             cursor = conn.cursor()
-            
-            resolved_uid = resolve_user_id(user_id, conn) or user_id or (user["id"] if user else "")
-            resolved_chat_id = resolve_user_id(raw_chat_id, conn) or raw_chat_id
-            
-            # Mark incoming messages as read
-            if resolved_chat_id and resolved_uid:
-                cursor.execute("""
-                    UPDATE messages SET read_at = ?
-                    WHERE sender_id IN (?, ?) AND receiver_id IN (?, ?) AND read_at IS NULL
-                """, (datetime.now().isoformat(), resolved_chat_id, raw_chat_id, resolved_uid, user_id))
-                conn.commit()
 
-            # Query all messages between these two users (checking both resolved and raw strings)
+            # Find all friends where status is 'connected' or 'accepted'
             cursor.execute("""
-                SELECT * FROM messages
-                WHERE (sender_id IN (?, ?) AND receiver_id IN (?, ?))
-                   OR (sender_id IN (?, ?) AND receiver_id IN (?, ?))
+                SELECT CASE WHEN user_id = ? THEN friend_id ELSE user_id END as conn_user_id
+                FROM friendships
+                WHERE (user_id = ? OR friend_id = ?) AND status IN ('connected', 'accepted')
+            """, (user_id, user_id, user_id))
+            raw_ids = [r[0] for r in cursor.fetchall() if r[0] and r[0] != user_id]
+            unique_ids = list(dict.fromkeys(raw_ids))
+
+            connections = []
+            now_dt = datetime.now()
+            for cid in unique_ids:
+                # Check blocks
+                cursor.execute("""
+                    SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+                """, (user_id, cid, cid, user_id))
+                if cursor.fetchone():
+                    continue
+
+                cursor.execute("""
+                    SELECT id, name, handle, avatar_url, avatar_letter, campus, last_active
+                    FROM users WHERE id = ? AND (role IS NULL OR role != 'banned')
+                """, (cid,))
+                row = cursor.fetchone()
+                if not row:
+                    continue
+                u = dict(row)
+                is_online = False
+                if u.get("last_active"):
+                    try:
+                        la_dt = datetime.fromisoformat(u["last_active"])
+                        if (now_dt - la_dt).total_seconds() < 120:
+                            is_online = True
+                    except Exception:
+                        pass
+                u["is_online"] = is_online
+                connections.append({
+                    "id": u["id"],
+                    "name": u["name"] or "Student",
+                    "username": u["handle"] or "user",
+                    "handle": u["handle"] or "user",
+                    "avatar_url": u["avatar_url"] or "",
+                    "avatar_letter": u["avatar_letter"] or "K",
+                    "campus": u["campus"] or "Connected",
+                    "is_online": is_online
+                })
+
+            conn.close()
+            return self.send_json(200, {"success": True, "connections": connections})
+
+        if path == "/api/chat/messages":
+            user = get_current_user(self.headers, query=query)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Unauthorized", "messages": []})
+            user_id = user["id"]
+            partner_id = query.get("chat_id", [""])[0].strip() or query.get("partner_id", [""])[0].strip()
+            if not partner_id:
+                return self.send_json(400, {"success": False, "error": "chat_id is required", "messages": []})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            resolved_partner_id = resolve_user_id(partner_id, conn) or partner_id
+
+            # Check blocks
+            cursor.execute("""
+                SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+            """, (user_id, resolved_partner_id, resolved_partner_id, user_id))
+            if cursor.fetchone():
+                conn.close()
+                return self.send_json(403, {"success": False, "error": "Blocked", "messages": []})
+
+            # Mark incoming messages sent by partner as read
+            now_iso = datetime.now().isoformat()
+            cursor.execute("""
+                UPDATE messages SET read_at = ?
+                WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
+            """, (now_iso, resolved_partner_id, user_id))
+            conn.commit()
+
+            cursor.execute("""
+                SELECT id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url
+                FROM messages
+                WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
                 ORDER BY created_at ASC
-            """, (resolved_uid, user_id, resolved_chat_id, raw_chat_id,
-                  resolved_chat_id, raw_chat_id, resolved_uid, user_id))
+            """, (user_id, resolved_partner_id, resolved_partner_id, user_id))
             msgs = [dict(r) for r in cursor.fetchall()]
             conn.close()
             return self.send_json(200, {
                 "success": True,
                 "messages": msgs,
-                "resolved_user_id": resolved_uid,
-                "resolved_chat_id": resolved_chat_id
+                "resolved_chat_id": resolved_partner_id
             })
 
         if path == "/api/search/radar":
@@ -6757,7 +6900,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 m["timeAgo"] = format_time_ago(m.get("created_at", ""))
                 blocked = False
                 if user.get("id"):
-                    cursor.execute("SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)",
+                    cursor.execute("SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)",
                                    (user["id"], m.get("user_id"), m.get("user_id"), user["id"]))
                     blocked = bool(cursor.fetchone())
                 m["blocked"] = blocked
@@ -9842,58 +9985,92 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/chat/send":
             try:
-                explicit_uid = (body.get("senderId") or body.get("sender_id") or self.headers.get("X-User-Id", "")).strip()
                 user = get_current_user(self.headers, body)
-                raw_sender_id = explicit_uid or (user["id"] if user else "u_80bef710")
+                if not user:
+                    return self.send_json(401, {"error": "Authentication required", "success": False})
+                sender_id = user["id"]
+
                 raw_receiver_id = body.get("recipientId") or body.get("receiverId") or body.get("receiver_id") or body.get("recipient_id") or body.get("chat_id")
                 if not raw_receiver_id:
                     return self.send_json(400, {"error": "Receiver ID is required", "success": False})
+                
                 content = (body.get("content") or body.get("text") or "").strip()
-                if not content:
+                msg_type = body.get("message_type") or body.get("type") or "text"
+                moment_id = body.get("moment_id")
+                media_url = body.get("media_url")
+
+                if not content and not moment_id and not media_url:
                     return self.send_json(400, {"error": "Message content cannot be empty", "success": False})
 
-                conn = get_db()
-                sender_id = resolve_user_id(raw_sender_id, conn) or raw_sender_id
-                receiver_id = resolve_user_id(raw_receiver_id, conn) or raw_receiver_id
+                if moment_id and not content:
+                    content = "Shared a Moment"
 
-                sender_row = conn.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (sender_id,)).fetchone()
-                if not sender_row:
-                    sender_row = conn.execute("SELECT * FROM users WHERE LOWER(handle) = ? LIMIT 1", (str(raw_sender_id).lower().replace("@", ""),)).fetchone()
-                    if sender_row:
-                        sender_id = sender_row["id"]
-                    elif user and user.get("id"):
-                        sender_id = user["id"]
-                        sender_row = user
+                conn = get_db()
+                receiver_id = resolve_user_id(raw_receiver_id, conn) or raw_receiver_id
 
                 receiver_row = conn.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (receiver_id,)).fetchone()
                 if not receiver_row:
                     receiver_row = conn.execute("SELECT * FROM users WHERE LOWER(handle) = ? LIMIT 1", (str(raw_receiver_id).lower().replace("@", ""),)).fetchone()
                     if receiver_row:
                         receiver_id = receiver_row["id"]
+                    else:
+                        conn.close()
+                        return self.send_json(404, {"error": "Recipient user not found", "success": False})
+
+                # Prevent sending message to self
+                if sender_id == receiver_id:
+                    conn.close()
+                    return self.send_json(400, {"error": "Cannot send message to yourself", "success": False})
+
+                # Check blocks
+                blocked_row = conn.execute("""
+                    SELECT 1 FROM blocks 
+                    WHERE (user_id = ? AND blocked_user_id = ?) 
+                       OR (user_id = ? AND blocked_user_id = ?)
+                    LIMIT 1
+                """, (sender_id, receiver_id, receiver_id, sender_id)).fetchone()
+                if blocked_row:
+                    conn.close()
+                    return self.send_json(403, {"error": "Cannot send message to this user", "success": False})
 
                 msg_id = "m_" + secrets.token_hex(6)
                 created = datetime.now().isoformat()
-                conn.execute("INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at) VALUES (?, ?, ?, ?, ?, NULL)",
-                             (msg_id, sender_id, receiver_id, content, created))
+                conn.execute("""
+                    INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url)
+                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                """, (msg_id, sender_id, receiver_id, content, created, msg_type, moment_id, media_url))
                 
                 # Update last_active for sender
                 conn.execute("UPDATE users SET last_active = ? WHERE id = ?", (created, sender_id))
                 
-                actor_name = user.get("name", "Student") if user else "Student"
-                actor_handle = user.get("handle", "user") if user else "user"
-                actor_avatar = user.get("avatar_url", "") if user else ""
+                actor_name = user.get("name", "Student")
+                actor_handle = user.get("handle", "user")
+                actor_avatar = user.get("avatar_url", "")
                 preview = (content[:28] + '...') if len(content) > 28 else content
                 try:
                     conn.execute("""
-                        INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar)
-                        VALUES (?, ?, ?, ?, 'message', 0, ?, ?, ?, ?)
-                    """, ("notif_" + secrets.token_hex(6), receiver_id, f"Message from @{actor_handle}", preview, sender_id, actor_name, actor_handle, actor_avatar))
+                        INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar, action_screen, target_id)
+                        VALUES (?, ?, ?, ?, 'message', 0, ?, ?, ?, ?, 'chat-conversation', ?)
+                    """, ("notif_" + secrets.token_hex(6), receiver_id, f"Message from @{actor_handle}", preview, sender_id, actor_name, actor_handle, actor_avatar, sender_id))
                 except Exception as e:
                     print("Chat notification error:", e)
 
                 conn.commit()
                 conn.close()
-                return self.send_json(201, {"success": True, "message": {"id": msg_id, "sender_id": sender_id, "receiver_id": receiver_id, "content": content, "created_at": created, "read_at": None}})
+                return self.send_json(201, {
+                    "success": True,
+                    "message": {
+                        "id": msg_id,
+                        "sender_id": sender_id,
+                        "receiver_id": receiver_id,
+                        "content": content,
+                        "created_at": created,
+                        "read_at": None,
+                        "message_type": msg_type,
+                        "moment_id": moment_id,
+                        "media_url": media_url
+                    }
+                })
             except Exception as e:
                 print("Error sending message:", e)
                 return self.send_json(500, {"error": str(e), "success": False})

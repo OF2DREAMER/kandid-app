@@ -17,14 +17,14 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-.font-mono-tag {
+.font-mono-tag, .font-mono-meta {
   font-family: 'JetBrains Mono', monospace;
 }
 
-.no-scroll::-webkit-scrollbar {
+.no-scroll::-webkit-scrollbar, .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
-.no-scroll {
+.no-scroll, .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
