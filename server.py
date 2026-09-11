@@ -4380,7 +4380,7 @@ def haversine_distance_km(coords1, coords2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return 6371.0 * c
 
-def get_current_user(headers, body=None, query=None):
+def get_current_user(headers, body=None, query=None, require_session=False):
     auth = headers.get("Authorization", "")
     token = None
     if auth.startswith("Bearer "):
@@ -4408,8 +4408,8 @@ def get_current_user(headers, body=None, query=None):
         """, (token, now_iso))
         row = cursor.fetchone()
 
-    # Fallback to X-User-Id or body/query senderId/userId for dev/client compatibility ONLY if no token was passed
-    if not row and not token:
+    # Fallback to X-User-Id or body/query senderId/userId for dev/client compatibility ONLY if no token was passed AND require_session is False
+    if not row and not token and not require_session:
         x_uid = headers.get("X-User-Id", "").strip()
         if not x_uid and body and isinstance(body, dict):
             x_uid = (body.get("senderId") or body.get("sender_id") or body.get("userId") or body.get("user_id") or "").strip()
@@ -4540,7 +4540,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
         query = parse_qs(parsed.query)
 
         # Enforce privacy: Never serve raw database or chat attachments via static file handler
-        if path.startswith("/data") or path.startswith("/data/") or "chat_attachments" in path:
+        import posixpath
+        from urllib.parse import unquote
+        norm_path = posixpath.normpath(unquote(path))
+        if norm_path.startswith("/data") or norm_path.startswith("/data/") or "chat_attachments" in norm_path or norm_path.endswith(".db") or norm_path.endswith(".sqlite"):
             return self.send_json(403, {"error": "Access denied"})
 
         if path in ["/health", "/healthz", "/api/health"]:
@@ -4593,7 +4596,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "online": bool(user)})
 
         if path == "/api/chat/unread-count":
-            user = get_current_user(self.headers, query=query)
+            user = get_current_user(self.headers, query=query, require_session=True)
             if not user:
                 return self.send_json(200, {"success": True, "count": 0})
             user_id = user["id"]
@@ -6592,7 +6595,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True, "requests": requests})
         if path == "/api/chat/conversations":
-            user = get_current_user(self.headers, query=query)
+            user = get_current_user(self.headers, query=query, require_session=True)
             if not user:
                 return self.send_json(401, {"success": False, "error": "Unauthorized", "conversations": []})
             user_id = user["id"]
@@ -6717,7 +6720,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "conversations": convos})
 
         if path == "/api/chat/connections":
-            user = get_current_user(self.headers, query=query)
+            user = get_current_user(self.headers, query=query, require_session=True)
             if not user:
                 return self.send_json(401, {"success": False, "error": "Unauthorized", "connections": []})
             user_id = user["id"]
@@ -6776,7 +6779,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "connections": connections})
 
         if path == "/api/chat/messages":
-            user = get_current_user(self.headers, query=query)
+            user = get_current_user(self.headers, query=query, require_session=True)
             if not user:
                 return self.send_json(401, {"success": False, "error": "Unauthorized", "messages": []})
             user_id = user["id"]
@@ -6868,7 +6871,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             })
 
         if path.startswith("/api/chat/attachments/"):
-            user = get_current_user(self.headers, query=query)
+            user = get_current_user(self.headers, query=query, require_session=True)
             if not user:
                 return self.send_json(401, {"success": False, "error": "Unauthorized"})
             user_id = user["id"]
@@ -6938,7 +6941,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 self.wfile.write(content)
                 return
             except Exception as e:
-                return self.send_json(500, {"success": False, "error": str(e)})
+                return self.send_json(500, {"success": False, "error": "Internal server error reading attachment"})
 
         if path == "/api/search/radar":
             user = get_current_user(self.headers)
@@ -10128,7 +10131,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(401, {"error": "Unauthorized"})
 
         if path in ["/api/user/block", "/api/chat/block", "/api/block"]:
-            user = get_current_user(self.headers, body)
+            user = get_current_user(self.headers, body, require_session=True)
             if not user:
                 return self.send_json(401, {"error": "Authentication required", "success": False})
             user_id = user["id"]
@@ -10147,7 +10150,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "message": "User blocked successfully"})
 
         if path in ["/api/user/report", "/api/chat/report", "/api/report"]:
-            user = get_current_user(self.headers, body)
+            user = get_current_user(self.headers, body, require_session=True)
             if not user:
                 return self.send_json(401, {"error": "Authentication required", "success": False})
             reporter_id = user["id"]
@@ -10166,7 +10169,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "message": "Report submitted. Safety team will review."})
 
         if path == "/api/auth/revoke-session":
-            user = get_current_user(self.headers, body)
+            user = get_current_user(self.headers, body, require_session=True)
             if not user:
                 return self.send_json(401, {"error": "Authentication required", "success": False})
             
@@ -10191,10 +10194,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "message": "Session revoked successfully"})
 
         if path == "/api/chat/attachments":
-            user = get_current_user(self.headers, body)
+            user = get_current_user(self.headers, body, require_session=True)
             if not user:
                 return self.send_json(401, {"error": "Authentication required", "success": False})
             uploader_id = user["id"]
+
+            if not rate_limiter.check_rate_limit(f"chat_attach:{uploader_id}", max_requests=20, window_seconds=60):
+                return self.send_json(429, {"error": "Too many attachment uploads. Please slow down.", "success": False, "error_code": "KANDID_RATE_LIMITED"})
 
             raw_partner_id = body.get("partner_id") or body.get("recipientId") or body.get("receiver_id") or body.get("chat_id")
             if not raw_partner_id:
@@ -10295,7 +10301,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             })
 
         if path == "/api/chat/reactions":
-            user = get_current_user(self.headers, body)
+            user = get_current_user(self.headers, body, require_session=True)
             if not user:
                 return self.send_json(401, {"error": "Authentication required", "success": False})
             user_id = user["id"]
@@ -10373,17 +10379,27 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/chat/send":
             try:
-                user = get_current_user(self.headers, body)
+                user = get_current_user(self.headers, body, require_session=True)
                 if not user:
                     return self.send_json(401, {"error": "Authentication required", "success": False})
                 sender_id = user["id"]
+
+                # Rate limiting to mitigate spam / DoS
+                if not rate_limiter.check_rate_limit(f"chat_send:{sender_id}", max_requests=60, window_seconds=60):
+                    return self.send_json(429, {"error": "Too many messages sent. Please slow down.", "success": False, "error_code": "KANDID_RATE_LIMITED"})
 
                 raw_receiver_id = body.get("recipientId") or body.get("receiverId") or body.get("receiver_id") or body.get("recipient_id") or body.get("chat_id")
                 if not raw_receiver_id:
                     return self.send_json(400, {"error": "Receiver ID is required", "success": False})
                 
                 content = (body.get("content") or body.get("text") or "").strip()
+                if len(content) > 5000:
+                    return self.send_json(400, {"error": "Message content exceeds maximum allowed length of 5000 characters", "success": False})
+
                 msg_type = body.get("message_type") or body.get("type") or "text"
+                if msg_type not in ["text", "photo", "moment", "reaction"]:
+                    msg_type = "text"
+
                 moment_id = body.get("moment_id")
                 media_url = body.get("media_url")
                 reply_to_id = body.get("reply_to_id") or body.get("replyToId")
@@ -10488,7 +10504,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 })
             except Exception as e:
                 print("Error sending message:", e)
-                return self.send_json(500, {"error": str(e), "success": False})
+                return self.send_json(500, {"error": "Internal server error while sending message", "success": False})
 
         if path == "/api/user/update":
             user = get_current_user(self.headers)

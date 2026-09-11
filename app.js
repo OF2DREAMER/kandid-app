@@ -8300,6 +8300,17 @@ function clearChatReplyTo() {
 }
 window.clearChatReplyTo = clearChatReplyTo;
 
+function handleChatReplyClick(msgId) {
+  var targetMsg = (state.chatLoadedMessages || []).find(function(m) { return m.id === msgId; });
+  if (!targetMsg) return;
+  var myUid = String(getActiveUserId() || '').toLowerCase();
+  var isMe = String(targetMsg.sender_id || '').toLowerCase() === myUid;
+  var name = isMe ? 'You' : (state.activeChatPartner ? state.activeChatPartner.name : 'Student');
+  var snippet = targetMsg.content || (targetMsg.message_type === 'photo' ? 'Photo' : 'Moment');
+  setChatReplyTo(targetMsg.id, name, snippet);
+}
+window.handleChatReplyClick = handleChatReplyClick;
+
 // Reactions sheet management
 function openChatReactionSheet(msgId) {
   state.targetReactionMsgId = msgId;
@@ -8679,7 +8690,7 @@ async function loadChatMessages(userId, isSilent = false) {
             '</div>' +
           '</div>' +
           '<div class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 pb-1">' +
-            '<button onclick="setChatReplyTo(\'' + m.id + '\', \'' + escapeHtml(senderLabel) + '\', \'' + escapeHtml(quoteText.replace(/'/g, '')) + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="Reply">↩</button>' +
+            '<button onclick="handleChatReplyClick(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="Reply">↩</button>' +
             '<button onclick="openChatReactionSheet(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="React">☺</button>' +
           '</div>' +
         '</div>';
