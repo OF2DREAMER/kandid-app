@@ -289,11 +289,7 @@ function getActiveUserId() {
     return stored.id;
   }
   var activeUid = localStorage.getItem('kandid_active_uid');
-  if (!activeUid) {
-    activeUid = 'u_80bef710';
-    localStorage.setItem('kandid_active_uid', activeUid);
-  }
-  return activeUid;
+  return activeUid || '';
 }
 window.getActiveUserId = getActiveUserId;
 
@@ -4690,7 +4686,82 @@ function renderMomentsSearchResults(moments, container) {
 state.activeDetailMoment = null;
 state.detailMomentFlipped = false;
 
+function applyUserToYouScreen(u) {
+  if (!u) return;
+  var avatarEl = document.getElementById('youProfileAvatar');
+  var initialsEl = document.getElementById('youProfileInitials');
+  var nameEl = document.getElementById('youProfileName');
+  var usernameEl = document.getElementById('youProfileUsername');
+  var campusEl = document.getElementById('youProfileCampus');
+  var bioEl = document.getElementById('youProfileBio');
+  var streakVal = document.getElementById('youStreakVal');
+  var momentsCountVal = document.getElementById('youMomentsCountVal');
+  var memoriesCountVal = document.getElementById('youMemoriesCountVal');
+
+  var finalName = u.name || (state.currentUser ? state.currentUser.name : 'You');
+  var finalHandle = u.username || u.handle || (state.currentUser ? (state.currentUser.username || state.currentUser.handle) : 'user');
+  finalHandle = String(finalHandle).replace('@', '');
+
+  var parts = finalName.trim().split(/\s+/);
+  var inits = '';
+  if (parts.length >= 2) {
+    inits = (parts[0][0] + parts[1][0]).toUpperCase();
+  } else if (finalName.length >= 2) {
+    inits = finalName.substring(0, 2).toUpperCase();
+  } else {
+    inits = (finalName[0] || 'K').toUpperCase();
+  }
+
+  if (initialsEl) initialsEl.textContent = inits;
+  if (u.avatar_url && !u.avatar_url.includes('api.dicebear.com')) {
+    if (avatarEl) {
+      avatarEl.src = u.avatar_url;
+      avatarEl.style.display = 'block';
+    }
+    if (initialsEl) initialsEl.style.display = 'none';
+  } else {
+    if (avatarEl) avatarEl.style.display = 'none';
+    if (initialsEl) initialsEl.style.display = 'block';
+  }
+
+  if (nameEl) nameEl.textContent = finalName;
+  if (usernameEl) usernameEl.textContent = '@' + finalHandle.toLowerCase();
+  
+  var commName = u.campus || u.community || (state.currentUser ? state.currentUser.campus : 'Campus Community');
+  var cityName = u.location_city || u.city || (state.currentUser ? (state.currentUser.location_city || state.currentUser.city) : 'Bengaluru, KA');
+  var campusNameEl = document.getElementById('youProfileCampusName');
+  var campusCityEl = document.getElementById('youProfileCampusCity');
+  if (campusNameEl) campusNameEl.textContent = commName;
+  if (campusCityEl) campusCityEl.textContent = cityName;
+  if (campusEl) campusEl.title = commName + ' · ' + cityName;
+
+  var journalCountEl = document.getElementById('youJournalCountText');
+  if (journalCountEl) {
+    var mCount = (u.momentCount != null ? u.momentCount : (state.myMoments ? state.myMoments.length : 18));
+    journalCountEl.textContent = '+' + (mCount > 4 ? (mCount - 4) : (mCount || 18));
+  }
+  
+  if (bioEl) bioEl.textContent = u.bio || 'Authentic moments across campus.';
+  
+  var sNum = (u.streak != null ? u.streak : (u.streak_count != null ? u.streak_count : 1));
+  if (streakVal) streakVal.textContent = sNum + (sNum === 1 ? ' DAY' : ' DAYS');
+  if (momentsCountVal) momentsCountVal.textContent = (u.momentCount != null ? u.momentCount : (state.myMoments ? state.myMoments.length : 1));
+  if (memoriesCountVal) memoriesCountVal.textContent = (u.memoryCount != null ? u.memoryCount : (state.myMoments ? state.myMoments.length : 1));
+
+  var editName = document.getElementById('modalEditName');
+  var editBio = document.getElementById('modalEditBio');
+  var editCampus = document.getElementById('modalEditCampus');
+  if (editName) editName.value = finalName;
+  if (editBio) editBio.value = u.bio || '';
+  if (editCampus) editCampus.value = commName;
+}
+window.applyUserToYouScreen = applyUserToYouScreen;
+
 async function loadYouScreen() {
+  if (state.currentUser) {
+    applyUserToYouScreen(state.currentUser);
+  }
+
   var data = await apiRequest('/api/me');
   if (!data || !data.success || !data.user) {
     data = await apiRequest('/api/user/profile');
@@ -4698,66 +4769,14 @@ async function loadYouScreen() {
 
   if (data && (data.user || data.success)) {
     var u = data.user || {};
-    var avatarEl = document.getElementById('youProfileAvatar');
-    var initialsEl = document.getElementById('youProfileInitials');
-    var nameEl = document.getElementById('youProfileName');
-    var usernameEl = document.getElementById('youProfileUsername');
-    var campusEl = document.getElementById('youProfileCampus');
-    var bioEl = document.getElementById('youProfileBio');
-    var streakVal = document.getElementById('youStreakVal');
-    var momentsCountVal = document.getElementById('youMomentsCountVal');
-    var memoriesCountVal = document.getElementById('youMemoriesCountVal');
-
-    var finalName = u.name || (state.currentUser ? state.currentUser.name : 'Student');
-    var finalHandle = u.username || u.handle || (state.currentUser ? state.currentUser.handle : 'user');
-    finalHandle = finalHandle.replace('@', '');
-
-    // Initials calculation (e.g. "ANIL" -> "AN", "Casey Mills" -> "CM")
-    var parts = finalName.trim().split(/\s+/);
-    var inits = '';
-    if (parts.length >= 2) {
-      inits = (parts[0][0] + parts[1][0]).toUpperCase();
-    } else if (finalName.length >= 2) {
-      inits = finalName.substring(0, 2).toUpperCase();
-    } else {
-      inits = (finalName[0] || 'K').toUpperCase();
-    }
-
-    if (initialsEl) initialsEl.textContent = inits;
-    if (u.avatar_url && !u.avatar_url.includes('api.dicebear.com')) {
-      if (avatarEl) {
-        avatarEl.src = u.avatar_url;
-        avatarEl.style.display = 'block';
+    state.currentUser = Object.assign({}, state.currentUser || {}, u);
+    try {
+      localStorage.setItem('kandid_user', JSON.stringify(state.currentUser));
+      if (state.currentUser.id) {
+        localStorage.setItem('kandid_active_uid', state.currentUser.id);
       }
-      if (initialsEl) initialsEl.style.display = 'none';
-    } else {
-      if (avatarEl) avatarEl.style.display = 'none';
-      if (initialsEl) initialsEl.style.display = 'block';
-    }
-
-    if (nameEl) nameEl.textContent = finalName;
-    if (usernameEl) usernameEl.textContent = '@' + finalHandle.toLowerCase();
-    
-    var commName = u.campus || u.community || (state.currentUser ? state.currentUser.campus : 'Guru Kashi University');
-    var cityName = u.location_city || u.city || (state.currentUser ? (state.currentUser.location_city || state.currentUser.city) : 'Supaul');
-    var campusNameEl = document.getElementById('youProfileCampusName');
-    var campusCityEl = document.getElementById('youProfileCampusCity');
-    if (campusNameEl) campusNameEl.textContent = commName;
-    if (campusCityEl) campusCityEl.textContent = cityName;
-    if (campusEl) campusEl.title = commName + ' · ' + cityName;
-
-    var journalCountEl = document.getElementById('youJournalCountText');
-    if (journalCountEl) {
-      var mCount = (u.momentCount != null ? u.momentCount : (state.myMoments ? state.myMoments.length : 18));
-      journalCountEl.textContent = '+' + (mCount > 4 ? (mCount - 4) : (mCount || 18));
-    }
-    
-    if (bioEl) bioEl.textContent = u.bio || 'Capturing ordinary days.';
-    
-    var sNum = (u.streak != null ? u.streak : (u.streak_count != null ? u.streak_count : 1));
-    if (streakVal) streakVal.textContent = sNum + (sNum === 1 ? ' DAY' : ' DAYS');
-    if (momentsCountVal) momentsCountVal.textContent = (u.momentCount != null ? u.momentCount : (state.myMoments ? state.myMoments.length : 1));
-    if (memoriesCountVal) memoriesCountVal.textContent = (u.memoryCount != null ? u.memoryCount : (state.myMoments ? state.myMoments.length : 1));
+    } catch(e) {}
+    applyUserToYouScreen(state.currentUser);
 
     // Update Pending Requests Badge
     var reqBadge = document.getElementById('youRequestsBadge');
@@ -4779,15 +4798,6 @@ async function loadYouScreen() {
 
     // Render Dynamic Communities
     renderYouCommunitiesList(u.joined_communities || []);
-
-    // Render Dynamic Hosted Drops (Conditional Creator Activity)
-
-    var editName = document.getElementById('modalEditName');
-    var editBio = document.getElementById('modalEditBio');
-    var editCampus = document.getElementById('modalEditCampus');
-    if (editName) editName.value = finalName;
-    if (editBio) editBio.value = u.bio || 'Capturing ordinary days.';
-    if (editCampus) editCampus.value = u.campus || 'North City University';
 
     await loadMyMoments();
     await loadProgressScreen();
@@ -6617,6 +6627,7 @@ async function checkOnboarding() {
     if (!token) {
         state.token = null;
         state.currentUser = null;
+        localStorage.removeItem('kandid_active_uid');
         if (obFlow) {
             obFlow.style.display = 'flex';
             switchScreen('entry');
@@ -6630,9 +6641,14 @@ async function checkOnboarding() {
             if (res && res.user) {
                 state.currentUser = res.user;
                 localStorage.setItem('kandid_user', JSON.stringify(res.user));
+                if (res.user.id) {
+                    localStorage.setItem('kandid_active_uid', res.user.id);
+                }
             } else {
                 // If token invalid, force login
                 localStorage.removeItem('kandid_token');
+                localStorage.removeItem('kandid_user');
+                localStorage.removeItem('kandid_active_uid');
                 state.token = null;
                 state.currentUser = null;
                 if (obFlow) {
@@ -6680,9 +6696,12 @@ window.submitUserLogin = async function() {
             localStorage.setItem('kandid_token', res.token);
             localStorage.setItem('kandid_onboarded', 'true');
             localStorage.setItem('kandid_user', JSON.stringify(res.user));
+            if (res.user && res.user.id) {
+                localStorage.setItem('kandid_active_uid', res.user.id);
+            }
             state.token = res.token;
             state.currentUser = res.user;
-            showToast('Welcome back, ' + res.user.name + '! 🎉');
+            showToast('Welcome back, ' + (res.user.name || res.user.username || 'User') + '! 🎉');
             
             var obFlow = document.getElementById('onboardingFlow');
             if (obFlow) obFlow.style.display = 'none';
@@ -7389,6 +7408,7 @@ function logoutUser() {
   localStorage.removeItem('kandid_token');
   localStorage.removeItem('kandid_onboarded');
   localStorage.removeItem('kandid_user');
+  localStorage.removeItem('kandid_active_uid');
   state.token = null;
   state.currentUser = null;
   showToast('Logged out successfully. Redirecting...');
@@ -7872,8 +7892,8 @@ async function loadChatMessages(userId, isSilent = false) {
   var myUid = getActiveUserId();
   var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid));
   if (data && data.success && Array.isArray(data.messages)) {
-    if (data.resolved_user_id) {
-      localStorage.setItem('kandid_active_uid', data.resolved_user_id);
+    if (state.currentUser && state.currentUser.id) {
+      localStorage.setItem('kandid_active_uid', state.currentUser.id);
     }
     // Only rebuild DOM if new messages or read receipts state changed
     var msgSignature = JSON.stringify(data.messages.map(function(m){ return m.id + '_' + (m.read_at ? '1' : '0'); }));
