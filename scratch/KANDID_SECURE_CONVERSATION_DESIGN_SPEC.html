@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kandid — Secure Conversation Design Spec</title>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        kandid: {
+                            bg: '#08080a',
+                            surface: '#111114',
+                            surfaceLight: '#18181c',
+                            border: '#222227',
+                            amber: '#f59e0b',
+                            amberDark: '#b45309',
+                            muted: '#71717a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #000000;
+            color: #f4f4f5;
+            -webkit-font-smoothing: antialiased;
+        }
+        .font-mono-meta {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Tactical Kandid surfaces */
+        .kandid-bubble-in {
+            background-color: #121215;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            color: #f4f4f5;
+        }
+        .kandid-bubble-out {
+            background-color: #1a1712;
+            border: 1px solid rgba(245, 158, 11, 0.22);
+            color: #fafaf9;
+        }
+        .kandid-moment-frame {
+            background: linear-gradient(180deg, #16161a 0%, #0d0d10 100%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+        .apple-blur {
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center min-h-screen bg-black p-2 md:p-6 text-zinc-100">
+
+    <!-- Top Design Spec Header & Navigation -->
+    <header class="w-full max-w-5xl mb-6 flex flex-col md:flex-row items-center justify-between gap-4 border-b border-zinc-800/80 pb-5">
+        <div>
+            <div class="flex items-center gap-2.5">
+                <span class="text-xs font-bold tracking-[0.25em] text-amber-500 font-mono-meta uppercase">KANDID · DESIGN SPEC</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-400 font-mono-meta">V1 SECURE CHAT</span>
+            </div>
+            <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white mt-1">1:1 Secure Conversation Experience</h1>
+            <p class="text-xs text-zinc-400 mt-0.5">Authentic Human-to-Human Messaging · Contextual Moments · Honest Security Posture</p>
+        </div>
+
+        <!-- Security Transparency Banner -->
+        <div class="flex items-center gap-3 bg-zinc-950/90 border border-zinc-800 px-3.5 py-2 rounded-2xl text-left">
+            <div class="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <i class="fa-solid fa-lock text-xs"></i>
+            </div>
+            <div>
+                <div class="text-[11px] font-bold text-zinc-200 font-mono-meta flex items-center gap-1.5">
+                    <span>🔒 Private · In Transit</span>
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                </div>
+                <div class="text-[10px] text-zinc-400 leading-tight">TLS 1.3 in flight · No misleading E2EE claims</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Interactive Prototype Controls -->
+    <div class="w-full max-w-5xl mb-6 flex flex-col gap-3">
+        <!-- Viewport Switcher -->
+        <div class="flex flex-wrap items-center justify-between gap-2 bg-zinc-950 p-2 rounded-2xl border border-zinc-800/80 text-xs">
+            <div class="flex items-center gap-2 pl-2 text-zinc-400 font-mono-meta text-[11px]">
+                <i class="fa-solid fa-mobile-screen"></i>
+                <span class="uppercase tracking-wider">VIEWPORT:</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5" role="tablist" aria-label="Device Viewports">
+                <button onclick="setViewport(390, 844, 'iPhone 12/13/14 (Standard)')" id="vp-390" class="vp-btn px-3 py-1.5 rounded-xl font-bold bg-amber-500 text-black text-xs transition shadow-sm">390 × 844 (Standard)</button>
+                <button onclick="setViewport(375, 812, 'iPhone X/11 Pro (Compact)')" id="vp-375" class="vp-btn px-3 py-1.5 rounded-xl font-medium text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 text-xs transition">375 × 812 (Compact)</button>
+                <button onclick="setViewport(393, 852, 'iPhone 14/15 Pro (Dynamic Island)')" id="vp-393" class="vp-btn px-3 py-1.5 rounded-xl font-medium text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 text-xs transition">393 × 852 (Dynamic)</button>
+                <button onclick="setViewport(430, 932, 'iPhone 14/15 Pro Max (Large)')" id="vp-430" class="vp-btn px-3 py-1.5 rounded-xl font-medium text-zinc-400 hover:text-white bg-zinc-900 border border-zinc-800 text-xs transition">430 × 932 (Large)</button>
+            </div>
+        </div>
+
+        <!-- 10 Required Design States (A to J) Switcher -->
+        <div class="flex flex-col gap-2 bg-zinc-950 p-3 rounded-2xl border border-zinc-800/80 text-xs">
+            <div class="flex items-center justify-between text-[11px] text-zinc-400 font-mono-meta px-1">
+                <span class="uppercase tracking-wider"><i class="fa-solid fa-sliders mr-1.5 text-amber-500"></i>REQUIRED DESIGN STATES (A – J):</span>
+                <span id="activeStateLabel" class="text-amber-400 font-bold">STATE B: Normal Conversation</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-1.5" role="tablist" aria-label="Conversation States">
+                <button onclick="switchState('A')" id="btn-state-A" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">A. Empty Beginning</button>
+                <button onclick="switchState('B')" id="btn-state-B" class="state-btn px-2.5 py-1.5 rounded-xl font-bold bg-amber-500 text-black text-[11px] text-left truncate transition">B. Normal Chat</button>
+                <button onclick="switchState('C')" id="btn-state-C" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">C. Quoted Reply</button>
+                <button onclick="switchState('D')" id="btn-state-D" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">D. RealMoji React</button>
+                <button onclick="switchState('E')" id="btn-state-E" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">E. Private Photo</button>
+                <button onclick="switchState('F')" id="btn-state-F" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">F. Shared Moment</button>
+                <button onclick="switchState('G')" id="btn-state-G" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">G. Attach Drawer</button>
+                <button onclick="switchState('H')" id="btn-state-H" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">H. Action Sheet</button>
+                <button onclick="switchState('I')" id="btn-state-I" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">I. Failed Message</button>
+                <button onclick="switchState('J')" id="btn-state-J" class="state-btn px-2.5 py-1.5 rounded-xl font-medium text-zinc-400 bg-zinc-900 border border-zinc-800/70 hover:border-zinc-700 transition text-[11px] text-left truncate">J. Long History</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device Frame Container (Dynamic Width/Height) -->
+    <div id="deviceContainer" style="width: 390px; height: 844px; min-height: 844px; max-height: 844px;" 
+         class="bg-[#09090b] text-white flex flex-col justify-between relative overflow-hidden shadow-2xl rounded-[44px] border-[10px] border-[#1c1c20] transition-all duration-300">
+        
+        <!-- Screen Content Wrapper -->
+        <div class="w-full h-full flex flex-col relative overflow-hidden">
+
+            <!-- 1. Top Phone Status Bar -->
+            <div class="flex justify-between items-center px-7 pt-3.5 pb-1 text-xs font-semibold text-white/90 sticky top-0 bg-[#09090b]/90 apple-blur z-50 shrink-0">
+                <span class="font-mono-meta text-[11px]">9:41</span>
+                <div class="flex items-center space-x-2 text-xs" aria-hidden="true">
+                    <i class="fa-solid fa-signal text-[10px]"></i>
+                    <i class="fa-solid fa-wifi text-[10px]"></i>
+                    <i class="fa-solid fa-battery-full text-sm"></i>
+                </div>
+            </div>
+
+            <!-- 2. Primary Conversation Header -->
+            <header class="px-4 py-2.5 flex items-center justify-between border-b border-zinc-800/80 bg-[#09090b]/95 apple-blur z-40 shrink-0" role="banner">
+                <!-- Back Action + Partner Identity -->
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <button type="button" onclick="showToast('Returns to Chat Home')" aria-label="Back to Chat Home" 
+                            class="w-8 h-8 rounded-full bg-zinc-900/80 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white hover:bg-zinc-800 transition active:scale-95 cursor-pointer shrink-0">
+                        <i class="fa-solid fa-arrow-left text-xs" aria-hidden="true"></i>
+                    </button>
+
+                    <!-- Avatar + Status indicator -->
+                    <div class="relative cursor-pointer shrink-0" onclick="switchState('H')">
+                        <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80" 
+                             alt="Khushi Kumari" 
+                             class="w-9 h-9 rounded-full object-cover border border-zinc-700 shadow-sm">
+                        <span class="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#09090b]" title="Active now"></span>
+                    </div>
+
+                    <!-- Name + Handle + Security Context Hierarchy -->
+                    <div class="min-w-0 flex flex-col justify-center">
+                        <div class="flex items-center gap-1.5">
+                            <h2 class="text-xs font-bold text-white tracking-tight truncate leading-snug">Khushi Kumari</h2>
+                            <span class="text-[10px] text-zinc-500 font-mono-meta truncate">@khushi</span>
+                        </div>
+                        <!-- Honest Security Subtitle (Not visually dominant, communicates trust cleanly) -->
+                        <div class="flex items-center gap-1.5 text-[9px] font-mono-meta text-zinc-400">
+                            <span class="text-amber-500/90 text-[8px]"><i class="fa-solid fa-lock"></i></span>
+                            <span class="tracking-wide">Private · In Transit</span>
+                            <span class="text-zinc-600">·</span>
+                            <span class="text-zinc-500 truncate">North Campus</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Header Actions (••• Menu) -->
+                <div class="flex items-center gap-1 shrink-0">
+                    <button type="button" onclick="toggleActionSheet()" aria-label="Conversation actions" 
+                            class="w-8 h-8 rounded-full bg-zinc-900/80 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-amber-400 hover:border-zinc-700 transition active:scale-95 cursor-pointer">
+                        <i class="fa-solid fa-ellipsis text-xs" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- 3. Message Stream Container (Scrollable) -->
+            <main id="chatStream" class="flex-1 overflow-y-auto px-4 py-3 no-scrollbar space-y-3.5 relative" role="region" aria-label="Chat messages">
+
+                <!-- STATE A: Empty Conversation Beginning -->
+                <section id="stateView-A" class="state-view hidden flex-col items-center justify-center h-full text-center px-6 py-12 space-y-4 my-auto">
+                    <div class="w-14 h-14 rounded-2xl bg-zinc-900/90 border border-zinc-800 flex items-center justify-center text-amber-400 shadow-inner">
+                        <i class="fa-solid fa-handshake text-xl"></i>
+                    </div>
+                    <div class="space-y-1.5">
+                        <span class="text-[10px] font-bold tracking-[0.25em] text-amber-500 font-mono-meta uppercase block">CONNECTED</span>
+                        <h3 class="text-base font-bold text-white tracking-tight">You and @khushi are connected</h3>
+                        <p class="text-xs text-zinc-400 max-w-[240px] mx-auto leading-relaxed">
+                            Start with something real. Share a moment from today or send a private note.
+                        </p>
+                    </div>
+                    <div class="pt-2 flex flex-col items-center gap-2 w-full max-w-[220px]">
+                        <button onclick="switchState('F')" class="w-full py-2 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-mono-meta text-zinc-200 flex items-center justify-center gap-2 transition active:scale-95">
+                            <i class="fa-solid fa-camera text-amber-400 text-[11px]"></i>
+                            <span>Share Today's Moment</span>
+                        </button>
+                        <div class="text-[9px] text-zinc-500 font-mono-meta flex items-center gap-1.5">
+                            <i class="fa-solid fa-shield-halved text-[8px]"></i>
+                            <span>Messages protected in transit</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Normal Conversation Flow (Shared between B, C, D, E, F, G, H, I, J) -->
+                <div id="activeMessagesFlow" class="space-y-3.5 flex flex-col">
+
+                    <!-- Date Divider -->
+                    <div class="flex items-center justify-center my-2">
+                        <span class="text-[8px] font-mono-meta text-zinc-500 bg-zinc-900/90 border border-zinc-800 px-3 py-0.5 rounded-full uppercase tracking-widest shadow-sm">
+                            TODAY · NORTH CAMPUS
+                        </span>
+                    </div>
+
+                    <!-- 1. Incoming Message (Restrained, elegant, non-bubble aesthetic) -->
+                    <div class="flex flex-col items-start space-y-1 max-w-[82%] group">
+                        <div class="kandid-bubble-in rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs text-zinc-100 shadow-sm leading-relaxed space-y-0.5">
+                            <p>Are you still near the design studio? The courtyard café just brewed fresh espresso ☕</p>
+                        </div>
+                        <div class="flex items-center gap-1.5 px-1 text-[9px] font-mono-meta text-zinc-500">
+                            <span>2:14 PM</span>
+                            <span>·</span>
+                            <span>Khushi</span>
+                        </div>
+                    </div>
+
+                    <!-- 2. Outgoing Message (Restrained warm carbon surface, subtle amber rim) -->
+                    <div class="flex flex-col items-end space-y-1 max-w-[82%] ml-auto group">
+                        <div class="kandid-bubble-out rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-zinc-100 shadow-sm leading-relaxed space-y-0.5">
+                            <p>Yeah! Just wrapping up the typography review on floor 3. Heading down in 5 mins.</p>
+                        </div>
+                        <div class="flex items-center justify-end gap-1 px-1 text-[9px] font-mono-meta text-zinc-500">
+                            <span>2:16 PM</span>
+                            <span class="text-amber-400 font-bold ml-0.5" title="Read by recipient">✓✓</span>
+                        </div>
+                    </div>
+
+                    <!-- 3. State C: Conversation with Quoted Reply -->
+                    <div id="flow-reply-msg" class="flex flex-col items-start space-y-1 max-w-[82%] group">
+                        <div class="kandid-bubble-in rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs text-zinc-100 shadow-sm leading-relaxed space-y-1.5">
+                            <!-- Compact Quoted Block (Secondary hierarchy, new message is hero) -->
+                            <div class="bg-black/40 border-l-2 border-amber-500 rounded-lg px-2 py-1 text-[10px] space-y-0.5">
+                                <span class="font-bold text-amber-400 font-mono-meta text-[9px] block">@you</span>
+                                <p class="text-zinc-400 truncate">Yeah! Just wrapping up the typography review...</p>
+                            </div>
+                            <!-- Hero Message Content -->
+                            <p>Awesome! Grab the corner table by the glass quad. I saved two seats.</p>
+                        </div>
+                        <div class="flex items-center gap-1.5 px-1 text-[9px] font-mono-meta text-zinc-500">
+                            <span>2:17 PM</span>
+                            <span>·</span>
+                            <span>Khushi</span>
+                        </div>
+                    </div>
+
+                    <!-- 4. State D: RealMoji Reaction Indicator (Lightweight, connection not popularity) -->
+                    <div id="flow-reaction-msg" class="flex flex-col items-end space-y-1 max-w-[82%] ml-auto group relative">
+                        <div class="kandid-bubble-out rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-zinc-100 shadow-sm leading-relaxed space-y-0.5">
+                            <p>Perfect, bringing the print samples too.</p>
+                        </div>
+                        
+                        <!-- RealMoji Reaction Badge (Docked, tactile, no giant public counters) -->
+                        <div class="flex items-center gap-1 -mt-2 mr-2 z-10">
+                            <button type="button" aria-label="Reaction: Spark and Heart" class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#111114] border border-zinc-700/80 shadow-md text-xs hover:border-amber-500/50 transition cursor-pointer">
+                                <span>⚡</span>
+                                <span>❤️</span>
+                                <span class="text-[9px] text-zinc-400 font-mono-meta ml-0.5">2</span>
+                            </button>
+                        </div>
+
+                        <div class="flex items-center justify-end gap-1 px-1 text-[9px] font-mono-meta text-zinc-500">
+                            <span>2:19 PM</span>
+                            <span class="text-amber-400 font-bold ml-0.5">✓✓</span>
+                        </div>
+                    </div>
+
+                    <!-- 5. State E: Private Photo Message (High photographic emphasis, restrained corners) -->
+                    <div id="flow-photo-msg" class="flex flex-col items-start space-y-1.5 max-w-[82%] group">
+                        <div class="rounded-2xl rounded-tl-sm overflow-hidden border border-zinc-800/80 bg-zinc-950 p-1 shadow-md">
+                            <div class="relative rounded-xl overflow-hidden aspect-[4/5] max-h-[220px]">
+                                <img src="https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=500&auto=format&fit=crop&q=80" 
+                                     alt="Courtyard Table" 
+                                     class="w-full h-full object-cover">
+                                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20"></div>
+                                <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between text-[10px] font-mono-meta text-white/90">
+                                    <span class="bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md border border-white/10">📍 Quad Courtyard</span>
+                                    <span class="text-[9px] text-zinc-400">PHOTO</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 px-1 text-[9px] font-mono-meta text-zinc-500">
+                            <span>2:21 PM</span>
+                            <span>·</span>
+                            <span>Khushi</span>
+                        </div>
+                    </div>
+
+                    <!-- 6. State F: Shared Kandid Moment Card (Distinctive, authentic dual-camera context) -->
+                    <div id="flow-moment-msg" class="flex flex-col items-end space-y-1.5 max-w-[86%] ml-auto group">
+                        <div class="kandid-moment-frame rounded-2xl rounded-tr-sm overflow-hidden p-2 shadow-lg w-full">
+                            <!-- Card Header: Distinctive Moment Flag -->
+                            <div class="flex items-center justify-between px-1 pb-1.5 border-b border-zinc-800/80 mb-1.5">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                    <span class="text-[9px] font-bold text-amber-400 font-mono-meta tracking-wider uppercase">SHARED A MOMENT</span>
+                                </div>
+                                <span class="text-[8px] text-zinc-500 font-mono-meta">DUAL CAPTURE</span>
+                            </div>
+
+                            <!-- Dual-Camera Moment Visual Surface -->
+                            <div class="relative rounded-xl overflow-hidden aspect-[4/3] bg-black">
+                                <!-- Main Camera Surface -->
+                                <img src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=600&auto=format&fit=crop&q=80" 
+                                     alt="Design Studio Quad" 
+                                     class="w-full h-full object-cover">
+                                
+                                <!-- Inset PIP Camera (Authentic Kandid Signature) -->
+                                <div class="absolute top-2 left-2 w-16 h-20 rounded-lg overflow-hidden border-2 border-[#09090b] shadow-xl">
+                                    <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80" 
+                                         alt="Khushi Selfie PIP" 
+                                         class="w-full h-full object-cover">
+                                </div>
+
+                                <!-- Ambient Location Badge Overlay -->
+                                <div class="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                                    <div class="bg-black/70 apple-blur px-2.5 py-1 rounded-lg border border-white/10 text-[10px] font-mono-meta text-white">
+                                        <span class="text-amber-400 mr-1">✦</span>
+                                        <span>North Campus Lab · Quad</span>
+                                    </div>
+                                    <span class="text-[9px] font-mono-meta bg-black/60 px-1.5 py-0.5 rounded text-zinc-400">2:24 PM</span>
+                                </div>
+                            </div>
+
+                            <!-- Moment Caption / Context -->
+                            <div class="pt-2 px-1 text-xs text-zinc-200">
+                                <p class="leading-snug">"Studio critique wrapped up early today! Table is waiting."</p>
+                            </div>
+                        </div>
+
+                        <!-- Status & Metadata -->
+                        <div class="flex items-center justify-end gap-1 px-1 text-[9px] font-mono-meta text-zinc-500">
+                            <span>2:24 PM</span>
+                            <span class="text-amber-400 font-bold ml-0.5">✓✓</span>
+                        </div>
+                    </div>
+
+                    <!-- 7. State I: Failed Message Example (Calm warning tone, tap to retry) -->
+                    <div id="flow-failed-msg" class="flex flex-col items-end space-y-1 max-w-[82%] ml-auto group">
+                        <div class="kandid-bubble-out rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-zinc-100 shadow-sm leading-relaxed border-rose-500/40 bg-rose-950/20">
+                            <p>Be there in one second, elevator is packed.</p>
+                        </div>
+                        <div class="flex items-center justify-end gap-1.5 px-1 text-[9px] font-mono-meta text-rose-400">
+                            <i class="fa-solid fa-triangle-exclamation text-[8px]"></i>
+                            <span class="cursor-pointer hover:underline" onclick="showToast('Retrying message send...')">Not delivered · Tap to retry</span>
+                        </div>
+                    </div>
+
+                    <!-- Additional messages for State J: Long Conversation History -->
+                    <div id="flow-long-history" class="space-y-3.5 hidden">
+                        <div class="flex items-center justify-center my-2">
+                            <span class="text-[8px] font-mono-meta text-zinc-500 bg-zinc-900/90 border border-zinc-800 px-3 py-0.5 rounded-full uppercase tracking-widest">
+                                YESTERDAY · ARCHIVE
+                            </span>
+                        </div>
+                        <div class="flex flex-col items-start space-y-1 max-w-[82%]">
+                            <div class="kandid-bubble-in rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs text-zinc-100">
+                                <p>Did you check the community drop for the typography workshop on Thursday?</p>
+                            </div>
+                            <span class="text-[9px] font-mono-meta text-zinc-500 px-1">Yesterday 6:30 PM</span>
+                        </div>
+                        <div class="flex flex-col items-end space-y-1 max-w-[82%] ml-auto">
+                            <div class="kandid-bubble-out rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-zinc-100">
+                                <p>Already registered! ₹19 verified check-in confirmed.</p>
+                            </div>
+                            <span class="text-[9px] font-mono-meta text-zinc-500 px-1">Yesterday 6:34 PM · ✓✓</span>
+                        </div>
+                    </div>
+
+                </div>
+            </main>
+
+            <!-- 4. Interactive Bottom Composer Area -->
+            <footer class="border-t border-zinc-800/80 bg-[#09090b] px-3 pt-2 pb-3 shrink-0 z-40 relative" role="region" aria-label="Message Composer">
+                
+                <!-- State C: Quoted Reply Banner (Dismissible, secondary reference) -->
+                <div id="composerReplyBanner" class="hidden flex items-center justify-between bg-zinc-900/90 border border-zinc-800 rounded-xl px-3 py-1.5 mb-2 transition-all">
+                    <div class="flex items-center gap-2 overflow-hidden">
+                        <div class="w-1 h-6 bg-amber-500 rounded-full shrink-0"></div>
+                        <div class="text-xs truncate">
+                            <span class="text-[9px] font-bold text-amber-400 font-mono-meta block">Replying to @khushi</span>
+                            <span class="text-[11px] text-zinc-400 truncate block">"Awesome! Grab the corner table by the glass..."</span>
+                        </div>
+                    </div>
+                    <button type="button" onclick="dismissReplyBanner()" aria-label="Cancel reply" class="text-zinc-400 hover:text-white text-xs px-2 py-1 font-mono-meta cursor-pointer">✕</button>
+                </div>
+
+                <!-- State G: Tactile Attachment Drawer (Compact, high craftsmanship, not a bloated grid) -->
+                <div id="attachmentDrawer" class="hidden absolute bottom-16 left-3 bg-[#111114] border border-zinc-800 rounded-2xl p-2 shadow-2xl space-y-1 w-52 text-xs font-mono-meta z-50 apple-blur">
+                    <div class="px-2 py-1 text-[9px] font-bold text-zinc-500 tracking-wider uppercase border-b border-zinc-800/80">ATTACH TO CONVERSATION</div>
+                    <button onclick="switchState('E'); toggleAttachmentDrawer()" class="w-full py-2 px-2.5 rounded-xl hover:bg-zinc-800/80 flex items-center gap-2.5 text-left text-zinc-200 transition cursor-pointer">
+                        <div class="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-300"><i class="fa-regular fa-image text-[10px]"></i></div>
+                        <div>
+                            <span class="block text-[11px] font-medium">Photo</span>
+                            <span class="block text-[9px] text-zinc-500">From gallery</span>
+                        </div>
+                    </button>
+                    <button onclick="switchState('F'); toggleAttachmentDrawer()" class="w-full py-2 px-2.5 rounded-xl hover:bg-zinc-800/80 flex items-center gap-2.5 text-left text-zinc-200 transition cursor-pointer">
+                        <div class="w-6 h-6 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400"><i class="fa-solid fa-camera text-[10px]"></i></div>
+                        <div>
+                            <span class="block text-[11px] font-medium">Snap Moment</span>
+                            <span class="block text-[9px] text-amber-500/80">Dual capture</span>
+                        </div>
+                    </button>
+                    <button onclick="switchState('F'); toggleAttachmentDrawer()" class="w-full py-2 px-2.5 rounded-xl hover:bg-zinc-800/80 flex items-center gap-2.5 text-left text-zinc-200 transition cursor-pointer">
+                        <div class="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center text-zinc-300"><i class="fa-solid fa-clock-rotate-left text-[10px]"></i></div>
+                        <div>
+                            <span class="block text-[11px] font-medium">Share Moment</span>
+                            <span class="block text-[9px] text-zinc-500">From memory</span>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- Main Composer Bar -->
+                <div class="flex items-center gap-2">
+                    <!-- + Attachment Control -->
+                    <button type="button" onclick="toggleAttachmentDrawer()" aria-label="Add attachment" 
+                            class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-amber-400 flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0">
+                        <i class="fa-solid fa-plus text-xs" aria-hidden="true"></i>
+                    </button>
+
+                    <!-- Textarea / Input -->
+                    <div class="flex-1 relative">
+                        <input id="demoInput" type="text" placeholder="Private message..." 
+                               class="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-700 transition font-sans" 
+                               aria-label="Write a private message"
+                               onkeydown="if(event.key==='Enter') handleSimulateSend()">
+                    </div>
+
+                    <!-- Send Action Button -->
+                    <button type="button" onclick="handleSimulateSend()" aria-label="Send message" 
+                            class="w-9 h-9 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0 shadow-sm">
+                        <i class="fa-solid fa-arrow-up text-xs" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </footer>
+
+            <!-- 5. State H: Action Sheet (••• Menu) Modal Overlay -->
+            <div id="actionSheetModal" class="hidden absolute inset-0 bg-black/70 apple-blur z-50 flex flex-col justify-end transition-opacity">
+                <!-- Backdrop click dismiss -->
+                <div class="flex-1" onclick="toggleActionSheet()"></div>
+
+                <!-- Bottom Sheet Surface -->
+                <div class="bg-[#111114] border-t border-zinc-800 rounded-t-[32px] p-4 space-y-3 text-xs shadow-2xl">
+                    <!-- Grabber handle -->
+                    <div class="w-8 h-1 bg-zinc-700 rounded-full mx-auto"></div>
+
+                    <!-- User Overview Card -->
+                    <div class="flex items-center gap-3 p-2 bg-zinc-900/60 rounded-2xl border border-zinc-800/80">
+                        <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80" 
+                             alt="Khushi Kumari" 
+                             class="w-10 h-10 rounded-full object-cover border border-zinc-700">
+                        <div>
+                            <h4 class="font-bold text-white text-xs">Khushi Kumari</h4>
+                            <p class="text-[10px] text-zinc-400 font-mono-meta">@khushi · North Campus</p>
+                        </div>
+                    </div>
+
+                    <!-- Primary Safe Actions -->
+                    <div class="space-y-1">
+                        <button onclick="showToast('Navigating to Khushi\'s profile'); toggleActionSheet()" class="w-full py-2.5 px-3 rounded-xl hover:bg-zinc-800/80 flex items-center justify-between text-zinc-200 transition cursor-pointer">
+                            <div class="flex items-center gap-2.5">
+                                <i class="fa-regular fa-user text-zinc-400 w-4"></i>
+                                <span>View Profile</span>
+                            </div>
+                            <i class="fa-solid fa-chevron-right text-[10px] text-zinc-600"></i>
+                        </button>
+                        <button onclick="showToast('Notifications muted'); toggleActionSheet()" class="w-full py-2.5 px-3 rounded-xl hover:bg-zinc-800/80 flex items-center justify-between text-zinc-200 transition cursor-pointer">
+                            <div class="flex items-center gap-2.5">
+                                <i class="fa-regular fa-bell-slash text-zinc-400 w-4"></i>
+                                <span>Mute Notifications</span>
+                            </div>
+                            <span class="text-[10px] text-zinc-500 font-mono-meta">8 hrs</span>
+                        </button>
+                    </div>
+
+                    <!-- Visual Separator for Dangerous Actions -->
+                    <div class="border-t border-zinc-800/80 pt-1 space-y-1">
+                        <button onclick="showToast('User Blocked'); toggleActionSheet()" class="w-full py-2.5 px-3 rounded-xl hover:bg-rose-950/20 text-rose-400 flex items-center justify-between transition cursor-pointer">
+                            <div class="flex items-center gap-2.5">
+                                <i class="fa-solid fa-ban text-rose-500 w-4"></i>
+                                <span>Block @khushi</span>
+                            </div>
+                            <span class="text-[10px] text-rose-500/80 font-mono-meta">Prevent contact</span>
+                        </button>
+                        <button onclick="showToast('Report submitted'); toggleActionSheet()" class="w-full py-2.5 px-3 rounded-xl hover:bg-rose-950/20 text-rose-400 flex items-center justify-between transition cursor-pointer">
+                            <div class="flex items-center gap-2.5">
+                                <i class="fa-regular fa-flag text-rose-500 w-4"></i>
+                                <span>Report Conversation</span>
+                            </div>
+                            <span class="text-[10px] text-rose-500/80 font-mono-meta">Safety review</span>
+                        </button>
+                    </div>
+
+                    <!-- Cancel / Dismiss Button -->
+                    <button type="button" onclick="toggleActionSheet()" class="w-full py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white font-medium transition cursor-pointer text-center">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+
+            <!-- In-App Toast Notification -->
+            <div id="toastNotification" class="hidden absolute top-14 left-6 right-6 z-50 bg-zinc-900 border border-zinc-700 text-white text-xs font-mono-meta px-3.5 py-2 rounded-xl shadow-2xl text-center apple-blur transition-all">
+                Toast message
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Interactive Logic Script -->
+    <script>
+        var currentState = 'B';
+        var isDrawerOpen = false;
+        var isActionSheetOpen = false;
+
+        function setViewport(width, height, label) {
+            var container = document.getElementById('deviceContainer');
+            container.style.width = width + 'px';
+            container.style.height = height + 'px';
+            container.style.minHeight = height + 'px';
+            container.style.maxHeight = height + 'px';
+
+            document.querySelectorAll('.vp-btn').forEach(function(btn) {
+                btn.classList.remove('bg-amber-500', 'text-black', 'font-bold');
+                btn.classList.add('text-zinc-400', 'bg-zinc-900', 'border', 'border-zinc-800');
+            });
+            var activeBtn = document.getElementById('vp-' + width);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-zinc-400', 'bg-zinc-900', 'border', 'border-zinc-800');
+                activeBtn.classList.add('bg-amber-500', 'text-black', 'font-bold');
+            }
+            showToast('Viewport set to ' + width + ' × ' + height);
+        }
+
+        function switchState(stateKey) {
+            currentState = stateKey;
+
+            // Highlight state buttons
+            document.querySelectorAll('.state-btn').forEach(function(btn) {
+                btn.classList.remove('bg-amber-500', 'text-black', 'font-bold');
+                btn.classList.add('text-zinc-400', 'bg-zinc-900', 'border', 'border-zinc-800/70');
+            });
+            var activeStateBtn = document.getElementById('btn-state-' + stateKey);
+            if (activeStateBtn) {
+                activeStateBtn.classList.remove('text-zinc-400', 'bg-zinc-900', 'border', 'border-zinc-800/70');
+                activeStateBtn.classList.add('bg-amber-500', 'text-black', 'font-bold');
+            }
+
+            var labelMap = {
+                'A': 'STATE A: New / Empty Conversation Beginning',
+                'B': 'STATE B: Normal Conversation (Restrained Bubble Aesthetic)',
+                'C': 'STATE C: Conversation with Quoted Reply & Active Banner',
+                'D': 'STATE D: RealMoji Connection Reaction Indicator',
+                'E': 'STATE E: Private Photographic Message',
+                'F': 'STATE F: Shared Kandid Moment Card (Dual Capture & Context)',
+                'G': 'STATE G: Tactile Attachment Drawer Open',
+                'H': 'STATE H: Action Sheet (•••) Open with Safety Separation',
+                'I': 'STATE I: Failed Message Delivery State (Tap to Retry)',
+                'J': 'STATE J: Long Conversation History with Date Divider'
+            };
+            document.getElementById('activeStateLabel').textContent = labelMap[stateKey] || stateKey;
+
+            // Handle element visibility based on state
+            var emptyView = document.getElementById('stateView-A');
+            var flowView = document.getElementById('activeMessagesFlow');
+            var replyBanner = document.getElementById('composerReplyBanner');
+            var drawer = document.getElementById('attachmentDrawer');
+            var actionModal = document.getElementById('actionSheetModal');
+
+            var replyMsg = document.getElementById('flow-reply-msg');
+            var reactionMsg = document.getElementById('flow-reaction-msg');
+            var photoMsg = document.getElementById('flow-photo-msg');
+            var momentMsg = document.getElementById('flow-moment-msg');
+            var failedMsg = document.getElementById('flow-failed-msg');
+            var longHistory = document.getElementById('flow-long-history');
+
+            // Reset all overlays
+            drawer.classList.add('hidden');
+            actionModal.classList.add('hidden');
+            replyBanner.classList.add('hidden');
+
+            if (stateKey === 'A') {
+                emptyView.classList.remove('hidden');
+                emptyView.classList.add('flex');
+                flowView.classList.add('hidden');
+            } else {
+                emptyView.classList.add('hidden');
+                emptyView.classList.remove('flex');
+                flowView.classList.remove('hidden');
+
+                // Adjust specific elements
+                replyMsg.style.display = (stateKey === 'C' || stateKey === 'J') ? 'flex' : 'none';
+                reactionMsg.style.display = (stateKey === 'D' || stateKey === 'J') ? 'flex' : 'none';
+                photoMsg.style.display = (stateKey === 'E' || stateKey === 'J') ? 'flex' : 'none';
+                momentMsg.style.display = (stateKey === 'F' || stateKey === 'J') ? 'flex' : 'none';
+                failedMsg.style.display = (stateKey === 'I') ? 'flex' : 'none';
+                
+                if (stateKey === 'J') {
+                    longHistory.classList.remove('hidden');
+                } else {
+                    longHistory.classList.add('hidden');
+                }
+
+                if (stateKey === 'C') {
+                    replyBanner.classList.remove('hidden');
+                } else if (stateKey === 'G') {
+                    drawer.classList.remove('hidden');
+                } else if (stateKey === 'H') {
+                    actionModal.classList.remove('hidden');
+                }
+            }
+
+            // Scroll to bottom of message container
+            var stream = document.getElementById('chatStream');
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        function toggleAttachmentDrawer() {
+            var drawer = document.getElementById('attachmentDrawer');
+            if (drawer.classList.contains('hidden')) {
+                drawer.classList.remove('hidden');
+                document.getElementById('actionSheetModal').classList.add('hidden');
+            } else {
+                drawer.classList.add('hidden');
+            }
+        }
+
+        function toggleActionSheet() {
+            var modal = document.getElementById('actionSheetModal');
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+                document.getElementById('attachmentDrawer').classList.add('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        function dismissReplyBanner() {
+            document.getElementById('composerReplyBanner').classList.add('hidden');
+            showToast('Reply reference dismissed');
+        }
+
+        function handleSimulateSend() {
+            var input = document.getElementById('demoInput');
+            var text = input.value.trim();
+            if (!text) {
+                showToast('Type a message first');
+                return;
+            }
+            input.value = '';
+
+            var flow = document.getElementById('activeMessagesFlow');
+            var newMsg = document.createElement('div');
+            newMsg.className = 'flex flex-col items-end space-y-1 max-w-[82%] ml-auto group';
+            newMsg.innerHTML = `
+                <div class="kandid-bubble-out rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-xs text-zinc-100 shadow-sm leading-relaxed space-y-0.5">
+                    <p>${escapeHtml(text)}</p>
+                </div>
+                <div class="flex items-center justify-end gap-1 px-1 text-[9px] font-mono-meta text-zinc-500">
+                    <span>JUST NOW</span>
+                    <span class="text-amber-400 font-bold ml-0.5">✓</span>
+                </div>
+            `;
+            flow.appendChild(newMsg);
+            dismissReplyBanner();
+
+            var stream = document.getElementById('chatStream');
+            stream.scrollTop = stream.scrollHeight;
+            showToast('Message sent');
+        }
+
+        function showToast(msg) {
+            var toast = document.getElementById('toastNotification');
+            toast.textContent = msg;
+            toast.classList.remove('hidden');
+            clearTimeout(window._toastTimeout);
+            window._toastTimeout = setTimeout(function() {
+                toast.classList.add('hidden');
+            }, 2000);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // Initialize on State B
+        switchState('B');
+    </script>
+</body>
+</html>
