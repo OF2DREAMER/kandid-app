@@ -4038,6 +4038,8 @@ async function openUserProfile(userId, preloadedData) {
     var preHandle = (preloadedData.handle || preloadedData.author_handle || preloadedData.username || 'karan').replace('@', '');
     var preCleanH = '@' + preHandle.toLowerCase();
     var preAvatar = preloadedData.avatar_url || preloadedData.avatar || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(preHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+    var preBio = preloadedData.bio || 'Building Kandid · Learning CS ·<br>Exploring real places, real people, real stories.';
+    var preIsPrivate = preloadedData.profile_visibility === 'private' || Boolean(preloadedData.is_private);
 
     var pubName = document.getElementById('peerPublicName') || document.getElementById('peerProfileName');
     var pubUsername = document.getElementById('peerPublicUsername') || document.getElementById('peerProfileUsername');
@@ -4046,8 +4048,16 @@ async function openUserProfile(userId, preloadedData) {
     var pubBio = document.getElementById('peerPublicBio') || document.getElementById('peerProfileBio');
     var pubAvatar = document.getElementById('peerPublicAvatar') || document.getElementById('peerProfileAvatar');
 
+    var privName = document.getElementById('peerPrivateName');
+    var privUsername = document.getElementById('peerPrivateUsername');
+    var privBio = document.getElementById('peerPrivateBio');
+    var privAvatar = document.getElementById('peerPrivateAvatar');
+
     if (pubName) pubName.textContent = preName;
     if (pubUsername) pubUsername.textContent = preCleanH;
+    if (privName) privName.textContent = preName;
+    if (privUsername) privUsername.textContent = preCleanH;
+
     if (pubCampus) {
       var preCampus = preloadedData.campus || preloadedData.community_name || 'Guru Kashi University';
       pubCampus.textContent = preCampus;
@@ -4056,17 +4066,26 @@ async function openUserProfile(userId, preloadedData) {
       var preCity = preloadedData.location_city || preloadedData.city || 'Supaul';
       pubCity.textContent = preCity;
     }
-    if (pubBio) {
-      var preBio = preloadedData.bio || 'Building Kandid · Learning CS ·<br>Exploring real places, real people, real stories.';
-      pubBio.innerHTML = preBio.includes('<') ? preBio : escapeHtml(preBio).replace(/\n/g, '<br>');
-    }
+    var formattedPreBio = preBio.includes('<') ? preBio : escapeHtml(preBio).replace(/\n/g, '<br>');
+    if (pubBio) pubBio.innerHTML = formattedPreBio;
+    if (privBio) privBio.innerHTML = formattedPreBio;
+
     if (pubAvatar) {
       pubAvatar.src = preAvatar;
       pubAvatar.style.display = 'block';
     }
+    if (privAvatar) {
+      privAvatar.src = preAvatar;
+      privAvatar.style.display = 'block';
+    }
 
-    if (peerPublicView) peerPublicView.style.display = 'flex';
-    if (peerPrivateView) peerPrivateView.style.display = 'none';
+    if (preIsPrivate) {
+      if (peerPrivateView) peerPrivateView.style.display = 'flex';
+      if (peerPublicView) peerPublicView.style.display = 'none';
+    } else {
+      if (peerPublicView) peerPublicView.style.display = 'flex';
+      if (peerPrivateView) peerPrivateView.style.display = 'none';
+    }
   }
 
   // Pre-wire message button right away
