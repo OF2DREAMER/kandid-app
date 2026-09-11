@@ -679,7 +679,7 @@ function switchScreenView(screenName) {
   var target = document.getElementById('screen-' + screenName);
   if (target) {
     target.classList.add('active');
-    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'offline' || screenName === 'block' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile') {
+    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'offline' || screenName === 'block' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile' || screenName === 'search') {
         target.style.display = 'flex';
     } else {
         target.style.display = 'block';
@@ -687,7 +687,7 @@ function switchScreenView(screenName) {
   }
 
   document.querySelectorAll('.dock-item').forEach(function(btn) {
-    if (btn.dataset.screen === screenName || ((screenName === 'memories' || screenName === 'progress' || screenName === 'settings' || screenName === 'report' || screenName === 'block') && btn.dataset.screen === 'you') || (screenName === 'empty-search' && btn.dataset.screen === 'search') || (screenName === 'search-global' && btn.dataset.screen === 'search') || (screenName.startsWith('chat-') && btn.dataset.screen === 'chat-home')) {
+    if (btn.dataset.screen === screenName || ((screenName === 'memories' || screenName === 'progress' || screenName === 'settings' || screenName === 'report' || screenName === 'block') && btn.dataset.screen === 'you') || (screenName === 'empty-search' && btn.dataset.screen === 'search') || (screenName.startsWith('chat-') && btn.dataset.screen === 'chat-home')) {
       btn.className = 'dock-item text-amber-500 flex flex-col items-center cursor-pointer active';
     } else {
       btn.className = 'dock-item text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer';
@@ -708,8 +708,6 @@ function switchScreenView(screenName) {
   if (statusMode) {
     if (screenName === 'search') {
       statusMode.textContent = 'SEARCH';
-    } else if (screenName === 'search-global') {
-      statusMode.textContent = 'GLOBAL';
     } else if (screenName === 'feed') {
       statusMode.textContent = (state.activeCircle === 'campus' || state.activeCircle === 'community') ? 'COMMUNITY' : (state.activeCircle === 'global' ? 'GLOBAL WINDOW' : (state.activeCircle === 'nearby' ? 'NEARBY' : 'LIVE'));
     } else if (screenName === 'memories') {
@@ -3377,18 +3375,13 @@ window.publishCapturedMoment = publishCapturedMoment;
 
 
 // =====================================================================
-// SEARCH 2.0 — THE DOORWAY INTO THE KANDID WORLD
+// SECTION 2: SEARCH — MAP-BASED PROXIMITY RADAR & 4 CATEGORIES (APPROVED)
 // =====================================================================
-
-// ── State ──────────────────────────────────────────────────────────────
 state.searchQuery = '';
-state.searchFilter = 'all';
+state.searchCategory = 'people'; // Strict 4 categories: 'people' | 'moments' | 'places' | 'communities'
 state.searchFocused = false;
-state.globalCursor = '';
-state.globalMoments = [];
-state.globalHasMore = false;
-state.searchScrollPos = 0;
-state.globalScrollPos = 0;
+state.lastSearchResults = null;
+state.selectedRadarNode = null;
 
 var searchDebounceTimer = null;
 var searchAbortCtrl = null;
@@ -3396,39 +3389,90 @@ var _recentSearchesCache = null;
 
 // ── View helpers ──────────────────────────────────────────────────────
 function _searchShowView(viewName) {
-  // viewName: 'idle' | 'focused' | 'results' | 'empty' | 'error'
-  var idle    = document.getElementById('searchIdleView');
-  var focused = document.getElementById('searchFocusedView');
-  var results = document.getElementById('searchResultsView');
-  var empty   = document.getElementById('searchEmptyState');
-  var error   = document.getElementById('searchErrorState');
-  var skel    = document.getElementById('searchResultsSkeleton');
+  var views = {
+    'idle': document.getElementById('view-idle'),
+    'focused': document.getElementById('view-focused'),
+    'people': document.getElementById('view-res-people'),
+    'moments': document.getElementById('view-res-moments'),
+    'places': document.getElementById('view-res-places'),
+    'communities': document.getElementById('view-res-communities'),
+    'loading': document.getElementById('view-loading'),
+    'error': document.getElementById('view-error'),
+    'empty': document.getElementById('view-empty')
+  };
 
-  if (idle)    idle.style.display    = (viewName === 'idle')    ? 'block' : 'none';
-  if (focused) focused.style.display = (viewName === 'focused') ? 'block' : 'none';
-  if (results) results.style.display = (viewName === 'results' || viewName === 'skeleton') ? 'block' : 'none';
-  if (skel)    skel.style.display    = (viewName === 'skeleton') ? 'block' : 'none';
-  if (empty)   empty.style.display   = (viewName === 'empty')   ? 'block' : 'none';
-  if (error)   error.style.display   = (viewName === 'error')   ? 'block' : 'none';
-}
-
-// ── Filter Chips ──────────────────────────────────────────────────────
-function selectSearchFilter(filterType) {
-  state.searchFilter = filterType;
-  document.querySelectorAll('.search-chip-btn').forEach(function(btn) {
-    if (btn.dataset.filter === filterType) {
-      btn.className = 'search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 bg-amber-500 text-black border-amber-500';
-    } else {
-      btn.className = 'search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600';
+  Object.keys(views).forEach(function(k) {
+    if (views[k]) {
+      views[k].classList.add('hidden');
+      views[k].classList.remove('flex');
     }
   });
-  if (state.searchQuery) {
-    performSearch();
+
+  var target = views[viewName];
+  if (target) {
+    target.classList.remove('hidden');
+    target.classList.add('flex');
   }
 }
-window.selectSearchFilter = selectSearchFilter;
+window._searchShowView = _searchShowView;
 
-// ── Input handlers ────────────────────────────────────────────────────
+// ── Category Navigation Pills (People, Moments, Places, Communities) ──
+function selectSearchCategory(cat) {
+  var validCategories = ['people', 'moments', 'places', 'communities'];
+  if (!validCategories.includes(cat)) cat = 'people';
+  state.searchCategory = cat;
+
+  validCategories.forEach(function(c) {
+    var pill = document.getElementById('cat-pill-' + c);
+    if (pill) {
+      if (c === cat) {
+        pill.className = 'search-cat-pill px-3 py-1 rounded-full bg-amber-500 text-black font-bold flex-shrink-0 cursor-pointer transition';
+        pill.setAttribute('aria-selected', 'true');
+      } else {
+        pill.className = 'search-cat-pill px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-gray-400 hover:text-white transition flex-shrink-0 cursor-pointer';
+        pill.setAttribute('aria-selected', 'false');
+      }
+    }
+  });
+
+  if (state.searchQuery && state.searchQuery.trim()) {
+    _displayCategoryResults(cat);
+  }
+}
+window.selectSearchCategory = selectSearchCategory;
+window.selectSearchFilter = selectSearchCategory; // backward compat
+
+function _displayCategoryResults(cat) {
+  var data = state.lastSearchResults;
+  if (!data) {
+    performSearch(state.searchQuery, cat);
+    return;
+  }
+
+  var listMap = {
+    'people': data.people || [],
+    'moments': data.moments || [],
+    'places': data.places || [],
+    'communities': data.communities || []
+  };
+
+  var items = listMap[cat] || [];
+  if (items.length > 0) {
+    _searchShowView(cat);
+  } else {
+    var hasAny = (data.people && data.people.length > 0) ||
+                 (data.moments && data.moments.length > 0) ||
+                 (data.places && data.places.length > 0) ||
+                 (data.communities && data.communities.length > 0);
+    if (hasAny) {
+      _searchShowView(cat);
+    } else {
+      _searchShowView('empty');
+    }
+  }
+}
+
+// ── Search Input & Focus ──────────────────────────────────────────────
 function handleSearchInput(event) {
   var val = (event.target.value || '').trim();
   if (val.length > 80) {
@@ -3436,12 +3480,16 @@ function handleSearchInput(event) {
     event.target.value = val;
   }
   state.searchQuery = val;
-  var clearBtn = document.getElementById('searchClearBtn');
-  if (clearBtn) clearBtn.style.display = val ? 'block' : 'none';
+  var clearBtn = document.getElementById('search-clear-btn');
+  if (clearBtn) {
+    if (val) clearBtn.classList.remove('hidden');
+    else clearBtn.classList.add('hidden');
+  }
 
   if (!val) {
     if (state.searchFocused) {
       _searchShowView('focused');
+      loadRecentSearches();
     } else {
       _searchShowView('idle');
     }
@@ -3450,7 +3498,7 @@ function handleSearchInput(event) {
 
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
   searchDebounceTimer = setTimeout(function() {
-    performSearch();
+    performSearch(val, state.searchCategory);
   }, 300);
 }
 window.handleSearchInput = handleSearchInput;
@@ -3466,7 +3514,6 @@ window.onSearchFocus = onSearchFocus;
 
 function onSearchBlur() {
   state.searchFocused = false;
-  // Small delay so click on recent item registers first
   setTimeout(function() {
     if (!state.searchQuery) {
       _searchShowView('idle');
@@ -3476,82 +3523,92 @@ function onSearchBlur() {
 window.onSearchBlur = onSearchBlur;
 
 function clearSearchInput() {
-  var input = document.getElementById('searchInput');
+  var input = document.getElementById('main-search-input');
   if (input) input.value = '';
   state.searchQuery = '';
-  var clearBtn = document.getElementById('searchClearBtn');
-  if (clearBtn) clearBtn.style.display = 'none';
+  var clearBtn = document.getElementById('search-clear-btn');
+  if (clearBtn) clearBtn.classList.add('hidden');
+  closeSearchActivitySheet();
   _searchShowView('idle');
   loadSearchDiscovery();
 }
 window.clearSearchInput = clearSearchInput;
 
-// Legacy compat (old filter tabs reference)
 function filterBySector(sectorName) {
-  var input = document.getElementById('searchInput');
+  var input = document.getElementById('main-search-input');
   if (input) input.value = sectorName;
   state.searchQuery = sectorName;
-  var clearBtn = document.getElementById('searchClearBtn');
-  if (clearBtn) clearBtn.style.display = 'block';
-  performSearch();
+  var clearBtn = document.getElementById('search-clear-btn');
+  if (clearBtn) clearBtn.classList.remove('hidden');
+  performSearch(sectorName, 'places');
 }
 window.filterBySector = filterBySector;
 
 function filterByFrequency(freqTag) {
-  var input = document.getElementById('searchInput');
+  var input = document.getElementById('main-search-input');
   if (input) input.value = freqTag;
   state.searchQuery = freqTag;
-  var clearBtn = document.getElementById('searchClearBtn');
-  if (clearBtn) clearBtn.style.display = 'block';
-  performSearch();
+  var clearBtn = document.getElementById('search-clear-btn');
+  if (clearBtn) clearBtn.classList.remove('hidden');
+  performSearch(freqTag, 'moments');
 }
 window.filterByFrequency = filterByFrequency;
 
 // ── Recent Searches ───────────────────────────────────────────────────
 async function loadRecentSearches() {
-  var list = document.getElementById('recentSearchesList');
+  var list = document.getElementById('searchRecentList');
   if (!list) return;
 
   var data = await apiRequest('/api/search/recent');
   _recentSearchesCache = (data && data.success && Array.isArray(data.searches)) ? data.searches : [];
 
   if (!_recentSearchesCache.length) {
-    list.innerHTML = '<div class="text-center py-6 text-xs text-zinc-700 font-mono-tag">No recent searches</div>';
+    list.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">NO RECENT SEARCHES</div>';
     return;
   }
 
   list.innerHTML = '';
   _recentSearchesCache.forEach(function(rs) {
-    var item = document.createElement('button');
-    item.className = 'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900/60 transition-colors cursor-pointer text-left group';
+    var item = document.createElement('div');
+    item.className = 'flex items-center justify-between p-3 bg-[#121215]/60 border border-neutral-800/60 rounded-xl cursor-pointer hover:border-neutral-700 transition select-none';
     item.innerHTML =
-      '<svg class="w-3.5 h-3.5 text-zinc-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' +
-      '<span class="text-xs text-zinc-300 font-mono-tag flex-1 uppercase truncate">' + escapeHtml(rs.query) + '</span>' +
-      '<button class="text-[9px] text-zinc-700 group-hover:text-zinc-500 font-mono-tag transition-colors" data-rs-id="' + escapeHtml(rs.id) + '" onclick="deleteRecentSearch(event, \'' + escapeHtml(rs.id) + '\')">✕</button>';
-    item.addEventListener('click', function(e) {
-      if (e.target.tagName === 'BUTTON' || e.target.closest('button[data-rs-id]')) return;
-      var searchInput = document.getElementById('searchInput');
-      if (searchInput) searchInput.value = rs.query;
-      state.searchQuery = rs.query;
-      var clearBtn = document.getElementById('searchClearBtn');
-      if (clearBtn) clearBtn.style.display = 'block';
-      performSearch();
+      '<div class="flex items-center space-x-3 text-xs text-gray-200 min-w-0">' +
+        '<i class="fa-solid fa-clock-rotate-left text-gray-500 flex-shrink-0"></i>' +
+        '<span class="truncate">' + escapeHtml(rs.query) + '</span>' +
+      '</div>' +
+      '<button class="text-gray-500 hover:text-white text-xs p-1 flex-shrink-0 cursor-pointer" aria-label="Delete recent search">' +
+        '<i class="fa-solid fa-xmark"></i>' +
+      '</button>';
+
+    item.querySelector('button').addEventListener('click', function(e) {
+      deleteRecentSearch(e, rs.id);
     });
+
+    item.addEventListener('click', function(e) {
+      if (e.target.closest('button')) return;
+      var input = document.getElementById('main-search-input');
+      if (input) input.value = rs.query;
+      state.searchQuery = rs.query;
+      var clearBtn = document.getElementById('search-clear-btn');
+      if (clearBtn) clearBtn.classList.remove('hidden');
+      performSearch(rs.query, state.searchCategory);
+    });
+
     list.appendChild(item);
   });
 }
 window.loadRecentSearches = loadRecentSearches;
 
-async function saveRecentSearch(query, searchType) {
-  if (!query) return;
+async function saveRecentSearch(query, category) {
+  if (!query || !query.trim()) return;
   try {
-    await apiRequest('/api/search/recent', 'POST', { query: query, search_type: searchType || 'all' });
-    _recentSearchesCache = null; // invalidate cache
+    await apiRequest('/api/search/recent', 'POST', { query: query.trim(), search_type: category || 'all' });
+    _recentSearchesCache = null;
   } catch(e) {}
 }
 
 async function deleteRecentSearch(e, rsId) {
-  e.stopPropagation();
+  if (e && e.stopPropagation) e.stopPropagation();
   if (!rsId) return;
   await apiRequest('/api/search/recent?id=' + encodeURIComponent(rsId), 'DELETE');
   _recentSearchesCache = null;
@@ -3566,182 +3623,213 @@ async function clearAllRecentSearches() {
 }
 window.clearAllRecentSearches = clearAllRecentSearches;
 
-// ── Radar ─────────────────────────────────────────────────────────────
+// ── Proximity Radar ───────────────────────────────────────────────────
 async function loadRadar() {
-  var statusLabel = document.getElementById('radarStatusLabel');
-  var badge = document.getElementById('activeNodesBadge');
-  var nodesGroup = document.getElementById('radarNodes');
-  var labelsDiv = document.getElementById('radarNodeLabels');
-  var summaryLine = document.getElementById('radarSummaryLine');
+  var nodesLayer = document.getElementById('activity-nodes-layer');
+  var footerStatus = document.getElementById('radar-footer-status');
+  var locOffOverlay = document.getElementById('map-loc-off-overlay');
+
+  if (locOffOverlay) locOffOverlay.classList.add('hidden');
 
   var data = await apiRequest('/api/search/radar');
   if (!data || !data.success) {
-    if (statusLabel) statusLabel.textContent = 'QUIET';
-    if (badge) badge.textContent = '0 ACTIVE NODES';
-    if (summaryLine) summaryLine.textContent = 'Quiet around here.';
+    if (footerStatus) footerStatus.textContent = 'QUIET AROUND HERE';
+    if (nodesLayer) nodesLayer.innerHTML = '';
     return;
   }
 
   var nodes = data.nodes || [];
-  if (badge) badge.textContent = nodes.length + ' ACTIVE NODE' + (nodes.length !== 1 ? 'S' : '');
 
-  // Radar status states (§10)
-  var currentStatus = data.status || (nodes.length > 0 ? 'active' : 'quiet');
-  if (statusLabel) {
-    if (currentStatus === 'active') statusLabel.textContent = 'LIVE';
-    else if (currentStatus === 'quiet') statusLabel.textContent = 'QUIET';
-    else statusLabel.textContent = 'STANDBY';
+  if (nodes.length === 0) {
+    if (footerStatus) footerStatus.textContent = 'QUIET AROUND HERE';
+    if (nodesLayer) nodesLayer.innerHTML = '';
+    return;
   }
 
-  // Summary line from real API data (§8)
-  if (summaryLine) {
-    summaryLine.textContent = data.summary || (nodes.length > 0 ? (nodes.length + ' places active') : 'Quiet around here.');
+  if (footerStatus) {
+    footerStatus.textContent = 'AROUND YOU · ACTIVITY AROUND HERE';
   }
 
-  if (nodesGroup) {
-    nodesGroup.innerHTML = '';
-    // Fixed ring radii for opaque visual slot positioning (no geographic data)
-    var ringRadii = [0.38, 0.62, 0.82];
-    nodes.slice(0, 12).forEach(function(n) {
-      var slot = typeof n.slot === 'number' ? n.slot : 0;
-      var ring = typeof n.ring === 'number' ? n.ring : 1;
-      var r = ringRadii[ring % 3];
-      var angleRad = ((slot % 12) * 30 - 90) * Math.PI / 180;
-      var x = r * Math.cos(angleRad);
-      var y = r * Math.sin(angleRad);
-      var color = n.type === 'campus' ? '#f59e0b' : n.type === 'place' ? '#34d399' : '#a78bfa';
-      var dotSize = n.type === 'campus' ? 0.055 : 0.042;
+  if (nodesLayer) {
+    nodesLayer.innerHTML = '';
+    var nodeCoords = [
+      { top: '30%', left: '22%' },
+      { top: '58%', left: '64%' },
+      { top: '24%', left: '68%' },
+      { top: '68%', left: '20%' },
+      { top: '18%', left: '44%' },
+      { top: '76%', left: '46%' }
+    ];
 
-      var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      g.setAttribute('transform', 'translate(' + x + ',' + y + ')');
+    nodes.slice(0, 6).forEach(function(n, idx) {
+      var pos = nodeCoords[idx % nodeCoords.length];
+      var isCampus = n.type === 'campus';
+      var dotClass = isCampus ? 'bg-amber-400 animate-pulse' : 'bg-neutral-400';
 
-      var pulse = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      pulse.setAttribute('cx', '0'); pulse.setAttribute('cy', '0');
-      pulse.setAttribute('r', String(dotSize));
-      pulse.setAttribute('fill', color); pulse.setAttribute('opacity', '0.2');
-      var anim = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
-      anim.setAttribute('attributeName', 'r');
-      anim.setAttribute('values', dotSize + ';' + (dotSize * 2.5) + ';' + dotSize);
-      anim.setAttribute('dur', '2.5s'); anim.setAttribute('repeatCount', 'indefinite');
-      pulse.appendChild(anim);
+      var nodeEl = document.createElement('div');
+      nodeEl.className = 'absolute flex items-center space-x-1.5 bg-[#121215]/95 border border-[#27272A] px-2 py-1 rounded-md shadow-md cursor-pointer hover:border-amber-500 transition select-none';
+      nodeEl.style.top = pos.top;
+      nodeEl.style.left = pos.left;
+      nodeEl.innerHTML =
+        '<span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>' +
+        '<span class="text-[9px] font-semibold text-gray-200">' + escapeHtml(n.label || (isCampus ? 'Campus' : 'Place')) + '</span>';
 
-      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      dot.setAttribute('cx', '0'); dot.setAttribute('cy', '0');
-      dot.setAttribute('r', String(dotSize));
-      dot.setAttribute('fill', color);
-
-      g.appendChild(pulse);
-      g.appendChild(dot);
-      nodesGroup.appendChild(g);
+      nodeEl.addEventListener('click', function() {
+        openSearchActivitySheet(n);
+      });
+      nodesLayer.appendChild(nodeEl);
     });
-  }
-
-  if (labelsDiv && nodes.length > 0) {
-    labelsDiv.style.display = 'block';
-    labelsDiv.innerHTML = '';
-    nodes.slice(0, 5).forEach(function(n) {
-      var color = n.type === 'campus' ? 'text-amber-500' : n.type === 'place' ? 'text-emerald-400' : 'text-violet-400';
-      var dot = document.createElement('div');
-      dot.className = 'flex items-center gap-2';
-      dot.innerHTML =
-        '<span class="w-1.5 h-1.5 rounded-full ' + color.replace('text-', 'bg-') + ' flex-shrink-0"></span>' +
-        '<span class="text-[9px] font-mono-tag text-zinc-400 truncate">' + escapeHtml(n.label) + '</span>' +
-        '<span class="text-[8px] font-mono-tag text-zinc-700 ml-auto flex-shrink-0">' + n.post_count + ' MOMENTS</span>';
-      labelsDiv.appendChild(dot);
-    });
-    if (nodes.length > 5) {
-      var more = document.createElement('div');
-      more.className = 'text-[9px] font-mono-tag text-zinc-600 text-center pt-0.5';
-      more.textContent = '+' + (nodes.length - 5) + ' MORE';
-      labelsDiv.appendChild(more);
-    }
-  } else if (labelsDiv) {
-    labelsDiv.style.display = 'none';
   }
 }
 window.loadRadar = loadRadar;
 
-// ── Discovery (Idle View) ─────────────────────────────────────────────
-async function loadSearchDiscovery() {
-  var skeleton = document.getElementById('searchSkeletonState');
-  if (skeleton) skeleton.style.display = 'block';
+function openSearchActivitySheet(node) {
+  state.selectedRadarNode = node;
+  var sheet = document.getElementById('search-activity-sheet');
+  var title = document.getElementById('activity-sheet-title');
+  var subtitle = document.getElementById('activity-sheet-subtitle');
+  var actionBtn = document.getElementById('activity-sheet-action-btn');
+  var footerStatus = document.getElementById('radar-footer-status');
 
-  // Load radar in parallel
+  if (title) title.textContent = (node.label || 'CAMPUS').toUpperCase();
+  if (subtitle) {
+    var typeName = node.type === 'campus' ? 'Campus' : (node.type === 'place' ? 'Place' : 'Community');
+    var count = node.post_count || 1;
+    subtitle.textContent = typeName + ' · ' + count + ' recent Moment' + (count !== 1 ? 's' : '');
+  }
+  if (footerStatus) footerStatus.textContent = 'SELECTED AREA';
+
+  if (actionBtn) {
+    actionBtn.onclick = function() {
+      closeSearchActivitySheet();
+      if (typeof openCampusPage === 'function') {
+        openCampusPage(node.label);
+      }
+    };
+  }
+
+  if (sheet) {
+    sheet.classList.remove('hidden');
+    sheet.classList.add('block');
+  }
+}
+window.openSearchActivitySheet = openSearchActivitySheet;
+
+function closeSearchActivitySheet() {
+  state.selectedRadarNode = null;
+  var sheet = document.getElementById('search-activity-sheet');
+  if (sheet) {
+    sheet.classList.add('hidden');
+    sheet.classList.remove('block');
+  }
+  var footerStatus = document.getElementById('radar-footer-status');
+  if (footerStatus) {
+    footerStatus.textContent = 'AROUND YOU · ACTIVITY AROUND HERE';
+  }
+}
+window.closeSearchActivitySheet = closeSearchActivitySheet;
+
+function enableSearchLocation() {
+  if (!navigator.geolocation) {
+    showToast('Geolocation is not supported by your browser');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      showToast('Location enabled');
+      var overlay = document.getElementById('map-loc-off-overlay');
+      if (overlay) overlay.classList.add('hidden');
+      loadRadar();
+    },
+    function(err) {
+      showToast('Location permission required for nearby discovery');
+      var footerStatus = document.getElementById('radar-footer-status');
+      if (footerStatus) footerStatus.textContent = 'LOCATION REQUIRED';
+    },
+    { timeout: 8000 }
+  );
+}
+window.enableSearchLocation = enableSearchLocation;
+
+// ── Around You Discovery ──────────────────────────────────────────────
+async function loadSearchDiscovery() {
   loadRadar();
 
+  var aroundContainer = document.getElementById('searchAroundYouContainer');
+  if (!aroundContainer) return;
+
   var data = await apiRequest('/api/search?type=all');
+  if (!data || !data.success) {
+    aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">NO ACTIVITY RECORDED NEARBY YET</div>';
+    return;
+  }
 
-  if (skeleton) skeleton.style.display = 'none';
-
-  if (!data || !data.success) return;
-
-  // Sectors
-  var sectorsContainer = document.getElementById('searchSectorsContainer');
-  var sectorLabel = document.getElementById('sectorCountLabel');
-  if (sectorsContainer && Array.isArray(data.sectors) && data.sectors.length > 0) {
-    if (sectorLabel) sectorLabel.textContent = data.sectors.length + ' ACTIVE';
-    sectorsContainer.innerHTML = '';
+  var items = [];
+  if (Array.isArray(data.sectors) && data.sectors.length > 0) {
     data.sectors.forEach(function(s) {
-      var el = document.createElement('div');
-      el.className = 'bg-zinc-950 border border-zinc-800/60 rounded-2xl p-3.5 flex justify-between items-center shadow-lg hover:border-amber-500/40 transition-colors cursor-pointer active:scale-[0.99]';
-      el.innerHTML =
-        '<div class="flex items-center gap-3">' +
-          '<div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-base flex-shrink-0">' + (s.icon || '📍') + '</div>' +
-          '<div>' +
-            '<h3 class="text-xs font-bold text-white tracking-wide">' + escapeHtml(s.name) + '</h3>' +
-            '<span class="text-[9px] text-zinc-500 font-mono-tag uppercase">' + escapeHtml(s.area || 'Community Hub') + '</span>' +
-          '</div>' +
-        '</div>' +
-        '<span class="text-[9px] text-zinc-400 font-mono-tag font-bold bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-lg flex-shrink-0">' + s.momentsCount + ' MOMENTS</span>';
-      el.addEventListener('click', function() { filterBySector(s.name); });
-      sectorsContainer.appendChild(el);
+      items.push({ name: s.name, type: 'Place', subtext: s.area || 'Active area', icon: s.icon || '📍' });
     });
-  } else if (sectorsContainer) {
-    sectorsContainer.innerHTML = '<div class="text-center py-4 text-xs text-zinc-600 font-mono-tag">No active spaces yet</div>';
+  } else if (Array.isArray(data.campuses) && data.campuses.length > 0) {
+    data.campuses.forEach(function(c) {
+      items.push({ name: c.name, type: 'Campus', subtext: (c.city || 'Campus') + ' · Recent Moments', icon: '🎓' });
+    });
   }
 
-  // Frequencies
-  var freqContainer = document.getElementById('searchFrequenciesContainer');
-  if (freqContainer && Array.isArray(data.frequencies) && data.frequencies.length > 0) {
-    freqContainer.innerHTML = '';
-    data.frequencies.forEach(function(f, idx) {
-      var borderClass = (idx < data.frequencies.length - 1) ? 'pb-2.5 border-b border-zinc-900/60' : '';
-      var el = document.createElement('div');
-      el.className = 'flex justify-between items-center text-xs font-mono-tag cursor-pointer hover:opacity-80 transition-opacity ' + borderClass;
-      el.innerHTML =
-        '<span class="text-amber-400 font-bold">' + (f.number || ('0' + (idx+1))) + ' ' + escapeHtml(f.tag) + '</span>' +
-        '<span class="text-zinc-500">' + f.postsCount + ' POSTS</span>';
-      el.addEventListener('click', function() { filterByFrequency(f.tag); });
-      freqContainer.appendChild(el);
+  if (Array.isArray(data.communities) && data.communities.length > 0) {
+    data.communities.slice(0, 2).forEach(function(c) {
+      items.push({ name: c.name, type: 'Community', subtext: c.city || 'Recent Moments', icon: '📸' });
     });
-  } else if (freqContainer) {
-    freqContainer.innerHTML = '<div class="text-center py-2 text-xs text-zinc-600 font-mono-tag">No trending tags yet</div>';
   }
+
+  if (items.length === 0) {
+    aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">NO ACTIVITY RECORDED NEARBY YET</div>';
+    return;
+  }
+
+  aroundContainer.innerHTML = '';
+  items.slice(0, 4).forEach(function(item) {
+    var card = document.createElement('div');
+    card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer hover:border-neutral-700 transition select-none';
+    card.innerHTML =
+      '<div class="flex items-center space-x-3 min-w-0">' +
+        '<div class="w-9 h-9 rounded-lg overflow-hidden bg-neutral-800 flex-shrink-0 flex items-center justify-center text-sm">' +
+          item.icon +
+        '</div>' +
+        '<div class="min-w-0">' +
+          '<h4 class="text-xs font-bold text-white truncate">' + escapeHtml(item.name) + '</h4>' +
+          '<p class="text-[10px] text-gray-400 mt-0.5 truncate">' + escapeHtml(item.type + ' · ' + item.subtext) + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<i class="fa-solid fa-chevron-right text-[10px] text-gray-500 flex-shrink-0"></i>';
+
+    card.addEventListener('click', function() {
+      if (typeof openCampusPage === 'function') openCampusPage(item.name);
+    });
+    aroundContainer.appendChild(card);
+  });
 }
 window.loadSearchDiscovery = loadSearchDiscovery;
 
 // ── Search Execution ──────────────────────────────────────────────────
-async function performSearch(query, filter) {
+async function performSearch(query, category) {
   query = (typeof query === 'string') ? query : state.searchQuery;
-  filter = filter || state.searchFilter || 'all';
+  category = category || state.searchCategory || 'people';
 
-  if (!query) {
+  if (!query || !query.trim()) {
     _searchShowView('idle');
     loadSearchDiscovery();
     return;
   }
 
-  // Abort any in-flight request
+  closeSearchActivitySheet();
+  _searchShowView('loading');
+
   if (searchAbortCtrl) {
     try { searchAbortCtrl.abort(); } catch(e) {}
   }
   searchAbortCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
 
-  _searchShowView('skeleton');
-  var resultsContainer = document.getElementById('searchResultsContainer');
-  if (resultsContainer) resultsContainer.innerHTML = '';
-
-  var endpoint = '/api/search?q=' + encodeURIComponent(query) + '&type=' + encodeURIComponent(filter);
+  var endpoint = '/api/search?q=' + encodeURIComponent(query.trim()) + '&type=all';
   var data = await apiRequest(endpoint);
 
   if (!data || !data.success) {
@@ -3749,267 +3837,193 @@ async function performSearch(query, filter) {
     return;
   }
 
-  if (resultsContainer) resultsContainer.innerHTML = '';
-  _searchShowView('results');
+  state.lastSearchResults = data;
 
-  var hasResults = false;
+  var people = data.people || [];
+  var moments = data.moments || [];
+  var places = data.places || [];
+  var communities = data.communities || [];
 
-  if (Array.isArray(data.people) && data.people.length > 0 &&
-      (filter === 'people' || filter === 'all')) {
-    hasResults = true;
-    renderPeopleSearchResults(data.people, resultsContainer);
-  }
+  renderPeopleSearchResults(people);
+  renderMomentsSearchResults(moments);
+  renderPlacesSearchResults(places);
+  renderCommunitiesSearchResults(communities);
 
-  if (Array.isArray(data.campuses) && data.campuses.length > 0 &&
-      (filter === 'campuses' || filter === 'all')) {
-    hasResults = true;
-    renderCampusSearchResults(data.campuses, resultsContainer);
-  }
-
-  if (Array.isArray(data.communities) && data.communities.length > 0 &&
-      (filter === 'communities' || filter === 'places' || filter === 'all')) {
-    hasResults = true;
-    renderCommunitiesSearchResults(data.communities, resultsContainer);
-  }
-
-  if (Array.isArray(data.places) && data.places.length > 0 &&
-      (filter === 'places' || filter === 'all')) {
-    hasResults = true;
-    renderPlacesSearchResults(data.places, resultsContainer);
-  }
-
-  if (Array.isArray(data.moments) && data.moments.length > 0 &&
-      (filter === 'moments' || filter === 'all')) {
-    hasResults = true;
-    renderMomentsSearchResults(data.moments, resultsContainer);
-  }
-
-  if (!hasResults) {
+  var totalResults = people.length + moments.length + places.length + communities.length;
+  if (totalResults === 0) {
     _searchShowView('empty');
     return;
   }
 
-  // Save to recent searches (fire-and-forget)
-  saveRecentSearch(query, filter);
+  var counts = {
+    'people': people.length,
+    'moments': moments.length,
+    'places': places.length,
+    'communities': communities.length
+  };
+
+  if (counts[category] > 0) {
+    selectSearchCategory(category);
+    _searchShowView(category);
+  } else {
+    var firstCategoryWithResults = ['people', 'moments', 'places', 'communities'].find(function(c) {
+      return counts[c] > 0;
+    }) || 'people';
+    selectSearchCategory(firstCategoryWithResults);
+    _searchShowView(firstCategoryWithResults);
+  }
+
+  saveRecentSearch(query, category);
 }
 window.performSearch = performSearch;
 
 // ── Result Renderers ──────────────────────────────────────────────────
-function _searchSectionHeader(label, count, container) {
-  var header = document.createElement('div');
-  header.className = 'flex items-center justify-between px-1 pt-2 pb-2';
-  header.innerHTML =
-    '<span class="text-[9px] text-zinc-500 font-mono-tag font-bold tracking-[0.2em] uppercase">' + label + '</span>' +
-    '<span class="text-[9px] text-zinc-700 font-mono-tag">' + count + '</span>';
-  container.appendChild(header);
-}
+function renderPeopleSearchResults(people) {
+  var list = document.getElementById('searchPeopleResultsList');
+  if (!list) return;
+  list.innerHTML = '';
 
-
-function renderPeopleSearchResults(people, container) {
-  var header = document.createElement('div');
-  header.className = 'px-1 pt-1 pb-2 flex justify-between items-center text-[9px] font-mono-tag text-zinc-500 font-bold uppercase tracking-widest';
-  header.innerHTML = '<span>PEOPLE & CREATORS (' + people.length + ')</span>';
-  container.appendChild(header);
-
-  var group = document.createElement('div');
-  group.className = 'space-y-2.5';
+  if (!people || people.length === 0) {
+    list.innerHTML = '<div class="py-8 text-center text-xs text-gray-500 font-mono-meta">NO PEOPLE FOUND</div>';
+    return;
+  }
 
   people.forEach(function(p) {
     var item = document.createElement('div');
-    item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-lg hover:border-amber-500/50 hover:bg-zinc-900/30 transition cursor-pointer active:scale-[0.99]';
+    item.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3.5 flex items-center justify-between select-none';
 
     var avatarSrc = p.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(p.handle || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
     var name = escapeHtml(p.name || 'Student');
     var handle = escapeHtml(p.handle || 'user');
     var campus = escapeHtml(p.campus || 'North City University');
 
+    var isConnected = Boolean(p.is_connected || (state.currentUser && state.currentUser.friends && state.currentUser.friends.includes(p.id)));
+
+    var buttonHtml = isConnected
+      ? '<span class="px-3 py-1.5 bg-neutral-900 border border-neutral-700 text-gray-300 rounded-full text-[10px] font-bold flex-shrink-0">CONNECTED</span>'
+      : '<button class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
+
     item.innerHTML =
-      '<div class="flex items-center gap-3">' +
-        '<div class="w-11 h-11 rounded-full bg-zinc-900 overflow-hidden border border-zinc-800 flex-shrink-0">' +
-          '<img src="' + avatarSrc + '" class="w-full h-full object-cover">' +
-        '</div>' +
-        '<div>' +
-          '<h4 class="text-xs font-bold text-white">' + name + '</h4>' +
-          '<p class="text-[10px] text-zinc-400 font-mono-tag">@' + handle + ' · ' + campus + '</p>' +
+      '<div class="flex items-center space-x-3.5 min-w-0 cursor-pointer user-profile-target">' +
+        '<img src="' + avatarSrc + '" alt="" class="w-11 h-11 rounded-full object-cover flex-shrink-0 border border-neutral-800">' +
+        '<div class="min-w-0">' +
+          '<h4 class="text-xs font-bold text-white truncate">' + name + '</h4>' +
+          '<p class="text-[10px] text-gray-400 font-mono-meta truncate">@' + handle + ' · ' + campus + '</p>' +
         '</div>' +
       '</div>' +
-      '<button class="px-3 py-1.5 bg-zinc-900 hover:bg-amber-500 hover:text-black text-amber-400 font-bold text-[9px] font-mono-tag rounded-xl border border-zinc-800 transition shadow-sm active:scale-95">VIEW PROFILE</button>';
+      buttonHtml;
 
-    item.querySelector('button').addEventListener('click', function(e) {
-      e.stopPropagation();
+    item.querySelector('.user-profile-target').addEventListener('click', function() {
       openUserProfile(p.id, p);
     });
 
-    item.addEventListener('click', function() {
-      openUserProfile(p.id, p);
-    });
-
-    group.appendChild(item);
-  });
-
-  container.appendChild(group);
-}
-
-// ── Campus Search Results ─────────────────────────────────────────────
-function renderCampusSearchResults(campuses, container) {
-  _searchSectionHeader('CAMPUSES', campuses.length, container);
-  var group = document.createElement('div');
-  group.className = 'space-y-2';
-
-  campuses.forEach(function(c) {
-    var item = document.createElement('div');
-    item.className = 'bg-zinc-950 border border-zinc-800/60 rounded-2xl p-3.5 flex items-center justify-between shadow-lg hover:border-amber-500/40 transition cursor-pointer active:scale-[0.99]';
-    var momCnt = c.moments_count || 0;
-    item.innerHTML =
-      '<div class="flex items-center gap-3">' +
-        '<div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-lg flex-shrink-0">🎓</div>' +
-        '<div>' +
-          '<h3 class="text-xs font-bold text-white tracking-wide">' + escapeHtml(c.name || 'Campus') + '</h3>' +
-          '<span class="text-[9px] text-zinc-500 font-mono-tag uppercase">' + escapeHtml((c.city || '') + (c.state ? ', ' + c.state : '')) + '</span>' +
-        '</div>' +
-      '</div>' +
-      '<div class="text-right flex-shrink-0">' +
-        '<div class="text-[9px] text-zinc-400 font-mono-tag font-bold bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-lg">' + momCnt + ' MOMENTS</div>' +
-      '</div>';
-    item.addEventListener('click', function() {
-      if (typeof openCampusPage === 'function') openCampusPage(c.name);
-    });
-    group.appendChild(item);
-  });
-
-  container.appendChild(group);
-}
-window.renderCampusSearchResults = renderCampusSearchResults;
-
-// ── Global Search ─────────────────────────────────────────────────────
-function openGlobalSearch() {
-  var scrollBody = document.getElementById('searchScrollBody');
-  if (scrollBody) {
-    state.searchScrollPos = scrollBody.scrollTop;
-  }
-  state.globalCursor = '';
-  state.globalMoments = [];
-  state.globalHasMore = false;
-  switchScreenView('search-global');
-  loadGlobalMoments(true);
-}
-window.openGlobalSearch = openGlobalSearch;
-
-function closeGlobalSearch() {
-  switchScreenView('search');
-  var scrollBody = document.getElementById('searchScrollBody');
-  if (scrollBody && typeof state.searchScrollPos === 'number') {
-    scrollBody.scrollTop = state.searchScrollPos;
-  }
-}
-window.closeGlobalSearch = closeGlobalSearch;
-
-async function loadGlobalMoments(reset) {
-  if (reset) {
-    state.globalCursor = '';
-    state.globalMoments = [];
-    var list = document.getElementById('globalMomentsList');
-    if (list) list.innerHTML = '<div class="text-center py-12 text-xs text-zinc-600 font-mono-tag animate-pulse">LOADING GLOBAL MOMENTS...</div>';
-    var loadMoreWrap = document.getElementById('globalLoadMoreWrap');
-    if (loadMoreWrap) loadMoreWrap.style.display = 'none';
-  }
-
-  var url = '/api/search/global';
-  if (state.globalCursor) url += '?cursor=' + encodeURIComponent(state.globalCursor);
-
-  var data = await apiRequest(url);
-
-  var list = document.getElementById('globalMomentsList');
-  var loadMoreWrap = document.getElementById('globalLoadMoreWrap');
-  var noMoreState = document.getElementById('globalNoMoreState');
-
-  if (!data || !data.success) {
-    if (list && state.globalMoments.length === 0) {
-      list.innerHTML = '<div class="text-center py-12 text-xs text-zinc-600 font-mono-tag">Could not load moments.<br>Check your connection.</div>';
+    var btn = item.querySelector('button');
+    if (btn) {
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        connectWithUser(p.id, btn);
+      });
     }
+
+    list.appendChild(item);
+  });
+}
+window.renderPeopleSearchResults = renderPeopleSearchResults;
+
+function renderMomentsSearchResults(moments) {
+  var grid = document.getElementById('searchMomentsResultsGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  if (!moments || moments.length === 0) {
+    grid.innerHTML = '<div class="col-span-2 py-8 text-center text-xs text-gray-500 font-mono-meta">NO MOMENTS FOUND</div>';
     return;
   }
 
-  var newMoments = data.moments || [];
-  state.globalHasMore = data.has_more;
-  if (data.next_cursor) state.globalCursor = data.next_cursor;
+  moments.forEach(function(m) {
+    var card = document.createElement('article');
+    card.className = 'relative h-[180px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer bg-neutral-900 select-none';
 
-  if (reset) {
-    state.globalMoments = newMoments;
-    if (list) list.innerHTML = '';
-    if (newMoments.length === 0) {
-      list.innerHTML = '<div class="text-center py-12 text-xs text-zinc-600 font-mono-tag">No global moments yet.<br>Be the first to share publicly!</div>';
-      return;
-    }
-  } else {
-    state.globalMoments = state.globalMoments.concat(newMoments);
-  }
+    var mainImg = m.main_img || m.mainImg || m.mediaUrl || '';
+    var campus = escapeHtml(m.campus || m.location_city || 'Campus');
+    var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || 'JUST NOW'));
 
-  if (list && newMoments.length > 0) {
-    if (reset) list.innerHTML = '';
-    newMoments.forEach(function(m) {
-      list.appendChild(renderGlobalMoment(m));
+    var imgHtml = mainImg
+      ? '<img src="' + escapeHtml(mainImg) + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="">'
+      : '<div class="w-full h-full flex items-center justify-center text-2xl text-neutral-700">📷</div>';
+
+    card.innerHTML =
+      imgHtml +
+      '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none"></div>' +
+      '<div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">' +
+        '<p class="text-[9px] font-mono-meta text-amber-400 font-bold">' + timeAgo + '</p>' +
+        '<p class="text-xs font-bold text-white truncate mt-0.5">' + campus + '</p>' +
+      '</div>';
+
+    card.addEventListener('click', function() {
+      if (typeof openMomentDetail === 'function') openMomentDetail(m);
     });
+
+    grid.appendChild(card);
+  });
+}
+window.renderMomentsSearchResults = renderMomentsSearchResults;
+
+function renderPlacesSearchResults(places) {
+  var list = document.getElementById('searchPlacesResultsList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!places || places.length === 0) {
+    list.innerHTML = '<div class="py-8 text-center text-xs text-gray-500 font-mono-meta">NO PLACES FOUND</div>';
+    return;
   }
 
-  if (loadMoreWrap) loadMoreWrap.style.display = state.globalHasMore ? 'block' : 'none';
-  if (noMoreState) noMoreState.style.display = (!state.globalHasMore && state.globalMoments.length > 0) ? 'block' : 'none';
-}
-window.loadGlobalMoments = loadGlobalMoments;
+  places.forEach(function(pl) {
+    var card = document.createElement('div');
+    card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-4 space-y-1 cursor-pointer hover:border-neutral-700 transition select-none';
+    var subtitle = pl.area ? (pl.area + ' · Active area') : 'Campus · Recent public Moments';
+    card.innerHTML =
+      '<h4 class="text-xs font-bold text-white">' + escapeHtml(pl.name) + '</h4>' +
+      '<p class="text-[11px] text-gray-400">' + escapeHtml(subtitle) + '</p>';
 
-function loadMoreGlobalMoments() {
-  loadGlobalMoments(false);
-}
-window.loadMoreGlobalMoments = loadMoreGlobalMoments;
+    card.addEventListener('click', function() {
+      if (typeof openCampusPage === 'function') openCampusPage(pl.name);
+    });
 
-function renderGlobalMoment(m) {
-  var card = document.createElement('article');
-  card.className = 'bg-zinc-950 border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl';
-
-  var mainImg = m.main_img || m.mainImg || '';
-  var pipImg  = m.pip_img  || m.pipImg  || '';
-  var author  = escapeHtml(m.author_handle || m.user_handle || 'user');
-  var campus  = escapeHtml((m.community_name || m.campus || 'GLOBAL').toUpperCase());
-  var caption = escapeHtml(m.caption || '');
-  var timeAgo = escapeHtml(m.timeAgo || 'JUST NOW');
-  var locCity = m.location_city ? escapeHtml(m.location_city) : '';
-
-  var mainImgHtml = mainImg
-    ? '<img src="' + escapeHtml(mainImg) + '" class="w-full h-full object-cover">'
-    : '<div class="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-700 font-mono-tag text-xs"><span class="text-xl mb-1">📷</span>MOMENT ARCHIVE</div>';
-
-  var pipImgHtml = pipImg
-    ? '<div class="absolute top-3 left-3 w-16 h-24 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
-        '<img src="' + escapeHtml(pipImg) + '" class="w-full h-full object-cover">' +
-      '</div>'
-    : '';
-
-  card.innerHTML =
-    '<div class="w-full aspect-[4/5] bg-black relative overflow-hidden group select-none cursor-pointer">' +
-      mainImgHtml +
-      pipImgHtml +
-      '<div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent px-3.5 py-3">' +
-        '<div class="flex items-end justify-between gap-2">' +
-          '<div class="min-w-0">' +
-            (caption ? '<p class="text-white text-xs font-medium leading-snug line-clamp-2 mb-1">' + caption + '</p>' : '') +
-            '<div class="flex items-center gap-1.5">' +
-              '<span class="text-amber-400 font-mono-tag text-[9px] font-bold">@' + author + '</span>' +
-              '<span class="text-zinc-500 font-mono-tag text-[9px]">·</span>' +
-              '<span class="text-zinc-400 font-mono-tag text-[9px] uppercase truncate">' + campus + '</span>' +
-              (locCity ? '<span class="text-zinc-600 font-mono-tag text-[8px]">· ' + locCity + '</span>' : '') +
-            '</div>' +
-          '</div>' +
-          '<span class="text-[9px] text-zinc-500 font-mono-tag flex-shrink-0">' + timeAgo + '</span>' +
-        '</div>' +
-      '</div>' +
-    '</div>';
-
-  card.addEventListener('click', function() {
-    if (typeof openMomentDetail === 'function') openMomentDetail(m);
+    list.appendChild(card);
   });
-
-  return card;
 }
+window.renderPlacesSearchResults = renderPlacesSearchResults;
+
+function renderCommunitiesSearchResults(communities) {
+  var list = document.getElementById('searchCommunitiesResultsList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!communities || communities.length === 0) {
+    list.innerHTML = '<div class="py-8 text-center text-xs text-gray-500 font-mono-meta">NO COMMUNITIES FOUND</div>';
+    return;
+  }
+
+  communities.forEach(function(c) {
+    var card = document.createElement('div');
+    card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-4 flex items-center justify-between select-none cursor-pointer hover:border-neutral-700 transition';
+    card.innerHTML =
+      '<div class="min-w-0 mr-3">' +
+        '<h4 class="text-xs font-bold text-white truncate">' + escapeHtml(c.name) + '</h4>' +
+        '<p class="text-[11px] text-gray-400 mt-0.5 truncate">' + escapeHtml(c.description || (c.city || 'Where visual storytellers meet.')) + '</p>' +
+      '</div>' +
+      '<button class="px-3.5 py-1.5 bg-neutral-900 border border-neutral-700 hover:border-neutral-500 text-white rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">VIEW</button>';
+
+    card.addEventListener('click', function() {
+      if (typeof openCampusPage === 'function') openCampusPage(c.name);
+    });
+
+    list.appendChild(card);
+  });
+}
+window.renderCommunitiesSearchResults = renderCommunitiesSearchResults;
 
 // =====================================================================
 // PUBLIC PEER PROFILE ENGINE
@@ -4551,148 +4565,6 @@ async function confirmDeleteAccount() {
   logoutUser();
 }
 window.confirmDeleteAccount = confirmDeleteAccount;
-
-function renderCommunitiesSearchResults(communities, container) {
-  var header = document.createElement('div');
-  header.className = 'px-1 pt-3 pb-2 flex justify-between items-center text-[9px] font-mono-tag text-zinc-500 font-bold uppercase tracking-widest';
-  header.innerHTML = '<span>COMMUNITIES (' + communities.length + ')</span>';
-  container.appendChild(header);
-
-  var group = document.createElement('div');
-  group.className = 'space-y-2';
-
-  communities.forEach(function(c) {
-    var item = document.createElement('div');
-    item.className = 'bg-zinc-950 border border-zinc-800/80 hover:border-amber-500/40 rounded-2xl p-3.5 flex justify-between items-center shadow-lg transition cursor-pointer active:scale-[0.99]';
-    var cType = (c.type || 'COMMUNITY').toUpperCase();
-    var cIcon = c.icon || (cType === 'CAMPUS' ? '🎓' : cType === 'PLACE' ? '📍' : '📸');
-    var isMember = Boolean(c.is_joined || (state.currentUser && ((state.currentUser.campus && state.currentUser.campus.toLowerCase() === c.name.toLowerCase()) || state.currentUser.campus === c.id)));
-    var actionBtnHtml = isMember
-      ? '<span class="text-[9px] text-zinc-400 font-mono-tag font-bold px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800">JOINED ✓</span>'
-      : '<span class="text-[9px] text-black font-mono-tag font-bold px-3 py-1 rounded-lg bg-amber-500 shadow-sm">+ JOIN</span>';
-
-    item.innerHTML =
-      '<div class="flex items-center gap-3 min-w-0">' +
-        '<div class="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-sm flex-shrink-0">' +
-          cIcon +
-        '</div>' +
-        '<div class="min-w-0">' +
-          '<h3 class="text-xs font-bold text-white truncate">◉ ' + escapeHtml(c.name) + '</h3>' +
-          '<span class="text-[9px] text-zinc-400 font-mono-tag uppercase">' + escapeHtml(cType) + ' · ' + (c.members_count || 1) + ' MEMBERS</span>' +
-        '</div>' +
-      '</div>' +
-      '<div class="flex items-center gap-2 flex-shrink-0">' +
-        actionBtnHtml +
-      '</div>';
-
-    item.addEventListener('click', function() {
-      if (typeof openCampusPage === 'function') {
-        openCampusPage(c.name);
-      }
-    });
-
-    group.appendChild(item);
-  });
-
-  container.appendChild(group);
-}
-window.renderCommunitiesSearchResults = renderCommunitiesSearchResults;
-
-function renderPlacesSearchResults(places, container) {
-  var header = document.createElement('div');
-  header.className = 'px-1 pt-3 pb-2 flex justify-between items-center text-[9px] font-mono-tag text-zinc-500 font-bold uppercase tracking-widest';
-  header.innerHTML = '<span>CAMPUS SECTORS (' + places.length + ')</span>';
-  container.appendChild(header);
-
-  var group = document.createElement('div');
-  group.className = 'space-y-2';
-
-  places.forEach(function(pl) {
-    var item = document.createElement('div');
-    item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex justify-between items-center shadow-lg hover:border-zinc-700 transition cursor-pointer active:scale-[0.99]';
-    item.innerHTML =
-      '<div class="flex items-center gap-3">' +
-        '<span class="text-[10px] text-amber-500 font-mono-tag font-bold">' + pl.number + '</span>' +
-        '<div>' +
-          '<h3 class="text-xs font-bold text-white">' + escapeHtml(pl.name) + '</h3>' +
-          '<span class="text-[9px] text-zinc-500 font-mono-tag">' + escapeHtml(pl.area || 'Location') + '</span>' +
-        '</div>' +
-      '</div>' +
-      '<span class="text-[10px] text-zinc-400 font-mono-tag font-bold bg-zinc-900 border border-zinc-800 px-2.5 py-1 rounded-lg">' + pl.momentsCount + ' MOMENTS</span>';
-
-    item.addEventListener('click', function() {
-      if (pl.is_community || pl.community_id) {
-        if (typeof openCampusPage === 'function') openCampusPage(pl.name);
-      } else {
-        filterBySector(pl.name);
-      }
-    });
-
-    group.appendChild(item);
-  });
-
-  container.appendChild(group);
-}
-
-function renderMomentsSearchResults(moments, container) {
-  var header = document.createElement('div');
-  header.className = 'px-1 pt-3 pb-2 flex justify-between items-center text-[9px] font-mono-tag text-zinc-500 font-bold uppercase tracking-widest';
-  header.innerHTML = '<span>MATCHING MOMENTS (' + moments.length + ')</span>';
-  container.appendChild(header);
-
-  var group = document.createElement('div');
-  group.className = 'space-y-4';
-
-  moments.forEach(function(m) {
-    var card = document.createElement('article');
-    card.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3 shadow-xl';
-
-    var mainImg = m.main_img || m.mainImg || '';
-    var pipImg = m.pip_img || m.pipImg || '';
-    var author = escapeHtml(m.author_handle || m.user_handle || 'user');
-    var rawComm = m.community_name || m.primary_community_name || m.campus || 'CAMPUS';
-    var cleanComm = rawComm.replace(/^Near\s+/i, '');
-    var campus = escapeHtml(cleanComm.toUpperCase());
-    var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || cleanComm;
-    var caption = escapeHtml(m.caption || 'Captured moment');
-    var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || 'JUST NOW'));
-
-    var mainImgHtml = mainImg
-      ? '<img src="' + escapeHtml(mainImg) + '" class="w-full h-full object-cover">'
-      : '<div class="w-full h-full flex flex-col items-center justify-center bg-zinc-900 text-zinc-700 font-mono-tag text-xs"><span class="text-xl mb-1">📷</span>MOMENT</div>';
-
-    var pipImgHtml = pipImg
-      ? '<div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
-          '<img src="' + escapeHtml(pipImg) + '" class="w-full h-full object-cover">' +
-        '</div>'
-      : '';
-
-    card.innerHTML =
-      '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none cursor-pointer">' +
-        mainImgHtml +
-        pipImgHtml +
-      '</div>' +
-      '<div class="space-y-1 px-0.5">' +
-        '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag flex-wrap gap-1">' +
-          '<div class="flex items-center gap-1.5">' +
-            '<span class="font-bold text-white">@' + author + '</span>' +
-            '<span>·</span>' +
-            (commTarget
-              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="text-amber-400 hover:text-amber-300 font-bold hover:underline cursor-pointer">◉ ' + campus + '</button>'
-              : '<span>' + campus + '</span>') +
-          '</div>' +
-          '<span class="moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' + timeAgo + '</span>' +
-        '</div>' +
-        '<p class="text-xs text-zinc-200">"' + caption + '"</p>' +
-      '</div>';
-
-    group.appendChild(card);
-  });
-
-  container.appendChild(group);
-  updateAllMomentTimestamps();
-}
-
 
 // YOU / PROFILE & PERSONAL ARCHIVE MODULE
 // =====================================================================
