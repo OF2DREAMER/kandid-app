@@ -6390,6 +6390,29 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(400, {'error': 'target_id required'})
             conn = get_db()
             cursor = conn.cursor()
+
+            # Check bidirectional block
+            cursor.execute("""
+                SELECT 1 FROM blocks
+                WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+            """, (user['id'], target_id, target_id, user['id']))
+            if cursor.fetchone():
+                conn.close()
+                return self.send_json(200, {'success': True, 'shared_communities': [], 'mutual_connections': []})
+
+            # Privacy gate: if target profile is private and viewer is not connected
+            cursor.execute("SELECT profile_visibility FROM users WHERE id = ?", (target_id,))
+            t_row = cursor.fetchone()
+            if t_row and str(t_row['profile_visibility'] or 'public').strip().lower() == 'private' and user['id'] != target_id:
+                cursor.execute("""
+                    SELECT 1 FROM friendships
+                    WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
+                      AND status IN ('connected', 'accepted')
+                """, (user['id'], target_id, target_id, user['id']))
+                if not cursor.fetchone():
+                    conn.close()
+                    return self.send_json(200, {'success': True, 'shared_communities': [], 'mutual_connections': []})
+
             # Shared communities: both users are members
             try:
                 cursor.execute("""
@@ -6474,9 +6497,19 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         pass
                 target_user["is_online"] = is_online
 
-                # Check friendship status between current_user and target_user
+                # Check bidirectional block between current_user and target_user
                 current_user = get_current_user(self.headers)
                 curr_id = current_user["id"] if current_user else None
+                if curr_id and curr_id != target_user["id"]:
+                    cursor.execute("""
+                        SELECT 1 FROM blocks
+                        WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+                    """, (curr_id, target_user["id"], target_user["id"], curr_id))
+                    if cursor.fetchone():
+                        conn.close()
+                        return self.send_json(404, {"error": "User not found", "success": False})
+
+                # Check friendship status between current_user and target_user
                 connection_status = "none"
                 if curr_id and curr_id != target_user["id"]:
                     cursor.execute("""
@@ -6514,9 +6547,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                             'avatar_letter': target_user.get('avatar_letter', 'K'),
                             'cover_url': target_user.get('cover_url', ''),
                             'profile_visibility': 'private',
-                            'is_online': target_user.get('is_online', False),
-                            'campus': target_user.get('campus', ''),
-                            'location_city': target_user.get('location_city', ''),
+                            'is_online': False,
+                            'campus': '',
+                            'location_city': '',
                         },
                         'connection_status': connection_status,
                         'moments': [],
@@ -10566,6 +10599,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             avatar_url = body.get("avatar_url") or body.get("avatar") or ""
             if avatar_url and avatar_url.startswith("data:image"):
                 avatar_url = save_base64_image(avatar_url, "avatar")
+            cover_url = body.get("cover_url") or body.get("cover") or ""
+            if cover_url and cover_url.startswith("data:image"):
+                cover_url = save_base64_image(cover_url, "cover")
 
             conn = get_db()
             cursor = conn.cursor()
@@ -10586,6 +10622,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if location_city is not None: conn.execute("UPDATE users SET location_city = ? WHERE id = ?", (location_city, user_id))
             if vibe is not None: conn.execute("UPDATE users SET vibe = ? WHERE id = ?", (vibe, user_id))
             if avatar_url: conn.execute("UPDATE users SET avatar_url = ? WHERE id = ?", (avatar_url, user_id))
+            if cover_url: conn.execute("UPDATE users SET cover_url = ? WHERE id = ?", (cover_url, user_id))
             conn.commit()
 
             cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -10594,6 +10631,27 @@ class KandidHandler(SimpleHTTPRequestHandler):
             updated.pop("salt", None)
             conn.close()
             return self.send_json(200, {"success": True, "user": updated})
+
+        if path in ["/api/user/photo", "/api/user/avatar"]:
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthenticated", "success": False})
+            user_id = user["id"]
+            avatar_url = body.get("photo") or body.get("avatar_url") or body.get("avatar") or ""
+            if not avatar_url:
+                return self.send_json(400, {"error": "photo required", "success": False})
+            if avatar_url.startswith("data:image"):
+                avatar_url = save_base64_image(avatar_url, "avatar")
+            conn = get_db()
+            conn.execute("UPDATE users SET avatar_url = ? WHERE id = ?", (avatar_url, user_id))
+            conn.commit()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            updated = dict(cursor.fetchone())
+            updated.pop("password_hash", None)
+            updated.pop("salt", None)
+            conn.close()
+            return self.send_json(200, {"success": True, "avatar_url": avatar_url, "user": updated})
 
         if path == "/api/user/privacy":
             user = get_current_user(self.headers)

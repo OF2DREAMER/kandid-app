@@ -815,26 +815,9 @@
         <main class="overflow-y-auto flex-grow no-scrollbar relative" role="region" aria-label="User Profile">
 
             <!-- Profile Cover Banner Header -->
-            <div class="relative w-full h-[120px] bg-neutral-900 overflow-hidden" role="img" aria-label="Profile cover window into the world">
-                <img src="https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=600&q=80" id="youCoverImg" alt="" class="w-full h-full object-cover opacity-70">
+            <div class="relative w-full h-[120px] bg-gradient-to-br from-neutral-900 via-[#18181b] to-neutral-950 overflow-hidden" role="img" aria-label="Profile cover window into the world">
+                <img src="" id="youCoverImg" alt="" class="w-full h-full object-cover opacity-70" style="display:none;">
                 <div class="absolute inset-0 bg-gradient-to-t from-[#0b0b0c] via-transparent to-black/30"></div>
-
-                <!-- Top App Brand & Icons Header Overlay -->
-                <header class="absolute top-2.5 left-4 right-4 flex justify-between items-center z-10 text-white">
-                    <div class="flex items-center space-x-2">
-                        <div class="bg-[#f59e0b] text-black font-bold text-xs px-2 py-0.5 rounded-[6px] tracking-wider" aria-hidden="true">K</div>
-                        <span class="font-bold tracking-[0.25em] text-xs text-gray-100">KANDID</span>
-                    </div>
-                    <div class="flex items-center space-x-4 text-gray-300 text-lg">
-                        <button type="button" onclick="openSettings()" aria-label="Settings" class="hover:text-amber-400 transition cursor-pointer">
-                            <i class="fa-solid fa-gear text-[18px]"></i>
-                        </button>
-                        <button type="button" onclick="switchScreenView('notifications')" aria-label="Notifications" class="relative hover:text-amber-400 transition cursor-pointer">
-                            <i class="fa-solid fa-bell text-[18px]"></i>
-                            <span class="absolute top-0 right-0 w-2 h-2 bg-amber-500 rounded-full ring-2 ring-[#0b0b0c]" id="youNotifDot" aria-hidden="true"></span>
-                        </button>
-                    </div>
-                </header>
             </div>
 
             <!-- Profile Identity Section -->
@@ -848,7 +831,8 @@
                                     <img src="" id="youProfileAvatar" alt="Profile picture" class="w-full h-full object-cover rounded-full" style="display:none;">
                                 </div>
                             </div>
-                            <button type="button" onclick="openEditProfileModal()" aria-label="Change profile photo" class="absolute bottom-0 right-0 bg-[#18181b] border border-neutral-700 text-white p-1.5 rounded-full text-[9px] hover:bg-neutral-800 shadow transition cursor-pointer">
+                            <input type="file" id="youDirectAvatarInput" accept="image/*" class="hidden" onchange="handleDirectAvatarUpload(event)">
+                            <button type="button" onclick="triggerDirectAvatarUpload()" aria-label="Change profile photo" class="absolute bottom-0 right-0 bg-[#18181b] border border-neutral-700 text-white p-1.5 rounded-full text-[9px] hover:bg-neutral-800 shadow transition cursor-pointer">
                                 <i class="fa-solid fa-camera" aria-hidden="true"></i>
                             </button>
                         </div>
@@ -858,10 +842,13 @@
                         </div>
                     </div>
 
-                    <!-- Compact Edit Profile Icon Button -->
-                    <div class="pt-6">
+                    <!-- Profile Controls (Settings & Edit Profile) -->
+                    <div class="pt-6 flex items-center space-x-1.5 flex-shrink-0">
                         <button type="button" onclick="openEditProfileModal()" aria-label="Edit Profile" class="w-8 h-8 bg-transparent border border-neutral-700 hover:border-amber-500/60 rounded-full text-xs text-gray-200 transition flex items-center justify-center cursor-pointer">
                             <i class="fa-solid fa-pen text-[10px]" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" onclick="openSettings()" aria-label="Settings" class="w-8 h-8 bg-transparent border border-neutral-700 hover:border-amber-500/60 rounded-full text-xs text-gray-200 transition flex items-center justify-center cursor-pointer">
+                            <i class="fa-solid fa-gear text-[11px]" aria-hidden="true"></i>
                         </button>
                     </div>
                 </div>
@@ -887,7 +874,7 @@
             <!-- Your Journal Section -->
             <section class="px-5 mt-5" aria-labelledby="journal-heading">
                 <div class="bg-[#121215] border border-neutral-800/80 rounded-[20px] p-4 relative overflow-hidden shadow-xl" id="youJournalCard">
-                    <div class="absolute inset-0 bg-cover bg-center opacity-25 pointer-events-none" style="background-image: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=600&q=80');" aria-hidden="true"></div>
+                    <div class="absolute inset-0 bg-cover bg-center opacity-25 pointer-events-none" id="youJournalCardBg" aria-hidden="true"></div>
                     <div class="absolute inset-0 bg-gradient-to-t from-[#121215] via-[#121215]/60 to-transparent pointer-events-none" aria-hidden="true"></div>
                     
                     <div class="relative z-10">
@@ -895,15 +882,9 @@
                         <h2 class="text-[19px] font-bold text-white mt-1 leading-snug tracking-tight">A record of the life you've lived.</h2>
                         <p class="text-[11px] text-gray-300 mt-1 leading-relaxed">Your moments, people and places — kept as they happened.</p>
 
-                        <!-- Journal Image Previews -->
+                        <!-- Journal Image Previews (Rendered Dynamically via loadYouScreen) -->
                         <div class="flex space-x-2 mt-4 overflow-x-auto no-scrollbar pb-1" role="list" aria-label="Journal moment previews" id="youJournalThumbnailsStrip">
-                            <div role="listitem"><img src="https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=150&q=80" class="w-[60px] h-[72px] object-cover rounded-[10px] border border-neutral-700/60 flex-shrink-0" alt="Journal moment preview"></div>
-                            <div role="listitem"><img src="https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=150&q=80" class="w-[60px] h-[72px] object-cover rounded-[10px] border border-neutral-700/60 flex-shrink-0" alt="Journal moment preview"></div>
-                            <div role="listitem"><img src="https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&w=150&q=80" class="w-[60px] h-[72px] object-cover rounded-[10px] border border-neutral-700/60 flex-shrink-0" alt="Journal moment preview"></div>
-                            <div role="listitem"><img src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=150&q=80" class="w-[60px] h-[72px] object-cover rounded-[10px] border border-neutral-700/60 flex-shrink-0" alt="Journal moment preview"></div>
-                            <div role="listitem" class="w-[60px] h-[72px] bg-neutral-900 border border-neutral-700/60 rounded-[10px] flex items-center justify-center text-xs font-bold text-gray-300 flex-shrink-0" id="youJournalCountText" aria-label="18 more moments">
-                                +18
-                            </div>
+                            <!-- Dynamic -->
                         </div>
 
                         <!-- Open Journal Action -->
@@ -935,14 +916,14 @@
                 
                 <div class="space-y-2.5">
                     <!-- People Card -->
-                    <div onclick="switchScreenView('chat-home'); startNewChatFromConnections();" class="bg-[#121215] border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition">
+                    <div onclick="switchScreenView('chat-home'); if(typeof startNewChatFromConnections==='function')startNewChatFromConnections();" class="bg-[#121215] border border-neutral-800/80 hover:border-neutral-700 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition">
                         <div class="flex items-center space-x-3.5">
                             <div class="w-8 h-8 rounded-full bg-neutral-800/90 flex items-center justify-center text-gray-300 text-xs" aria-hidden="true">
                                 <i class="fa-solid fa-user-group"></i>
                             </div>
                             <div>
                                 <h4 class="text-[11px] font-bold text-white tracking-wide">PEOPLE</h4>
-                                <p class="text-[10px] text-gray-400 mt-0.5">People who matter.</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5" id="youWorldPeopleDesc">People who matter.</p>
                             </div>
                         </div>
                         <i class="fa-solid fa-chevron-right text-[10px] text-gray-500" aria-hidden="true"></i>
@@ -956,7 +937,7 @@
                             </div>
                             <div>
                                 <h4 class="text-[11px] font-bold text-white tracking-wide">COMMUNITIES</h4>
-                                <p class="text-[10px] text-gray-400 mt-0.5">Where you belong.</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5" id="youWorldCommunitiesDesc">Where you belong.</p>
                             </div>
                         </div>
                         <i class="fa-solid fa-chevron-right text-[10px] text-gray-500" aria-hidden="true"></i>
@@ -970,7 +951,7 @@
                             </div>
                             <div>
                                 <h4 class="text-[11px] font-bold text-white tracking-wide">PLACES</h4>
-                                <p class="text-[10px] text-gray-400 mt-0.5">Where life happened.</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5" id="youWorldPlacesDesc">Where life happened.</p>
                             </div>
                         </div>
                         <i class="fa-solid fa-chevron-right text-[10px] text-gray-500" aria-hidden="true"></i>
@@ -999,18 +980,44 @@
       <section class="app-screen bg-[#0b0b0c] text-white flex flex-col p-0 pb-28" id="screen-peer-profile" style="display:none;">
 
         <!-- ─────────────────────────────────────────────────────────────
+             0. LOADING SKELETON STATE
+             ───────────────────────────────────────────────────────────── -->
+        <div id="peerProfileLoading" class="w-full flex-1 flex flex-col items-center justify-center p-6 space-y-4" style="display:none;">
+            <div class="w-20 h-20 rounded-full bg-neutral-900 border border-neutral-800 animate-pulse"></div>
+            <div class="h-4 w-32 bg-neutral-900 rounded-md animate-pulse"></div>
+            <div class="h-3 w-20 bg-neutral-900 rounded-md animate-pulse"></div>
+            <div class="w-full max-w-xs h-24 bg-neutral-900/60 rounded-2xl animate-pulse mt-4"></div>
+        </div>
+
+        <!-- ─────────────────────────────────────────────────────────────
+             0. ERROR STATE
+             ───────────────────────────────────────────────────────────── -->
+        <div id="peerProfileError" class="w-full flex-1 flex flex-col items-center justify-center p-6 text-center space-y-3" style="display:none;">
+            <div class="w-12 h-12 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-amber-500 mb-1">
+                <i class="fa-solid fa-user-xmark text-lg"></i>
+            </div>
+            <h3 class="text-sm font-bold text-white tracking-tight">COULDN'T LOAD PROFILE</h3>
+            <p class="text-xs text-neutral-400 max-w-[220px]">This profile isn't available or could not be loaded right now.</p>
+            <div class="pt-2">
+                <button type="button" onclick="retryLoadPeerProfile()" class="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-amber-400 font-bold text-xs rounded-full transition cursor-pointer">
+                    TRY AGAIN
+                </button>
+            </div>
+        </div>
+
+        <!-- ─────────────────────────────────────────────────────────────
              1. PUBLIC OTHER USER PROFILE (Approved Design)
              ───────────────────────────────────────────────────────────── -->
         <div id="peerPublicView" class="w-full flex-1 flex flex-col overflow-y-auto no-scrollbar relative">
 
             <!-- Profile Cover Banner -->
-            <div class="relative w-full h-[120px] bg-neutral-900 overflow-hidden" role="img" aria-label="Cinematic cover representing personal world">
-                <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80" id="peerPublicCoverImg" alt="" class="w-full h-full object-cover opacity-70">
+            <div class="relative w-full h-[120px] bg-gradient-to-br from-neutral-900 via-[#18181b] to-neutral-950 overflow-hidden" role="img" aria-label="Cinematic cover representing personal world">
+                <img src="" id="peerPublicCoverImg" alt="" class="w-full h-full object-cover opacity-70" style="display:none;">
                 <div class="absolute inset-0 bg-gradient-to-t from-[#0b0b0c] via-transparent to-black/30" aria-hidden="true"></div>
 
                 <!-- Top Navigation -->
                 <div class="absolute top-2.5 left-4 right-4 flex justify-between items-center z-10 text-white">
-                    <button type="button" onclick="window.KandidRouter?.back ? window.KandidRouter.back() : history.back();" aria-label="Back" class="hover:text-amber-400 transition p-1 cursor-pointer">
+                    <button type="button" onclick="closePeerProfile()" aria-label="Back" class="hover:text-amber-400 transition p-1 cursor-pointer">
                         <i class="fa-solid fa-arrow-left text-base" aria-hidden="true"></i>
                     </button>
                     <button type="button" onclick="openProfileActionsMenu()" aria-label="Profile actions menu" class="hover:text-amber-400 transition p-1 cursor-pointer">
@@ -1025,12 +1032,12 @@
                     <div class="flex items-center space-x-3.5 min-w-0 flex-1 mr-2">
                         <div class="relative flex-shrink-0">
                             <div class="w-[82px] h-[82px] rounded-full p-[2.5px] bg-gradient-to-tr from-amber-600 via-amber-500 to-amber-300 shadow-lg shadow-amber-500/10">
-                                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&h=300&q=80" id="peerPublicAvatar" alt="Karan Kumar profile picture" class="w-full h-full object-cover rounded-full border-2 border-[#0b0b0c]">
+                                <img src="" id="peerPublicAvatar" alt="Profile picture" class="w-full h-full object-cover rounded-full border-2 border-[#0b0b0c]" style="display:none;">
                             </div>
                         </div>
                         <div class="pt-6 min-w-0">
-                            <h1 class="font-bold text-[19px] text-white tracking-tight leading-tight truncate" id="peerPublicName">Karan Kumar</h1>
-                            <p class="text-[11px] text-gray-400 font-medium mt-0.5 truncate" id="peerPublicUsername">@karan</p>
+                            <h1 class="font-bold text-[19px] text-white tracking-tight leading-tight truncate" id="peerPublicName">User</h1>
+                            <p class="text-[11px] text-gray-400 font-medium mt-0.5 truncate" id="peerPublicUsername">@user</p>
                         </div>
                     </div>
                     
@@ -1051,11 +1058,11 @@
                 <div class="flex flex-col text-[11px] text-gray-300 mt-2.5 space-y-1" id="peerPublicLocationRow" aria-label="Contextual location">
                     <div class="flex items-center space-x-1.5" id="peerPublicCampusRow">
                         <i class="fa-solid fa-graduation-cap text-gray-400 text-[10px]" aria-hidden="true"></i>
-                        <span id="peerPublicCampus">Guru Kashi University</span>
+                        <span id="peerPublicCampus"></span>
                     </div>
                     <div class="flex items-center space-x-1.5" id="peerPublicCityRow">
                         <i class="fa-solid fa-location-dot text-gray-400 text-[10px]" aria-hidden="true"></i>
-                        <span id="peerPublicCity">Supaul</span>
+                        <span id="peerPublicCity"></span>
                     </div>
                 </div>
 
@@ -1123,13 +1130,13 @@
         <div id="peerPrivateView" class="w-full flex-1 flex flex-col justify-between overflow-y-auto no-scrollbar relative" style="display:none;">
             <div>
                 <!-- Profile Cover Banner -->
-                <div class="relative w-full h-[190px] bg-neutral-900 overflow-hidden flex-shrink-0" role="img" aria-label="Cinematic profile cover">
-                    <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80" id="peerPrivateCoverImg" alt="" class="w-full h-full object-cover opacity-60">
+                <div class="relative w-full h-[190px] bg-gradient-to-br from-neutral-900 via-[#18181b] to-neutral-950 overflow-hidden flex-shrink-0" role="img" aria-label="Cinematic profile cover">
+                    <img src="" id="peerPrivateCoverImg" alt="" class="w-full h-full object-cover opacity-60" style="display:none;">
                     <div class="absolute inset-0 bg-gradient-to-t from-[#0b0b0c] via-[#0b0b0c]/40 to-black/50" aria-hidden="true"></div>
 
                     <!-- Top Navigation -->
                     <div class="absolute top-3 left-4 right-4 flex justify-between items-center z-10 text-white">
-                        <button type="button" onclick="window.KandidRouter?.back ? window.KandidRouter.back() : history.back()" aria-label="Back" class="hover:text-amber-400 transition p-1 cursor-pointer">
+                        <button type="button" onclick="closePeerProfile()" aria-label="Back" class="hover:text-amber-400 transition p-1 cursor-pointer">
                             <i class="fa-solid fa-arrow-left text-lg" aria-hidden="true"></i>
                         </button>
                         <button type="button" onclick="openProfileActionsMenu()" aria-label="Profile actions menu" class="hover:text-amber-400 transition p-1 cursor-pointer">
@@ -1142,14 +1149,14 @@
                 <section class="px-5 -mt-12 relative z-25 flex-shrink-0 text-center flex flex-col items-center">
                     <div class="relative inline-block">
                         <div class="w-[96px] h-[96px] rounded-full p-[3px] bg-gradient-to-tr from-amber-600 via-amber-500 to-amber-300 shadow-xl shadow-amber-500/10">
-                            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&h=300&q=80" id="peerPrivateAvatar" alt="Karan Kumar profile picture" class="w-full h-full object-cover rounded-full border-2 border-[#0b0b0c]">
+                            <img src="" id="peerPrivateAvatar" alt="Profile picture" class="w-full h-full object-cover rounded-full border-2 border-[#0b0b0c]" style="display:none;">
                         </div>
                     </div>
 
                     <!-- Name & Username -->
                     <div class="mt-3.5">
-                        <h1 class="font-bold text-[22px] text-white tracking-tight leading-tight" id="peerPrivateName">Karan Kumar</h1>
-                        <p class="text-xs text-gray-400 font-medium mt-0.5" id="peerPrivateUsername">@karan</p>
+                        <h1 class="font-bold text-[22px] text-white tracking-tight leading-tight" id="peerPrivateName">User</h1>
+                        <p class="text-xs text-gray-400 font-medium mt-0.5" id="peerPrivateUsername">@user</p>
                     </div>
 
                     <!-- Bio Section -->
@@ -4758,6 +4765,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.29"></script>
+  <script src="app.js?v=5.3.1"></script>
 </body>
 </html>
