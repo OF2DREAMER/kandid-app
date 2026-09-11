@@ -822,7 +822,7 @@ function switchScreenView(screenName) {
       if (headerBlockConfirm) headerBlockConfirm.style.display = "flex";
       statusText = "BLOCKED";
     } else if (screenName === "chat-home") {
-      if (headerChatHome) headerChatHome.style.display = "flex";
+      if (headerChatHome) headerChatHome.style.display = "none";
       statusText = "CHAT HOME";
     } else if (screenName === "chat-new") {
       if (headerChatNew) headerChatNew.style.display = "flex";
@@ -7768,14 +7768,58 @@ function isUserOnline(lastActive) {
 }
 window.isUserOnline = isUserOnline;
 
+// Local cache of fetched conversations and connections
+var cachedChatConversations = [];
+var cachedChatConnections = [];
+var chatHomeCurrentState = 'populated'; // 'populated', 'empty', 'newmsg'
+
+function formatChatTime(isoString) {
+  if (!isoString) return '';
+  var d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  var now = new Date();
+  var diffSec = Math.floor((now - d) / 1000);
+  if (diffSec < 60) return 'Just now';
+  var diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return diffMin + 'm';
+  var diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return diffHr + 'h';
+  var diffDays = Math.floor(diffHr / 24);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return diffDays + 'd';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function setChatHomeState(targetState) {
+  var populated = document.getElementById('state-populated');
+  var empty = document.getElementById('state-empty');
+  var newmsg = document.getElementById('state-newmsg');
+
+  if (populated) populated.classList.add('hidden');
+  if (empty) empty.classList.add('hidden');
+  if (newmsg) newmsg.classList.add('hidden');
+
+  chatHomeCurrentState = targetState;
+
+  if (targetState === 'populated' && populated) {
+    populated.classList.remove('hidden');
+  } else if (targetState === 'empty' && empty) {
+    empty.classList.remove('hidden');
+  } else if (targetState === 'newmsg' && newmsg) {
+    newmsg.classList.remove('hidden');
+  }
+}
+window.setChatHomeState = setChatHomeState;
+
 async function checkChatUnreadBadge() {
   if (!state.currentUser) return;
   try {
     var data = await apiRequest('/api/chat/unread-count');
     var badge = document.getElementById('chatUnreadBadge');
+    var count = (data && data.success) ? (data.count || 0) : 0;
     if (badge) {
-      if (data && data.success && data.count > 0) {
-        badge.textContent = data.count > 99 ? '99+' : data.count;
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
         badge.classList.remove('hidden');
         badge.style.display = 'flex';
       } else {
@@ -7783,83 +7827,292 @@ async function checkChatUnreadBadge() {
         badge.style.display = 'none';
       }
     }
+    // Also update chat header notification dot if unread notifications exist
+    var chatNotifDot = document.getElementById('chatNotifDot');
+    if (chatNotifDot) {
+      var notifData = await apiRequest('/api/notifications?unread=1');
+      if (notifData && notifData.unread_count > 0) {
+        chatNotifDot.classList.remove('hidden');
+      } else {
+        chatNotifDot.classList.add('hidden');
+      }
+    }
   } catch(e){}
 }
 window.checkChatUnreadBadge = checkChatUnreadBadge;
 
 async function loadChatConversations(isSilent = false) {
-  var container = document.getElementById('chatHomeList');
-  if (!container) return;
+  var listContainer = document.getElementById('chatConversationsList');
+  if (!listContainer) return;
 
-  if (!isSilent) {
-      container.innerHTML = '<div class="text-center py-6 text-xs text-zinc-500 font-mono-tag animate-pulse">SYNCING PEERS & CHATS...</div>';
+  if (!isSilent && cachedChatConversations.length === 0) {
+    listContainer.innerHTML = '<div class="text-center py-8 text-xs text-zinc-500 font-mono-meta animate-pulse">Syncing conversations...</div>';
   }
 
   var data = await apiRequest('/api/chat/conversations');
   if (data && data.success && Array.isArray(data.conversations)) {
     var convos = data.conversations;
-    
-    var newDataStr = JSON.stringify(convos);
-    if (isSilent && container.dataset.lastData === newDataStr) {
-        return; // No changes, skip DOM rebuild
+    cachedChatConversations = convos;
+
+    var searchInput = document.getElementById('chatSearchInput');
+    var query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+    if (chatHomeCurrentState !== 'newmsg') {
+      if (convos.length === 0 && !query) {
+        setChatHomeState('empty');
+      } else {
+        setChatHomeState('populated');
+        renderChatConversations(convos, query);
+      }
     }
-    container.dataset.lastData = newDataStr;
-    container.innerHTML = '';
-
-    if (convos.length === 0) {
-      container.innerHTML = 
-        '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-8 text-center space-y-3">' +
-          '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-lg">💬</div>' +
-          '<h3 class="text-xs font-bold text-white uppercase font-mono-tag">NO CHATS YET</h3>' +
-          '<p class="text-[11px] text-zinc-400">Connect with people in your community to start a conversation!</p>' +
-          '<button class="mt-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl font-mono-tag uppercase cursor-pointer" onclick="switchChatSubTab(\'friends\')">👥 VIEW CONNECTED FRIENDS</button>' +
-        '</div>';
-      return;
-    }
-
-    convos.forEach(function(c) {
-      var item = document.createElement('div');
-      var hasUnread = (c.unreadCount && c.unreadCount > 0);
-      item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-md cursor-pointer hover:bg-zinc-900/50 transition-all ' + (hasUnread ? 'border-amber-500/40 bg-zinc-950/90' : '');
-
-      var avatarSrc = c.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(c.handle || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
-      var name = escapeHtml(c.name || 'Classmate');
-      var handle = escapeHtml(c.handle || 'user');
-      var campus = escapeHtml(c.campus || 'North City University');
-      var lastMsg = escapeHtml(c.lastMessage || 'Tap to start conversation');
-
-      var isOnline = c.is_online || isUserOnline(c.last_active);
-      var statusBadge = isOnline ? 
-        '<span class="text-[9px] text-amber-500 font-bold font-mono-tag flex-shrink-0 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>ACTIVE</span>' : 
-        '<span class="text-[9px] text-zinc-600 font-mono-tag flex-shrink-0">OFFLINE</span>';
-
-      var unreadPill = hasUnread ?
-        '<span class="min-w-[18px] h-[18px] px-1 bg-amber-500 text-black text-[9px] font-black font-mono-tag rounded-full flex items-center justify-center shadow-md flex-shrink-0 ml-2">' + c.unreadCount + '</span>' : '';
-
-      item.innerHTML = 
-        '<div class="flex items-center gap-3.5 flex-1 min-w-0">' +
-          '<div class="w-12 h-12 rounded-full bg-zinc-900 overflow-hidden border border-zinc-800 flex-shrink-0 relative">' +
-            '<img src="' + avatarSrc + '" class="w-full h-full object-cover">' +
-            (isOnline ? '<div class="absolute bottom-0 right-0 w-3 h-3 bg-amber-500 border-2 border-zinc-950 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"></div>' : '') +
-          '</div>' +
-          '<div class="flex-1 min-w-0">' +
-            '<div class="flex justify-between items-baseline mb-0.5">' +
-              '<h3 class="text-xs font-bold text-white truncate ' + (hasUnread ? 'text-amber-400' : '') + '">' + name + '</h3>' +
-              '<div class="flex items-center gap-1.5">' + statusBadge + unreadPill + '</div>' +
-            '</div>' +
-            '<p class="text-[11px] ' + (hasUnread ? 'text-zinc-100 font-medium' : 'text-zinc-400') + ' truncate">' + lastMsg + '</p>' +
-          '</div>' +
-        '</div>';
-
-      item.addEventListener('click', function() {
-        openChatThread(c.id, name, '@' + handle, avatarSrc, isOnline);
-      });
-
-      container.appendChild(item);
-    });
   }
 }
 window.loadChatConversations = loadChatConversations;
+
+function renderChatConversations(convos, filterQuery = '') {
+  var listContainer = document.getElementById('chatConversationsList');
+  if (!listContainer) return;
+
+  var filtered = convos;
+  if (filterQuery) {
+    filtered = convos.filter(function(c) {
+      var name = ((c.participant && c.participant.name) || c.name || '').toLowerCase();
+      var handle = ((c.participant && c.participant.handle) || c.handle || '').toLowerCase();
+      var campus = ((c.participant && c.participant.campus) || c.campus || '').toLowerCase();
+      var lastMsg = ((c.last_message && c.last_message.preview) || c.lastMessage || '').toLowerCase();
+      return name.includes(filterQuery) || handle.includes(filterQuery) || campus.includes(filterQuery) || lastMsg.includes(filterQuery);
+    });
+  }
+
+  listContainer.innerHTML = '';
+
+  if (filtered.length === 0) {
+    if (filterQuery) {
+      listContainer.innerHTML = '<div class="text-center py-10 text-xs text-gray-500 font-mono-meta">No conversations found matching "' + escapeHtml(filterQuery) + '"</div>';
+    } else {
+      setChatHomeState('empty');
+    }
+    return;
+  }
+
+  filtered.forEach(function(c) {
+    var p = c.participant || {};
+    var partnerId = p.id || c.id;
+    var name = escapeHtml(p.name || c.name || 'Student');
+    var handle = escapeHtml(p.handle || c.handle || 'user');
+    var campus = escapeHtml(p.campus || c.campus || '');
+    var isOnline = (p.is_online !== undefined) ? p.is_online : (c.is_online || false);
+
+    var avatarSrc = p.avatar_url || c.avatar_url;
+    if (!avatarSrc || avatarSrc.includes('unsplash.com')) {
+      avatarSrc = 'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(handle || name || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b';
+    }
+
+    var lastMsgObj = c.last_message || {};
+    var lastMsgText = escapeHtml(lastMsgObj.preview || c.lastMessage || 'Tap to chat');
+    var isMoment = lastMsgObj.type === 'moment' || lastMsgObj.moment_id || lastMsgText.includes('Shared a Moment');
+    var timeFormatted = formatChatTime(lastMsgObj.created_at || c.lastTimestamp || '');
+
+    var unreadCnt = (c.unread_count !== undefined) ? c.unread_count : (c.unreadCount || 0);
+    var hasUnread = (c.unread === true) || (unreadCnt > 0);
+
+    var article = document.createElement('article');
+    article.className = 'py-3.5 flex items-center justify-between group cursor-pointer hover:bg-neutral-900/30 px-2 -mx-2 rounded-xl transition';
+
+    var messagePreviewHtml = '';
+    if (isMoment) {
+      messagePreviewHtml = 
+        '<div class="text-[11px] text-gray-300 truncate mt-0.5 flex items-center space-x-1.5">' +
+          '<span class="inline-block w-3.5 h-3.5 rounded overflow-hidden flex-shrink-0 border border-neutral-700 bg-neutral-800 text-[9px] flex items-center justify-center">📸</span>' +
+          '<span class="truncate">' + lastMsgText + '</span>' +
+        '</div>';
+    } else {
+      messagePreviewHtml = 
+        '<p class="text-[11px] ' + (hasUnread ? 'text-gray-200 font-medium' : 'text-gray-400') + ' truncate mt-0.5">' + lastMsgText + '</p>';
+    }
+
+    article.innerHTML = 
+      '<div class="flex items-center space-x-3.5 min-w-0 flex-1">' +
+        '<div class="relative w-11 h-11 rounded-full overflow-hidden bg-neutral-800 flex-shrink-0 border border-neutral-800">' +
+          '<img src="' + avatarSrc + '" alt="' + name + '" class="w-full h-full object-cover">' +
+          (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full"></div>' : '') +
+        '</div>' +
+        '<div class="min-w-0 flex-1 pr-2">' +
+          '<h4 class="text-xs font-bold text-white truncate">' + name + '</h4>' +
+          messagePreviewHtml +
+          (campus ? '<p class="text-[10px] text-gray-500 truncate mt-0.5 font-mono-meta">' + campus + '</p>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="flex flex-col items-end flex-shrink-0 pl-2">' +
+        '<span class="text-[10px] font-mono-meta ' + (hasUnread ? 'text-amber-400 font-bold' : 'text-gray-500') + '">' + timeFormatted + '</span>' +
+        (hasUnread ? '<span class="w-1.5 h-1.5 bg-amber-500 rounded-full mt-1.5" aria-label="Unread message"></span>' : '') +
+      '</div>';
+
+    article.addEventListener('click', function() {
+      openChatThread(partnerId, name, '@' + handle, avatarSrc, isOnline);
+    });
+
+    listContainer.appendChild(article);
+  });
+}
+
+async function startNewChatFromConnections() {
+  setChatHomeState('newmsg');
+  await loadChatConnections();
+}
+window.startNewChatFromConnections = startNewChatFromConnections;
+
+function exitChatNewMsgState() {
+  var searchInput = document.getElementById('chatSearchInput');
+  if (searchInput) searchInput.value = '';
+  var clearBtn = document.getElementById('chatSearchClearBtn');
+  if (clearBtn) clearBtn.classList.add('hidden');
+
+  if (cachedChatConversations.length > 0) {
+    setChatHomeState('populated');
+    renderChatConversations(cachedChatConversations);
+  } else {
+    setChatHomeState('empty');
+  }
+}
+window.exitChatNewMsgState = exitChatNewMsgState;
+
+async function loadChatConnections() {
+  var container = document.getElementById('chatConnectionsList');
+  if (!container) return;
+
+  container.innerHTML = '<div class="text-center py-6 text-xs text-gray-500 font-mono-meta animate-pulse">Loading connections...</div>';
+
+  var data = await apiRequest('/api/chat/connections');
+  if (data && data.success && Array.isArray(data.connections)) {
+    cachedChatConnections = data.connections;
+    renderChatConnections(cachedChatConnections);
+  } else {
+    container.innerHTML = '<div class="text-center py-6 text-xs text-gray-500 font-mono-meta">Could not load connections.</div>';
+  }
+}
+window.loadChatConnections = loadChatConnections;
+
+function renderChatConnections(connections, filterQuery = '') {
+  var container = document.getElementById('chatConnectionsList');
+  if (!container) return;
+
+  var filtered = connections;
+  if (filterQuery) {
+    filtered = connections.filter(function(c) {
+      var name = (c.name || '').toLowerCase();
+      var handle = (c.handle || '').toLowerCase();
+      var campus = (c.campus || '').toLowerCase();
+      return name.includes(filterQuery) || handle.includes(filterQuery) || campus.includes(filterQuery);
+    });
+  }
+
+  container.innerHTML = '';
+
+  if (filtered.length === 0) {
+    if (filterQuery) {
+      container.innerHTML = '<div class="text-center py-8 text-xs text-gray-500 font-mono-meta">No connections matching "' + escapeHtml(filterQuery) + '"</div>';
+    } else {
+      container.innerHTML = 
+        '<div class="py-8 text-center space-y-2">' +
+          '<p class="text-xs text-gray-400 font-mono-meta">NO CONNECTIONS YET</p>' +
+          '<p class="text-[11px] text-gray-500">Connect with people in Search to start conversations.</p>' +
+          '<button onclick="switchScreenView(\'search\')" class="mt-2 px-3.5 py-1.5 bg-neutral-900 border border-neutral-800 text-amber-500 hover:text-white rounded-lg text-xs font-mono-meta cursor-pointer">FIND PEOPLE IN SEARCH →</button>' +
+        '</div>';
+    }
+    return;
+  }
+
+  filtered.forEach(function(c) {
+    var name = escapeHtml(c.name || 'Student');
+    var handle = escapeHtml(c.handle || 'user');
+    var campus = escapeHtml(c.campus || 'Connected');
+    var isOnline = !!c.is_online;
+
+    var avatarSrc = c.avatar_url;
+    if (!avatarSrc || avatarSrc.includes('unsplash.com')) {
+      avatarSrc = 'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(handle || name || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b';
+    }
+
+    var row = document.createElement('div');
+    row.className = 'flex items-center justify-between p-2 -mx-2 rounded-xl hover:bg-neutral-900/60 cursor-pointer transition';
+
+    row.innerHTML = 
+      '<div class="flex items-center space-x-3 min-w-0 flex-1">' +
+        '<div class="relative w-10 h-10 rounded-full overflow-hidden bg-neutral-800 flex-shrink-0 border border-neutral-800">' +
+          '<img src="' + avatarSrc + '" alt="" class="w-full h-full object-cover">' +
+          (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full"></div>' : '') +
+        '</div>' +
+        '<div class="min-w-0 flex-1 pr-2">' +
+          '<h5 class="text-xs font-bold text-white truncate">' + name + '</h5>' +
+          '<p class="text-[10px] text-gray-400 font-mono-meta truncate">' + campus + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<button type="button" class="px-2.5 py-1 bg-neutral-900 hover:bg-amber-500 hover:text-black border border-neutral-800 text-gray-300 text-[10px] font-mono-meta font-bold rounded-lg transition cursor-pointer flex-shrink-0">CHAT</button>';
+
+    row.addEventListener('click', function() {
+      openChatThread(c.id, name, '@' + handle, avatarSrc, isOnline);
+    });
+
+    container.appendChild(row);
+  });
+}
+
+function handleChatSearchInput(e) {
+  var val = e.target.value;
+  var clearBtn = document.getElementById('chatSearchClearBtn');
+  if (clearBtn) {
+    if (val) {
+      clearBtn.classList.remove('hidden');
+    } else {
+      clearBtn.classList.add('hidden');
+    }
+  }
+
+  var query = val.trim().toLowerCase();
+
+  if (chatHomeCurrentState === 'newmsg') {
+    renderChatConnections(cachedChatConnections, query);
+  } else {
+    // If user has conversations, filter them
+    if (cachedChatConversations.length > 0) {
+      renderChatConversations(cachedChatConversations, query);
+    } else if (query) {
+      // If 0 conversations but user is typing to search someone, switch to State C and search connections
+      setChatHomeState('newmsg');
+      if (cachedChatConnections.length === 0) {
+        loadChatConnections().then(function() {
+          renderChatConnections(cachedChatConnections, query);
+        });
+      } else {
+        renderChatConnections(cachedChatConnections, query);
+      }
+    }
+  }
+}
+window.handleChatSearchInput = handleChatSearchInput;
+
+function clearChatSearch() {
+  var searchInput = document.getElementById('chatSearchInput');
+  if (searchInput) {
+    searchInput.value = '';
+    searchInput.focus();
+  }
+  var clearBtn = document.getElementById('chatSearchClearBtn');
+  if (clearBtn) clearBtn.classList.add('hidden');
+
+  if (chatHomeCurrentState === 'newmsg') {
+    renderChatConnections(cachedChatConnections, '');
+  } else {
+    if (cachedChatConversations.length > 0) {
+      setChatHomeState('populated');
+      renderChatConversations(cachedChatConversations, '');
+    } else {
+      setChatHomeState('empty');
+    }
+  }
+}
+window.clearChatSearch = clearChatSearch;
 
 function openChatThread(userId, name, handle, avatarUrl, isOnline) {
   state.activeChatUser = userId;
@@ -8392,22 +8645,10 @@ function openChatWithUser(userId, name, handle, avatarUrl, isOnline) {
 window.openChatWithUser = openChatWithUser;
 
 function switchChatSubTab(tab) {
-  var chatList = document.getElementById('chatHomeList');
-  var friendsList = document.getElementById('connectedFriendsList');
-  var btnChats = document.getElementById('tabBtnChats');
-  var btnFriends = document.getElementById('tabBtnFriends');
-
   if (tab === 'friends') {
-    if (chatList) chatList.style.display = 'none';
-    if (friendsList) friendsList.style.display = 'block';
-    if (btnChats) btnChats.className = 'flex-1 py-1.5 text-zinc-400 hover:text-white font-medium rounded-lg transition-all cursor-pointer';
-    if (btnFriends) btnFriends.className = 'flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm transition-all cursor-pointer';
-    loadConnectedFriends();
+    startNewChatFromConnections();
   } else {
-    if (chatList) chatList.style.display = 'block';
-    if (friendsList) friendsList.style.display = 'none';
-    if (btnChats) btnChats.className = 'flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm transition-all cursor-pointer';
-    if (btnFriends) btnFriends.className = 'flex-1 py-1.5 text-zinc-400 hover:text-white font-medium rounded-lg transition-all cursor-pointer';
+    exitChatNewMsgState();
   }
 }
 window.switchChatSubTab = switchChatSubTab;
