@@ -2268,9 +2268,6 @@
           <div class="px-5 pt-3 pb-3">
               <div class="flex justify-between items-center mb-3">
                   <h2 class="text-lg font-bold text-white tracking-tight">Chat</h2>
-                  <button type="button" id="chatNewMsgBtn" onclick="startNewChatFromConnections()" class="text-[10px] font-mono-meta font-bold text-amber-500 hover:text-amber-400 uppercase tracking-wider flex items-center gap-1 cursor-pointer">
-                      <span>+ NEW</span>
-                  </button>
               </div>
               
               <div class="relative">
@@ -2490,7 +2487,7 @@
                     <p id="chatReplySnippet" class="text-zinc-300 truncate text-[11px]">Quoted text preview</p>
                 </div>
             </div>
-            <button onclick="clearChatReplyTo()" class="text-zinc-500 hover:text-white text-xs px-2 py-1 font-mono-tag cursor-pointer">✕</button>
+            <button id="chatReplyDismissBtn" onclick="clearChatReplyTo()" class="text-zinc-500 hover:text-white text-xs px-2 py-1 font-mono-tag cursor-pointer" title="Cancel Reply">✕</button>
         </div>
 
         <!-- Attachment Menu Popover -->

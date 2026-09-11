@@ -6827,17 +6827,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     """, (m["reply_to_id"], user_id, resolved_partner_id, resolved_partner_id, user_id))
                     r_row = cursor.fetchone()
                     if r_row:
-                        c_text = r_row["content"] or ""
+                        r_dict = dict(r_row)
+                        c_text = r_dict.get("content") or ""
                         preview_text = (c_text[:80] + "...") if len(c_text) > 80 else c_text
                         if not preview_text:
-                            preview_text = "Photo" if r_row["message_type"] == "photo" else ("Moment" if r_row["message_type"] == "moment" else "Attachment")
+                            preview_text = "Photo" if r_dict.get("message_type") == "photo" else ("Moment" if r_dict.get("message_type") == "moment" else "Attachment")
                         m["reply_to"] = {
-                            "id": r_row["id"],
-                            "sender_id": r_row["sender_id"],
-                            "sender_name": r_row["name"] or "Student",
-                            "sender_handle": r_row["handle"] or "user",
+                            "id": r_dict["id"],
+                            "sender_id": r_dict["sender_id"],
+                            "sender_name": r_dict.get("name") or "Student",
+                            "sender_handle": r_dict.get("handle") or "user",
                             "content": preview_text,
-                            "message_type": r_row.get("message_type", "text")
+                            "message_type": r_dict.get("message_type") or "text"
                         }
 
                 # 2. Resolve Moment details if moment_id is present
