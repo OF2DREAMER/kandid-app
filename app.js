@@ -840,9 +840,9 @@ function switchScreenView(screenName) {
     } else if (screenName === "chat-request") {
       if (headerChatRequest) headerChatRequest.style.display = "flex";
       statusText = "REQUEST";
-    } else if (screenName === "chat-settings") {
-      if (headerChatSettings) headerChatSettings.style.display = "flex";
-      statusText = "SETTINGS";
+    } else if (screenName === "chat-settings" || screenName === "chat-privacy") {
+      if (headerChatSettings) headerChatSettings.style.display = "none";
+      statusText = "CHAT PRIVACY";
     } else if (screenName === "peer-profile") {
       if (headerPeerProfile) headerPeerProfile.style.display = "none";
       statusText = "USER PROFILE";
@@ -876,7 +876,7 @@ function switchScreenView(screenName) {
   var composerShared = document.getElementById("chatComposerShared");
   
   if (unifiedDock) {
-    if (screenName === "collective-memory" || screenName === "live-pulse" || screenName === "chat-conversation" || screenName === "chat-shared") {
+    if (screenName === "collective-memory" || screenName === "live-pulse" || screenName === "chat-conversation" || screenName === "chat-shared" || screenName === "chat-privacy") {
       unifiedDock.style.display = "none";
     } else {
       unifiedDock.style.display = "flex";
@@ -8219,53 +8219,141 @@ function toggleChatMute() {
 }
 window.toggleChatMute = toggleChatMute;
 
-async function promptChatReport() {
+function openChatPrivacyScreen() {
+  if (state.activeChatPartner) {
+    var handle = state.activeChatPartner.handle || '@user';
+    var blockTitle = document.getElementById('chatPrivacyBlockPromptTitle');
+    if (blockTitle) {
+      blockTitle.textContent = 'Block ' + (handle.startsWith('@') ? handle : ('@' + handle)) + '?';
+    }
+  }
+  switchScreenView('chat-privacy');
+}
+window.openChatPrivacyScreen = openChatPrivacyScreen;
+
+function closeChatPrivacyScreen() {
+  switchScreenView('chat-conversation');
+}
+window.closeChatPrivacyScreen = closeChatPrivacyScreen;
+
+function openChatPrivacyModal(type) {
+  var container = document.getElementById('chatPrivacyModalContainer');
+  var sheetBlock = document.getElementById('chatPrivacySheetBlock');
+  var sheetReport = document.getElementById('chatPrivacySheetReport');
+  var sheetSignout = document.getElementById('chatPrivacySheetSignout');
+  if (!container) return;
+
+  if (sheetBlock) sheetBlock.classList.add('hidden');
+  if (sheetReport) sheetReport.classList.add('hidden');
+  if (sheetSignout) sheetSignout.classList.add('hidden');
+
+  if (type === 'block') {
+    if (state.activeChatPartner) {
+      var handle = state.activeChatPartner.handle || '@user';
+      var blockTitle = document.getElementById('chatPrivacyBlockPromptTitle');
+      if (blockTitle) {
+        blockTitle.textContent = 'Block ' + (handle.startsWith('@') ? handle : ('@' + handle)) + '?';
+      }
+    }
+    if (sheetBlock) sheetBlock.classList.remove('hidden');
+  } else if (type === 'report') {
+    if (sheetReport) sheetReport.classList.remove('hidden');
+  } else if (type === 'signout') {
+    if (sheetSignout) sheetSignout.classList.remove('hidden');
+  }
+
+  container.classList.remove('hidden');
+  container.classList.add('flex');
+}
+window.openChatPrivacyModal = openChatPrivacyModal;
+
+function closeChatPrivacyModal() {
+  var container = document.getElementById('chatPrivacyModalContainer');
+  var sheetBlock = document.getElementById('chatPrivacySheetBlock');
+  var sheetReport = document.getElementById('chatPrivacySheetReport');
+  var sheetSignout = document.getElementById('chatPrivacySheetSignout');
+  if (container) {
+    container.classList.add('hidden');
+    container.classList.remove('flex');
+  }
+  if (sheetBlock) sheetBlock.classList.add('hidden');
+  if (sheetReport) sheetReport.classList.add('hidden');
+  if (sheetSignout) sheetSignout.classList.add('hidden');
+}
+window.closeChatPrivacyModal = closeChatPrivacyModal;
+
+async function executeChatPrivacyBlock() {
   if (!state.activeChatUser) return;
-  var reason = prompt('Reason for reporting this conversation / user:', 'Harassment or Inappropriate behavior');
-  if (!reason) return;
+  var btn = document.getElementById('chatPrivacyConfirmBlockBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'BLOCKING...'; }
+  try {
+    var res = await apiRequest('/api/chat/block', {
+      method: 'POST',
+      body: JSON.stringify({ targetUserId: state.activeChatUser })
+    });
+    if (res && res.success) {
+      closeChatPrivacyModal();
+      showToast('User blocked');
+      switchScreenView('chat-home');
+      loadChatConversations();
+    } else {
+      showToast(res ? (res.error || 'Failed to block user') : 'Failed to block user');
+    }
+  } catch (err) {
+    showToast('Failed to block user. Please try again.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'BLOCK'; }
+  }
+}
+window.executeChatPrivacyBlock = executeChatPrivacyBlock;
+
+async function executeChatPrivacyReport() {
+  if (!state.activeChatUser) return;
+  var btn = document.getElementById('chatPrivacyConfirmReportBtn');
+  var selectedRadio = document.querySelector('input[name="chat-report-reason"]:checked');
+  var reason = selectedRadio ? selectedRadio.value : 'Harassment';
+  if (btn) { btn.disabled = true; btn.textContent = 'SUBMITTING...'; }
   try {
     var res = await apiRequest('/api/chat/report', {
       method: 'POST',
       body: JSON.stringify({
         reportedUserId: state.activeChatUser,
         reason: reason,
-        details: 'Reported via Chat Action Menu'
+        details: 'Reported via Chat Privacy & Security screen'
       })
     });
     if (res && res.success) {
+      closeChatPrivacyModal();
       showToast('Report submitted. Safety team will review.');
     } else {
-      showToast(res ? res.error : 'Failed to submit report');
+      showToast(res ? (res.error || 'Failed to submit report') : 'Failed to submit report');
     }
   } catch (err) {
-    showToast('Failed to submit report');
+    showToast('Failed to submit report. Please try again.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'SUBMIT REPORT'; }
   }
+}
+window.executeChatPrivacyReport = executeChatPrivacyReport;
+
+async function executeChatPrivacySignout() {
+  var btn = document.getElementById('chatPrivacyConfirmSignoutBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'SIGNING OUT...'; }
+  try {
+    await apiRequest('/api/auth/logout', { method: 'POST' });
+  } catch (e) {}
+  closeChatPrivacyModal();
+  logoutUser();
+}
+window.executeChatPrivacySignout = executeChatPrivacySignout;
+
+function promptChatReport() {
+  openChatPrivacyModal('report');
 }
 window.promptChatReport = promptChatReport;
 
-async function promptChatBlock() {
-  if (!state.activeChatUser) return;
-  var partnerName = state.activeChatPartner ? state.activeChatPartner.name : 'this user';
-  if (!confirm('Block ' + partnerName + '? You will no longer be able to message each other.')) {
-    return;
-  }
-  try {
-    var res = await apiRequest('/api/chat/block', {
-      method: 'POST',
-      body: JSON.stringify({
-        targetUserId: state.activeChatUser
-      })
-    });
-    if (res && res.success) {
-      showToast('User blocked');
-      switchScreenView('chat-home');
-      loadChatConversations();
-    } else {
-      showToast(res ? res.error : 'Failed to block user');
-    }
-  } catch (err) {
-    showToast('Failed to block user');
-  }
+function promptChatBlock() {
+  openChatPrivacyModal('block');
 }
 window.promptChatBlock = promptChatBlock;
 
