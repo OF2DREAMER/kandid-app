@@ -2254,6 +2254,8 @@ def init_db():
     try:
         if "connections_from" not in users_columns:
             cursor.execute("ALTER TABLE users ADD COLUMN connections_from TEXT DEFAULT 'everyone'")
+        cursor.execute("UPDATE users SET profile_visibility = 'private' WHERE LOWER(handle) IN ('aman', 'ceo')")
+        conn.commit()
     except Exception:
         pass
 
@@ -6467,7 +6469,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
                 # Public communities this target user belongs to
                 cursor.execute("""
-                    SELECT DISTINCT c.id, c.name, c.type, c.description, c.icon, c.city, c.location_context
+                    SELECT DISTINCT c.id, c.name, c.type, c.description, c.icon, c.city, c.location_context, c.created_at
                     FROM communities c
                     LEFT JOIN community_members cm ON c.id = cm.community_id
                     WHERE (cm.user_id = ? OR LOWER(c.name) = ? OR c.creator_id = ?)
