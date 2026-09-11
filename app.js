@@ -4070,15 +4070,16 @@ async function openUserProfile(userId, preloadedData) {
     if (pubInitials) pubInitials.textContent = preInits || 'K';
 
     var pubInitialsBox = document.getElementById('peerPublicInitialsBox');
-    if (preAvatar && !preAvatar.includes('dicebear')) {
-      if (pubAvatar) { pubAvatar.src = preAvatar; pubAvatar.style.display = 'block'; }
-      if (pubInitialsBox) pubInitialsBox.style.display = 'none';
-      if (pubInitials) pubInitials.style.display = 'none';
-    } else {
-      if (pubAvatar) pubAvatar.style.display = 'none';
-      if (pubInitialsBox) pubInitialsBox.style.display = 'flex';
-      if (pubInitials) pubInitials.style.display = 'block';
+    var finalPreAvatar = preAvatar || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(preHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+    if (pubAvatar) {
+      pubAvatar.src = finalPreAvatar;
+      pubAvatar.style.display = 'block';
+      pubAvatar.onerror = function() {
+        this.style.display = 'none';
+        if (pubInitialsBox) pubInitialsBox.style.display = 'flex';
+      };
     }
+    if (pubInitialsBox) pubInitialsBox.style.display = 'none';
 
     if (peerPublicView) peerPublicView.style.display = 'flex';
     if (peerPrivateView) peerPrivateView.style.display = 'none';
@@ -4138,13 +4139,16 @@ async function openUserProfile(userId, preloadedData) {
     }
     if (privInitials) privInitials.textContent = inits || 'K';
 
-    if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
-      if (privAvatar) { privAvatar.src = avatarUrl; privAvatar.style.display = 'block'; }
-      if (privInitials) privInitials.style.display = 'none';
-    } else {
-      if (privAvatar) privAvatar.style.display = 'none';
-      if (privInitials) privInitials.style.display = 'block';
+    var privFinalAvatar = avatarUrl || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(finalHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+    if (privAvatar) {
+      privAvatar.src = privFinalAvatar;
+      privAvatar.style.display = 'block';
+      privAvatar.onerror = function() {
+        this.style.display = 'none';
+        if (privInitials) privInitials.style.display = 'block';
+      };
     }
+    if (privInitials) privInitials.style.display = 'none';
     if (privCover) {
       privCover.src = u.cover_url || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80';
     }
@@ -4196,15 +4200,16 @@ async function openUserProfile(userId, preloadedData) {
     if (pubInitials) pubInitials.textContent = inits || 'K';
 
     var pubInitialsBox = document.getElementById('peerPublicInitialsBox');
-    if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
-      if (pubAvatar) { pubAvatar.src = avatarUrl; pubAvatar.style.display = 'block'; }
-      if (pubInitialsBox) pubInitialsBox.style.display = 'none';
-      if (pubInitials) pubInitials.style.display = 'none';
-    } else {
-      if (pubAvatar) pubAvatar.style.display = 'none';
-      if (pubInitialsBox) pubInitialsBox.style.display = 'flex';
-      if (pubInitials) pubInitials.style.display = 'block';
+    var finalAvatar = avatarUrl || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(finalHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+    if (pubAvatar) {
+      pubAvatar.src = finalAvatar;
+      pubAvatar.style.display = 'block';
+      pubAvatar.onerror = function() {
+        this.style.display = 'none';
+        if (pubInitialsBox) pubInitialsBox.style.display = 'flex';
+      };
     }
+    if (pubInitialsBox) pubInitialsBox.style.display = 'none';
     if (pubCover) {
       pubCover.src = u.cover_url || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80';
     }
@@ -4261,44 +4266,50 @@ async function openUserProfile(userId, preloadedData) {
     var pubMutualConnCard = document.getElementById('peerPublicMutualConnCard') || document.getElementById('peerMutualConnectionsCard');
     var pubMutualConnText = document.getElementById('peerPublicMutualConnText') || document.getElementById('peerMutualConnectionsText');
 
+    if (pubSharedWorld) {
+      pubSharedWorld.style.display = 'block';
+      if (pubSharedCommCard) {
+        pubSharedCommCard.style.display = 'flex';
+        if (pubSharedCommText) {
+          pubSharedCommText.textContent = u.campus ? (u.campus + ' Community') : 'Kandid Shared Spaces';
+        }
+        pubSharedCommCard.onclick = function() {
+          if (typeof openCampusPage === 'function') openCampusPage(u.campus || 'Guru Kashi University');
+        };
+      }
+      if (pubMutualConnCard) {
+        pubMutualConnCard.style.display = 'flex';
+        if (pubMutualConnText) {
+          pubMutualConnText.textContent = 'Explore campus network';
+        }
+      }
+    }
+
     try {
       var sharedRes = await apiRequest('/api/user/shared-context?target_id=' + encodeURIComponent(userId));
       if (sharedRes && sharedRes.success) {
         var sharedComms = sharedRes.shared_communities || [];
         var mutualConns = sharedRes.mutual_connections || [];
-        var hasSharedWorld = (sharedComms.length > 0 || mutualConns.length > 0);
 
-        if (hasSharedWorld && pubSharedWorld) {
-          pubSharedWorld.style.display = 'block';
-
-          if (sharedComms.length > 0 && pubSharedCommCard && pubSharedCommText) {
-            pubSharedCommCard.style.display = 'flex';
-            var firstComm = sharedComms[0].name;
-            var extraComm = sharedComms.length - 1;
-            pubSharedCommText.textContent = firstComm + (extraComm > 0 ? ' + ' + extraComm + ' more' : '');
+        if (sharedComms.length > 0 && pubSharedCommText) {
+          var firstComm = sharedComms[0].name;
+          var extraComm = sharedComms.length - 1;
+          pubSharedCommText.textContent = firstComm + (extraComm > 0 ? ' + ' + extraComm + ' more' : '');
+          if (pubSharedCommCard) {
             pubSharedCommCard.onclick = function() {
               if (typeof openCampusPage === 'function') openCampusPage(sharedComms[0].name);
             };
-          } else if (pubSharedCommCard) {
-            pubSharedCommCard.style.display = 'none';
           }
-
-          if (mutualConns.length > 0 && pubMutualConnCard && pubMutualConnText) {
-            pubMutualConnCard.style.display = 'flex';
-            var firstNames = mutualConns.slice(0, 2).map(function(c) { return c.name; }).join(', ');
-            var extraConn = mutualConns.length - 2;
-            pubMutualConnText.textContent = firstNames + (extraConn > 0 ? ' +' + extraConn : '');
-          } else if (pubMutualConnCard) {
-            pubMutualConnCard.style.display = 'none';
-          }
-        } else if (pubSharedWorld) {
-          pubSharedWorld.style.display = 'none';
         }
-      } else if (pubSharedWorld) {
-        pubSharedWorld.style.display = 'none';
+
+        if (mutualConns.length > 0 && pubMutualConnText) {
+          var firstNames = mutualConns.slice(0, 2).map(function(c) { return c.name; }).join(', ');
+          var extraConn = mutualConns.length - 2;
+          pubMutualConnText.textContent = firstNames + (extraConn > 0 ? ' +' + extraConn : '');
+        }
       }
     } catch (e) {
-      if (pubSharedWorld) pubSharedWorld.style.display = 'none';
+      console.warn('[Profile] shared context error:', e);
     }
   }
 }
