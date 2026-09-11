@@ -53,6 +53,19 @@
       border: 1px solid rgba(255, 255, 255, 0.08);
       transition: border-color 0.15s ease, background-color 0.15s ease;
     }
+    @media (prefers-reduced-motion: reduce) {
+      .animate-subtle-pulse {
+        animation: none !important;
+      }
+    }
+    @keyframes subtle-pulse {
+      0% { transform: scale(1); opacity: 0.7; }
+      50% { transform: scale(1.35); opacity: 0.25; }
+      100% { transform: scale(1); opacity: 0.7; }
+    }
+    .animate-subtle-pulse {
+      animation: subtle-pulse 3s infinite ease-in-out;
+    }
     .kandid-input:focus {
       border-color: rgba(245, 158, 11, 0.5);
       background-color: #0d0d10;
@@ -607,232 +620,205 @@
       </section>
 
       <!-- =================================================================
-           SECTION 2: SEARCH 2.0 — THE DOORWAY INTO THE KANDID WORLD
+           SECTION 2: SEARCH — MAP-BASED PROXIMITY RADAR & DISCOVERY (APPROVED)
            ================================================================= -->
-      <section class="app-screen flex flex-col" id="screen-search" style="overflow:hidden; height:100%;">
+      <section class="app-screen flex flex-col bg-[#0b0b0c] text-white relative overflow-hidden" id="screen-search" style="display:none; height:100%;">
 
-        <!-- ── Search Header ── -->
-        <div class="flex-shrink-0 px-4 pt-4 pb-0 space-y-3" id="searchHeader">
-          <!-- Brand line -->
-          <div class="flex items-center justify-between">
-            <span class="text-[9px] font-mono-tag text-zinc-600 tracking-[0.25em] uppercase">KANDID · SEARCH</span>
-            <span class="text-[9px] font-mono-tag text-zinc-600 tracking-widest" id="searchStatusLine">READY</span>
-          </div>
+        <!-- Scrollable Content Area -->
+        <main class="overflow-y-auto flex-grow no-scrollbar relative flex flex-col pb-28" id="searchScrollArea" role="region" aria-label="Search">
 
-          <!-- Tactile Search Field -->
-          <div id="searchFieldWrap" class="relative flex items-center gap-2.5 bg-zinc-950 border border-zinc-800 rounded-2xl px-3.5 py-3 shadow-inner transition-all duration-200 focus-within:border-amber-500/60 focus-within:shadow-[0_0_0_2px_rgba(245,158,11,0.12)]">
-            <svg class="w-4 h-4 text-amber-500 flex-shrink-0 transition-transform duration-200" id="searchIcon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-            </svg>
-            <input
-              type="text"
-              id="searchInput"
-              autocomplete="off"
-              autocorrect="off"
-              autocapitalize="off"
-              spellcheck="false"
-              placeholder="Search people, places, Moments..."
-              aria-label="Search Kandid"
-              maxlength="80"
-              class="bg-transparent outline-none w-full text-white placeholder-zinc-500 text-[11px] font-medium tracking-wide"
-              oninput="handleSearchInput(event)"
-              onfocus="onSearchFocus()"
-              onblur="onSearchBlur()"
-            >
-            <button class="text-zinc-500 hover:text-white text-xs cursor-pointer flex-shrink-0 transition-colors" id="searchClearBtn" onclick="clearSearchInput()" style="display:none;" aria-label="Clear search">✕</button>
-          </div>
+            <!-- Header Section -->
+            <header class="px-5 pt-4 pb-1 flex justify-between items-center sticky top-0 bg-[#0b0b0c]/90 backdrop-blur-md z-40">
+                <div class="flex items-center space-x-2">
+                    <h1 class="text-sm font-bold tracking-[0.25em] text-white">KANDID</h1>
+                </div>
+                <div class="flex items-center">
+                    <button type="button" onclick="openNotificationsDrawer()" aria-label="Notifications" class="relative w-8 h-8 rounded-full bg-neutral-900/80 border border-neutral-800/80 flex items-center justify-center text-gray-300 hover:text-amber-400 hover:border-neutral-700 transition cursor-pointer">
+                        <i class="fa-regular fa-bell text-xs" aria-hidden="true"></i>
+                        <span class="absolute top-2 right-2 w-1.5 h-1.5 bg-amber-500 rounded-full" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </header>
 
-          <!-- Filter Chips -->
-          <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" id="searchFilterChips">
-            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 bg-amber-500 text-black border-amber-500" data-filter="all" onclick="selectSearchFilter('all')">ALL</button>
-            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="people" onclick="selectSearchFilter('people')">PEOPLE</button>
-            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="moments" onclick="selectSearchFilter('moments')">MOMENTS</button>
-            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="places" onclick="selectSearchFilter('places')">PLACES</button>
-            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="campuses" onclick="selectSearchFilter('campuses')">CAMPUS</button>
-            <button class="search-chip-btn flex-shrink-0 text-[9px] font-mono-tag font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer active:scale-95 text-zinc-400 border-zinc-800 hover:border-zinc-600" data-filter="communities" onclick="selectSearchFilter('communities')">COMMUNITIES</button>
-          </div>
+            <!-- Primary Tactile Search Field & Category Navigation Pills -->
+            <div class="px-5 pt-2 pb-3 sticky top-[53px] bg-[#0b0b0c]/95 backdrop-blur-md z-30">
+                <div class="relative">
+                    <span class="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-gray-500 text-xs">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </span>
+                    <input type="text" id="main-search-input" placeholder="Search people, places, Moments..." class="w-full bg-[#121215] border border-neutral-800/80 rounded-xl pl-9 pr-9 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/60 transition shadow-inner font-medium" aria-label="Search people, places, Moments" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="handleSearchInput(event)" onfocus="onSearchFocus()" onblur="onSearchBlur()">
+                    <button type="button" id="search-clear-btn" onclick="clearSearchInput()" class="absolute inset-y-0 right-3 flex items-center text-gray-500 hover:text-white transition hidden cursor-pointer" aria-label="Clear search">
+                        <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                </div>
+
+                <!-- Category Navigation Pills -->
+                <div class="flex items-center space-x-2 mt-2.5 overflow-x-auto no-scrollbar pb-1 text-[11px] font-medium" role="tablist" aria-label="Search categories">
+                    <button role="tab" id="cat-pill-people" aria-selected="true" class="search-cat-pill px-3 py-1 rounded-full bg-amber-500 text-black font-bold flex-shrink-0 cursor-pointer transition" onclick="selectSearchCategory('people')">People</button>
+                    <button role="tab" id="cat-pill-moments" aria-selected="false" class="search-cat-pill px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-gray-400 hover:text-white transition flex-shrink-0 cursor-pointer" onclick="selectSearchCategory('moments')">Moments</button>
+                    <button role="tab" id="cat-pill-places" aria-selected="false" class="search-cat-pill px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-gray-400 hover:text-white transition flex-shrink-0 cursor-pointer" onclick="selectSearchCategory('places')">Places</button>
+                    <button role="tab" id="cat-pill-communities" aria-selected="false" class="search-cat-pill px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-gray-400 hover:text-white transition flex-shrink-0 cursor-pointer" onclick="selectSearchCategory('communities')">Communities</button>
+                </div>
+            </div>
+
+            <!-- ================= STATE CONTAINER ================= -->
+            
+            <!-- STATE 1: SEARCH IDLE (Map-Based Proximity Radar - Normal Activity) -->
+            <div id="view-idle" class="flex flex-col flex-grow px-5 pt-2 pb-8 space-y-5">
+                <!-- Compact Map-Based Proximity Radar Component (~190px height) -->
+                <div class="space-y-1.5">
+                    <div class="flex justify-between items-center px-0.5">
+                        <h3 class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase">PROXIMITY</h3>
+                        <span id="radar-footer-status" class="text-[9px] font-mono-meta text-gray-400 uppercase">AROUND YOU · ACTIVITY AROUND HERE</span>
+                    </div>
+
+                    <!-- Simplified Dark Real-World Map Container -->
+                    <div id="map-container" class="relative w-full h-[190px] bg-[#0A0A0C] border border-[#27272A] rounded-2xl overflow-hidden shadow-xl">
+                        <!-- Real-World Map Layer (Geometry, Blocks & Roads) -->
+                        <div class="absolute inset-0 opacity-40 pointer-events-none">
+                            <svg class="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M-10 50 Q 140 20, 400 70" stroke="#161619" stroke-width="6" fill="none" />
+                                <path d="M50 -10 Q 90 220, 340 320" stroke="#161619" stroke-width="4" fill="none" />
+                                <path d="M100 170 L 380 40" stroke="#161619" stroke-width="3" fill="none" />
+                                <rect x="25" y="20" width="75" height="45" rx="3" fill="#1F1F24" />
+                                <rect x="135" y="105" width="110" height="55" rx="3" fill="#1F1F24" />
+                                <rect x="275" y="85" width="75" height="75" rx="3" fill="#1F1F24" />
+                                <text x="145" y="138" fill="#71717A" font-size="8" font-family="monospace">CAMPUS BLK</text>
+                            </svg>
+                        </div>
+
+                        <!-- KANDID Activity Layer: Contextual Nodes -->
+                        <div id="activity-nodes-layer">
+                            <!-- Populated dynamically via loadRadar() -->
+                        </div>
+
+                        <!-- YOU Anchor Marker (Quiet, Subtly Pulsing) -->
+                        <div class="absolute top-[50%] left-[45%] -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none z-10">
+                            <div class="relative flex items-center justify-center">
+                                <div class="absolute w-7 h-7 rounded-full bg-amber-500/15 animate-subtle-pulse"></div>
+                                <div class="w-3 h-3 rounded-full bg-amber-500 ring-2 ring-black shadow-md flex items-center justify-center">
+                                    <div class="w-1 h-1 bg-black rounded-full"></div>
+                                </div>
+                            </div>
+                            <span class="text-[8px] font-mono-meta font-bold text-amber-400 mt-1 tracking-wider bg-black/80 px-1.5 py-0.2 rounded border border-amber-500/20">YOU</span>
+                        </div>
+
+                        <!-- Location Disabled Overlay (Used in Loc-Off State) -->
+                        <div id="map-loc-off-overlay" class="absolute inset-0 bg-[#0A0A0C]/90 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-center hidden z-20">
+                            <i class="fa-solid fa-location-slash text-amber-500 text-base mb-1.5"></i>
+                            <h4 class="text-xs font-bold text-white tracking-tight">DISCOVER NEARBY</h4>
+                            <p class="text-[10px] text-gray-400 mt-1 max-w-[200px] leading-tight">
+                                Turn on location to explore what's happening around you.
+                            </p>
+                            <button onclick="enableSearchLocation()" class="mt-3 px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold tracking-wide transition shadow-md shadow-amber-500/10 cursor-pointer">
+                                ENABLE
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Around You Section -->
+                <div class="space-y-3">
+                    <h3 class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase">AROUND YOU</h3>
+                    <div class="space-y-2.5" id="searchAroundYouContainer">
+                        <!-- Populated dynamically via loadSearchDiscovery() -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- STATE 2: SEARCH FOCUSED (Calm Recent Searches) -->
+            <div id="view-focused" class="hidden flex-col flex-grow px-5 pt-3 pb-8 space-y-4">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase">RECENT SEARCHES</h3>
+                    <button onclick="clearAllRecentSearches()" class="text-[10px] font-bold text-amber-500 hover:underline cursor-pointer">CLEAR ALL</button>
+                </div>
+                <div class="space-y-2" id="searchRecentList">
+                    <!-- Populated dynamically via loadRecentSearches() -->
+                </div>
+            </div>
+
+            <!-- STATE 4: SEARCH RESULTS — PEOPLE -->
+            <div id="view-res-people" class="hidden flex-col flex-grow px-5 pt-3 pb-8 space-y-4">
+                <h3 class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase">PEOPLE</h3>
+                <div class="space-y-2.5" id="searchPeopleResultsList">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+
+            <!-- STATE 5: SEARCH RESULTS — MOMENTS -->
+            <div id="view-res-moments" class="hidden flex-col flex-grow px-5 pt-3 pb-8 space-y-4">
+                <h3 class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase">MOMENTS</h3>
+                <div class="grid grid-cols-2 gap-2.5" id="searchMomentsResultsGrid">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+
+            <!-- STATE 6: SEARCH RESULTS — PLACES -->
+            <div id="view-res-places" class="hidden flex-col flex-grow px-5 pt-3 pb-8 space-y-4">
+                <h3 class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase">PLACES</h3>
+                <div class="space-y-2.5" id="searchPlacesResultsList">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+
+            <!-- STATE 7: SEARCH RESULTS — COMMUNITIES -->
+            <div id="view-res-communities" class="hidden flex-col flex-grow px-5 pt-3 pb-8 space-y-4">
+                <h3 class="text-[10px] font-bold tracking-[0.2em] text-gray-400 uppercase">COMMUNITIES</h3>
+                <div class="space-y-2.5" id="searchCommunitiesResultsList">
+                    <!-- Dynamic -->
+                </div>
+            </div>
+
+            <!-- STATE 8: LOADING SKELETON -->
+            <div id="view-loading" class="hidden flex-col flex-grow px-5 pt-3 pb-8 space-y-3">
+                <div class="w-full h-12 bg-neutral-900/80 rounded-xl animate-pulse"></div>
+                <div class="w-full h-12 bg-neutral-900/80 rounded-xl animate-pulse"></div>
+                <div class="w-full h-12 bg-neutral-900/80 rounded-xl animate-pulse"></div>
+                <div class="w-full h-12 bg-neutral-900/80 rounded-xl animate-pulse"></div>
+            </div>
+
+            <!-- STATE 9: ERROR STATE -->
+            <div id="view-error" class="hidden flex-col flex-grow items-center justify-center px-6 text-center py-16">
+                <div class="w-12 h-12 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-rose-400 mb-4">
+                    <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                </div>
+                <h3 class="text-sm font-bold text-white tracking-tight">Couldn't load results.</h3>
+                <div class="mt-6">
+                    <button onclick="performSearch()" class="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-gray-200 rounded-full text-xs font-bold transition cursor-pointer">
+                        TRY AGAIN
+                    </button>
+                </div>
+            </div>
+
+            <!-- STATE 10: EMPTY STATE (NOTHING FOUND) -->
+            <div id="view-empty" class="hidden flex-col flex-grow items-center justify-center px-6 text-center py-16 space-y-2">
+                <div class="text-2xl mb-1">🔍</div>
+                <h3 class="text-xs font-bold text-gray-400 font-mono-meta uppercase tracking-wider">NOTHING FOUND.</h3>
+                <p class="text-[11px] text-gray-500">Try another name, place, or Moment.</p>
+            </div>
+
+        </main><!-- /searchScrollArea -->
+
+        <!-- Activity Detail Sheet Overlay (Within Screen for selected Radar node) -->
+        <div id="search-activity-sheet" class="absolute bottom-[95px] left-5 right-5 bg-[#121215] border border-neutral-700/80 rounded-2xl p-4 text-white shadow-2xl z-40 hidden transition-all duration-200">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h4 class="text-xs font-bold text-white" id="activity-sheet-title">CAMPUS</h4>
+                    <p class="text-[10px] text-amber-400 mt-0.5" id="activity-sheet-subtitle">Campus · Recent Moments</p>
+                </div>
+                <button onclick="closeSearchActivitySheet()" class="text-gray-400 hover:text-white p-1 cursor-pointer" aria-label="Close sheet">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+            </div>
+            <div class="mt-3 pt-3 border-t border-neutral-800/80 flex justify-end">
+                <button id="activity-sheet-action-btn" class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition shadow cursor-pointer">
+                    VIEW →
+                </button>
+            </div>
         </div>
 
-        <!-- ── Scrollable Body ── -->
-        <div class="flex-1 overflow-y-auto px-4 pb-32 pt-3 space-y-4" id="searchScrollBody">
-
-          <!-- ── IDLE VIEW: Radar + Sectors + Frequencies + Global Gateway ── -->
-          <div id="searchIdleView">
-
-            <!-- PROXIMITY RADAR -->
-            <div class="bg-zinc-950 border border-zinc-800/60 rounded-2xl overflow-hidden shadow-xl mb-4" id="searchRadarCard">
-              <div class="flex justify-between items-center px-4 pt-3.5 pb-2">
-                <span class="text-[9px] text-amber-500 font-mono-tag font-bold tracking-[0.2em] uppercase">PROXIMITY</span>
-                <span class="text-[9px] text-zinc-600 font-mono-tag" id="radarStatusLabel">SCANNING...</span>
-              </div>
-
-              <!-- SVG Radar Canvas -->
-              <div class="relative mx-4 mb-3" style="height:180px;">
-                <svg id="radarSvg" width="100%" height="180" viewBox="-1 -1 2 2" preserveAspectRatio="xMidYMid meet" style="overflow:visible;">
-                  <!-- Rings -->
-                  <circle cx="0" cy="0" r="0.33" fill="none" stroke="rgba(63,63,70,0.5)" stroke-width="0.012"/>
-                  <circle cx="0" cy="0" r="0.60" fill="none" stroke="rgba(63,63,70,0.35)" stroke-width="0.009"/>
-                  <circle cx="0" cy="0" r="0.87" fill="none" stroke="rgba(63,63,70,0.22)" stroke-width="0.007"/>
-                  <!-- Cross-hair -->
-                  <line x1="-0.95" y1="0" x2="0.95" y2="0" stroke="rgba(63,63,70,0.25)" stroke-width="0.006"/>
-                  <line x1="0" y1="-0.95" x2="0" y2="0.95" stroke="rgba(63,63,70,0.25)" stroke-width="0.006"/>
-                  <!-- Sweep arm (animated, calmer 6s) -->
-                  <line id="radarSweepArm" x1="0" y1="0" x2="0" y2="-0.9" stroke="rgba(245,158,11,0.45)" stroke-width="0.012" stroke-linecap="round">
-                    <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="6s" repeatCount="indefinite"/>
-                  </line>
-                  <!-- Center dot + YOU label -->
-                  <circle cx="0" cy="0" r="0.045" fill="#f59e0b"/>
-                  <circle cx="0" cy="0" r="0.045" fill="#f59e0b" opacity="0.4">
-                    <animate attributeName="r" values="0.045;0.10;0.045" dur="3s" repeatCount="indefinite"/>
-                    <animate attributeName="opacity" values="0.4;0;0.4" dur="3s" repeatCount="indefinite"/>
-                  </circle>
-                  <text x="0" y="0.12" text-anchor="middle" fill="rgba(245,158,11,0.7)" font-size="0.08" font-family="'JetBrains Mono', monospace" font-weight="bold" letter-spacing="0.02">YOU</text>
-                  <!-- Dynamic nodes injected by JS -->
-                  <g id="radarNodes"></g>
-                </svg>
-              </div>
-
-              <!-- Active Nodes Badge + Summary + Privacy -->
-              <div class="px-4 pb-2.5 border-t border-zinc-900/60 pt-2.5 space-y-1.5">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block"></span>
-                    <span class="text-[9px] text-zinc-400 font-mono-tag" id="activeNodesBadge">0 ACTIVE NODES</span>
-                  </div>
-                  <span class="text-[9px] text-zinc-600 font-mono-tag">CONTEXT ONLY · NO GPS</span>
-                </div>
-                <div class="text-[9px] text-zinc-500 font-mono-tag" id="radarSummaryLine"></div>
-              </div>
-
-              <!-- Node Labels List (injected by JS) -->
-              <div id="radarNodeLabels" class="px-4 pb-3 space-y-1.5 border-t border-zinc-900/40 pt-2.5" style="display:none;"></div>
-            </div>
-
-            <!-- Skeleton Loader (shown while loading) -->
-            <div id="searchSkeletonState" class="space-y-3" style="display:none;">
-              <div class="h-3 bg-zinc-900 rounded-xl w-2/3 animate-pulse"></div>
-              <div class="h-12 bg-zinc-900 rounded-2xl animate-pulse"></div>
-              <div class="h-12 bg-zinc-900 rounded-2xl animate-pulse"></div>
-              <div class="h-3 bg-zinc-900 rounded-xl w-1/2 animate-pulse mt-2"></div>
-              <div class="h-10 bg-zinc-900 rounded-2xl animate-pulse"></div>
-            </div>
-
-            <!-- AROUND YOUR WORLD (community spaces with real moments) -->
-            <div class="space-y-2.5 mb-4" id="searchAroundYourWorld">
-              <div class="flex items-center justify-between px-1">
-                <span class="text-[9px] text-zinc-500 font-mono-tag tracking-[0.2em] uppercase">AROUND YOUR WORLD</span>
-                <span class="text-[9px] text-zinc-700 font-mono-tag" id="sectorCountLabel"></span>
-              </div>
-              <div class="space-y-2" id="searchSectorsContainer">
-                <div class="text-center py-4 text-xs text-zinc-600 font-mono-tag animate-pulse">SYNCING AROUND YOUR WORLD...</div>
-              </div>
-            </div>
-
-            <!-- TRENDING FREQUENCIES / TAGS -->
-            <div class="space-y-2.5 mb-4">
-              <div class="flex items-center justify-between px-1">
-                <span class="text-[9px] text-zinc-500 font-mono-tag tracking-[0.2em] uppercase">FREQUENCIES</span>
-              </div>
-              <div class="bg-zinc-950 border border-zinc-800/60 rounded-2xl p-4 space-y-3 shadow-lg" id="searchFrequenciesContainer">
-                <div class="text-center py-2 text-xs text-zinc-600 font-mono-tag animate-pulse">SYNCING TAGS...</div>
-              </div>
-            </div>
-
-            <!-- GLOBAL GATEWAY -->
-            <div id="searchExploreGateway" class="mb-4">
-              <button
-                onclick="openGlobalSearch()"
-                class="w-full bg-zinc-950 border border-zinc-800/60 hover:border-amber-500/40 rounded-2xl p-4 flex items-center justify-between shadow-xl transition-all duration-200 active:scale-[0.99] cursor-pointer group"
-              >
-                <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 group-hover:border-amber-500/30 flex items-center justify-center text-lg transition-colors flex-shrink-0">🌐</div>
-                  <div class="text-left">
-                    <h3 class="text-xs font-bold text-white tracking-wide">EXPLORE THE WORLD</h3>
-                    <p class="text-[9px] text-zinc-500 font-mono-tag uppercase">Global Kandid · Public Moments</p>
-                  </div>
-                </div>
-                <svg class="w-4 h-4 text-zinc-600 group-hover:text-amber-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                </svg>
-              </button>
-            </div>
-
-          </div><!-- /searchIdleView -->
-
-          <!-- ── FOCUSED VIEW: Recent Searches (shown when input focused, no query) ── -->
-          <div id="searchFocusedView" style="display:none;">
-            <div class="flex items-center justify-between px-1 mb-2.5">
-              <span class="text-[9px] text-zinc-500 font-mono-tag tracking-[0.2em] uppercase">RECENT</span>
-              <button class="text-[9px] text-zinc-600 hover:text-amber-500 font-mono-tag cursor-pointer transition-colors" onclick="clearAllRecentSearches()">CLEAR ALL</button>
-            </div>
-            <div id="recentSearchesList" class="space-y-1.5">
-              <div class="text-center py-6 text-xs text-zinc-700 font-mono-tag">No recent searches</div>
-            </div>
-          </div>
-
-          <!-- ── RESULTS VIEW: Search Results ── -->
-          <div id="searchResultsView" style="display:none;">
-            <!-- Skeleton while loading -->
-            <div id="searchResultsSkeleton" class="space-y-2.5" style="display:none;">
-              <div class="h-3 bg-zinc-900 rounded-xl w-1/3 animate-pulse"></div>
-              <div class="h-14 bg-zinc-900 rounded-2xl animate-pulse"></div>
-              <div class="h-14 bg-zinc-900 rounded-2xl animate-pulse"></div>
-              <div class="h-14 bg-zinc-900 rounded-2xl animate-pulse"></div>
-            </div>
-            <!-- Actual results -->
-            <div id="searchResultsContainer" class="space-y-4"></div>
-          </div>
-
-          <!-- ── EMPTY STATE ── -->
-          <div class="text-center py-14 space-y-2.5" id="searchEmptyState" style="display:none;">
-            <div class="text-3xl mb-2">🔍</div>
-            <h3 class="text-xs font-bold text-white font-mono-tag tracking-wider uppercase">NOTHING FOUND</h3>
-            <p class="text-[11px] text-zinc-500">Try another name, place, or Moment.</p>
-          </div>
-
-          <!-- ── ERROR STATE ── -->
-          <div class="text-center py-14 space-y-3" id="searchErrorState" style="display:none;">
-            <div class="text-3xl mb-2">📡</div>
-            <h3 class="text-xs font-bold text-amber-500 font-mono-tag tracking-wider uppercase">Couldn't load results.</h3>
-            <p class="text-[11px] text-zinc-400">Check your connection and try again.</p>
-            <button class="mt-2 px-5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-mono-tag text-[10px] rounded-xl cursor-pointer active:scale-95 transition-all" onclick="performSearch()">TRY AGAIN →</button>
-          </div>
-
-        </div><!-- /searchScrollBody -->
       </section>
 
-      <!-- =================================================================
-           SECTION 2B: GLOBAL DISCOVERY (accessible via Search only)
-           ================================================================= -->
-      <section class="app-screen flex flex-col" id="screen-search-global" style="display:none; overflow:hidden; height:100%;">
-
-        <!-- Global Header -->
-        <div class="flex-shrink-0 px-4 pt-4 pb-3 border-b border-zinc-900 flex items-center gap-3">
-          <button onclick="closeGlobalSearch()" class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer active:scale-95 transition-all flex-shrink-0">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-          </button>
-          <div class="flex-1">
-            <h2 class="text-sm font-bold text-white tracking-wide">GLOBAL KANDID</h2>
-            <p class="text-[9px] text-zinc-500 font-mono-tag uppercase tracking-widest">Public Moments · Worldwide</p>
-          </div>
-          <div class="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0"></div>
-        </div>
-
-        <!-- Global Moments Feed -->
-        <div class="flex-1 overflow-y-auto px-4 pt-3 pb-32 space-y-4" id="globalMomentsScroll">
-          <div id="globalMomentsList" class="space-y-4">
-            <div class="text-center py-12 text-xs text-zinc-600 font-mono-tag animate-pulse">LOADING GLOBAL MOMENTS...</div>
-          </div>
-          <!-- Load More -->
-          <div id="globalLoadMoreWrap" class="text-center pb-4" style="display:none;">
-            <button onclick="loadMoreGlobalMoments()" class="px-5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 font-mono-tag text-[10px] rounded-xl cursor-pointer active:scale-95 transition-all">LOAD MORE</button>
-          </div>
-          <!-- End state -->
-          <div id="globalNoMoreState" class="text-center py-4 text-[10px] text-zinc-700 font-mono-tag" style="display:none;">— END OF GLOBAL FEED —</div>
-        </div>
-      </section>
-
-      <!-- =================================================================
       <!-- =================================================================
            SECTION 4: YOU / PROFILE (APPROVED SOURCE OF TRUTH)
            ================================================================= -->
@@ -4785,6 +4771,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.2.27"></script>
+  <script src="app.js?v=5.2.28"></script>
 </body>
 </html>
