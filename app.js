@@ -9199,6 +9199,7 @@ window.chatHeartbeatInterval = setInterval(function() {
 // EDIT PROFILE & USER UPDATE SYSTEM
 // =====================================================================
 var pendingEditAvatarData = '';
+var pendingEditCoverData = '';
 
 function openEditProfileModal() {
   var modal = document.getElementById('editProfileModal');
@@ -9212,6 +9213,7 @@ function openEditProfileModal() {
   var initsEl = document.getElementById('modalEditAvatarInitials');
 
   pendingEditAvatarData = '';
+  pendingEditCoverData = '';
 
   if (state.currentUser) {
     if (nameInp) nameInp.value = state.currentUser.name || '';
@@ -9234,6 +9236,23 @@ function openEditProfileModal() {
         initsEl.style.display = 'block';
         initsEl.textContent = (state.currentUser.name ? state.currentUser.name.substring(0, 2).toUpperCase() : 'AN');
       }
+    }
+
+    var curCover = state.currentUser.cover_url || '';
+    var coverPreview = document.getElementById('modalEditCoverPreview');
+    var coverPlaceholder = document.getElementById('modalEditCoverPlaceholder');
+    if (curCover && !curCover.includes('unsplash.com')) {
+      if (coverPreview) {
+        coverPreview.src = curCover;
+        coverPreview.style.display = 'block';
+      }
+      if (coverPlaceholder) coverPlaceholder.style.display = 'none';
+    } else {
+      if (coverPreview) {
+        coverPreview.style.display = 'none';
+        coverPreview.removeAttribute('src');
+      }
+      if (coverPlaceholder) coverPlaceholder.style.display = 'block';
     }
   }
 
@@ -9260,10 +9279,42 @@ function handleModalAvatarUpload(event) {
 }
 window.handleModalAvatarUpload = handleModalAvatarUpload;
 
+function handleModalCoverUpload(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) {
+    showToast('Please select a valid image file (JPG, PNG, WebP).');
+    return;
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    showToast('Cover photo exceeds maximum size limit (15MB).');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    pendingEditCoverData = e.target.result;
+    var coverPreview = document.getElementById('modalEditCoverPreview');
+    var coverPlaceholder = document.getElementById('modalEditCoverPlaceholder');
+    if (coverPreview) {
+      coverPreview.src = e.target.result;
+      coverPreview.style.display = 'block';
+    }
+    if (coverPlaceholder) coverPlaceholder.style.display = 'none';
+    showToast('Cover photo selected! Click Save Changes 📸');
+  };
+  reader.readAsDataURL(file);
+}
+window.handleModalCoverUpload = handleModalCoverUpload;
+
 function closeEditProfileModal() {
   var modal = document.getElementById('editProfileModal');
   if (modal) modal.style.display = 'none';
   pendingEditAvatarData = '';
+  pendingEditCoverData = '';
+  var aInp = document.getElementById('modalEditAvatarInput');
+  if (aInp) aInp.value = '';
+  var cInp = document.getElementById('modalEditCoverInput');
+  if (cInp) cInp.value = '';
 }
 window.closeEditProfileModal = closeEditProfileModal;
 
@@ -9299,6 +9350,9 @@ async function saveUserProfileChanges() {
   if (pendingEditAvatarData) {
     payload.avatar_url = pendingEditAvatarData;
   }
+  if (pendingEditCoverData) {
+    payload.cover_url = pendingEditCoverData;
+  }
 
   var res = await apiRequest('/api/user/update', {
     method: 'POST',
@@ -9315,6 +9369,11 @@ async function saveUserProfileChanges() {
       state.currentUser.vibe = newVibe;
       if (res.user && res.user.avatar_url) {
         state.currentUser.avatar_url = res.user.avatar_url;
+      }
+      if (res.user && res.user.cover_url) {
+        state.currentUser.cover_url = res.user.cover_url;
+      } else if (pendingEditCoverData) {
+        state.currentUser.cover_url = pendingEditCoverData;
       }
       localStorage.setItem('kandid_user', JSON.stringify(state.currentUser));
     }
