@@ -818,24 +818,6 @@
             <div class="relative w-full h-[120px] bg-gradient-to-br from-neutral-900 via-[#18181b] to-neutral-950 overflow-hidden" id="youCoverContainer" role="img" aria-label="Profile cover window into the world">
                 <img src="" id="youCoverImg" alt="" class="w-full h-full object-cover opacity-70" style="display:none;">
                 <div class="absolute inset-0 bg-gradient-to-t from-[#0b0b0c] via-transparent to-black/30 pointer-events-none"></div>
-
-                <!-- Cover Edit Controls -->
-                <input type="file" id="youDirectCoverInput" accept="image/*" class="hidden" onchange="handleDirectCoverUpload(event)">
-                <button type="button" onclick="triggerDirectCoverUpload()" id="youCoverEditBtn" aria-label="Change cover photo" class="absolute top-1.5 right-2 z-10 w-11 h-11 flex items-center justify-center bg-transparent cursor-pointer p-0 group">
-                    <span class="w-8 h-8 rounded-full bg-black/40 group-hover:bg-black/60 group-active:border-amber-500 group-active:text-amber-400 border border-white/15 text-white/80 group-hover:text-white flex items-center justify-center transition shadow-sm backdrop-blur-sm">
-                        <i class="fa-solid fa-camera text-[11px]" aria-hidden="true"></i>
-                    </span>
-                </button>
-
-                <!-- Cover Action Bar (Save / Cancel during preview) -->
-                <div id="youCoverActionBar" class="absolute top-2 right-2.5 z-20 flex items-center space-x-1.5" style="display:none;">
-                    <button type="button" onclick="cancelCoverUpload()" class="px-2.5 py-1 bg-black/70 hover:bg-black/90 border border-white/20 text-gray-200 hover:text-white text-[10px] font-mono-tag uppercase tracking-wider rounded-full backdrop-blur-sm transition cursor-pointer active:scale-95">
-                        Cancel
-                    </button>
-                    <button type="button" onclick="saveCoverUpload()" id="youSaveCoverBtn" class="px-3 py-1 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black text-[10px] font-mono-tag font-bold uppercase tracking-wider rounded-full transition shadow-md cursor-pointer active:scale-95">
-                        Save
-                    </button>
-                </div>
             </div>
 
             <!-- Profile Identity Section -->
@@ -843,16 +825,13 @@
                 <div class="flex items-start justify-between">
                     <div class="flex items-center space-x-3.5">
                         <div class="relative flex-shrink-0">
-                            <div class="w-[82px] h-[82px] rounded-full p-[2px] bg-gradient-to-tr from-amber-600 via-amber-500 to-amber-300 shadow-lg shadow-amber-500/10">
+                            <div class="w-[82px] h-[82px] rounded-full p-[2px] bg-gradient-to-tr from-amber-600 via-amber-500 to-amber-300 shadow-lg shadow-amber-500/10 cursor-pointer" onclick="openEditProfileModal()">
                                 <div class="w-full h-full rounded-full bg-zinc-900 overflow-hidden flex items-center justify-center border-2 border-[#0b0b0c]" id="youProfileAvatarBox">
                                     <span id="youProfileInitials" class="text-amber-400 font-bold font-mono-tag text-2xl">K</span>
                                     <img src="" id="youProfileAvatar" alt="Profile picture" class="w-full h-full object-cover rounded-full" style="display:none;">
                                 </div>
                             </div>
                             <input type="file" id="youDirectAvatarInput" accept="image/*" class="hidden" onchange="handleDirectAvatarUpload(event)">
-                            <button type="button" onclick="triggerDirectAvatarUpload()" aria-label="Change profile photo" class="absolute bottom-0 right-0 bg-[#18181b] border border-neutral-700 text-white p-1.5 rounded-full text-[9px] hover:bg-neutral-800 shadow transition cursor-pointer">
-                                <i class="fa-solid fa-camera" aria-hidden="true"></i>
-                            </button>
                         </div>
                         <div class="pt-6">
                             <h1 class="font-bold text-[19px] text-white tracking-tight leading-tight" id="youProfileName">You</h1>
@@ -4341,8 +4320,22 @@
                             <span id="modalEditAvatarInitials" class="text-amber-500 font-bold font-mono-tag text-sm">AN</span>
                         </div>
                         <input type="file" id="modalEditAvatarInput" accept="image/*" class="hidden" onchange="handleModalAvatarUpload(event)">
-                        <button type="button" onclick="document.getElementById('modalEditAvatarInput').click()" class="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-[10px] font-bold rounded-xl font-mono-tag cursor-pointer">
+                        <button type="button" onclick="document.getElementById('modalEditAvatarInput').click()" class="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-[10px] font-bold rounded-xl font-mono-tag cursor-pointer active:scale-95">
                             📷 CHANGE PHOTO
+                        </button>
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-[9px] text-zinc-500 uppercase tracking-widest block font-bold">Cover Photo</label>
+                    <div class="flex items-center gap-3">
+                        <div class="w-20 h-12 rounded-xl bg-gradient-to-br from-neutral-900 via-[#18181b] to-neutral-950 border border-zinc-800 overflow-hidden flex items-center justify-center flex-shrink-0 relative" id="modalEditCoverPreviewBox">
+                            <img id="modalEditCoverPreview" class="w-full h-full object-cover" style="display:none;">
+                            <span id="modalEditCoverPlaceholder" class="text-[9px] text-zinc-600 font-mono-tag uppercase">No Cover</span>
+                        </div>
+                        <input type="file" id="modalEditCoverInput" accept="image/*" class="hidden" onchange="handleModalCoverUpload(event)">
+                        <button type="button" onclick="document.getElementById('modalEditCoverInput').click()" class="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-[10px] font-bold rounded-xl font-mono-tag cursor-pointer active:scale-95">
+                            📷 CHANGE COVER
                         </button>
                     </div>
                 </div>
@@ -4783,6 +4776,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.3.2"></script>
+  <script src="app.js?v=5.3.3"></script>
 </body>
 </html>
