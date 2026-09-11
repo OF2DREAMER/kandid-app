@@ -6358,15 +6358,27 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC", (user["id"],))
             memories_rows = [dict(r) for r in cursor.fetchall()]
-            conn.close()
 
+            places = set()
+            communities = set()
             for m in memories_rows:
                 m["timeAgo"] = format_time_ago(m.get("created_at", ""))
-                m["mediaUrl"] = m["main_img"]
+                m["mediaUrl"] = m.get("main_img") or m.get("media_url")
+                loc = m.get("campus") or m.get("location_city")
+                if loc and loc.strip():
+                    places.add(loc.strip().upper())
+                cid = m.get("primary_community_id")
+                if cid:
+                    communities.add(cid)
 
+            conn.close()
             return self.send_json(200, {
                 "success": True,
-                "memories": memories_rows
+                "memories": memories_rows,
+                "moments": memories_rows,
+                "momentsCount": len(memories_rows),
+                "placesCount": len(places),
+                "communitiesCount": len(communities)
             })
 
         if path == "/api/user/shared-context":

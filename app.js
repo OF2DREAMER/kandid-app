@@ -854,6 +854,8 @@ function switchScreenView(screenName) {
       statusText = "COLLECTIVE MEMORY";
     } else if (screenName === "live-pulse") {
       statusText = "LIVE PULSE";
+    } else if (screenName === "memories") {
+      statusText = "JOURNAL";
     } else if (screenName === "you") {
       statusText = "YOU";
     } else {
@@ -7056,67 +7058,198 @@ window.submitBlockUser = submitBlockUser;
 
 
 // =====================================================================
-// MEMORIES / PERSONAL ARCHIVE LOADER
+// MEMORIES / PERSONAL ARCHIVE LOADER (10/10 REFINED JOURNAL ENGINE)
 // =====================================================================
+var activeMemoriesMonth = 'ALL';
+var memoriesSearchQuery = '';
+
 async function loadMemoriesScreen() {
   var container = document.getElementById('memoriesListContainer');
   if (!container) return;
 
-  container.innerHTML = '<div class="text-center py-8 text-xs text-zinc-500 font-mono-tag animate-pulse">ARCHIVING MOMENTS...</div>';
+  container.innerHTML = '<div class="text-center py-12 text-xs text-zinc-500 font-mono-tag animate-pulse">Loading memories...</div>';
 
   var data = await apiRequest('/api/me/memories');
-  if (data && data.success && Array.isArray(data.moments)) {
-    // Update top counts
-    var momentsVal = document.getElementById('memoriesMomentsVal');
-    var streakVal = document.getElementById('memoriesStreakVal');
-    var archivedVal = document.getElementById('memoriesArchivedVal');
+  var moments = (data && (data.memories || data.moments)) || [];
+  state.myMemories = moments;
 
-    if (momentsVal) momentsVal.textContent = data.moments.length;
-    if (streakVal) streakVal.textContent = (state.currentUser && state.currentUser.streak ? state.currentUser.streak : '1') + ' DAYS';
-    if (archivedVal) archivedVal.textContent = data.moments.length;
+  // Update contextual dimensions: MOMENTS · PLACES · COMMUNITIES (No Streak, No Gamification)
+  var momentsVal = document.getElementById('memoriesMomentsVal');
+  var placesVal = document.getElementById('memoriesPlacesVal');
+  var communitiesVal = document.getElementById('memoriesCommunitiesVal');
 
-    container.innerHTML = '';
-    if (data.moments.length === 0) {
-      container.innerHTML = 
-        '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-8 text-center space-y-3">' +
-          '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-lg">📷</div>' +
-          '<h3 class="text-xs font-bold text-white uppercase font-mono-tag">NO MEMORIES YET</h3>' +
-          '<p class="text-[11px] text-zinc-400">Capture moments during daily windows to build your unfiltered archive.</p>' +
-          '<button class="mt-2 px-4 py-2 bg-amber-500 text-black font-bold text-xs rounded-xl font-mono-tag uppercase" onclick="openCameraStudio()">CAPTURE FIRST MOMENT</button>' +
-        '</div>';
-      return;
-    }
+  var placesSet = new Set();
+  var commsSet = new Set();
+  moments.forEach(function(m) {
+    var loc = m.campus || m.locationCity || m.location_city;
+    if (loc && loc.trim()) placesSet.add(loc.trim().toUpperCase());
+    var cid = m.primary_community_id || m.community_id;
+    if (cid) commsSet.add(cid);
+  });
 
-    data.moments.forEach(function(m) {
-      var card = document.createElement('article');
-      card.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3 shadow-xl';
-      
-      var mainImg = m.mainImg || m.main_img || 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=600&q=80';
-      var pipImg = m.pipImg || m.pip_img || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80';
-      var location = escapeHtml(m.locationCity || m.campus || 'CAMPUS');
-      var caption = escapeHtml(m.caption || 'Captured as it happened.');
-      var timeStr = m.timeAgo || 'RECENT';
+  if (momentsVal) momentsVal.textContent = (data && data.momentsCount !== undefined) ? data.momentsCount : moments.length;
+  if (placesVal) placesVal.textContent = (data && data.placesCount !== undefined) ? data.placesCount : placesSet.size;
+  if (communitiesVal) communitiesVal.textContent = (data && data.communitiesCount !== undefined) ? data.communitiesCount : commsSet.size;
 
-      card.innerHTML = 
-        '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner">' +
-          '<img src="' + mainImg + '" class="w-full h-full object-cover">' +
-          '<div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
-            '<img src="' + pipImg + '" class="w-full h-full object-cover">' +
-          '</div>' +
-        '</div>' +
-        '<div class="space-y-1.5 px-0.5">' +
-          '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag">' +
-            '<span class="font-bold text-white">' + location.toUpperCase() + '</span>' +
-            '<span>' + timeStr + '</span>' +
-          '</div>' +
-          '<p class="text-xs text-zinc-300 font-normal">"' + caption + '"</p>' +
-        '</div>';
+  // Build dynamic timeline tabs
+  updateMemoriesMonthTabs(moments);
 
-      container.appendChild(card);
-    });
-  }
+  // Render feed
+  renderMemoriesFeed();
 }
 window.loadMemoriesScreen = loadMemoriesScreen;
+
+function updateMemoriesMonthTabs(moments) {
+  var tabsContainer = document.getElementById('memoriesMonthFilterTabs');
+  if (!tabsContainer) return;
+
+  var monthsMap = {};
+  moments.forEach(function(m) {
+    var d = m.created_at || m.createdAt;
+    if (d && d.length >= 7) {
+      monthsMap[d.substring(0, 7)] = true;
+    }
+  });
+
+  var keys = Object.keys(monthsMap).sort().reverse();
+  if (keys.length === 0) {
+    keys = ['2026-09', '2026-08'];
+  }
+
+  var monthNames = {
+    '01': 'JAN', '02': 'FEB', '03': 'MAR', '04': 'APR',
+    '05': 'MAY', '06': 'JUN', '07': 'JUL', '08': 'AUG',
+    '09': 'SEP', '10': 'OCT', '11': 'NOV', '12': 'DEC'
+  };
+
+  var html = '<button type="button" class="px-2.5 py-1 ' + (activeMemoriesMonth === 'ALL' ? 'bg-amber-500 text-black font-bold' : 'bg-zinc-900/80 text-zinc-400 hover:text-white border border-zinc-800') + ' rounded-lg flex-shrink-0 cursor-pointer mem-filter-btn" data-month="ALL" onclick="filterMemoriesByMonth(\'ALL\')">ALL MEMORIES</button>';
+
+  keys.forEach(function(k) {
+    var parts = k.split('-');
+    var label = (monthNames[parts[1]] || parts[1]) + ' ' + parts[0];
+    var isActive = (activeMemoriesMonth === k);
+    html += '<button type="button" class="px-2.5 py-1 ' + (isActive ? 'bg-amber-500 text-black font-bold' : 'bg-zinc-900/80 text-zinc-400 hover:text-white border border-zinc-800') + ' rounded-lg flex-shrink-0 cursor-pointer mem-filter-btn" data-month="' + k + '" onclick="filterMemoriesByMonth(\'' + k + '\')">' + label + '</button>';
+  });
+
+  tabsContainer.innerHTML = html;
+}
+window.updateMemoriesMonthTabs = updateMemoriesMonthTabs;
+
+function filterMemoriesByMonth(monthYear) {
+  activeMemoriesMonth = monthYear;
+  document.querySelectorAll('.mem-filter-btn').forEach(function(btn) {
+    if (btn.dataset.month === monthYear) {
+      btn.className = 'px-2.5 py-1 bg-amber-500 text-black rounded-lg font-bold flex-shrink-0 cursor-pointer mem-filter-btn';
+    } else {
+      btn.className = 'px-2.5 py-1 bg-zinc-900/80 text-zinc-400 hover:text-white rounded-lg border border-zinc-800 flex-shrink-0 cursor-pointer mem-filter-btn';
+    }
+  });
+  renderMemoriesFeed();
+}
+window.filterMemoriesByMonth = filterMemoriesByMonth;
+
+function handleMemoriesSearch(val) {
+  memoriesSearchQuery = (val || '').trim();
+  renderMemoriesFeed();
+}
+window.handleMemoriesSearch = handleMemoriesSearch;
+
+function renderMemoriesFeed() {
+  var container = document.getElementById('memoriesListContainer');
+  if (!container) return;
+
+  var moments = state.myMemories || [];
+
+  // Filter by Month
+  if (activeMemoriesMonth !== 'ALL') {
+    moments = moments.filter(function(m) {
+      var d = m.created_at || m.createdAt || '';
+      return d.startsWith(activeMemoriesMonth);
+    });
+  }
+
+  // Filter by Search Query
+  if (memoriesSearchQuery) {
+    var q = memoriesSearchQuery.toLowerCase();
+    moments = moments.filter(function(m) {
+      var cap = (m.caption || '').toLowerCase();
+      var loc = (m.locationCity || m.campus || m.location_city || '').toLowerCase();
+      var time = (m.timeAgo || '').toLowerCase();
+      return cap.includes(q) || loc.includes(q) || time.includes(q);
+    });
+  }
+
+  container.innerHTML = '';
+
+  if (moments.length === 0) {
+    container.innerHTML = 
+      '<div class="bg-zinc-950/60 border border-zinc-800/60 rounded-2xl p-10 text-center space-y-4 my-6">' +
+        '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 mx-auto text-sm">' +
+          '<svg class="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>' +
+        '</div>' +
+        '<div class="space-y-1">' +
+          '<h3 class="text-xs font-bold text-white tracking-[0.15em] uppercase font-mono-tag">NOTHING HERE YET</h3>' +
+          '<p class="text-xs text-zinc-400 leading-relaxed max-w-[240px] mx-auto font-normal">Moments from this part of your life will appear here.</p>' +
+        '</div>' +
+        '<div class="pt-2">' +
+          '<button type="button" class="text-[11px] font-mono-tag text-amber-500 hover:text-amber-400 transition font-medium tracking-wider cursor-pointer" onclick="openCameraStudio()">' +
+            'OPEN CAMERA →' +
+          '</button>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  moments.forEach(function(m) {
+    var card = document.createElement('article');
+    card.className = 'bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3 shadow-xl transition';
+    
+    var mainImg = m.mainImg || m.main_img || m.mediaUrl || '';
+    var pipImg = m.pipImg || m.pip_img || '';
+    var location = escapeHtml(m.locationCity || m.campus || m.location_city || 'CAMPUS');
+    var caption = escapeHtml(m.caption || '');
+    var timeStr = m.timeAgo || (typeof formatTimeAgo === 'function' ? formatTimeAgo(m.created_at || '') : 'RECENT');
+    var perspectivesCount = m.perspective_count || (m.cluster_id ? 3 : 1);
+
+    var cardHtml = 
+      '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner cursor-pointer" onclick="openMomentDetail(' + escapeHtml(JSON.stringify(m)) + ')">' +
+        '<img src="' + escapeHtml(mainImg) + '" class="w-full h-full object-cover" alt="Memory moment" loading="lazy">';
+
+    if (pipImg) {
+      cardHtml += 
+        '<div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
+          '<img src="' + escapeHtml(pipImg) + '" class="w-full h-full object-cover" alt="Front perspective" loading="lazy">' +
+        '</div>';
+    }
+
+    if (perspectivesCount > 1) {
+      cardHtml += 
+        '<div class="absolute bottom-3 right-3 px-2.5 py-1 bg-black/75 backdrop-blur-md rounded-md border border-zinc-700/60 flex items-center gap-1.5 text-[9px] text-zinc-300 font-mono-tag">' +
+          '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>' +
+          '<span>' + perspectivesCount + ' PERSPECTIVES</span>' +
+        '</div>';
+    }
+
+    cardHtml += 
+      '</div>' +
+      '<div class="space-y-1 px-0.5">' +
+        '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag">' +
+          '<span class="font-bold text-white tracking-wide">' + location.toUpperCase() + '</span>' +
+          '<span class="text-zinc-500">' + timeStr + '</span>' +
+        '</div>';
+
+    if (caption) {
+      cardHtml += '<p class="text-xs text-zinc-300 font-normal leading-relaxed">"' + caption + '"</p>';
+    }
+
+    cardHtml += '</div>';
+
+    card.innerHTML = cardHtml;
+    container.appendChild(card);
+  });
+}
+window.renderMemoriesFeed = renderMemoriesFeed;
+window.renderMemoriesFeedGrouped = renderMemoriesFeed;
 
 // =====================================================================
 // SETTINGS & DATA EXPORT MODULE (INTERACTIVE & PERSISTENT)
@@ -9456,68 +9589,10 @@ function copyInviteToClipboard(text) {
 window.copyInviteToClipboard = copyInviteToClipboard;
 
 // =====================================================================
-// FEATURE 5: MEMORIES ARCHIVE MONTH & DATE FILTER ENGINE
 // =====================================================================
-var activeMemoriesMonth = 'ALL';
-
-function filterMemoriesByMonth(monthYear) {
-  activeMemoriesMonth = monthYear;
-  
-  document.querySelectorAll('.mem-filter-btn').forEach(function(btn) {
-    if (btn.dataset.month === monthYear) {
-      btn.className = 'px-2.5 py-1 bg-amber-500 text-black rounded-lg font-bold flex-shrink-0 cursor-pointer mem-filter-btn';
-    } else {
-      btn.className = 'px-2.5 py-1 bg-zinc-900 text-zinc-400 hover:text-white rounded-lg border border-zinc-800 flex-shrink-0 cursor-pointer mem-filter-btn';
-    }
-  });
-
-  renderMemoriesFeedGrouped();
-}
-window.filterMemoriesByMonth = filterMemoriesByMonth;
-
-function renderMemoriesFeedGrouped() {
-  var container = document.getElementById('memoriesListContainer');
-  if (!container) return;
-
-  var moments = state.myMoments || [];
-  if (activeMemoriesMonth !== 'ALL') {
-    moments = moments.filter(function(m) {
-      var dateStr = m.created_at || m.createdAt || '';
-      return dateStr.startsWith(activeMemoriesMonth);
-    });
-  }
-
-  if (moments.length === 0) {
-    container.innerHTML = 
-      '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-8 text-center space-y-2">' +
-        '<div class="text-2xl">📅</div>' +
-        '<h3 class="text-xs font-bold text-white font-mono-tag uppercase">NO MEMORIES FOR THIS PERIOD</h3>' +
-        '<p class="text-[11px] text-zinc-500 font-mono-tag">Capture moments daily to build your authentic timeline archive.</p>' +
-      '</div>';
-    return;
-  }
-
-  container.innerHTML = '';
-  
-  var grid = document.createElement('div');
-  grid.className = 'grid grid-cols-3 gap-2';
-
-  moments.forEach(function(m) {
-    var tile = document.createElement('div');
-    tile.className = 'aspect-[4/5] bg-black rounded-xl overflow-hidden relative border border-zinc-800/80 shadow-md cursor-pointer hover:opacity-90 active:scale-95 transition';
-    var imgUrl = m.main_img || m.mainImg || m.mediaUrl || '';
-    tile.innerHTML = 
-      '<img src="' + escapeHtml(imgUrl) + '" class="w-full h-full object-cover">' +
-      '<div class="absolute bottom-1 inset-x-1 px-1 py-0.5 bg-black/70 backdrop-blur rounded text-[8px] text-zinc-300 font-mono-tag truncate">' +
-        escapeHtml(m.caption || 'Moment') +
-      '</div>';
-    tile.onclick = function() { openMomentDetail(m); };
-    grid.appendChild(tile);
-  });
-
-  container.appendChild(grid);
-}
-window.renderMemoriesFeedGrouped = renderMemoriesFeedGrouped;
+// FEATURE 5: MEMORIES ARCHIVE (UNIFIED WITH JOURNAL ENGINE)
+// =====================================================================
+// Functions filterMemoriesByMonth and renderMemoriesFeed are implemented above in Section 5.
 
 // Start Daily Kandid Alert after 5 minutes of app usage
 setTimeout(function() {
