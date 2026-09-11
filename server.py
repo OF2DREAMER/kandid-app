@@ -6290,7 +6290,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "email": user.get("email", ""),
                 "email_verified": bool(user.get("email_verified", 1)),
                 "profile_visibility": user.get("profile_visibility", "public"),
-                "connections_from": user.get("connections_from", "everyone")
+                "connections_from": user.get("connections_from", "everyone"),
+                "cover_url": user.get("cover_url", "")
             }
 
             return self.send_json(200, {
@@ -10652,6 +10653,33 @@ class KandidHandler(SimpleHTTPRequestHandler):
             updated.pop("salt", None)
             conn.close()
             return self.send_json(200, {"success": True, "avatar_url": avatar_url, "user": updated})
+
+        if path == "/api/user/cover":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthenticated", "success": False})
+            user_id = user["id"]
+            cover_url = body.get("cover") or body.get("cover_url") or body.get("photo") or ""
+            if not cover_url:
+                return self.send_json(400, {"error": "cover photo required", "success": False})
+            if cover_url.startswith("data:"):
+                if not cover_url.startswith("data:image"):
+                    return self.send_json(400, {"error": "Invalid image format", "success": False})
+                cover_url = save_base64_image(cover_url, "cover")
+            elif not (cover_url.startswith("http://") or cover_url.startswith("https://") or cover_url.startswith("/uploads/")):
+                return self.send_json(400, {"error": "Invalid image URL", "success": False})
+            if not cover_url:
+                return self.send_json(400, {"error": "Invalid image format or size exceeds limit", "success": False})
+            conn = get_db()
+            conn.execute("UPDATE users SET cover_url = ? WHERE id = ?", (cover_url, user_id))
+            conn.commit()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            updated = dict(cursor.fetchone())
+            updated.pop("password_hash", None)
+            updated.pop("salt", None)
+            conn.close()
+            return self.send_json(200, {"success": True, "cover_url": cover_url, "user": updated})
 
         if path == "/api/user/privacy":
             user = get_current_user(self.headers)
