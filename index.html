@@ -633,7 +633,7 @@
                     <span class="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-gray-500 text-xs">
                         <i class="fa-solid fa-magnifying-glass"></i>
                     </span>
-                    <input type="text" id="main-search-input" placeholder="Search people, places, Moments..." class="w-full bg-[#121215] border border-neutral-800/80 rounded-xl pl-9 pr-9 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/60 transition shadow-inner font-medium" aria-label="Search people, places, Moments" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="handleSearchInput(event)" onfocus="onSearchFocus()" onblur="onSearchBlur()">
+                    <input type="text" id="main-search-input" placeholder="Search people, places, Moments..." class="w-full bg-[#121215] border border-neutral-800/80 rounded-xl pl-9 pr-9 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-amber-500/60 transition shadow-inner font-medium" aria-label="Search people, places, Moments" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="handleSearchInput(event)" onkeydown="if(event.key==='Enter'){if(searchDebounceTimer)clearTimeout(searchDebounceTimer);performSearch();}" onfocus="onSearchFocus()" onblur="onSearchBlur()">
                     <button type="button" id="search-clear-btn" onclick="clearSearchInput()" class="absolute inset-y-0 right-3 flex items-center text-gray-500 hover:text-white transition hidden cursor-pointer" aria-label="Clear search">
                         <i class="fa-solid fa-xmark text-xs"></i>
                     </button>
