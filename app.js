@@ -319,29 +319,23 @@ async function apiRequest(endpoint, options) {
 
   try {
     var res = await fetch(endpoint, options);
+    var contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      // Server returned non-JSON (HTML error page, etc.)
+      var text = await res.text();
+      console.warn('[API] Non-JSON response for', endpoint, 'status:', res.status, 'body:', text.substring(0, 200));
+      return { success: false, error: 'Server error (' + res.status + ')' };
+    }
     var data = await res.json();
     return data;
   } catch (err) {
-    // Offline / local file / network fallback
+    console.warn('[API] fetch error for', endpoint, err && err.message);
     if (endpoint.indexOf('/api/feed') !== -1) {
       return { success: true, feed: MOCK_DATA.feed };
     }
     if (endpoint.indexOf('/api/user/profile') !== -1) {
-      var uidMatch = endpoint.match(/user_id=([^&]+)/);
-      var targetId = uidMatch ? decodeURIComponent(uidMatch[1]) : '';
-      return {
-        success: true,
-        user: {
-          id: targetId || 'u_target',
-          name: 'Student',
-          handle: 'user',
-          campus: 'Campus',
-          location_city: 'City',
-          bio: ''
-        },
-        moments: [],
-        connection_status: 'none'
-      };
+      // Do NOT return dummy data — return failure so profile shows an error toast
+      return { success: false, error: 'Unable to load profile. Check your connection.' };
     }
     if (endpoint.indexOf('/api/campus') !== -1) {
       return {
@@ -4058,16 +4052,31 @@ async function openUserProfile(userId, preloadedData) {
 
     if (pubName) pubName.textContent = preName;
     if (pubUsername) pubUsername.textContent = preCleanH;
-    if (pubCampus) pubCampus.textContent = preloadedData.campus || preloadedData.community_name || 'Campus';
-    if (pubCity) pubCity.textContent = preloadedData.location_city || preloadedData.city || 'City';
-    if (pubBio) pubBio.textContent = preloadedData.bio || 'Building Kandid · Learning CS ·\nExploring real places, real people, real stories.';
+    if (pubCampus) {
+      var preCampus = preloadedData.campus || preloadedData.community_name || '';
+      pubCampus.textContent = preCampus;
+      if (pubCampus.parentElement) pubCampus.parentElement.style.display = preCampus ? 'flex' : 'none';
+    }
+    if (pubCity) {
+      var preCity = preloadedData.location_city || preloadedData.city || '';
+      pubCity.textContent = preCity;
+      if (pubCity.parentElement) pubCity.parentElement.style.display = preCity ? 'flex' : 'none';
+    }
+    if (pubBio) {
+      var preBio = preloadedData.bio || '';
+      pubBio.textContent = preBio;
+      pubBio.style.display = preBio ? 'block' : 'none';
+    }
     if (pubInitials) pubInitials.textContent = preInits || 'K';
 
+    var pubInitialsBox = document.getElementById('peerPublicInitialsBox');
     if (preAvatar && !preAvatar.includes('dicebear')) {
       if (pubAvatar) { pubAvatar.src = preAvatar; pubAvatar.style.display = 'block'; }
+      if (pubInitialsBox) pubInitialsBox.style.display = 'none';
       if (pubInitials) pubInitials.style.display = 'none';
     } else {
       if (pubAvatar) pubAvatar.style.display = 'none';
+      if (pubInitialsBox) pubInitialsBox.style.display = 'flex';
       if (pubInitials) pubInitials.style.display = 'block';
     }
 
@@ -4166,29 +4175,34 @@ async function openUserProfile(userId, preloadedData) {
       }
     }
     if (pubCampus) {
+      var campRow = document.getElementById('peerPublicCampusRow') || pubCampus.parentElement;
       if (u.campus) {
         pubCampus.textContent = u.campus;
-        if (pubCampus.parentElement) pubCampus.parentElement.style.display = 'flex';
-      } else if (pubCampus.parentElement) {
-        pubCampus.parentElement.style.display = 'none';
+        if (campRow) campRow.style.display = 'flex';
+      } else if (campRow) {
+        campRow.style.display = 'none';
       }
     }
     if (pubCity) {
       var cityVal = u.location_city || u.city;
+      var ctyRow = document.getElementById('peerPublicCityRow') || pubCity.parentElement;
       if (cityVal) {
         pubCity.textContent = cityVal;
-        if (pubCity.parentElement) pubCity.parentElement.style.display = 'flex';
-      } else if (pubCity.parentElement) {
-        pubCity.parentElement.style.display = 'none';
+        if (ctyRow) ctyRow.style.display = 'flex';
+      } else if (ctyRow) {
+        ctyRow.style.display = 'none';
       }
     }
     if (pubInitials) pubInitials.textContent = inits || 'K';
 
+    var pubInitialsBox = document.getElementById('peerPublicInitialsBox');
     if (avatarUrl && !avatarUrl.includes('api.dicebear.com')) {
       if (pubAvatar) { pubAvatar.src = avatarUrl; pubAvatar.style.display = 'block'; }
+      if (pubInitialsBox) pubInitialsBox.style.display = 'none';
       if (pubInitials) pubInitials.style.display = 'none';
     } else {
       if (pubAvatar) pubAvatar.style.display = 'none';
+      if (pubInitialsBox) pubInitialsBox.style.display = 'flex';
       if (pubInitials) pubInitials.style.display = 'block';
     }
     if (pubCover) {
@@ -4221,10 +4235,10 @@ async function openUserProfile(userId, preloadedData) {
 
           article.innerHTML =
             '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">' +
-            '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none"></div>' +
+            '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>' +
             '<div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">' +
               '<p class="text-[9px] font-extrabold text-amber-400 tracking-wider uppercase">' + timeStr + '</p>' +
-              '<p class="text-xs font-bold text-white truncate mt-0.5">' + locStr + '</p>' +
+              '<p class="text-xs font-bold text-white truncate mt-0.5"><i class="fa-solid fa-location-dot text-[8px] mr-1 text-gray-400" aria-hidden="true"></i>' + locStr + '</p>' +
             '</div>';
 
           article.onclick = function() {
