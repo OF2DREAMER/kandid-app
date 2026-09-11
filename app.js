@@ -3460,15 +3460,7 @@ function _displayCategoryResults(cat) {
   if (items.length > 0) {
     _searchShowView(cat);
   } else {
-    var hasAny = (data.people && data.people.length > 0) ||
-                 (data.moments && data.moments.length > 0) ||
-                 (data.places && data.places.length > 0) ||
-                 (data.communities && data.communities.length > 0);
-    if (hasAny) {
-      _searchShowView(cat);
-    } else {
-      _searchShowView('empty');
-    }
+    _searchShowView('empty');
   }
 }
 
@@ -3897,11 +3889,17 @@ function renderPeopleSearchResults(people) {
     var handle = escapeHtml(p.handle || 'user');
     var campus = escapeHtml(p.campus || 'North City University');
 
-    var isConnected = Boolean(p.is_connected || (state.currentUser && state.currentUser.friends && state.currentUser.friends.includes(p.id)));
+    var isConnected = Boolean(p.is_connected || p.connection_status === 'connected' || (state.currentUser && state.currentUser.friends && state.currentUser.friends.includes(p.id)));
+    var isRequested = Boolean(p.is_requested || p.connection_status === 'requested');
 
-    var buttonHtml = isConnected
-      ? '<span class="px-3 py-1.5 bg-neutral-900 border border-neutral-700 text-gray-300 rounded-full text-[10px] font-bold flex-shrink-0">CONNECTED</span>'
-      : '<button class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
+    var buttonHtml = '';
+    if (isConnected) {
+      buttonHtml = '<span class="px-3 py-1.5 bg-neutral-900 border border-neutral-700 text-gray-300 rounded-full text-[10px] font-bold flex-shrink-0">CONNECTED</span>';
+    } else if (isRequested) {
+      buttonHtml = '<span class="px-3 py-1.5 bg-neutral-900 border border-neutral-800 text-amber-400 rounded-full text-[10px] font-bold flex-shrink-0">REQUESTED</span>';
+    } else {
+      buttonHtml = '<button class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
+    }
 
     item.innerHTML =
       '<div class="flex items-center space-x-3.5 min-w-0 cursor-pointer user-profile-target">' +
@@ -9243,16 +9241,25 @@ async function connectWithUser(userId, btnEl) {
   });
 
   if (res && res.success) {
-    showToast('Connected! +25 XP 🎉');
+    var isNowConnected = (res.status === 'connected');
+    showToast(isNowConnected ? 'Connected! +25 XP 🎉' : 'Connection request sent ✉️');
     if (btnEl) {
-      btnEl.className = 'px-3 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 font-mono-tag text-[9px] font-bold rounded-lg';
-      btnEl.textContent = '✓ CONNECTED';
+      if (isNowConnected) {
+        btnEl.className = 'px-3 py-1.5 bg-neutral-900 border border-neutral-700 text-gray-300 rounded-full text-[10px] font-bold flex-shrink-0';
+        btnEl.textContent = 'CONNECTED';
+        btnEl.disabled = true;
+      } else {
+        btnEl.className = 'px-3 py-1.5 bg-neutral-900 border border-neutral-800 text-amber-400 rounded-full text-[10px] font-bold flex-shrink-0';
+        btnEl.textContent = 'REQUESTED';
+        btnEl.disabled = true;
+      }
     }
   } else {
     showToast('Could not connect: ' + (res ? res.error : 'Network error'));
     if (btnEl) {
       btnEl.disabled = false;
-      btnEl.textContent = '+ CONNECT';
+      btnEl.className = 'px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer';
+      btnEl.textContent = 'CONNECT';
     }
   }
 }

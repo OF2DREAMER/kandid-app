@@ -7127,6 +7127,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn = get_db()
             cursor = conn.cursor()
 
+            blocked_ids = set()
+            if user_id:
+                cursor.execute("""
+                    SELECT blocked_user_id FROM blocks WHERE user_id = ?
+                    UNION
+                    SELECT user_id FROM blocks WHERE blocked_user_id = ?
+                """, (user_id, user_id))
+                blocked_ids = {r[0] for r in cursor.fetchall()}
+
             # ---------- Discovery sectors from real DB (public posts by campus) ----------
             cursor.execute("""
                 SELECT campus as name, COUNT(*) as count FROM posts
@@ -7221,8 +7230,30 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         ORDER BY streak_count DESC LIMIT 20
                     """)
                 people_results = [dict(r) for r in cursor.fetchall()]
-                for p in people_results:
-                    p["avatar_url"] = p.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={p.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                if user_id:
+                    people_results = [p for p in people_results if p["id"] not in blocked_ids and p["id"] != user_id]
+                    for p in people_results:
+                        p["avatar_url"] = p.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={p.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                        cursor.execute("""
+                            SELECT status FROM friendships
+                            WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+                            ORDER BY CASE WHEN status IN ('accepted', 'connected') THEN 1 WHEN status = 'pending' THEN 2 ELSE 3 END
+                            LIMIT 1
+                        """, (user_id, p["id"], p["id"], user_id))
+                        f_row = cursor.fetchone()
+                        if f_row:
+                            st = f_row["status"]
+                            p["connection_status"] = "connected" if st in ("accepted", "connected") else ("requested" if st == "pending" else "connect")
+                        else:
+                            p["connection_status"] = "connect"
+                        p["is_connected"] = (p["connection_status"] == "connected")
+                        p["is_requested"] = (p["connection_status"] == "requested")
+                else:
+                    for p in people_results:
+                        p["avatar_url"] = p.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={p.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                        p["connection_status"] = "connect"
+                        p["is_connected"] = False
+                        p["is_requested"] = False
 
             # ---------- 2. Search Communities ----------
             if type_param in ["communities", "places", "all"] or (type_param not in ["campuses", "people", "moments"] and q):
@@ -7327,6 +7358,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         ORDER BY p.created_at DESC LIMIT 20
                     """)
                 moments_results = [dict(r) for r in cursor.fetchall()]
+                if user_id and blocked_ids:
+                    moments_results = [m for m in moments_results if m.get("user_id") not in blocked_ids]
                 for m in moments_results:
                     cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
                     m["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
