@@ -1855,6 +1855,14 @@ class PostgresCursorWrapper:
         # Convert SQLite ? placeholders to PostgreSQL %s
         pg_sql = sql.replace("?", "%s")
 
+        # Convert SQLite datetime(...) syntax to PostgreSQL
+        if "DATETIME(" in pg_sql.upper():
+            import re
+            pg_sql = re.sub(r"(?i)datetime\(\s*'now'\s*,\s*'-([0-9]+)\s*days?'\s*\)", r"(CURRENT_TIMESTAMP - INTERVAL '\1 days')", pg_sql)
+            pg_sql = re.sub(r"(?i)datetime\(\s*'now'\s*,\s*'-([0-9]+)\s*hours?'\s*\)", r"(CURRENT_TIMESTAMP - INTERVAL '\1 hours')", pg_sql)
+            pg_sql = re.sub(r"(?i)datetime\(\s*'now'\s*\)", r"CURRENT_TIMESTAMP", pg_sql)
+            pg_sql = re.sub(r"(?i)datetime\(\s*([a-zA-Z0-9_.]+)\s*\)", r"(\1)::timestamp", pg_sql)
+
         # Handle ALTER TABLE ADD COLUMN IF NOT EXISTS in PostgreSQL
         if "ALTER TABLE " in clean_upper and " ADD COLUMN " in clean_upper and " IF NOT EXISTS " not in clean_upper:
             import re
@@ -4740,13 +4748,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 upcoming_drops_count = cursor.fetchone()[0]
 
                 # Recent moments within 7 days
+                seven_days_ago_campus = (datetime.now() - timedelta(days=7)).isoformat()
                 cursor.execute("""
                     SELECT COUNT(*) FROM posts 
                     WHERE (campus = ? OR circle = ?)
                       AND is_private = 0
                       AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-                      AND datetime(created_at) >= datetime('now', '-7 days')
-                """, (c.get("name", ""), c.get("name", "")))
+                      AND created_at >= ?
+                """, (c.get("name", ""), c.get("name", ""), seven_days_ago_campus))
                 recent_moments_count = cursor.fetchone()[0]
 
                 # Total moments count
@@ -6174,10 +6183,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 joined_communities = [dict(r) for r in cursor.fetchall()]
 
             # Weekly moments on user's campus
+            seven_days_ago = (datetime.now() - timedelta(days=7)).isoformat()
             cursor.execute("""
                 SELECT COUNT(*) FROM posts
-                WHERE campus = ? AND created_at >= datetime('now', '-7 days')
-            """, (user.get("campus", "North City University"),))
+                WHERE campus = ? AND created_at >= ?
+            """, (user.get("campus", "North City University"), seven_days_ago))
             weekly_campus_count = cursor.fetchone()[0]
             if weekly_campus_count == 0:
                 weekly_campus_count = 12
@@ -6342,150 +6352,164 @@ class KandidHandler(SimpleHTTPRequestHandler):
             })
 
         if path == "/api/user/profile":
-            user = get_current_user(self.headers)
-            target_user_id = (query.get("user_id") or query.get("id") or [""])[0]
-            target_handle = (query.get("handle") or [""])[0]
+            try:
+                user = get_current_user(self.headers)
+                target_user_id = (query.get("user_id") or query.get("id") or [""])[0]
+                target_handle = (query.get("handle") or [""])[0]
 
-            conn = get_db()
-            cursor = conn.cursor()
+                conn = get_db()
+                cursor = conn.cursor()
 
-            target_row = None
-            if target_user_id:
-                cursor.execute("SELECT * FROM users WHERE id = ?", (target_user_id,))
-                target_row = cursor.fetchone()
-                if not target_row:
-                    clean_h = target_user_id.replace("@", "").strip()
+                target_row = None
+                if target_user_id:
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (target_user_id,))
+                    target_row = cursor.fetchone()
+                    if not target_row:
+                        clean_h = target_user_id.replace("@", "").strip()
+                        cursor.execute("SELECT * FROM users WHERE LOWER(handle) = LOWER(?) OR LOWER(email) = LOWER(?)", (clean_h, clean_h))
+                        target_row = cursor.fetchone()
+                elif target_handle:
+                    clean_h = target_handle.replace("@", "").strip()
                     cursor.execute("SELECT * FROM users WHERE LOWER(handle) = LOWER(?) OR LOWER(email) = LOWER(?)", (clean_h, clean_h))
                     target_row = cursor.fetchone()
-            elif target_handle:
-                clean_h = target_handle.replace("@", "").strip()
-                cursor.execute("SELECT * FROM users WHERE LOWER(handle) = LOWER(?) OR LOWER(email) = LOWER(?)", (clean_h, clean_h))
-                target_row = cursor.fetchone()
-            elif user:
-                cursor.execute("SELECT * FROM users WHERE id = ?", (user["id"],))
-                target_row = cursor.fetchone()
-            else:
-                conn.close()
-                return self.send_json(401, {"error": "Unauthenticated", "success": False})
+                elif user:
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (user["id"],))
+                    target_row = cursor.fetchone()
+                else:
+                    conn.close()
+                    return self.send_json(401, {"error": "Unauthenticated", "success": False})
 
-            if not target_row:
-                conn.close()
-                return self.send_json(404, {"error": "User not found", "success": False})
+                if not target_row:
+                    conn.close()
+                    return self.send_json(404, {"error": "User not found", "success": False})
 
-            target_user = dict(target_row)
-            now_dt = datetime.now()
-            is_online = False
-            if target_user.get("last_active"):
-                try:
-                    la_dt = datetime.fromisoformat(target_user["last_active"])
-                    if (now_dt - la_dt).total_seconds() < 120:
-                        is_online = True
-                except:
-                    pass
-            target_user["is_online"] = is_online
+                target_user = dict(target_row)
+                now_dt = datetime.now()
+                is_online = False
+                if target_user.get("last_active"):
+                    try:
+                        la_dt = datetime.fromisoformat(target_user["last_active"])
+                        if (now_dt - la_dt).total_seconds() < 120:
+                            is_online = True
+                    except:
+                        pass
+                target_user["is_online"] = is_online
 
-            # Public moments for this user
-            cursor.execute("SELECT * FROM posts WHERE user_id = ? AND is_private = 0 ORDER BY created_at DESC", (target_user["id"],))
-            moments = [dict(r) for r in cursor.fetchall()]
-            for m in moments:
-                cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
-                m["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
-                m["timeAgo"] = format_time_ago(m.get("created_at", ""))
-                m["mediaUrl"] = m.get("main_img", "")
-            
-            cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_private = 0", (target_user["id"],))
-            target_user["momentCount"] = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ?", (target_user["id"],))
-            target_user["memoryCount"] = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM posts WHERE campus = ? AND created_at >= datetime('now', '-7 days')", (target_user.get("campus", "North City University"),))
-            target_user["weeklyCampusCount"] = cursor.fetchone()[0] or 12
-            target_user["username"] = target_user.get("handle")
-            target_user["streak"] = target_user.get("streak_count", 0)
-            target_user["avatar"] = target_user.get("avatar_url", "")
-            
-            # Check friendship status between current_user and target_user
-            current_user = get_current_user(self.headers)
-            curr_id = current_user["id"] if current_user else None
-            connection_status = "none"
-            if curr_id and curr_id != target_user["id"]:
+                # Check friendship status between current_user and target_user
+                current_user = get_current_user(self.headers)
+                curr_id = current_user["id"] if current_user else None
+                connection_status = "none"
+                if curr_id and curr_id != target_user["id"]:
+                    cursor.execute("""
+                        SELECT status, user_id, friend_id FROM friendships
+                        WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+                    """, (curr_id, target_user["id"], target_user["id"], curr_id))
+                    f_rows = cursor.fetchall()
+                    for fr in f_rows:
+                        if fr["status"] in ["connected", "accepted"]:
+                            connection_status = "connected"
+                            break
+                        elif fr["status"] == "pending":
+                            if fr["user_id"] == curr_id:
+                                connection_status = "pending_sent"
+                            else:
+                                connection_status = "pending_received"
+                elif curr_id == target_user["id"]:
+                    connection_status = "self"
+
+                # Privacy gate: if profile is private and viewer is not connected/self
+                profile_visibility = str(target_user.get('profile_visibility') or 'public').strip().lower()
+                if profile_visibility == 'private' and connection_status not in ('connected', 'self'):
+                    target_user.pop('password_hash', None)
+                    target_user.pop('salt', None)
+                    conn.close()
+                    return self.send_json(200, {
+                        'success': True,
+                        'is_private': True,
+                        'user': {
+                            'id': target_user['id'],
+                            'name': target_user.get('name', ''),
+                            'handle': target_user.get('handle', ''),
+                            'bio': target_user.get('bio', ''),
+                            'avatar_url': target_user.get('avatar_url', ''),
+                            'avatar_letter': target_user.get('avatar_letter', 'K'),
+                            'cover_url': target_user.get('cover_url', ''),
+                            'profile_visibility': 'private',
+                            'is_online': target_user.get('is_online', False),
+                            'campus': target_user.get('campus', ''),
+                            'location_city': target_user.get('location_city', ''),
+                        },
+                        'connection_status': connection_status,
+                        'moments': [],
+                        'communities': []
+                    })
+
+                # Public moments for this user
+                cursor.execute("SELECT * FROM posts WHERE user_id = ? AND is_private = 0 ORDER BY created_at DESC", (target_user["id"],))
+                moments = [dict(r) for r in cursor.fetchall()]
+                for m in moments:
+                    cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
+                    m["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
+                    m["timeAgo"] = format_time_ago(m.get("created_at", ""))
+                    m["mediaUrl"] = m.get("main_img", "")
+                
+                cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_private = 0", (target_user["id"],))
+                target_user["momentCount"] = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ?", (target_user["id"],))
+                target_user["memoryCount"] = cursor.fetchone()[0]
+
+                seven_days_ago = (datetime.now() - timedelta(days=7)).isoformat()
+                cursor.execute("SELECT COUNT(*) FROM posts WHERE campus = ? AND created_at >= ?", (target_user.get("campus", "North City University"), seven_days_ago))
+                target_user["weeklyCampusCount"] = cursor.fetchone()[0] or 12
+                target_user["username"] = target_user.get("handle")
+                target_user["streak"] = target_user.get("streak_count", 0)
+                target_user["avatar"] = target_user.get("avatar_url", "")
+
+                # Public communities this target user belongs to
                 cursor.execute("""
-                    SELECT status, user_id, friend_id FROM friendships
-                    WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
-                """, (curr_id, target_user["id"], target_user["id"], curr_id))
-                f_rows = cursor.fetchall()
-                for fr in f_rows:
-                    if fr["status"] in ["connected", "accepted"]:
-                        connection_status = "connected"
-                        break
-                    elif fr["status"] == "pending":
-                        if fr["user_id"] == curr_id:
-                            connection_status = "pending_sent"
-                        else:
-                            connection_status = "pending_received"
-            elif curr_id == target_user["id"]:
-                connection_status = "self"
+                    SELECT DISTINCT c.id, c.name, c.type, c.description, c.icon, c.city, c.location_context
+                    FROM communities c
+                    LEFT JOIN community_members cm ON c.id = cm.community_id
+                    WHERE (cm.user_id = ? OR LOWER(c.name) = ? OR c.creator_id = ?)
+                      AND c.visibility = 'public'
+                    ORDER BY c.created_at DESC LIMIT 6
+                """, (target_user["id"], (target_user.get("campus") or "").lower(), target_user["id"]))
+                user_communities = [dict(r) for r in cursor.fetchall()]
+                if not user_communities and target_user.get("campus"):
+                    cursor.execute("SELECT id, name, type, description, icon, city, location_context FROM communities WHERE LOWER(name) = ? AND visibility = 'public'", ((target_user.get("campus") or "").lower(),))
+                    comm_row = cursor.fetchone()
+                    if comm_row:
+                        user_communities.append(dict(comm_row))
+                target_user["communities"] = user_communities
 
-            # Privacy gate: if profile is private and viewer is not connected/self
-            profile_visibility = str(target_user.get('profile_visibility') or 'public').strip().lower()
-            if profile_visibility == 'private' and connection_status not in ('connected', 'self'):
-                target_user.pop('password_hash', None)
-                target_user.pop('salt', None)
+                # Don't expose sensitive fields
+                target_user.pop("password_hash", None)
+                target_user.pop("salt", None)
+
+                # Ensure new profile fields are present
+                target_user.setdefault("profile_visibility", "public")
+                target_user.setdefault("cover_url", "")
+                target_user.setdefault("location_city", "")
+                target_user["email_verified"] = bool(target_user.get("email_verified", 1))
+
                 conn.close()
                 return self.send_json(200, {
-                    'success': True,
-                    'is_private': True,
-                    'user': {
-                        'id': target_user['id'],
-                        'name': target_user.get('name', ''),
-                        'handle': target_user.get('handle', ''),
-                        'bio': target_user.get('bio', ''),
-                        'avatar_url': target_user.get('avatar_url', ''),
-                        'avatar_letter': target_user.get('avatar_letter', 'K'),
-                        'cover_url': target_user.get('cover_url', ''),
-                        'profile_visibility': 'private',
-                        'is_online': target_user.get('is_online', False),
-                    },
-                    'connection_status': connection_status,
-                    'moments': [],
-                    'communities': []
+                    "success": True,
+                    "is_private": False,
+                    "user": target_user,
+                    "moments": moments,
+                    "communities": user_communities,
+                    "connection_status": connection_status
                 })
-
-            # Public communities this target user belongs to
-            cursor.execute("""
-                SELECT DISTINCT c.id, c.name, c.type, c.description, c.icon, c.city, c.location_context
-                FROM communities c
-                LEFT JOIN community_members cm ON c.id = cm.community_id
-                WHERE (cm.user_id = ? OR LOWER(c.name) = ? OR c.creator_id = ?)
-                  AND c.visibility = 'public'
-                ORDER BY c.created_at DESC LIMIT 6
-            """, (target_user["id"], (target_user.get("campus") or "").lower(), target_user["id"]))
-            user_communities = [dict(r) for r in cursor.fetchall()]
-            if not user_communities and target_user.get("campus"):
-                cursor.execute("SELECT id, name, type, description, icon, city, location_context FROM communities WHERE LOWER(name) = ? AND visibility = 'public'", ((target_user.get("campus") or "").lower(),))
-                comm_row = cursor.fetchone()
-                if comm_row:
-                    user_communities.append(dict(comm_row))
-            target_user["communities"] = user_communities
-
-            # Don't expose sensitive fields
-            target_user.pop("password_hash", None)
-            target_user.pop("salt", None)
-
-            # Ensure new profile fields are present
-            target_user.setdefault("profile_visibility", "public")
-            target_user.setdefault("cover_url", "")
-            target_user.setdefault("location_city", "")
-            target_user["email_verified"] = bool(target_user.get("email_verified", 1))
-
-            conn.close()
-            return self.send_json(200, {
-                "success": True,
-                "is_private": False,
-                "user": target_user,
-                "moments": moments,
-                "communities": user_communities,
-                "connection_status": connection_status
-            })
+            except Exception as e:
+                import traceback
+                print(f"[ERROR] /api/user/profile failed: {e}")
+                traceback.print_exc()
+                try:
+                    conn.close()
+                except:
+                    pass
+                return self.send_json(500, {"success": False, "error": f"Server error: {str(e)}"})
 
         if path == "/api/friend/requests":
             user = get_current_user(self.headers)
@@ -10072,10 +10096,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor = conn.cursor()
 
             # Rate limit check (max 30 per hour)
+            one_hour_ago = (datetime.now() - timedelta(hours=1)).isoformat()
             cursor.execute("""
                 SELECT COUNT(*) FROM community_invites 
-                WHERE inviter_user_id = ? AND datetime(created_at) > datetime('now', '-1 hour')
-            """, (user["id"],))
+                WHERE inviter_user_id = ? AND created_at > ?
+            """, (user["id"], one_hour_ago))
             hourly_count = cursor.fetchone()[0]
             if hourly_count >= 30:
                 conn.close()
