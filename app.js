@@ -4024,9 +4024,22 @@ function renderCommunitiesSearchResults(communities) {
 window.renderCommunitiesSearchResults = renderCommunitiesSearchResults;
 
 // =====================================================================
-// PUBLIC PEER PROFILE ENGINE
+// PUBLIC & PRIVATE PEER PROFILE ENGINE
 // =====================================================================
-var lastScreenBeforeProfile = 'search';
+var lastScreenBeforeProfile = 'feed';
+
+function closePeerProfile() {
+  switchScreenView(lastScreenBeforeProfile || 'feed');
+}
+window.closePeerProfile = closePeerProfile;
+window.handlePeerProfileBack = closePeerProfile;
+
+function retryLoadPeerProfile() {
+  if (state.activePeerUserId) {
+    openUserProfile(state.activePeerUserId);
+  }
+}
+window.retryLoadPeerProfile = retryLoadPeerProfile;
 
 async function openUserProfile(userId, preloadedData) {
   if (!userId) return;
@@ -4034,83 +4047,21 @@ async function openUserProfile(userId, preloadedData) {
   if (state.activeScreen && state.activeScreen !== 'peer-profile') {
     lastScreenBeforeProfile = state.activeScreen;
   }
-  switchScreenView('peer-profile');
-
   state.activePeerUserId = userId;
   state.activePeerConnectionStatus = 'none';
 
+  switchScreenView('peer-profile');
+
+  var loadingEl = document.getElementById('peerProfileLoading');
+  var errorEl = document.getElementById('peerProfileError');
   var peerPublicView = document.getElementById('peerPublicView');
   var peerPrivateView = document.getElementById('peerPrivateView');
 
-  var momentsGrid = document.getElementById('peerPublicMomentsGrid') || document.getElementById('peerProfileMomentsGrid');
-  var sharedWorldSec = document.getElementById('peerPublicSharedWorld') || document.getElementById('peerSharedWorldSection');
-
-  // Instant preview from preloadedData if available
-  if (preloadedData) {
-    var preName = preloadedData.name || preloadedData.author_name || 'Karan Kumar';
-    var preHandle = (preloadedData.handle || preloadedData.author_handle || preloadedData.username || 'karan').replace('@', '');
-    var preCleanH = '@' + preHandle.toLowerCase();
-    var preAvatar = preloadedData.avatar_url || preloadedData.avatar || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(preHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
-    var preBio = preloadedData.bio || 'Building Kandid · Learning CS ·<br>Exploring real places, real people, real stories.';
-    var preIsPrivate = preloadedData.profile_visibility === 'private' || Boolean(preloadedData.is_private);
-
-    var pubName = document.getElementById('peerPublicName') || document.getElementById('peerProfileName');
-    var pubUsername = document.getElementById('peerPublicUsername') || document.getElementById('peerProfileUsername');
-    var pubCampus = document.getElementById('peerPublicCampus') || document.getElementById('peerProfileCampus');
-    var pubCity = document.getElementById('peerPublicCity') || document.getElementById('peerProfileCity');
-    var pubBio = document.getElementById('peerPublicBio') || document.getElementById('peerProfileBio');
-    var pubAvatar = document.getElementById('peerPublicAvatar') || document.getElementById('peerProfileAvatar');
-
-    var privName = document.getElementById('peerPrivateName');
-    var privUsername = document.getElementById('peerPrivateUsername');
-    var privBio = document.getElementById('peerPrivateBio');
-    var privAvatar = document.getElementById('peerPrivateAvatar');
-
-    if (pubName) pubName.textContent = preName;
-    if (pubUsername) pubUsername.textContent = preCleanH;
-    if (privName) privName.textContent = preName;
-    if (privUsername) privUsername.textContent = preCleanH;
-
-    if (pubCampus) {
-      var preCampus = preloadedData.campus || preloadedData.community_name || 'Guru Kashi University';
-      pubCampus.textContent = preCampus;
-    }
-    if (pubCity) {
-      var preCity = preloadedData.location_city || preloadedData.city || 'Supaul';
-      pubCity.textContent = preCity;
-    }
-    var formattedPreBio = preBio.includes('<') ? preBio : escapeHtml(preBio).replace(/\n/g, '<br>');
-    if (pubBio) pubBio.innerHTML = formattedPreBio;
-    if (privBio) privBio.innerHTML = formattedPreBio;
-
-    if (pubAvatar) {
-      pubAvatar.src = preAvatar;
-      pubAvatar.style.display = 'block';
-    }
-    if (privAvatar) {
-      privAvatar.src = preAvatar;
-      privAvatar.style.display = 'block';
-    }
-
-    if (preIsPrivate) {
-      if (peerPrivateView) peerPrivateView.style.display = 'flex';
-      if (peerPublicView) peerPublicView.style.display = 'none';
-    } else {
-      if (peerPublicView) peerPublicView.style.display = 'flex';
-      if (peerPrivateView) peerPrivateView.style.display = 'none';
-    }
-  }
-
-  // Pre-wire message button right away
-  var pubMsgBtn = document.getElementById('peerPublicMessageBtn') || document.getElementById('peerProfileMessageBtn');
-  if (pubMsgBtn) {
-    pubMsgBtn.onclick = function() {
-      var name = (document.getElementById('peerPublicName') || {}).textContent || 'User';
-      var handle = (document.getElementById('peerPublicUsername') || {}).textContent || '@user';
-      var avatar = (document.getElementById('peerPublicAvatar') || {}).src || '';
-      openChatThread(userId, name, handle, avatar, false);
-    };
-  }
+  // Reset view to clean loading state
+  if (peerPublicView) peerPublicView.style.display = 'none';
+  if (peerPrivateView) peerPrivateView.style.display = 'none';
+  if (errorEl) errorEl.style.display = 'none';
+  if (loadingEl) loadingEl.style.display = 'flex';
 
   // Fetch authoritative profile data from server
   var res = null;
@@ -4120,32 +4071,29 @@ async function openUserProfile(userId, preloadedData) {
     console.warn('[Profile] API request failed:', err);
   }
 
-  // If server returned error or user not found, keep graceful view without crashing
+  if (loadingEl) loadingEl.style.display = 'none';
+
+  // Handle server error, 404, or blocked user
   if (!res || !res.success || !res.user) {
-    console.warn('[Profile] Server unavailable or user not found, keeping preloaded/default view');
-    if (preloadedData && (preloadedData.profile_visibility === 'private' || preloadedData.is_private)) {
-      if (peerPrivateView) peerPrivateView.style.display = 'flex';
-      if (peerPublicView) peerPublicView.style.display = 'none';
-    }
-    updatePeerConnectionUI(state.activePeerConnectionStatus || 'none');
+    console.warn('[Profile] Server returned error or user not found');
+    if (errorEl) errorEl.style.display = 'flex';
     return;
   }
 
   var u = res.user;
-  var connStatus = res.connection_status || (u && u.connection_status) || 'none';
+  var connStatus = res.connection_status || u.connection_status || 'none';
   state.activePeerConnectionStatus = connStatus;
   state.activePeerUser = u;
-  var isPrivate = (res.is_private === true) || (u && u.profile_visibility === 'private' && connStatus !== 'connected' && connStatus !== 'self');
 
-  // Real user data with graceful fallbacks so design is 100% stable
-  var finalName = u.name || 'Karan Kumar';
-  var finalHandle = (u.handle || u.username || 'karan').replace('@', '');
+  var isPrivate = (res.is_private === true) || (u.profile_visibility === 'private' && connStatus !== 'connected' && connStatus !== 'self');
+
+  // Real user attributes with clean fallbacks
+  var finalName = u.name || 'User';
+  var finalHandle = (u.handle || u.username || 'user').replace('@', '');
   var cleanHandle = '@' + finalHandle.toLowerCase();
-  var finalCampus = u.campus || 'Guru Kashi University';
-  var finalCity = u.location_city || u.city || 'Supaul';
-  var finalBio = u.bio || 'Building Kandid · Learning CS ·<br>Exploring real places, real people, real stories.';
-  var finalAvatar = u.avatar || u.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(finalHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
-  var finalCover = u.cover_url || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=800&q=80';
+  var finalBio = u.bio || '';
+  var finalAvatar = u.avatar_url || u.avatar || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(finalHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+  var finalCover = (u.cover_url && !u.cover_url.includes('unsplash.com')) ? u.cover_url : '';
 
   if (isPrivate) {
     // ─── PRIVATE PROFILE STATE ───
@@ -4160,12 +4108,22 @@ async function openUserProfile(userId, preloadedData) {
 
     if (privName) privName.textContent = finalName;
     if (privUsername) privUsername.textContent = cleanHandle;
-    if (privBio) privBio.innerHTML = finalBio.includes('<') ? finalBio : escapeHtml(finalBio).replace(/\n/g, '<br>');
+    if (privBio) {
+      privBio.textContent = finalBio || 'Their world, kept close.';
+    }
     if (privAvatar) {
       privAvatar.src = finalAvatar;
       privAvatar.style.display = 'block';
     }
-    if (privCover) privCover.src = finalCover;
+    if (privCover) {
+      if (finalCover) {
+        privCover.src = finalCover;
+        privCover.style.display = 'block';
+      } else {
+        privCover.style.display = 'none';
+        privCover.removeAttribute('src');
+      }
+    }
 
     updatePeerConnectionUI(connStatus);
   } else {
@@ -4173,46 +4131,82 @@ async function openUserProfile(userId, preloadedData) {
     if (peerPublicView) peerPublicView.style.display = 'flex';
     if (peerPrivateView) peerPrivateView.style.display = 'none';
 
-    var pubName = document.getElementById('peerPublicName') || document.getElementById('peerProfileName');
-    var pubUsername = document.getElementById('peerPublicUsername') || document.getElementById('peerProfileUsername');
-    var pubCampus = document.getElementById('peerPublicCampus') || document.getElementById('peerProfileCampus');
-    var pubCity = document.getElementById('peerPublicCity') || document.getElementById('peerProfileCity');
-    var pubBio = document.getElementById('peerPublicBio') || document.getElementById('peerProfileBio');
-    var pubAvatar = document.getElementById('peerPublicAvatar') || document.getElementById('peerProfileAvatar');
-    var pubCover = document.getElementById('peerPublicCoverImg') || document.getElementById('peerCoverImg');
+    var pubName = document.getElementById('peerPublicName');
+    var pubUsername = document.getElementById('peerPublicUsername');
+    var pubCampus = document.getElementById('peerPublicCampus');
+    var pubCity = document.getElementById('peerPublicCity');
+    var pubCampusRow = document.getElementById('peerPublicCampusRow');
+    var pubCityRow = document.getElementById('peerPublicCityRow');
+    var pubBio = document.getElementById('peerPublicBio');
+    var pubAvatar = document.getElementById('peerPublicAvatar');
+    var pubCover = document.getElementById('peerPublicCoverImg');
+    var pubMsgBtn = document.getElementById('peerPublicMessageBtn');
 
     if (pubName) pubName.textContent = finalName;
     if (pubUsername) pubUsername.textContent = cleanHandle;
-    if (pubCampus) pubCampus.textContent = finalCampus;
-    if (pubCity) pubCity.textContent = finalCity;
-    if (pubBio) pubBio.innerHTML = finalBio.includes('<') ? finalBio : escapeHtml(finalBio).replace(/\n/g, '<br>');
+
+    if (pubCampus && pubCampusRow) {
+      if (u.campus) {
+        pubCampus.textContent = u.campus;
+        pubCampusRow.style.display = 'flex';
+      } else {
+        pubCampusRow.style.display = 'none';
+      }
+    }
+    if (pubCity && pubCityRow) {
+      var cCity = u.location_city || u.city || '';
+      if (cCity) {
+        pubCity.textContent = cCity;
+        pubCityRow.style.display = 'flex';
+      } else {
+        pubCityRow.style.display = 'none';
+      }
+    }
+
+    if (pubBio) {
+      pubBio.textContent = finalBio || 'Authentic moments across campus.';
+    }
     if (pubAvatar) {
       pubAvatar.src = finalAvatar;
       pubAvatar.style.display = 'block';
     }
-    if (pubCover) pubCover.src = finalCover;
+    if (pubCover) {
+      if (finalCover) {
+        pubCover.src = finalCover;
+        pubCover.style.display = 'block';
+      } else {
+        pubCover.style.display = 'none';
+        pubCover.removeAttribute('src');
+      }
+    }
 
     if (pubMsgBtn) {
       pubMsgBtn.onclick = function() {
-        openChatThread(u.id, finalName, cleanHandle, finalAvatar, u.is_online);
+        openChatThread(u.id, finalName, cleanHandle, finalAvatar, Boolean(u.is_online), u.campus || '');
       };
     }
 
     updatePeerConnectionUI(connStatus);
 
     // 2-column Moments Grid
+    var momentsGrid = document.getElementById('peerPublicMomentsGrid');
     if (momentsGrid) {
       momentsGrid.innerHTML = '';
-      if (res.moments && res.moments.length > 0) {
-        res.moments.forEach(function(m) {
+      var moments = res.moments || [];
+      if (moments.length > 0) {
+        moments.forEach(function(m) {
           var article = document.createElement('article');
           article.className = 'relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
-          var imgUrl = m.main_img || m.mediaUrl || 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?auto=format&fit=crop&w=300&q=80';
-          var locStr = escapeHtml(m.campus || m.location_city || finalCampus || 'GKU Campus');
-          var timeStr = escapeHtml(m.timeAgo || 'Recent');
+          var imgUrl = escapeHtml(m.main_img || m.mediaUrl || m.media_url || m.mainImg || '');
+          var locStr = escapeHtml(m.campus || m.location_city || u.campus || 'Campus');
+          var timeStr = escapeHtml(m.timeAgo || m.time_ago || (m.created_at ? formatTimeAgoClean(m.created_at) : 'RECENT')).toUpperCase();
+
+          var imgHtml = imgUrl
+            ? '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">'
+            : '<div class="w-full h-full bg-neutral-900 flex items-center justify-center text-zinc-700 font-mono-meta text-xs">MOMENT</div>';
 
           article.innerHTML =
-            '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">' +
+            imgHtml +
             '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>' +
             '<div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">' +
               '<p class="text-[9px] font-extrabold text-amber-400 tracking-wider uppercase">' + timeStr + '</p>' +
@@ -4238,28 +4232,13 @@ async function openUserProfile(userId, preloadedData) {
     }
 
     // Shared World Section
-    var pubSharedWorld = document.getElementById('peerPublicSharedWorld') || document.getElementById('peerSharedWorldSection');
-    var pubSharedCommCard = document.getElementById('peerPublicSharedCommCard') || document.getElementById('peerSharedCommunitiesCard');
-    var pubSharedCommText = document.getElementById('peerPublicSharedCommText') || document.getElementById('peerSharedCommunitiesText');
-    var pubMutualConnCard = document.getElementById('peerPublicMutualConnCard') || document.getElementById('peerMutualConnectionsCard');
-    var pubMutualConnText = document.getElementById('peerPublicMutualConnText') || document.getElementById('peerMutualConnectionsText');
+    var pubSharedWorld = document.getElementById('peerPublicSharedWorld');
+    var pubSharedCommCard = document.getElementById('peerPublicSharedCommCard');
+    var pubSharedCommText = document.getElementById('peerPublicSharedCommText');
+    var pubMutualConnCard = document.getElementById('peerPublicMutualConnCard');
+    var pubMutualConnText = document.getElementById('peerPublicMutualConnText');
 
     if (pubSharedWorld) pubSharedWorld.style.display = 'block';
-    if (pubSharedCommCard) {
-      pubSharedCommCard.style.display = 'flex';
-      if (pubSharedCommText) {
-        pubSharedCommText.textContent = finalCampus + ' + 1 more';
-      }
-      pubSharedCommCard.onclick = function() {
-        if (typeof openCampusPage === 'function') openCampusPage(finalCampus);
-      };
-    }
-    if (pubMutualConnCard) {
-      pubMutualConnCard.style.display = 'flex';
-      if (pubMutualConnText) {
-        pubMutualConnText.textContent = 'You both know these people';
-      }
-    }
 
     try {
       var sharedRes = await apiRequest('/api/user/shared-context?target_id=' + encodeURIComponent(userId));
@@ -4267,21 +4246,34 @@ async function openUserProfile(userId, preloadedData) {
         var sharedComms = sharedRes.shared_communities || [];
         var mutualConns = sharedRes.mutual_connections || [];
 
-        if (sharedComms.length > 0 && pubSharedCommText) {
-          var firstComm = sharedComms[0].name;
-          var extraComm = sharedComms.length - 1;
-          pubSharedCommText.textContent = firstComm + (extraComm > 0 ? ' + ' + extraComm + ' more' : '');
-          if (pubSharedCommCard) {
-            pubSharedCommCard.onclick = function() {
-              if (typeof openCampusPage === 'function') openCampusPage(sharedComms[0].name);
-            };
+        if (pubSharedCommText) {
+          if (sharedComms.length > 0) {
+            var firstComm = sharedComms[0].name;
+            var extraComm = sharedComms.length - 1;
+            pubSharedCommText.textContent = firstComm + (extraComm > 0 ? ' + ' + extraComm + ' more' : '');
+            if (pubSharedCommCard) {
+              pubSharedCommCard.onclick = function() {
+                if (typeof openCampusPage === 'function') openCampusPage(sharedComms[0].name);
+              };
+            }
+          } else {
+            pubSharedCommText.textContent = 'Explore communities together';
+            if (pubSharedCommCard) {
+              pubSharedCommCard.onclick = function() {
+                openCommunitySwitcher();
+              };
+            }
           }
         }
 
-        if (mutualConns.length > 0 && pubMutualConnText) {
-          var firstNames = mutualConns.slice(0, 2).map(function(c) { return c.name; }).join(', ');
-          var extraConn = mutualConns.length - 2;
-          pubMutualConnText.textContent = firstNames + (extraConn > 0 ? ' +' + extraConn : '');
+        if (pubMutualConnText) {
+          if (mutualConns.length > 0) {
+            var firstNames = mutualConns.slice(0, 2).map(function(c) { return c.name; }).join(', ');
+            var extraConn = mutualConns.length - 2;
+            pubMutualConnText.textContent = firstNames + (extraConn > 0 ? ' +' + extraConn : '');
+          } else {
+            pubMutualConnText.textContent = 'No mutual connections yet';
+          }
         }
       }
     } catch (e) {
@@ -4293,11 +4285,11 @@ window.openUserProfile = openUserProfile;
 
 // ─── CONNECTION STATE UI ENGINE ───
 function updatePeerConnectionUI(status) {
-  var connectText = document.getElementById('peerPublicConnectText') || document.getElementById('peerProfileConnectText');
-  var connectBtn = document.getElementById('peerPublicConnectBtn') || document.getElementById('peerProfileConnectBtn');
-  var connectIcon = document.getElementById('peerPublicConnectIcon') || document.getElementById('peerProfileConnectIcon');
-  var declineBtn = document.getElementById('peerPublicDeclineBtn') || document.getElementById('peerProfileDeclineBtn');
-  var msgBtn = document.getElementById('peerPublicMessageBtn') || document.getElementById('peerProfileMessageBtn');
+  var connectText = document.getElementById('peerPublicConnectText');
+  var connectBtn = document.getElementById('peerPublicConnectBtn');
+  var connectIcon = document.getElementById('peerPublicConnectIcon');
+  var declineBtn = document.getElementById('peerPublicDeclineBtn');
+  var msgBtn = document.getElementById('peerPublicMessageBtn');
 
   var privBtn = document.getElementById('peerPrivateConnectBtn');
   var privText = document.getElementById('peerPrivateConnectText');
@@ -4366,47 +4358,64 @@ function updatePeerConnectionUI(status) {
 }
 
 // ─── TOGGLE CONNECTION HANDLER ───
+var isTogglingConnection = false;
 async function togglePeerConnection() {
-  if (!state.activePeerUserId) return;
+  if (!state.activePeerUserId || isTogglingConnection) return;
   var currStatus = state.activePeerConnectionStatus || 'none';
+  isTogglingConnection = true;
 
-  if (currStatus === 'none') {
-    updatePeerConnectionUI('pending_sent');
-    state.activePeerConnectionStatus = 'pending_sent';
-    showToast('Connection request sent! ⏳');
-    var res = await apiRequest('/api/friend/request', {
-      method: 'POST',
-      body: { target_user_id: state.activePeerUserId }
-    });
-    if (res && res.status) {
-      state.activePeerConnectionStatus = res.status;
-      updatePeerConnectionUI(res.status);
-    } else if (res && res.error) {
-      showToast(res.error);
-      state.activePeerConnectionStatus = 'none';
+  try {
+    if (currStatus === 'none') {
+      updatePeerConnectionUI('pending_sent');
+      var res = await apiRequest('/api/friend/request', {
+        method: 'POST',
+        body: { target_user_id: state.activePeerUserId }
+      });
+      if (res && res.success) {
+        state.activePeerConnectionStatus = res.status || 'pending_sent';
+        updatePeerConnectionUI(state.activePeerConnectionStatus);
+        showToast('Connection request sent! ⏳');
+      } else {
+        updatePeerConnectionUI('none');
+        state.activePeerConnectionStatus = 'none';
+        showToast(res && res.error ? res.error : 'Could not send request.');
+      }
+    } else if (currStatus === 'pending_sent') {
       updatePeerConnectionUI('none');
+      var res = await apiRequest('/api/friend/cancel', {
+        method: 'POST',
+        body: { target_user_id: state.activePeerUserId }
+      });
+      if (res && res.success) {
+        state.activePeerConnectionStatus = 'none';
+        updatePeerConnectionUI('none');
+        showToast('Connection request cancelled.');
+      } else {
+        state.activePeerConnectionStatus = 'pending_sent';
+        updatePeerConnectionUI('pending_sent');
+        showToast(res && res.error ? res.error : 'Could not cancel request.');
+      }
+    } else if (currStatus === 'pending_received') {
+      updatePeerConnectionUI('connected');
+      var res = await apiRequest('/api/friend/accept', {
+        method: 'POST',
+        body: { target_user_id: state.activePeerUserId }
+      });
+      if (res && res.success) {
+        state.activePeerConnectionStatus = 'connected';
+        updatePeerConnectionUI('connected');
+        showToast('Connection accepted! ✦');
+        await openUserProfile(state.activePeerUserId);
+      } else {
+        state.activePeerConnectionStatus = 'pending_received';
+        updatePeerConnectionUI('pending_received');
+        showToast(res && res.error ? res.error : 'Could not accept connection.');
+      }
+    } else if (currStatus === 'connected') {
+      openProfileActionsMenu();
     }
-  } else if (currStatus === 'pending_sent') {
-    updatePeerConnectionUI('none');
-    state.activePeerConnectionStatus = 'none';
-    showToast('Connection request cancelled.');
-    await apiRequest('/api/friend/cancel', {
-      method: 'POST',
-      body: { target_user_id: state.activePeerUserId }
-    });
-  } else if (currStatus === 'pending_received') {
-    updatePeerConnectionUI('connected');
-    state.activePeerConnectionStatus = 'connected';
-    showToast('Connection accepted! ✦');
-    await apiRequest('/api/friend/accept', {
-      method: 'POST',
-      body: { target_user_id: state.activePeerUserId }
-    });
-    // Re-load profile so that if profile was private, it seamlessly unlocks!
-    await openUserProfile(state.activePeerUserId);
-  } else if (currStatus === 'connected') {
-    // Open profile actions menu so user can select "Remove Connection"
-    openProfileActionsMenu();
+  } finally {
+    isTogglingConnection = false;
   }
 }
 window.togglePeerConnection = togglePeerConnection;
@@ -4421,6 +4430,7 @@ async function declinePeerConnection() {
     body: { target_user_id: state.activePeerUserId }
   });
 }
+window.declinePeerConnection = declinePeerConnection;
 window.declinePeerConnection = declinePeerConnection;
 
 // ─── PROFILE ACTIONS BOTTOM SHEET (⋮ MENU) ───
@@ -4569,6 +4579,78 @@ window.confirmDeleteAccount = confirmDeleteAccount;
 state.activeDetailMoment = null;
 state.detailMomentFlipped = false;
 
+function triggerDirectAvatarUpload() {
+  var input = document.getElementById('youDirectAvatarInput');
+  if (input) {
+    input.value = '';
+    input.click();
+  }
+}
+window.triggerDirectAvatarUpload = triggerDirectAvatarUpload;
+
+async function handleDirectAvatarUpload(event) {
+  var file = event && event.target && event.target.files && event.target.files[0];
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) {
+    showToast('Please select a valid image file.');
+    return;
+  }
+  showToast('Updating profile photo...');
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    var base64Data = e.target.result;
+    // Optimistic preview
+    var avatarEl = document.getElementById('youProfileAvatar');
+    var initsEl = document.getElementById('youProfileInitials');
+    if (avatarEl) {
+      avatarEl.src = base64Data;
+      avatarEl.style.display = 'block';
+    }
+    if (initsEl) initsEl.style.display = 'none';
+
+    try {
+      var res = await apiRequest('/api/user/photo', {
+        method: 'POST',
+        body: { photo: base64Data }
+      });
+      if (res && (res.success || res.avatar_url || res.url)) {
+        var newUrl = res.avatar_url || res.url;
+        if (state.currentUser) {
+          state.currentUser.avatar_url = newUrl;
+          try {
+            localStorage.setItem('kandid_user', JSON.stringify(state.currentUser));
+          } catch(err) {}
+        }
+        showToast('Profile photo updated! ✨');
+      } else {
+        var updateRes = await apiRequest('/api/user/update', {
+          method: 'POST',
+          body: { avatar_url: base64Data }
+        });
+        if (updateRes && (updateRes.success || (updateRes.user && updateRes.user.avatar_url))) {
+          var updatedUrl = (updateRes.user && updateRes.user.avatar_url) || base64Data;
+          if (state.currentUser) {
+            state.currentUser.avatar_url = updatedUrl;
+            try {
+              localStorage.setItem('kandid_user', JSON.stringify(state.currentUser));
+            } catch(err) {}
+          }
+          showToast('Profile photo updated! ✨');
+        } else {
+          showToast('Could not update profile photo.');
+          if (state.currentUser) applyUserToYouScreen(state.currentUser);
+        }
+      }
+    } catch(err) {
+      console.warn('[Avatar] upload error:', err);
+      showToast('Photo upload failed.');
+      if (state.currentUser) applyUserToYouScreen(state.currentUser);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+window.handleDirectAvatarUpload = handleDirectAvatarUpload;
+
 function applyUserToYouScreen(u) {
   if (!u) return;
   var avatarEl = document.getElementById('youProfileAvatar');
@@ -4581,13 +4663,25 @@ function applyUserToYouScreen(u) {
   var momentsCountVal = document.getElementById('youMomentsCountVal');
   var memoriesCountVal = document.getElementById('youMemoriesCountVal');
 
+  // Cover image: real cover or calm ambient dark gradient
+  var coverImg = document.getElementById('youCoverImg');
+  if (coverImg) {
+    if (u.cover_url && !u.cover_url.includes('unsplash.com')) {
+      coverImg.src = u.cover_url;
+      coverImg.style.display = 'block';
+    } else {
+      coverImg.style.display = 'none';
+      coverImg.removeAttribute('src');
+    }
+  }
+
   var finalName = u.name || (state.currentUser ? state.currentUser.name : 'You');
   var finalHandle = u.username || u.handle || (state.currentUser ? (state.currentUser.username || state.currentUser.handle) : 'user');
   finalHandle = String(finalHandle).replace('@', '');
 
   var parts = finalName.trim().split(/\s+/);
   var inits = '';
-  if (parts.length >= 2) {
+  if (parts.length >= 2 && parts[0] && parts[1]) {
     inits = (parts[0][0] + parts[1][0]).toUpperCase();
   } else if (finalName.length >= 2) {
     inits = finalName.substring(0, 2).toUpperCase();
@@ -4603,7 +4697,10 @@ function applyUserToYouScreen(u) {
     }
     if (initialsEl) initialsEl.style.display = 'none';
   } else {
-    if (avatarEl) avatarEl.style.display = 'none';
+    if (avatarEl) {
+      avatarEl.style.display = 'none';
+      avatarEl.removeAttribute('src');
+    }
     if (initialsEl) initialsEl.style.display = 'block';
   }
 
@@ -4611,17 +4708,23 @@ function applyUserToYouScreen(u) {
   if (usernameEl) usernameEl.textContent = '@' + finalHandle.toLowerCase();
   
   var commName = u.campus || u.community || (state.currentUser ? state.currentUser.campus : 'Campus Community');
-  var cityName = u.location_city || u.city || (state.currentUser ? (state.currentUser.location_city || state.currentUser.city) : 'Bengaluru, KA');
+  var cityName = u.location_city || u.city || (state.currentUser ? (state.currentUser.location_city || state.currentUser.city) : 'Local');
   var campusNameEl = document.getElementById('youProfileCampusName');
   var campusCityEl = document.getElementById('youProfileCampusCity');
   if (campusNameEl) campusNameEl.textContent = commName;
   if (campusCityEl) campusCityEl.textContent = cityName;
   if (campusEl) campusEl.title = commName + ' · ' + cityName;
 
-  var journalCountEl = document.getElementById('youJournalCountText');
-  if (journalCountEl) {
-    var mCount = (u.momentCount != null ? u.momentCount : (state.myMoments ? state.myMoments.length : 18));
-    journalCountEl.textContent = '+' + (mCount > 4 ? (mCount - 4) : (mCount || 18));
+  // Real "Your World" card counts
+  var peopleDescEl = document.getElementById('youWorldPeopleDesc');
+  var commDescEl = document.getElementById('youWorldCommunitiesDesc');
+  var connCount = (u.connections_count != null) ? u.connections_count : (u.connections_from ? 1 : 0);
+  if (peopleDescEl) {
+    peopleDescEl.textContent = connCount > 0 ? (connCount + (connCount === 1 ? ' connection' : ' connections')) : 'People who matter.';
+  }
+  if (commDescEl) {
+    var jc = (u.joined_communities && u.joined_communities.length) || 0;
+    commDescEl.textContent = jc > 0 ? (jc + (jc === 1 ? ' community' : ' communities')) : 'Spaces you\'re part of.';
   }
   
   if (bioEl) bioEl.textContent = u.bio || 'Authentic moments across campus.';
@@ -4634,11 +4737,61 @@ function applyUserToYouScreen(u) {
   var editName = document.getElementById('modalEditName');
   var editBio = document.getElementById('modalEditBio');
   var editCampus = document.getElementById('modalEditCampus');
+  var editCity = document.getElementById('modalEditCity');
   if (editName) editName.value = finalName;
   if (editBio) editBio.value = u.bio || '';
   if (editCampus) editCampus.value = commName;
+  if (editCity) editCity.value = cityName;
 }
 window.applyUserToYouScreen = applyUserToYouScreen;
+
+async function loadYouJournalThumbnails() {
+  var strip = document.getElementById('youJournalThumbnailsStrip');
+  if (!strip) return;
+
+  var memData = await apiRequest('/api/me/memories');
+  var memories = (memData && memData.success && Array.isArray(memData.memories)) ? memData.memories : [];
+  
+  strip.innerHTML = '';
+  if (!memories || memories.length === 0) {
+    var myMoments = state.myMoments || [];
+    if (myMoments.length === 0) {
+      strip.innerHTML = '<div class="py-2 text-[10px] text-zinc-500 font-mono-meta tracking-wider">NO MEMORIES RECORDED YET</div>';
+      return;
+    }
+    memories = myMoments;
+  }
+
+  // Display up to 4 thumbnails
+  var displayList = memories.slice(0, 4);
+  var remaining = memories.length - 4;
+
+  displayList.forEach(function(m) {
+    var thumb = document.createElement('div');
+    thumb.className = 'w-14 h-14 rounded-xl bg-neutral-900 border border-neutral-800 overflow-hidden flex-shrink-0 cursor-pointer active:scale-95 transition';
+    var imgUrl = m.mediaUrl || m.main_img || m.media_url || m.mainImg || '';
+    if (imgUrl) {
+      thumb.innerHTML = '<img src="' + escapeHtml(imgUrl) + '" class="w-full h-full object-cover" alt="Memory preview">';
+    } else {
+      thumb.innerHTML = '<div class="w-full h-full bg-neutral-900 flex items-center justify-center text-amber-500/80 text-xs font-mono-meta">✦</div>';
+    }
+    thumb.onclick = function() {
+      openMemoryArchive();
+    };
+    strip.appendChild(thumb);
+  });
+
+  if (remaining > 0) {
+    var plusDiv = document.createElement('div');
+    plusDiv.className = 'w-14 h-14 rounded-xl bg-neutral-900/90 border border-neutral-800 flex items-center justify-center flex-shrink-0 text-amber-400 font-bold text-xs cursor-pointer active:scale-95 transition';
+    plusDiv.textContent = '+' + remaining;
+    plusDiv.onclick = function() {
+      openMemoryArchive();
+    };
+    strip.appendChild(plusDiv);
+  }
+}
+window.loadYouJournalThumbnails = loadYouJournalThumbnails;
 
 async function loadYouScreen() {
   if (state.currentUser) {
@@ -4682,7 +4835,9 @@ async function loadYouScreen() {
     // Render Dynamic Communities
     renderYouCommunitiesList(u.joined_communities || []);
 
+    // Load Real Moments & Real Journal Previews
     await loadMyMoments();
+    await loadYouJournalThumbnails();
     await loadProgressScreen();
   }
 }
@@ -4926,59 +5081,47 @@ function renderMomentsHorizontal(moments, container) {
       container.appendChild(card);
     });
   } else {
-    // Default moments matching reference screenshot
-    var sampleMoments = [
-      { time: '2 HR AGO', loc: 'GKU, SUPAUL', img: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=300&q=80' },
-      { time: 'YESTERDAY', loc: 'SUPAUL', img: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=300&q=80' },
-      { time: '3 DAYS AGO', loc: 'KOSHI RIVER', img: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=300&q=80' },
-      { time: '5 DAYS AGO', loc: 'COMMUNITY', img: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=300&q=80' }
-    ];
-
-    sampleMoments.forEach(function(s) {
-      var card = document.createElement('div');
-      card.className = 'w-28 h-36 flex-shrink-0 bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden relative shadow-lg group cursor-pointer active:scale-95 transition-all select-none';
-      card.innerHTML =
-        '<img src="' + s.img + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">' +
-        '<div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent pointer-events-none"></div>' +
-        '<div class="absolute top-1.5 right-2 text-white/80 text-xs font-bold drop-shadow">⋮</div>' +
-        '<div class="absolute bottom-2 left-2.5 right-2 space-y-0.5 pointer-events-none">' +
-          '<div class="text-[8px] font-bold text-amber-400 font-mono-tag uppercase tracking-wider">' + s.time + '</div>' +
-          '<div class="text-[8px] font-bold text-zinc-300 font-mono-tag uppercase truncate">' + s.loc + '</div>' +
-        '</div>';
-      card.addEventListener('click', openMemoryArchive);
-      container.appendChild(card);
-    });
+    var emptyEl = document.createElement('div');
+    emptyEl.className = 'py-4 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider w-full';
+    emptyEl.textContent = 'NO MOMENTS CAPTURED YET';
+    container.appendChild(emptyEl);
   }
 }
 
 function renderMomentsGrid(moments, grid) {
+  if (!grid) return;
   grid.innerHTML = '';
   if (!moments || moments.length === 0) {
     grid.innerHTML =
-      '<div class="col-span-3 text-center py-8 space-y-1">' +
-        '<p class="text-xs font-bold text-white font-mono-tag">NOTHING CAPTURED YET</p>' +
-        '<p class="text-[10px] text-zinc-500 font-mono-tag">Your first Moment will appear here.</p>' +
+      '<div class="col-span-2 py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider">' +
+        'NO MOMENTS CAPTURED YET' +
       '</div>';
     return;
   }
 
-  moments.slice(0, 5).forEach(function(m) {
-    var tile = document.createElement('div');
-    tile.className = 'aspect-[4/5] bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden relative shadow-md group cursor-pointer active:scale-95 transition-all';
-    
-    var timeBadgeColor = (m.timeAgo === 'TODAY' || m.time_ago === 'TODAY') ? 'text-amber-400' : 'text-zinc-300';
-    var timeAgoText = escapeHtml(m.timeAgo || m.time_ago || 'TODAY');
+  moments.slice(0, 10).forEach(function(m) {
+    var article = document.createElement('article');
+    article.className = 'relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
+    var imgUrl = escapeHtml(m.main_img || m.mediaUrl || m.media_url || m.mainImg || '');
+    var locStr = escapeHtml(m.campus || m.location_city || (state.currentUser ? state.currentUser.campus : '') || 'Campus');
+    var timeStr = escapeHtml((m.timeAgo || m.time_ago || (m.created_at ? formatTimeAgoClean(m.created_at) : 'RECENT'))).toUpperCase();
 
-    tile.innerHTML =
-      '<img src="' + escapeHtml(m.mediaUrl || m.mainImg || m.main_img || '') + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
-      '<span class="absolute bottom-1.5 left-1.5 text-[8px] ' + timeBadgeColor + ' font-mono-tag bg-black/80 px-1.5 py-0.5 rounded backdrop-blur-md font-bold">' +
-        timeAgoText +
-      '</span>';
+    var imgHtml = imgUrl
+      ? '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">'
+      : '<div class="w-full h-full bg-neutral-900 flex items-center justify-center text-zinc-700 font-mono-meta text-xs">MOMENT</div>';
 
-    tile.addEventListener('click', function() {
+    article.innerHTML =
+      imgHtml +
+      '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent pointer-events-none" aria-hidden="true"></div>' +
+      '<div class="absolute bottom-2.5 left-2.5 right-2.5 pointer-events-none">' +
+        '<p class="text-[9px] font-extrabold text-amber-400 tracking-wider uppercase">' + timeStr + '</p>' +
+        '<p class="text-xs font-bold text-white truncate mt-0.5"><i class="fa-solid fa-location-dot text-[8px] mr-1 text-gray-400" aria-hidden="true"></i>' + locStr + '</p>' +
+      '</div>';
+
+    article.onclick = function() {
       openMomentDetail(m);
-    });
-    grid.appendChild(tile);
+    };
+    grid.appendChild(article);
   });
 }
 
