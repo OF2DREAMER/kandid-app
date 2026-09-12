@@ -2249,6 +2249,7 @@ def init_db():
     );
     CREATE INDEX IF NOT EXISTS idx_chat_reactions_msg ON chat_reactions(message_id);
     CREATE INDEX IF NOT EXISTS idx_chat_attachments_conv ON chat_attachments(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver ON messages(sender_id, receiver_id);
     """)
 
     # Check and migrate columns if missing
@@ -10168,6 +10169,20 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     content = "Shared a Moment"
 
                 conn = get_db()
+                # --- Begin concurrency-safe transaction for 3-msg limit (per-pair) ---
+                _is_pg = bool(DATABASE_URL)
+                _in_tx = False
+                try:
+                    if _is_pg:
+                        conn.execute("BEGIN")
+                    else:
+                        try:
+                            conn.execute("BEGIN IMMEDIATE")
+                        except Exception:
+                            pass
+                    _in_tx = True
+                except Exception:
+                    _in_tx = False
                 receiver_id = resolve_user_id(raw_receiver_id, conn) or raw_receiver_id
 
                 receiver_row = conn.execute("SELECT * FROM users WHERE id = ? LIMIT 1", (receiver_id,)).fetchone()
@@ -10176,13 +10191,37 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     if receiver_row:
                         receiver_id = receiver_row["id"]
                     else:
+                        try:
+                            conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
                         conn.close()
                         return self.send_json(404, {"error": "Recipient user not found", "success": False})
 
                 # Prevent sending message to self
                 if sender_id == receiver_id:
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                     conn.close()
                     return self.send_json(400, {"error": "Cannot send message to yourself", "success": False})
+
+                # --- Postgres per-pair advisory lock (inside transaction) ---
+                if _is_pg and _in_tx:
+                    try:
+                        _pair_key = ":".join(sorted([sender_id, receiver_id]))
+                        conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (_pair_key,))
+                    except Exception:
+                        pass
 
                 # Check blocks
                 blocked_row = conn.execute("""
@@ -10192,8 +10231,55 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     LIMIT 1
                 """, (sender_id, receiver_id, receiver_id, sender_id)).fetchone()
                 if blocked_row:
+                    # Ensure rollback if in transaction
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
                     conn.close()
                     return self.send_json(403, {"error": "Cannot send message to this user", "success": False})
+
+                # --- Conversation-specific 3-message limit for non-connected pairs ---
+                # Per-pair advisory / BEGIN IMMEDIATE already started above; if not, start now
+                # Check connection status
+                _is_connected_row = conn.execute("""
+                    SELECT 1 FROM friendships
+                    WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
+                    AND status IN ('accepted', 'connected')
+                    LIMIT 1
+                """, (sender_id, receiver_id, receiver_id, sender_id)).fetchone()
+                _is_connected = bool(_is_connected_row)
+                if not _is_connected:
+                    # Determine if conversation already unlocked (both directions have at least one persisted message)
+                    _fwd_exists = conn.execute("SELECT 1 FROM messages WHERE sender_id = ? AND receiver_id = ? LIMIT 1", (sender_id, receiver_id)).fetchone()
+                    _rev_exists = conn.execute("SELECT 1 FROM messages WHERE sender_id = ? AND receiver_id = ? LIMIT 1", (receiver_id, sender_id)).fetchone()
+                    _is_unlocked = bool(_fwd_exists and _rev_exists)
+                    if not _is_unlocked:
+                        # If sender is the initiator (has sent before, receiver hasn't replied), enforce 3
+                        if _fwd_exists and not _rev_exists:
+                            _cur = conn.execute("SELECT COUNT(*) FROM messages WHERE sender_id = ? AND receiver_id = ?", (sender_id, receiver_id)).fetchone()
+                            _cnt = _cur[0] if _cur else 0
+                            if _cnt >= 3:
+                                try:
+                                    conn.execute("ROLLBACK")
+                                except Exception:
+                                    pass
+                                try:
+                                    conn.rollback()
+                                except Exception:
+                                    pass
+                                conn.close()
+                                return self.send_json(403, {
+                                    "error": "You have reached the message limit for non-connected users. Connect to continue chatting.",
+                                    "success": False,
+                                    "code": "NON_CONNECTION_MESSAGE_LIMIT",
+                                    "limit": 3
+                                })
+                        # If neither has sent (first message) or sender is replying first time (_fwd not exists but _rev exists), allow
 
                 # Validate reply_to_id belongs to this conversation
                 if reply_to_id:
@@ -10202,6 +10288,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         WHERE id = ? AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
                     """, (reply_to_id, sender_id, receiver_id, receiver_id, sender_id)).fetchone()
                     if not orig_msg:
+                        try:
+                            conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
                         conn.close()
                         return self.send_json(400, {"error": "Invalid reply_to message for this conversation", "success": False})
 
@@ -10209,12 +10303,36 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if moment_id:
                     moment_row = conn.execute("SELECT id, user_id, is_private, moderation_status FROM posts WHERE id = ?", (moment_id,)).fetchone()
                     if not moment_row:
+                        try:
+                            conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
                         conn.close()
                         return self.send_json(404, {"error": "Moment not found", "success": False})
                     if moment_row["moderation_status"] == "removed":
+                        try:
+                            conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
                         conn.close()
                         return self.send_json(400, {"error": "Moment is no longer available", "success": False})
                     if moment_row["is_private"] and moment_row["user_id"] != sender_id:
+                        try:
+                            conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
                         conn.close()
                         return self.send_json(403, {"error": "Cannot share private moment from another user", "success": False})
 
@@ -10261,6 +10379,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 })
             except Exception as e:
                 print("Error sending message:", e)
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
                 return self.send_json(500, {"error": "Internal server error while sending message", "success": False})
 
         if path == "/api/user/update":
