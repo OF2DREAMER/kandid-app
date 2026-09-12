@@ -2685,13 +2685,7 @@ def init_db():
         except:
             pass
 
-    cursor.execute("PRAGMA table_info(community_drops)")
-    cd_cols_mod = [row[1] for row in cursor.fetchall()]
-    if "moderation_status" not in cd_cols_mod:
-        try:
-            cursor.execute("ALTER TABLE community_drops ADD COLUMN moderation_status TEXT DEFAULT 'active'")
-        except:
-            pass
+    # community_drops moderation migration removed (table dropped)
 
     cursor.execute("PRAGMA table_info(communities)")
     c_cols_mod = [row[1] for row in cursor.fetchall()]
@@ -5936,13 +5930,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("SELECT COUNT(*) FROM friendships WHERE friend_id = ? AND status = 'pending'", (user["id"],))
             pending_requests_count = cursor.fetchone()[0]
 
-            # User's hosted drops
-            cursor.execute("""
-                SELECT * FROM community_drops 
-                WHERE creator_id = ? OR creator_handle = ?
-                ORDER BY created_at DESC
-            """, (user["id"], user.get("handle", "")))
-            hosted_drops = [dict(r) for r in cursor.fetchall()]
+            # User's hosted drops (Drops feature disabled in V1)
+            hosted_drops = []
 
             # User's joined communities
             cursor.execute("""
