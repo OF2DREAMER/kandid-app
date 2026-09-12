@@ -130,153 +130,13 @@ function playTactileFeedback(type) {
 }
 window.playTactileFeedback = playTactileFeedback;
 
-var MOCK_DATA = {
-  feed: [
-    {
-      id: 'post_maya_1',
-      author_handle: 'maya_s',
-      user_name: 'Maya Sharma',
-      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&q=80',
-      campus: 'North Block Quad',
-      timeAgo: '14 MIN AGO',
-      caption: 'Late afternoon coffee break between lectures at the quad.',
-      main_img: 'https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=600&q=80',
-      pip_img: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-      exif_iso: 'ISO 400',
-      exif_aperture: 'F/2.8',
-      exif_shutter: '1/250S',
-      circle: 'foryou',
-      realmojis: { '🔥': 5, '☕': 3 }
-    },
-    {
-      id: 'post_alex_1',
-      author_handle: 'alex_k',
-      user_name: 'Alex Rivera',
-      avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=80&q=80',
-      campus: 'North Block Library Wing',
-      timeAgo: '24 MIN AGO',
-      caption: 'Quiet corner in the library wing finishing architecture drafts.',
-      main_img: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80',
-      pip_img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-      exif_iso: 'ISO 200',
-      exif_aperture: 'F/4.0',
-      exif_shutter: '1/125S',
-      circle: 'campus',
-      realmojis: { '⚡': 4, '👏': 2 }
-    },
-    {
-      id: 'post_rohit_2',
-      author_handle: 'rohit_sharma',
-      user_name: 'Rohit Sharma',
-      avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=80&q=80',
-      campus: 'Courtyard Steps',
-      timeAgo: '42 MIN AGO',
-      caption: 'Sunset lighting hits the courtyard stairs perfectly today.',
-      main_img: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80',
-      pip_img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-      exif_iso: 'ISO 640',
-      exif_aperture: 'F/2.0',
-      exif_shutter: '1/320S',
-      circle: 'campus',
-      realmojis: { '🔥': 7, '❤️': 3 }
-    }
-  ],
-  global: [
-    {
-      id: 'post_hana_1',
-      author_handle: 'hana_k',
-      location_city: 'TOKYO',
-      location_coords: '35.6762° N',
-      timeAgo: '18 MIN AGO',
-      caption: 'Evening crossing after lab work in Shibuya.',
-      main_img: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=600&q=80',
-      pip_img: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-      exif_iso: 'ISO 800',
-      exif_shutter: '1/125S',
-      region: 'asia',
-      realmojis: { '🔥': 9, '⚡': 4 }
-    },
-    {
-      id: 'post_arjun_2',
-      author_handle: 'arjun_m',
-      location_city: 'DELHI',
-      location_coords: '28.6139° N',
-      timeAgo: '35 MIN AGO',
-      caption: 'Dusk settling over South Campus lawn.',
-      main_img: 'https://images.unsplash.com/photo-1587474260584-136574528ed5?auto=format&fit=crop&w=600&q=80',
-      pip_img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-      exif_iso: 'ISO 500',
-      exif_shutter: '1/200S',
-      region: 'asia',
-      realmojis: { '☕': 6, '❤️': 5 }
-    },
-    {
-      id: 'post_mia_3',
-      author_handle: 'mia_r',
-      location_city: 'LONDON',
-      location_coords: '51.5074° N',
-      timeAgo: '1 HR AGO',
-      caption: 'Last train back after a long library shift.',
-      main_img: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=600&q=80',
-      pip_img: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80',
-      exif_iso: 'ISO 320',
-      exif_shutter: '1/160S',
-      region: 'europe',
-      realmojis: { '🔥': 4, '👏': 3 }
-    }
-  ],
-  conversations: [
-    {
-      id: 'u_maya',
-      name: 'Maya Sharma',
-      handle: 'maya_s',
-      avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&q=80',
-      lastMessage: 'Are we heading to the union library later?'
-    },
-    {
-      id: 'u_alex',
-      name: 'Alex Rivera',
-      handle: 'alex_k',
-      avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=80&q=80',
-      lastMessage: 'Check out the new moment from the north wing.'
-    },
-    {
-      id: 'u_rohit',
-      name: 'Rohit Sharma',
-      handle: 'rohit_sharma',
-      avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=80&q=80',
-      lastMessage: 'Cultural night starts in 30 minutes!'
-    },
-    {
-      id: 'u_sarebaj',
-      name: 'Sarebaj Farsi',
-      handle: 'sarebaj_solvarionx',
-      avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=80&q=80',
-      lastMessage: 'Welcome to Kandid Beta! Keep it authentic.'
-    }
-  ],
-  messages: {
-    u_maya: [
-      { id: 'm1', sender_id: 'u_maya', content: 'Hey Casey! Did you capture your moment today?' },
-      { id: 'm2', sender_id: 'u_casey', content: 'Yes! Just posted near the quad.' },
-      { id: 'm3', sender_id: 'u_maya', content: 'Are we heading to the union library later?' }
-    ],
-    u_alex: [
-      { id: 'm4', sender_id: 'u_alex', content: 'Check out the new moment from the north wing.' }
-    ],
-    u_rohit: [
-      { id: 'm5', sender_id: 'u_rohit', content: 'Cultural night starts in 30 minutes!' }
-    ],
-    u_sarebaj: [
-      { id: 'm6', sender_id: 'u_sarebaj', content: 'Welcome to Kandid Beta! Keep it authentic.' }
-    ]
-  },
-  notifications: [
-    { id: 'n1', title: 'MOMENT WINDOW OPEN', body: 'You have 14 minutes to capture your raw daily perspective.', is_read: 0 },
-    { id: 'n2', title: 'NEW REACTION', body: '@maya_s reacted 🔥 to your North Quad moment.', is_read: 1 },
-    { id: 'n3', title: 'COMMUNITY LIVE', body: 'Cultural Night is live now at North City auditorium.', is_read: 1 }
-  ]
-};
+// SECURITY B-04: Safe media URL opener — only https:// allowed
+function safeOpenMediaUrl(url) {
+  if (url && typeof url === 'string' && url.trim().startsWith('https://')) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+window.safeOpenMediaUrl = safeOpenMediaUrl;
 
 function getActiveUserId() {
   if (state.currentUser && state.currentUser.id) return state.currentUser.id;
@@ -329,86 +189,6 @@ async function apiRequest(endpoint, options) {
     return data;
   } catch (err) {
     console.warn('[API] fetch error for', endpoint, err && err.message);
-    if (endpoint.indexOf('/api/feed') !== -1) {
-      return { success: true, feed: MOCK_DATA.feed };
-    }
-    if (endpoint.indexOf('/api/user/profile') !== -1) {
-      // Do NOT return dummy data — return failure so profile shows an error toast
-      return { success: false, error: 'Unable to load profile. Check your connection.' };
-    }
-    if (endpoint.indexOf('/api/campus') !== -1) {
-      return {
-        success: true,
-        campus: { name: 'North City University', activeMetric: '2.4K ACTIVE THIS WEEK' },
-        liveMoments: [{ name: 'CULTURAL NIGHT', summary: '12 moments captured around the auditorium.' }],
-        moments: MOCK_DATA.feed.filter(function(m) { return m.circle === 'campus'; })
-      };
-    }
-    if (endpoint.indexOf('/api/global') !== -1) {
-      var regMatch = endpoint.match(/region=([^&]+)/);
-      var reg = regMatch ? regMatch[1] : 'all';
-      var moments = (reg === 'all') ? MOCK_DATA.global : MOCK_DATA.global.filter(function(m) { return m.region === reg; });
-      return { success: true, moments: moments };
-    }
-    if (endpoint.indexOf('/api/chat/conversations') !== -1) {
-      return { success: true, conversations: MOCK_DATA.conversations };
-    }
-    if (endpoint.indexOf('/api/chat/messages') !== -1) {
-      var chatIdMatch = endpoint.match(/chat_id=([^&]+)/);
-      var cId = chatIdMatch ? chatIdMatch[1] : 'u_maya';
-      return { success: true, messages: MOCK_DATA.messages[cId] || [] };
-    }
-    if (endpoint.indexOf('/api/chat/send') !== -1) {
-      if (options.body) {
-        var body = JSON.parse(options.body);
-        if (!MOCK_DATA.messages[body.receiverId]) MOCK_DATA.messages[body.receiverId] = [];
-        MOCK_DATA.messages[body.receiverId].push({ id: 'm_' + Date.now(), sender_id: state.currentUser.id, content: body.content });
-      }
-      return { success: true };
-    }
-    if (endpoint.indexOf('/api/search') !== -1) {
-      return {
-        success: true,
-        activeNodes: 1,
-        sectors: [],
-        frequencies: [],
-        people: [],
-        places: [],
-        moments: []
-      };
-    }
-    if (endpoint.indexOf('/api/me/moments') !== -1) {
-      return { success: true, moments: MOCK_DATA.feed };
-    }
-    if (endpoint.indexOf('/api/me/memories') !== -1) {
-      return { success: true, count: 42, memories: MOCK_DATA.feed };
-    }
-    if (endpoint.indexOf('/api/me') !== -1) {
-      return {
-        success: true,
-        user: {
-          id: state.currentUser.id,
-          name: state.currentUser.name,
-          handle: state.currentUser.handle,
-          campus: state.currentUser.campus,
-          streak: 12,
-          momentsCount: 86,
-          memoriesCount: 42,
-          bio: 'Documenting campus life through 50mm candid frames.'
-        }
-      };
-    }
-    if (endpoint.indexOf('/api/notifications/read-all') !== -1) {
-      MOCK_DATA.notifications.forEach(function(n) { n.is_read = 1; });
-      return { success: true };
-    }
-    if (endpoint.indexOf('/api/notifications') !== -1) {
-      var unread = MOCK_DATA.notifications.filter(function(n) { return n.is_read === 0; }).length;
-      return { success: true, unreadCount: unread, notifications: MOCK_DATA.notifications };
-    }
-    if (endpoint.indexOf('/api/moments/capture') !== -1) {
-      return { success: true, message: 'Captured moment saved' };
-    }
     return { success: false, error: (err && err.message) ? err.message : 'Network error' };
   }
 }
@@ -1916,16 +1696,19 @@ async function loadFeedMoments(circle) {
         renderFeedCards(data.feed, container);
       }
     } else {
-      // If feed array is missing or mock fallback needed
-      if (typeof MOCK_DATA !== 'undefined' && MOCK_DATA.feed) {
-        renderFeedCards(MOCK_DATA.feed, container);
-      }
+      // Server returned no feed items — show empty state
+      container.innerHTML = '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+        '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">📷</div>' +
+        '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">NO MOMENTS YET</h3>' +
+        '<p class="text-[11px] text-zinc-400">Be the first to capture today's unfiltered perspective.</p>' +
+        '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="openCameraStudio()">CAPTURE TODAY'S MOMENT</button>' +
+        '</div>';
     }
   } catch(e) {
     console.error('Error loading feed moments:', e);
-    if (typeof MOCK_DATA !== 'undefined' && MOCK_DATA.feed) {
-      renderFeedCards(MOCK_DATA.feed, container);
-    }
+    container.innerHTML = '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+      '<p class="text-xs text-zinc-500">Unable to load feed. Check your connection.</p>' +
+      '</div>';
   }
 }
 
@@ -9017,9 +8800,10 @@ async function loadChatMessages(userId, isSilent = false) {
       // Photo Attachment Block
       var photoHtml = '';
       if (m.message_type === 'photo' || (m.media_url && !m.moment)) {
+        // SECURITY B-04: use data-media-url + safeOpenMediaUrl() instead of inline onclick with window.open to prevent javascript: XSS
         photoHtml = 
           '<div class="rounded-xl overflow-hidden border ' + (isMe ? 'border-amber-600/30' : 'border-zinc-800') + ' my-1 max-w-[240px]">' +
-            '<img src="' + escapeHtml(m.media_url) + '" class="w-full h-auto max-h-60 object-cover rounded-lg" loading="lazy" onclick="window.open(\'' + escapeHtml(m.media_url) + '\', \'_blank\')">' +
+            '<img src="' + escapeHtml(m.media_url) + '" class="w-full h-auto max-h-60 object-cover rounded-lg cursor-pointer" loading="lazy" data-media-url="' + escapeHtml(m.media_url) + '" onclick="safeOpenMediaUrl(this.dataset.mediaUrl)">' +
           '</div>';
       }
 

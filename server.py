@@ -4408,16 +4408,7 @@ def get_current_user(headers, body=None, query=None, require_session=False):
         """, (token, now_iso))
         row = cursor.fetchone()
 
-    # Fallback to X-User-Id or body/query senderId/userId for dev/client compatibility ONLY if no token was passed AND require_session is False
-    if not row and not token and not require_session:
-        x_uid = headers.get("X-User-Id", "").strip()
-        if not x_uid and body and isinstance(body, dict):
-            x_uid = (body.get("senderId") or body.get("sender_id") or body.get("userId") or body.get("user_id") or "").strip()
-        if not x_uid and query and isinstance(query, dict):
-            x_uid = (query.get("user_id", [""])[0] or query.get("userId", [""])[0] or "").strip()
-        if x_uid and x_uid not in ["null", "undefined", ""]:
-            cursor.execute("SELECT * FROM users WHERE (id = ? OR LOWER(handle) = ?) AND role != 'banned' LIMIT 1", (x_uid, x_uid.lower().replace("@", "")))
-            row = cursor.fetchone()
+    # SECURITY: X-User-Id header fallback removed — Bearer token is required for all authenticated requests.
 
     if row:
         user_dict = dict(row)
@@ -5321,7 +5312,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/community/recommendations":
             user = get_current_user(self.headers)
-            user_id = user["id"] if user else None
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            user_id = user["id"]
             try:
                 limit = int(query.get("limit", [12])[0])
             except (ValueError, TypeError):
@@ -5621,7 +5614,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # Server-authoritative role check
             role = get_user_community_role(comm_id, user["id"], cursor)
-            if role not in ("owner", "admin") and user.get("role") != "admin" and user.get("id") != "u_casey":
+            if role not in ("owner", "admin") and user.get("role") != "admin":
                 conn.close()
                 return self.send_json(403, {"error": "Forbidden: Only community owners and admins can access moderation reports."})
 
@@ -5665,7 +5658,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor = conn.cursor()
 
             role = get_user_community_role(comm_id, user["id"], cursor)
-            if role not in ("owner", "admin") and user.get("role") != "admin" and user.get("id") != "u_casey":
+            if role not in ("owner", "admin") and user.get("role") != "admin":
                 conn.close()
                 return self.send_json(403, {"error": "Forbidden: Only community owners and admins can view moderation audit trail."})
 
@@ -6141,7 +6134,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/notifications":
             user = get_current_user(self.headers)
-            user_id = user["id"] if user else "u_casey"
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            user_id = user["id"]
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30", (user_id,))
@@ -6173,7 +6168,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/friends":
             user = get_current_user(self.headers)
-            user_id = user["id"] if user else "u_casey"
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            user_id = user["id"]
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("""
@@ -6598,6 +6595,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 # Don't expose sensitive fields
                 target_user.pop("password_hash", None)
                 target_user.pop("salt", None)
+                target_user.pop("email", None)
 
                 # Ensure new profile fields are present
                 target_user.setdefault("profile_visibility", "public")
@@ -7432,7 +7430,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if path == "/api/me/progress":
             user = get_current_user(self.headers)
             if not user:
-                user = {"id": "u_casey", "xp": 1240}
+                return self.send_json(401, {"error": "Authentication required", "success": False})
             
             conn = get_db()
             cursor = conn.cursor()
@@ -8820,7 +8818,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # Check moderation authority
             role = get_user_community_role(comm_id, user["id"], cursor)
-            is_authorized = (role in ("owner", "admin")) or (user.get("role") == "admin") or (user.get("id") == "u_casey")
+            is_authorized = (role in ("owner", "admin")) or (user.get("role") == "admin")
             if not is_authorized and target_type == "drop" and target_id:
                 cursor.execute("SELECT creator_id FROM community_drops WHERE id = ?", (target_id,))
                 drow = cursor.fetchone()
@@ -10077,7 +10075,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/react":
             user = get_current_user(self.headers)
-            user_id = user["id"] if user else "u_casey"
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            user_id = user["id"]
             post_id = body.get("postId")
             emoji = body.get("emoji", "🔥")
             custom_photo = body.get("customPhoto") or body.get("photo") or ""
@@ -10482,6 +10482,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
                 moment_id = body.get("moment_id")
                 media_url = body.get("media_url")
+                # SECURITY B-04: Validate media_url scheme — only https:// allowed
+                if media_url:
+                    media_url = str(media_url).strip()
+                    if not media_url.startswith("https://"):
+                        return self.send_json(400, {"error": "Invalid media_url: only https:// URLs are permitted", "success": False})
                 reply_to_id = body.get("reply_to_id") or body.get("replyToId")
 
                 if not content and not moment_id and not media_url:
@@ -10765,7 +10770,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/notifications/mark-read" or path == "/api/notifications/read-all":
             user = get_current_user(self.headers)
-            user_id = user["id"] if user else "u_casey"
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            user_id = user["id"]
             conn = get_db()
             conn.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (user_id,))
             conn.commit()
