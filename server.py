@@ -2049,14 +2049,7 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
-    CREATE TABLE IF NOT EXISTS otps (
-        id TEXT PRIMARY KEY,
-        email TEXT NOT NULL,
-        otp_code TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        is_used INTEGER DEFAULT 0,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
+    -- otps table removed (B-13: stored plaintext OTPs, now uses email_otps with hash+salt)
 
     CREATE TABLE IF NOT EXISTS email_otps (
         id TEXT PRIMARY KEY,
@@ -2294,20 +2287,7 @@ def init_db():
     except Exception:
         pass
 
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS campus_events (
-        id TEXT PRIMARY KEY,
-        campus_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        summary TEXT,
-        status TEXT DEFAULT 'LIVE',
-        start_time TEXT,
-        location TEXT,
-        cover_image TEXT,
-        description TEXT,
-        created_at TEXT NOT NULL
-    )
-    ''')
+    # campus_events table removed — Events feature not active in V1 (B-10a)
 
     cursor.execute("PRAGMA table_info(posts)")
     posts_columns = [row[1] for row in cursor.fetchall()]
@@ -2432,135 +2412,7 @@ def init_db():
         ('comm_14', 'Running & Calisthenics Crew', 'Interest', 'Early morning trail runs, park workouts & active lifestyle.', 'Mumbai, MH', 'u_system', 'kandid', '🏃', 'public', 44)
     ])
 
-    # Community Drops Schema (Real-World Experiences & Monetization)
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS community_drops (
-        id TEXT PRIMARY KEY,
-        community_id TEXT NOT NULL,
-        community_name TEXT NOT NULL,
-        creator_id TEXT NOT NULL,
-        creator_handle TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT DEFAULT '',
-        date_str TEXT NOT NULL,
-        time_str TEXT NOT NULL,
-        capacity INTEGER DEFAULT 20,
-        registered_count INTEGER DEFAULT 0,
-        price REAL DEFAULT 19.0,
-        price_paise INTEGER DEFAULT 1900,
-        currency TEXT DEFAULT 'INR',
-        cover_img TEXT DEFAULT '',
-        video_url TEXT DEFAULT '',
-        video_duration REAL DEFAULT 0.0,
-        lifecycle_state TEXT DEFAULT 'DRAFT',
-        scheduled_start TEXT,
-        checkin_window_start TEXT,
-        checkin_window_end TEXT,
-        closed_at TEXT,
-        settlement_at TEXT,
-        starts_at TEXT DEFAULT '',
-        ends_at TEXT DEFAULT '',
-        host_experience_state TEXT DEFAULT 'WAITING_FOR_HOST',
-        host_started_at TEXT DEFAULT '',
-        meetup_context TEXT DEFAULT '',
-        meetup_updated_at TEXT DEFAULT '',
-        status TEXT DEFAULT 'active',
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-    ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS drop_orders (
-        id TEXT PRIMARY KEY,
-        drop_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        amount_paise INTEGER NOT NULL DEFAULT 1900,
-        currency TEXT DEFAULT 'INR',
-        payment_status TEXT DEFAULT 'pending',
-        payment_method TEXT DEFAULT 'upi',
-        idempotency_key TEXT UNIQUE,
-        provider_order_id TEXT,
-        provider_payment_id TEXT,
-        signature TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        verified_at TEXT
-    );
-    ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS community_drop_registrations (
-        id TEXT PRIMARY KEY,
-        drop_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        user_name TEXT NOT NULL,
-        user_handle TEXT NOT NULL,
-        user_avatar TEXT DEFAULT '',
-        order_id TEXT DEFAULT '',
-        amount_paid REAL DEFAULT 19.0,
-        amount_paid_paise INTEGER DEFAULT 1900,
-        platform_fee REAL DEFAULT 3.80,
-        platform_fee_paise INTEGER DEFAULT 380,
-        creator_amount REAL DEFAULT 15.20,
-        creator_amount_paise INTEGER DEFAULT 1520,
-        status TEXT DEFAULT 'confirmed',
-        is_checked_in INTEGER DEFAULT 0,
-        checked_in_at TEXT,
-        reminder_sent_at TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(drop_id, user_id)
-    );
-    ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS community_transactions (
-        id TEXT PRIMARY KEY,
-        drop_id TEXT NOT NULL,
-        community_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        creator_id TEXT NOT NULL,
-        gross_amount REAL DEFAULT 19.0,
-        platform_fee REAL DEFAULT 3.80,
-        creator_amount REAL DEFAULT 15.20,
-        status TEXT DEFAULT 'completed',
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    );
-    ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS financial_ledger (
-        id TEXT PRIMARY KEY,
-        transaction_ref TEXT UNIQUE NOT NULL,
-        order_id TEXT NOT NULL,
-        drop_id TEXT NOT NULL,
-        community_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        creator_id TEXT NOT NULL,
-        gross_amount_paise INTEGER NOT NULL,
-        platform_fee_paise INTEGER NOT NULL,
-        creator_amount_paise INTEGER NOT NULL,
-        currency TEXT DEFAULT 'INR',
-        payment_status TEXT DEFAULT 'successful',
-        settlement_status TEXT DEFAULT 'pending',
-        settlement_batch_id TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        settled_at TEXT
-    );
-    ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS drop_reminders (
-        id TEXT PRIMARY KEY,
-        drop_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        reminder_type TEXT DEFAULT '1_hour_before',
-        delivery_status TEXT DEFAULT 'pending',
-        scheduled_for TEXT NOT NULL,
-        sent_at TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(drop_id, user_id, reminder_type)
-    );
-    ''')
+    # Drops/Ticketing/Financial schema removed — Drops feature not in V1 (B-10a)
 
     # Auto-migrations for users table (is_creator, creator_activated_at)
     cursor.execute("PRAGMA table_info(users)")
@@ -2616,135 +2468,7 @@ def init_db():
             except:
                 pass
 
-    # Auto-migrations for community_drops table (currency, start_time, end_time, price_paise, lifecycle_state, etc.)
-    cursor.execute("PRAGMA table_info(community_drops)")
-    cd_cols = [row[1] for row in cursor.fetchall()]
-    for col, col_def in [
-        ("currency", "TEXT DEFAULT 'INR'"),
-        ("start_time", "TEXT DEFAULT '6:00 PM'"),
-        ("end_time", "TEXT DEFAULT '8:00 PM'"),
-        ("price_paise", "INTEGER DEFAULT 1900"),
-        ("lifecycle_state", "TEXT DEFAULT 'DRAFT'"),
-        ("scheduled_start", "TEXT DEFAULT ''"),
-        ("checkin_window_start", "TEXT DEFAULT ''"),
-        ("checkin_window_end", "TEXT DEFAULT ''"),
-        ("closed_at", "TEXT DEFAULT ''"),
-        ("settlement_at", "TEXT DEFAULT ''"),
-        ("video_url", "TEXT DEFAULT ''"),
-        ("video_duration", "REAL DEFAULT 0.0"),
-        ("starts_at", "TEXT DEFAULT ''"),
-        ("ends_at", "TEXT DEFAULT ''"),
-        ("host_experience_state", "TEXT DEFAULT 'WAITING_FOR_HOST'"),
-        ("host_started_at", "TEXT DEFAULT ''"),
-        ("meetup_context", "TEXT DEFAULT ''"),
-        ("meetup_updated_at", "TEXT DEFAULT ''"),
-        ("updated_at", "TEXT DEFAULT ''")
-    ]:
-        if col not in cd_cols:
-            try:
-                cursor.execute(f"ALTER TABLE community_drops ADD COLUMN {col} {col_def}")
-            except:
-                pass
-
-    # Backfill legacy drops for starts_at, ends_at, and host_experience_state
-    try:
-        cursor.execute("SELECT id, scheduled_start, closed_at, date_str, time_str, created_at, lifecycle_state, starts_at, ends_at, host_experience_state FROM community_drops")
-        legacy_drops = [dict(r) for r in cursor.fetchall()]
-        now_utc = datetime.now(timezone.utc)
-        for row in legacy_drops:
-            rid = row["id"]
-            st = (row.get("starts_at") or "").strip()
-            et = (row.get("ends_at") or "").strip()
-            hexp = (row.get("host_experience_state") or "").strip()
-            needs_update = False
-
-            if not st:
-                if row.get("scheduled_start") and row["scheduled_start"].strip():
-                    st = row["scheduled_start"].strip()
-                elif row.get("created_at") and row["created_at"].strip():
-                    st = row["created_at"].strip()
-                else:
-                    st = now_utc.isoformat()
-                needs_update = True
-
-            if not et:
-                try:
-                    sdt = datetime.fromisoformat(st.replace("Z", "+00:00"))
-                    if sdt.tzinfo is None:
-                        sdt = sdt.replace(tzinfo=timezone.utc)
-                    et = (sdt + timedelta(hours=2)).isoformat()
-                except Exception:
-                    et = (now_utc + timedelta(hours=2)).isoformat()
-                needs_update = True
-
-            if not hexp or hexp not in ("WAITING_FOR_HOST", "WALKING_LIVE", "FINISHED"):
-                lstate = (row.get("lifecycle_state") or "").upper()
-                if lstate in ("CLOSED", "SETTLEMENT", "MEMORY", "ENDED"):
-                    hexp = "FINISHED"
-                elif lstate in ("LIVE", "ACTIVE", "CHECK_IN"):
-                    hexp = "WALKING_LIVE"
-                else:
-                    hexp = "WAITING_FOR_HOST"
-                needs_update = True
-
-            if needs_update:
-                cursor.execute("""
-                    UPDATE community_drops 
-                    SET starts_at = ?, ends_at = ?, host_experience_state = ?
-                    WHERE id = ?
-                """, (st, et, hexp, rid))
-    except Exception as e:
-        print(f"[INIT_DB] Legacy drops backfill notice: {e}")
-
-    # Auto-migrations for community_drop_registrations table
-    cursor.execute("PRAGMA table_info(community_drop_registrations)")
-    cdr_cols = [row[1] for row in cursor.fetchall()]
-    for col, col_def in [
-        ("order_id", "TEXT DEFAULT ''"),
-        ("amount_paid_paise", "INTEGER DEFAULT 1900"),
-        ("platform_fee_paise", "INTEGER DEFAULT 380"),
-        ("creator_amount_paise", "INTEGER DEFAULT 1520"),
-        ("is_checked_in", "INTEGER DEFAULT 0"),
-        ("checked_in_at", "TEXT DEFAULT ''"),
-        ("reminder_sent_at", "TEXT DEFAULT ''")
-    ]:
-        if col not in cdr_cols:
-            try:
-                cursor.execute(f"ALTER TABLE community_drop_registrations ADD COLUMN {col} {col_def}")
-            except:
-                pass
-
-    # Auto-migrations for community_transactions table (currency, payment_provider, provider_transaction_id, updated_at)
-    cursor.execute("PRAGMA table_info(community_transactions)")
-    ctx_cols = [row[1] for row in cursor.fetchall()]
-    for col, col_def in [
-        ("currency", "TEXT DEFAULT 'INR'"),
-        ("payment_provider", "TEXT DEFAULT 'kandid_settlement_ledger'"),
-        ("provider_transaction_id", "TEXT DEFAULT ''"),
-        ("updated_at", "TEXT DEFAULT ''")
-    ]:
-        if col not in ctx_cols:
-            try:
-                cursor.execute(f"ALTER TABLE community_transactions ADD COLUMN {col} {col_def}")
-            except:
-                pass
-
-    # Indexes for Community & Drop Performance & Integrity
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cd_community_id ON community_drops(community_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cd_lifecycle ON community_drops(lifecycle_state);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cd_sched_start ON community_drops(scheduled_start);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_drop_id ON drop_orders(drop_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_user_id ON drop_orders(user_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_status ON drop_orders(payment_status);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_orders_idempotency ON drop_orders(idempotency_key);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reg_drop_id ON community_drop_registrations(drop_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reg_user_id ON community_drop_registrations(user_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reg_order_id ON community_drop_registrations(order_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_order_id ON financial_ledger(order_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_drop_id ON financial_ledger(drop_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fin_settlement ON financial_ledger(settlement_status);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rem_sched ON drop_reminders(scheduled_for);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rem_status ON drop_reminders(delivery_status);")
+    # Drops/financial table migrations removed — tables no longer exist in V1 (B-10a)
 
     # Auto-migrations for messages table (read_at, message_type, moment_id, media_url)
     cursor.execute("PRAGMA table_info(messages)")
@@ -5795,21 +5519,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             except:
                 events = []
 
-            if not events:
-                events = [
-                    {
-                        "id": "ev_tech_fest",
-                        "title": "Tech Fest Opening",
-                        "status": "LIVE",
-                        "status_tag": "● Happening now",
-                        "time_label": "TONIGHT",
-                        "area": "Main Ground",
-                        "moments_count": 24,
-                        "action_label": "OPEN →",
-                        "cover_image": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=700&q=80"
-                    }
-                ]
-
+            # Events feature not active in V1 — return empty list only
             # 6. Collective Memory Layer
             cursor.execute("SELECT * FROM collective_memories WHERE campus = ? OR community_name = ? OR community_id = ? ORDER BY created_at DESC LIMIT 12", (target_campus, comm_name, comm_id))
             mem_rows = cursor.fetchall()
@@ -10522,6 +10232,22 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if blocked_row:
                     conn.close()
                     return self.send_json(403, {"error": "Cannot send message to this user", "success": False})
+
+                # B-11: Connection gate — only accepted connections can message each other
+                connection_row = conn.execute("""
+                    SELECT 1 FROM friendships
+                    WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
+                    AND status = 'accepted'
+                    LIMIT 1
+                """, (sender_id, receiver_id, receiver_id, sender_id)).fetchone()
+                if not connection_row:
+                    conn.close()
+                    return self.send_json(403, {
+                        "error": "You can only message people you are connected with.",
+                        "success": False,
+                        "code": "NOT_CONNECTED"
+                    })
+
 
                 # Validate reply_to_id belongs to this conversation
                 if reply_to_id:
