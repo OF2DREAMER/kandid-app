@@ -475,7 +475,7 @@ function switchScreenView(screenName) {
   var target = document.getElementById('screen-' + screenName);
   if (target) {
     target.classList.add('active');
-    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'offline' || screenName === 'block' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile' || screenName === 'search') {
+    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'offline' || screenName === 'block' || screenName === 'block-list' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile' || screenName === 'search') {
         target.style.display = 'flex';
     } else {
         target.style.display = 'block';
@@ -536,6 +536,8 @@ function switchScreenView(screenName) {
     loadSettingsScreen();
   } else if (screenName === 'notifications') {
     loadNotifications();
+  } else if (screenName === 'block-list') {
+    loadBlockList();
   }
 
 
@@ -7041,6 +7043,65 @@ async function submitBlockUser() {
   switchScreenView('block-confirm');
 }
 window.submitBlockUser = submitBlockUser;
+
+// =====================================================================
+// BLOCK LIST: PERSISTED BLOCKED PEOPLE (MANAGE BLOCKED PEOPLE SCREEN)
+// =====================================================================
+async function loadBlockList() {
+  var container = document.getElementById('blockListContainer');
+  if (!container) return;
+
+  container.innerHTML = '<div class="text-center py-12 text-xs text-zinc-500 font-mono-tag animate-pulse">Loading blocked people...</div>';
+
+  var res = await apiRequest('/api/user/blocked');
+  var blocked = (res && res.success && Array.isArray(res.blocked)) ? res.blocked : [];
+
+  if (!res || !res.success) {
+    container.innerHTML = '<div class="text-center py-12 text-xs text-zinc-500 font-mono-tag">Could not load your block list. Please try again.</div>';
+    return;
+  }
+
+  if (blocked.length === 0) {
+    container.innerHTML = '<div class="text-center py-12 text-xs text-zinc-500 font-mono-tag">You haven\u2019t blocked anyone. Blocked people will appear here.</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  blocked.forEach(function(u) {
+    var row = document.createElement('div');
+    row.className = 'flex items-center justify-between p-3.5 rounded-2xl bg-zinc-950 border border-zinc-800/80';
+    var avatarLetter = (u.name || u.handle || 'U').charAt(0).toUpperCase();
+    var avatarHtml = u.avatar_url
+      ? '<img src="' + escapeHtml(u.avatar_url) + '" class="w-10 h-10 rounded-full object-cover" alt="">'
+      : '<div class="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-amber-400 font-bold text-xs">' + escapeHtml(avatarLetter) + '</div>';
+    row.innerHTML =
+      '<div class="flex items-center gap-3 min-w-0">' +
+        avatarHtml +
+        '<div class="min-w-0">' +
+          '<p class="text-xs font-bold text-white truncate">' + escapeHtml(u.name || u.handle || 'User') + '</p>' +
+          '<p class="text-[10px] text-zinc-500 font-mono-tag truncate">@' + escapeHtml(u.handle || '') + '</p>' +
+        '</div>' +
+      '</div>' +
+      '<button class="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-400 font-bold text-[10px] rounded-full tracking-wider uppercase cursor-pointer flex-shrink-0" onclick="unblockUser(\'' + escapeHtml(u.id) + '\')">UNBLOCK</button>';
+    container.appendChild(row);
+  });
+}
+window.loadBlockList = loadBlockList;
+
+async function unblockUser(userId) {
+  if (!userId) return;
+  var res = await apiRequest('/api/community/unblock', {
+    method: 'POST',
+    body: JSON.stringify({ target_id: userId })
+  });
+  if (res && res.success) {
+    showToast('User unblocked');
+    loadBlockList();
+  } else {
+    showToast('Could not unblock: ' + (res && res.error ? res.error : 'Network error'));
+  }
+}
+window.unblockUser = unblockUser;
 
 
 // =====================================================================
