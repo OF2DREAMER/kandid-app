@@ -16,3 +16,5 @@ uploads/
 kandid.db
 data/chat_attachments/*
 !data/chat_attachments/.gitkeep
+data/*backup*.db
+data/*_backup*.db

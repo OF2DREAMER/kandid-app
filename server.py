@@ -10477,7 +10477,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "message": "Password changed successfully."})
 
         if path == "/api/auth/switch":
-            handle = body.get("handle", "casey.rx").lower()
+            # Disabled in production to prevent account takeover (B-20)
+            if ENVIRONMENT == "production":
+                return self.send_json(403, {"error": "Account switching is disabled in production", "success": False})
+            handle = body.get("handle", "").lower().strip()
+            if not handle:
+                return self.send_json(400, {"error": "Handle required", "success": False})
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM users WHERE handle = ?", (handle,))
@@ -10486,8 +10491,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(404, {"error": "User handle not found"})
             u = dict(row)
-            token = f"token_{u['handle']}_prod"
-            expires = (datetime.now() + timedelta(days=30)).isoformat()
+            import secrets
+            token = secrets.token_urlsafe(32)
+            expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
             conn.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
                          (f"sess_{u['id']}", u["id"], token, expires))
             conn.commit()

@@ -546,14 +546,11 @@
 
             <!-- Horizontal preview tiles with OPEN PULSE card -->
             <div class="flex gap-2 overflow-x-auto no-scroll pt-1" id="communityPulsePreviewTiles">
-              <div class="w-16 h-20 shrink-0 rounded-xl overflow-hidden relative border border-white/10 bg-zinc-900 shadow-md cursor-pointer" onclick="openLivePulse()">
-                <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
+              <div class="w-16 h-20 shrink-0 rounded-xl overflow-hidden relative border border-white/10 bg-zinc-900 shadow-md cursor-pointer flex items-center justify-center text-zinc-600 font-mono-tag text-[10px]" onclick="openLivePulse()">
+                <span>PULSE</span>
               </div>
-              <div class="w-16 h-20 shrink-0 rounded-xl overflow-hidden relative border border-white/10 bg-zinc-900 shadow-md cursor-pointer" onclick="openLivePulse()">
-                <img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
-              </div>
-              <div class="w-16 h-20 shrink-0 rounded-xl overflow-hidden relative border border-white/10 bg-zinc-900 shadow-md cursor-pointer" onclick="openLivePulse()">
-                <img src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
+              <div class="w-16 h-20 shrink-0 rounded-xl overflow-hidden relative border border-white/10 bg-zinc-900 shadow-md cursor-pointer flex items-center justify-center text-zinc-600 font-mono-tag text-[10px]" onclick="openLivePulse()">
+                <span>LIVE</span>
               </div>
               <div onclick="openLivePulse()" class="w-16 h-20 shrink-0 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-amber-500/20 active:scale-95 transition shadow-sm">
                 <span class="text-amber-400 text-xs font-bold font-mono-tag">OPEN</span>
@@ -584,10 +581,8 @@
             </div>
 
             <div class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-3 shadow-xl">
-              <div class="aspect-[16/9] rounded-xl overflow-hidden relative border border-white/[.07]">
-                <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=700&q=80" class="w-full h-full object-cover">
-                <div class="absolute inset-0 bg-black/45"></div>
-                <div class="absolute bottom-3 left-3 right-3 flex items-end justify-between">
+              <div class="aspect-[16/9] rounded-xl overflow-hidden relative border border-white/[.07] bg-gradient-to-br from-zinc-900 via-zinc-950 to-zinc-900 flex items-end p-4">
+                <div class="w-full flex items-end justify-between z-10">
                   <div>
                     <p class="text-xs font-bold text-white">Campus Welcome & Orientation</p>
                     <p class="font-mono-tag text-[8px] text-zinc-300 mt-0.5">14 Moments captured together</p>
@@ -1065,7 +1060,7 @@
 
                 <!-- Bio -->
                 <div class="text-[11px] text-gray-300 mt-2.5 leading-relaxed font-normal" id="peerPublicBio" aria-label="Biography">
-                    Building Kandid · Learning CS ·<br>Exploring real places, real people, real stories.
+                    Authentic moments across campus.
                 </div>
             </section>
 
@@ -1158,7 +1153,7 @@
 
                     <!-- Bio Section -->
                     <div class="text-xs text-gray-300 mt-3 leading-relaxed font-normal max-w-[280px]" id="peerPrivateBio" aria-label="Biography">
-                        Building Kandid · Learning CS ·<br>Exploring real places, real people, real stories.
+                        Authentic moments across campus.
                     </div>
 
                     <!-- Restrained Private Profile Indicator -->
@@ -1500,43 +1495,6 @@
                 <input type="text" id="editProfileCampus" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white font-mono-tag mt-1 focus:outline-none focus:border-amber-500">
               </div>
               <button class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag mt-1 cursor-pointer active:scale-95 transition-transform" onclick="saveProfileSettings()">SAVE CHANGES</button>
-            </div>
-
-            <!-- Switch Dev Profile -->
-            <div class="space-y-2 pt-3 border-t border-zinc-900">
-              <h3 class="text-[10px] font-bold text-zinc-300 font-mono-tag uppercase">SWITCH DEV PROFILE</h3>
-              <div class="space-y-1.5" id="switchUserList">
-                <button class="w-full p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl flex items-center justify-between text-left cursor-pointer" onclick="switchUserAccount('maya_s')">
-                  <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 rounded-full bg-amber-500 text-black font-bold flex items-center justify-center text-[10px]">MS</div>
-                    <div>
-                      <div class="text-xs font-bold text-white">Maya Sharma</div>
-                      <span class="text-[8px] text-zinc-400 font-mono-tag">@maya_s</span>
-                    </div>
-                  </div>
-                  <span class="text-[8px] text-zinc-500 font-mono-tag">SWITCH →</span>
-                </button>
-                <button class="w-full p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl flex items-center justify-between text-left cursor-pointer" onclick="switchUserAccount('casey.rx')">
-                  <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 rounded-full bg-zinc-700 text-white font-bold flex items-center justify-center text-[10px]">CR</div>
-                    <div>
-                      <div class="text-xs font-bold text-white">Casey Rhodes</div>
-                      <span class="text-[8px] text-zinc-400 font-mono-tag">@casey.rx</span>
-                    </div>
-                  </div>
-                  <span class="text-[8px] text-zinc-500 font-mono-tag">SWITCH →</span>
-                </button>
-                <button class="w-full p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl flex items-center justify-between text-left cursor-pointer" onclick="switchUserAccount('alex_k')">
-                  <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 rounded-full bg-zinc-700 text-white font-bold flex items-center justify-center text-[10px]">AK</div>
-                    <div>
-                      <div class="text-xs font-bold text-white">Alex K</div>
-                      <span class="text-[8px] text-zinc-400 font-mono-tag">@alex_k</span>
-                    </div>
-                  </div>
-                  <span class="text-[8px] text-zinc-500 font-mono-tag">SWITCH →</span>
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -2060,13 +2018,13 @@
            ================================================================= -->
       <section class="app-screen bg-[#09090b] flex flex-col h-full" id="screen-block" style="display:none;">
           <div class="flex-1 flex flex-col items-center justify-center px-6 text-center space-y-6 py-10 pb-32">
-              <div class="w-20 h-20 rounded-2xl bg-zinc-900 overflow-hidden border border-zinc-700 shadow-2xl mx-auto">
-                  <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
+              <div class="w-20 h-20 rounded-2xl bg-zinc-900 overflow-hidden border border-zinc-700 shadow-2xl mx-auto flex items-center justify-center text-zinc-400 font-bold text-2xl" id="blockUserAvatarContainer">
+                  <span id="blockUserAvatarLetter">🚫</span>
               </div>
 
               <div class="space-y-1">
-                  <h2 class="text-base font-extrabold text-white tracking-tight uppercase font-mono-tag">Block Alex K.?</h2>
-                  <p class="text-xs text-amber-400 font-mono-tag">@alex_k</p>
+                  <h2 class="text-base font-extrabold text-white tracking-tight uppercase font-mono-tag" id="blockUserNameTitle">Block this user?</h2>
+                  <p class="text-xs text-amber-400 font-mono-tag" id="blockUserHandleText">@user</p>
               </div>
 
               <p class="text-xs text-zinc-300 font-normal leading-relaxed px-2 bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 shadow-inner">
@@ -2262,12 +2220,10 @@
               <div class="text-center"><span class="text-[9px] text-zinc-600 font-mono-tag bg-zinc-950 px-2.5 py-1 rounded-full uppercase">SHARED FROM KANDID</span></div>
 
               <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 space-y-3 max-w-[280px] self-end shadow-xl cursor-pointer">
-                  <div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800">
-                      <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=400&q=80" class="w-full h-full object-cover">
+                  <div class="w-full aspect-[4/5] bg-zinc-900 rounded-xl relative overflow-hidden border border-zinc-800 flex items-center justify-center text-zinc-600 font-mono-tag text-xs">
+                      <span>MOMENT PREVIEW</span>
                       <!-- PiP Front Camera -->
-                      <div class="absolute top-2.5 left-2.5 w-16 h-22 rounded-lg overflow-hidden border-2 border-white/20 bg-black shadow-lg">
-                          <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80" class="w-full h-full object-cover">
-                      </div>
+                      <div class="absolute top-2.5 left-2.5 w-16 h-22 rounded-lg overflow-hidden border-2 border-white/20 bg-zinc-800 shadow-lg"></div>
                   </div>
                   <div class="space-y-1">
                       <div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag font-bold">
@@ -2301,12 +2257,12 @@
       <!-- SCREEN 6: MESSAGE REQUEST -->
       <section class="app-screen bg-[#09090b] flex flex-col h-full" id="screen-chat-request" style="display:none;">
           <div class="flex-1 flex flex-col items-center justify-center px-6 text-center space-y-4 py-10 pb-32">
-              <div class="w-20 h-20 rounded-full overflow-hidden border border-zinc-700 shadow-xl mx-auto">
-                  <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
+              <div class="w-20 h-20 rounded-full overflow-hidden border border-zinc-700 shadow-xl mx-auto bg-zinc-900 flex items-center justify-center text-amber-500 text-xl font-bold font-mono-tag" id="chatRequestAvatar">
+                  <span>💬</span>
               </div>
               <div class="space-y-1">
-                  <h2 class="text-base font-extrabold text-white">Maya wants to start a conversation.</h2>
-                  <p class="text-xs text-zinc-400 font-mono-tag">North City University</p>
+                  <h2 class="text-base font-extrabold text-white" id="chatRequestTitle">New Conversation Request</h2>
+                  <p class="text-xs text-zinc-400 font-mono-tag" id="chatRequestCampus">Community Connection</p>
               </div>
               <p class="text-[10px] text-zinc-500 font-mono-tag">You choose who can enter your conversations.</p>
 
@@ -2664,28 +2620,22 @@
 
             <!-- Horizontal Pulse Preview Tiles with OPEN PULSE tile -->
             <div class="flex gap-2.5 overflow-x-auto no-scroll pt-1" id="campusPagePulseTiles">
-                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition">
-                    <div class="w-full aspect-square rounded-lg overflow-hidden bg-black">
-                        <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
-                    </div>
+                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition flex flex-col items-center justify-center text-center">
+                    <span class="text-xs">📚</span>
                     <p class="text-[10px] font-bold text-white truncate">Library</p>
-                    <p class="font-mono-tag text-[8px] text-zinc-500">8m ago</p>
+                    <p class="font-mono-tag text-[8px] text-zinc-500">Live</p>
                 </div>
 
-                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition">
-                    <div class="w-full aspect-square rounded-lg overflow-hidden bg-black">
-                        <img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
-                    </div>
+                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition flex flex-col items-center justify-center text-center">
+                    <span class="text-xs">🌿</span>
                     <p class="text-[10px] font-bold text-white truncate">Campus Quad</p>
-                    <p class="font-mono-tag text-[8px] text-zinc-500">12m ago</p>
+                    <p class="font-mono-tag text-[8px] text-zinc-500">Live</p>
                 </div>
 
-                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition">
-                    <div class="w-full aspect-square rounded-lg overflow-hidden bg-black">
-                        <img src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=200&q=80" class="w-full h-full object-cover">
-                    </div>
+                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition flex flex-col items-center justify-center text-center">
+                    <span class="text-xs">☕</span>
                     <p class="text-[10px] font-bold text-white truncate">Canteen</p>
-                    <p class="font-mono-tag text-[8px] text-zinc-500">18m ago</p>
+                    <p class="font-mono-tag text-[8px] text-zinc-500">Live</p>
                 </div>
 
                 <div onclick="openLivePulse()" class="w-20 shrink-0 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-amber-500/20 active:scale-95 transition shadow-sm p-2">
@@ -4474,14 +4424,8 @@
 
         <div class="flex-1 overflow-y-auto p-5 space-y-4" id="pulseModalMomentsList">
             <p class="text-xs text-zinc-400">A temporary living layer of active moments happening right now around this place.</p>
-            
-            <div class="aspect-[4/5] rounded-3xl overflow-hidden relative border border-white/[.08] shadow-2xl">
-                <img src="https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=700&q=80" class="w-full h-full object-cover">
-                <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
-                <div class="absolute bottom-4 left-4 right-4 space-y-1">
-                    <span class="font-mono-tag text-[9px] text-amber-400 bg-black/60 px-2 py-0.5 rounded">Near Main Building · Just now</span>
-                    <p class="text-sm font-bold text-white">"Rain clearing up over the quad"</p>
-                </div>
+            <div class="py-12 text-center text-zinc-500 font-mono-tag text-xs" id="pulseModalEmptyNotice">
+                <span>Loading active moments...</span>
             </div>
         </div>
 
@@ -4683,6 +4627,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.5.0"></script>
+  <script src="app.js?v=5.6.0"></script>
 </body>
 </html>
