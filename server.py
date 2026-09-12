@@ -10195,22 +10195,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     conn.close()
                     return self.send_json(403, {"error": "Cannot send message to this user", "success": False})
 
-                # B-11: Connection gate — only accepted connections can message each other
-                connection_row = conn.execute("""
-                    SELECT 1 FROM friendships
-                    WHERE ((user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?))
-                    AND status = 'accepted'
-                    LIMIT 1
-                """, (sender_id, receiver_id, receiver_id, sender_id)).fetchone()
-                if not connection_row:
-                    conn.close()
-                    return self.send_json(403, {
-                        "error": "You can only message people you are connected with.",
-                        "success": False,
-                        "code": "NOT_CONNECTED"
-                    })
-
-
                 # Validate reply_to_id belongs to this conversation
                 if reply_to_id:
                     orig_msg = conn.execute("""
