@@ -165,10 +165,7 @@ def get_user_community_role(community_id, user_id, cursor):
     if crow:
         if crow["creator_id"] and crow["creator_id"] == user_id:
             return "owner"
-        cursor.execute("SELECT handle FROM users WHERE id = ?", (user_id,))
-        urow_h = cursor.fetchone()
-        if urow_h and urow_h["handle"] and crow["creator_handle"] and urow_h["handle"].strip().lower() == crow["creator_handle"].strip().lower():
-            return "owner"
+
     # 2. Check community_members table
     cursor.execute("SELECT role, status FROM community_members WHERE (community_id = ? OR community_id = ?) AND user_id = ?", 
                    (community_id, crow["id"] if crow else community_id, user_id))
@@ -197,10 +194,7 @@ def validate_drop_ownership(drop_id, user_id, cursor):
     drop = dict(drop_row)
     if drop["creator_id"] == user_id:
         return True, "", drop
-    cursor.execute("SELECT handle FROM users WHERE id = ?", (user_id,))
-    u = cursor.fetchone()
-    if u and u["handle"] and drop.get("creator_handle") and u["handle"].strip().lower() == drop["creator_handle"].strip().lower():
-        return True, "", drop
+
     role = get_user_community_role(drop["community_id"], user_id, cursor)
     if role in ("owner", "admin"):
         return True, "", drop
@@ -5500,10 +5494,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if user and comm_row:
                 comm_dict = dict(comm_row)
                 user_role = get_user_community_role(comm_dict["id"], user["id"], cursor)
-                is_creator_user = bool(
-                    (comm_dict.get("creator_id") and comm_dict["creator_id"] == user["id"]) or
-                    (comm_dict.get("creator_handle") and user.get("handle") and comm_dict["creator_handle"].strip().lower() == user["handle"].strip().lower())
-                )
+                is_creator_user = bool(comm_dict.get("creator_id") and comm_dict["creator_id"] == user["id"])
+
                 if is_creator_user:
                     user_role = "owner"
                     is_joined = True
