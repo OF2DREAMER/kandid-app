@@ -308,7 +308,7 @@
           <div class="flex items-center gap-2.5 overflow-hidden">
               <button class="text-zinc-400 hover:text-white font-mono-tag cursor-pointer p-1" onclick="switchScreenView('chat-home')">←</button>
               <div class="w-9 h-9 rounded-full overflow-hidden border border-zinc-700 bg-zinc-900 shrink-0 cursor-pointer" onclick="viewChatPartnerProfile()">
-                  <img id="headerChatAvatar" src="https://api.dicebear.com/7.x/initials/svg?seed=K&backgroundColor=18181b,27272a&textColor=f59e0b" class="w-full h-full object-cover">
+                  <img id="headerChatAvatar" src="" class="w-full h-full object-cover" style="display:none;">
               </div>
               <div class="cursor-pointer overflow-hidden" onclick="viewChatPartnerProfile()">
                   <div class="flex items-center gap-1.5">
@@ -822,7 +822,7 @@
                         <div class="relative flex-shrink-0">
                             <div class="w-[82px] h-[82px] rounded-full p-[2px] bg-gradient-to-tr from-amber-600 via-amber-500 to-amber-300 shadow-lg shadow-amber-500/10 cursor-pointer" onclick="openEditProfileModal()">
                                 <div class="w-full h-full rounded-full bg-zinc-900 overflow-hidden flex items-center justify-center border-2 border-[#0b0b0c]" id="youProfileAvatarBox">
-                                    <span id="youProfileInitials" class="text-amber-400 font-bold font-mono-tag text-2xl">K</span>
+                                    <span id="youProfileInitials" class="text-amber-400 font-bold font-mono-tag text-2xl" style="display:none;"></span>
                                     <img src="" id="youProfileAvatar" alt="Profile picture" class="w-full h-full object-cover rounded-full" style="display:none;">
                                 </div>
                             </div>
@@ -4174,7 +4174,7 @@
                     <div class="flex items-center gap-3">
                         <div class="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden flex items-center justify-center flex-shrink-0" id="modalEditAvatarPreviewBox">
                             <img id="modalEditAvatarPreview" class="w-full h-full object-cover" style="display:none;">
-                            <span id="modalEditAvatarInitials" class="text-amber-500 font-bold font-mono-tag text-sm">AN</span>
+                            <span id="modalEditAvatarInitials" class="text-amber-500 font-bold font-mono-tag text-sm" style="display:none;"></span>
                         </div>
                         <input type="file" id="modalEditAvatarInput" accept="image/*" class="hidden" onchange="handleModalAvatarUpload(event)">
                         <button type="button" onclick="document.getElementById('modalEditAvatarInput').click()" class="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-[10px] font-bold rounded-xl font-mono-tag cursor-pointer active:scale-95">
@@ -4188,7 +4188,7 @@
                     <div class="flex items-center gap-3">
                         <div class="w-20 h-12 rounded-xl bg-gradient-to-br from-neutral-900 via-[#18181b] to-neutral-950 border border-zinc-800 overflow-hidden flex items-center justify-center flex-shrink-0 relative" id="modalEditCoverPreviewBox">
                             <img id="modalEditCoverPreview" class="w-full h-full object-cover" style="display:none;">
-                            <span id="modalEditCoverPlaceholder" class="text-[9px] text-zinc-600 font-mono-tag uppercase">No Cover</span>
+                            <span id="modalEditCoverPlaceholder" class="text-[9px] text-zinc-600 font-mono-tag uppercase" style="display:none;"></span>
                         </div>
                         <input type="file" id="modalEditCoverInput" accept="image/*" class="hidden" onchange="handleModalCoverUpload(event)">
                         <button type="button" onclick="document.getElementById('modalEditCoverInput').click()" class="px-3 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-[10px] font-bold rounded-xl font-mono-tag cursor-pointer active:scale-95">

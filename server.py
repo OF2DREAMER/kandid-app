@@ -5835,7 +5835,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     content = item.get("content") or item.get("body") or "interacted with you"
                     item["title"] = f"{actor} {content}"
                 if not item.get("avatar_url"):
-                    item["avatar_url"] = item.get("actor_avatar") or ("https://api.dicebear.com/7.x/initials/svg?seed=" + str(item.get("actor_handle", "user")) + "&backgroundColor=18181b,27272a&textColor=f59e0b")
+                    item["avatar_url"] = item.get("actor_avatar") or ""
                 item["time_ago"] = format_time_ago(item.get("created_at", ""))
                 notifs.append(item)
 
@@ -6945,7 +6945,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if user_id:
                     people_results = [p for p in people_results if p["id"] not in blocked_ids and p["id"] != user_id]
                     for p in people_results:
-                        p["avatar_url"] = p.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={p.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                        p["avatar_url"] = p.get("avatar_url") or ""
                         cursor.execute("""
                             SELECT status FROM friendships
                             WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
@@ -6962,7 +6962,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         p["is_requested"] = (p["connection_status"] == "requested")
                 else:
                     for p in people_results:
-                        p["avatar_url"] = p.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={p.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                        p["avatar_url"] = p.get("avatar_url") or ""
                         p["connection_status"] = "connect"
                         p["is_connected"] = False
                         p["is_requested"] = False
@@ -8671,7 +8671,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
                              ("sess_" + secrets.token_hex(6), u["id"], token, expires))
                 conn.commit()
-                avatar_url = u.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={u.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                avatar_url = u.get("avatar_url") or ""
                 user_obj = {
                     "id": u["id"],
                     "name": u.get("name", "Student"),
@@ -8854,7 +8854,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                          ("sess_" + secrets.token_hex(16), u["id"], token, expires))
             conn.commit()
             
-            avatar_url = u.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={u.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+            avatar_url = u.get("avatar_url") or ""
             
             user_obj = serialize_user(u)
             user_obj["avatar_url"] = avatar_url
@@ -9000,7 +9000,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                          ("sess_" + secrets.token_hex(16), u["id"], token, expires))
             conn.commit()
 
-            avatar_url = u.get("avatar_url") or f"https://api.dicebear.com/7.x/initials/svg?seed={u.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+            avatar_url = u.get("avatar_url") or ""
             user_obj = serialize_user(u)
             user_obj["avatar_url"] = avatar_url
             user_obj["avatar"] = avatar_url
@@ -9046,7 +9046,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 """, ("auth_" + secrets.token_hex(6), u["id"], google_id, email, datetime.now().isoformat()))
                 conn.commit()
 
-                avatar_url = u.get("avatar_url") or picture or f"https://api.dicebear.com/7.x/initials/svg?seed={u.get('handle', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                avatar_url = u.get("avatar_url") or picture or ""
                 user_obj = {
                     "id": u["id"],
                     "name": u.get("name", name),
@@ -9082,7 +9082,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             if session_row:
                 s = dict(session_row)
-                avatar_url = picture or s.get("google_avatar") or f"https://api.dicebear.com/7.x/initials/svg?seed={s.get('google_name', 'user')}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                avatar_url = picture or s.get("google_avatar") or ""
                 conn.close()
                 return self.send_json(200, {
                     "success": True,
@@ -9120,7 +9120,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 suffix += 1
 
             new_session_id = "onb_" + secrets.token_hex(12)
-            avatar_url = picture or f"https://api.dicebear.com/7.x/initials/svg?seed={handle}&backgroundColor=18181b,27272a&textColor=f59e0b"
+            avatar_url = picture or ""
             expires_at = (datetime.now() + timedelta(hours=24)).isoformat()
 
             cursor.execute("""
@@ -9206,7 +9206,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             campus_name = (body.get("campus_name") or s.get("chosen_campus_name") or "").strip()
             campus_id = (body.get("campus_id") or s.get("chosen_campus_id") or "").strip()
             city = (body.get("city") or s.get("chosen_city") or "").strip()
-            avatar_url = (body.get("avatar_url") or s.get("google_avatar") or f"https://api.dicebear.com/7.x/initials/svg?seed={handle}&backgroundColor=18181b,27272a&textColor=f59e0b").strip()
+            avatar_url = (body.get("avatar_url") or s.get("google_avatar") or "").strip()
+            if "api.dicebear.com" in avatar_url:
+                avatar_url = ""
             raw_pwd = (body.get("password") or "").strip()
 
             # Validate Handle format & uniqueness
@@ -9796,7 +9798,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             elif req_avatar and (req_avatar.startswith("http") or req_avatar.startswith("/uploads/")):
                 avatar_url = req_avatar
             else:
-                avatar_url = f"https://api.dicebear.com/7.x/initials/svg?seed={handle}&backgroundColor=18181b,27272a&textColor=f59e0b"
+                avatar_url = ""
             
             conn = get_db()
             try:

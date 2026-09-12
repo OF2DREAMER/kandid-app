@@ -388,7 +388,7 @@ function renderGlobalCards(moments, container) {
     var iso = escapeHtml(m.exif_iso || 'ISO 400');
     var shutter = escapeHtml(m.exif_shutter || '1/250S');
 
-    var avatarSrc = m.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(m.author_handle || m.user_name || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+    var avatarSrc = (m.avatar_url && !m.avatar_url.includes('api.dicebear.com')) ? m.avatar_url : '';
     var avatarHtml = '<img src="' + avatarSrc + '" class="w-full h-full object-cover">';
 
     var realmojis = m.realmojis || {};
@@ -3703,7 +3703,7 @@ function renderPeopleSearchResults(people) {
     var item = document.createElement('div');
     item.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3.5 flex items-center justify-between select-none';
 
-    var avatarSrc = p.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(p.handle || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+    var avatarSrc = (p.avatar_url && !p.avatar_url.includes('api.dicebear.com')) ? p.avatar_url : '';
     var name = escapeHtml(p.name || 'Student');
     var handle = escapeHtml(p.handle || 'user');
     var campus = escapeHtml(p.campus || 'North City University');
@@ -3911,8 +3911,10 @@ async function openUserProfile(userId, preloadedData) {
   var finalHandle = (u.handle || u.username || 'user').replace('@', '');
   var cleanHandle = '@' + finalHandle.toLowerCase();
   var finalBio = u.bio || '';
-  var finalAvatar = u.avatar_url || u.avatar || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(finalHandle) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
-  var finalCover = (u.cover_url && !u.cover_url.includes('unsplash.com')) ? u.cover_url : '';
+  var rawAvatar = (u.avatar_url || u.avatar || '').trim();
+  var finalAvatar = (rawAvatar && !rawAvatar.includes('api.dicebear.com')) ? rawAvatar : '';
+  var rawCover = (u.cover_url || u.cover || '').trim();
+  var finalCover = (rawCover && !rawCover.includes('unsplash.com')) ? rawCover : '';
 
   if (isPrivate) {
     // ─── PRIVATE PROFILE STATE ───
@@ -3931,13 +3933,20 @@ async function openUserProfile(userId, preloadedData) {
       privBio.textContent = finalBio || 'Their world, kept close.';
     }
     if (privAvatar) {
-      privAvatar.src = finalAvatar;
-      privAvatar.style.display = 'block';
+      if (finalAvatar) {
+        privAvatar.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+        privAvatar.onload = function() { this.style.display = 'block'; };
+        privAvatar.src = finalAvatar;
+      } else {
+        privAvatar.style.display = 'none';
+        privAvatar.removeAttribute('src');
+      }
     }
     if (privCover) {
       if (finalCover) {
+        privCover.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+        privCover.onload = function() { this.style.display = 'block'; };
         privCover.src = finalCover;
-        privCover.style.display = 'block';
       } else {
         privCover.style.display = 'none';
         privCover.removeAttribute('src');
@@ -3986,13 +3995,20 @@ async function openUserProfile(userId, preloadedData) {
       pubBio.textContent = finalBio || 'Authentic moments across campus.';
     }
     if (pubAvatar) {
-      pubAvatar.src = finalAvatar;
-      pubAvatar.style.display = 'block';
+      if (finalAvatar) {
+        pubAvatar.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+        pubAvatar.onload = function() { this.style.display = 'block'; };
+        pubAvatar.src = finalAvatar;
+      } else {
+        pubAvatar.style.display = 'none';
+        pubAvatar.removeAttribute('src');
+      }
     }
     if (pubCover) {
       if (finalCover) {
+        pubCover.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+        pubCover.onload = function() { this.style.display = 'block'; };
         pubCover.src = finalCover;
-        pubCover.style.display = 'block';
       } else {
         pubCover.style.display = 'none';
         pubCover.removeAttribute('src');
@@ -4618,12 +4634,19 @@ function applyUserToYouScreen(u) {
   var momentsCountVal = document.getElementById('youMomentsCountVal');
   var memoriesCountVal = document.getElementById('youMemoriesCountVal');
 
-  // Cover image: real cover or calm ambient dark gradient
+  // Cover image: real cover or blank dark container
   var coverImg = document.getElementById('youCoverImg');
   if (coverImg) {
-    if (u.cover_url && !u.cover_url.includes('unsplash.com')) {
-      coverImg.src = u.cover_url;
-      coverImg.style.display = 'block';
+    var rawCover = (u.cover_url || u.cover || '').trim();
+    if (rawCover && !rawCover.includes('unsplash.com')) {
+      coverImg.onerror = function() {
+        this.style.display = 'none';
+        this.removeAttribute('src');
+      };
+      coverImg.onload = function() {
+        this.style.display = 'block';
+      };
+      coverImg.src = rawCover;
     } else {
       coverImg.style.display = 'none';
       coverImg.removeAttribute('src');
@@ -4634,29 +4657,32 @@ function applyUserToYouScreen(u) {
   var finalHandle = u.username || u.handle || (state.currentUser ? (state.currentUser.username || state.currentUser.handle) : 'user');
   finalHandle = String(finalHandle).replace('@', '');
 
-  var parts = finalName.trim().split(/\s+/);
-  var inits = '';
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    inits = (parts[0][0] + parts[1][0]).toUpperCase();
-  } else if (finalName.length >= 2) {
-    inits = finalName.substring(0, 2).toUpperCase();
-  } else {
-    inits = (finalName[0] || 'K').toUpperCase();
+  if (initialsEl) {
+    initialsEl.style.display = 'none';
+    initialsEl.textContent = '';
   }
 
-  if (initialsEl) initialsEl.textContent = inits;
-  if (u.avatar_url && !u.avatar_url.includes('api.dicebear.com')) {
+  var rawAvatar = (u.avatar_url || u.avatar || '').trim();
+  if (rawAvatar && !rawAvatar.includes('api.dicebear.com')) {
     if (avatarEl) {
-      avatarEl.src = u.avatar_url;
-      avatarEl.style.display = 'block';
+      avatarEl.onerror = function() {
+        this.style.display = 'none';
+        this.removeAttribute('src');
+        if (initialsEl) {
+          initialsEl.style.display = 'none';
+          initialsEl.textContent = '';
+        }
+      };
+      avatarEl.onload = function() {
+        this.style.display = 'block';
+      };
+      avatarEl.src = rawAvatar;
     }
-    if (initialsEl) initialsEl.style.display = 'none';
   } else {
     if (avatarEl) {
       avatarEl.style.display = 'none';
       avatarEl.removeAttribute('src');
     }
-    if (initialsEl) initialsEl.style.display = 'block';
   }
 
   if (nameEl) nameEl.textContent = finalName;
@@ -6951,7 +6977,7 @@ function renderChatNewUserList(users, container, title) {
     var item = document.createElement('div');
     item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between shadow-md cursor-pointer hover:bg-zinc-900/50 transition-all';
     
-    var avatarSrc = u.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(u.handle || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+    var avatarSrc = (u.avatar_url && !u.avatar_url.includes('api.dicebear.com')) ? u.avatar_url : '';
     var name = escapeHtml(u.name || 'Student');
     var handle = escapeHtml(u.handle || 'user');
     var campus = escapeHtml(u.campus || 'North City University');
@@ -7655,7 +7681,7 @@ async function loadConnectionRequests() {
       var item = document.createElement('div');
       item.className = 'bg-zinc-950 border border-amber-500/40 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xl transition-all';
       
-      var avSrc = r.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(r.handle || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+      var avSrc = (r.avatar_url && !r.avatar_url.includes('api.dicebear.com')) ? r.avatar_url : '';
       var name = escapeHtml((r.name || 'Student').toUpperCase());
       var handle = escapeHtml((r.handle || 'user').toUpperCase());
       var campus = escapeHtml(r.campus || 'North City University');
@@ -7758,7 +7784,7 @@ async function loadNotifications() {
 
       item.className = 'bg-zinc-950 border border-zinc-800/80 ' + borderHighlight + ' rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-lg transition-colors cursor-pointer hover:bg-zinc-900/50 active:scale-[0.99]';
 
-      var avatarSrc = n.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(n.actor_handle || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+      var avatarSrc = (n.avatar_url && !n.avatar_url.includes('api.dicebear.com')) ? n.avatar_url : '';
       var title = escapeHtml(n.title || n.message || 'New activity on Kandid');
       var timeAgo = escapeHtml(n.time_ago || n.timeAgo || 'Recent');
 
@@ -8004,9 +8030,9 @@ function renderChatConversations(convos, filterQuery = '') {
     var campus = escapeHtml(p.campus || c.campus || '');
     var isOnline = (p.is_online !== undefined) ? p.is_online : (c.is_online || false);
 
-    var avatarSrc = p.avatar_url || c.avatar_url;
-    if (!avatarSrc || avatarSrc.includes('unsplash.com')) {
-      avatarSrc = 'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(handle || name || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b';
+    var avatarSrc = p.avatar_url || c.avatar_url || '';
+    if (avatarSrc.includes('unsplash.com') || avatarSrc.includes('api.dicebear.com')) {
+      avatarSrc = '';
     }
 
     var lastMsgObj = c.last_message || {};
@@ -8130,9 +8156,9 @@ function renderChatConnections(connections, filterQuery = '') {
     var campus = escapeHtml(c.campus || 'Connected');
     var isOnline = !!c.is_online;
 
-    var avatarSrc = c.avatar_url;
-    if (!avatarSrc || avatarSrc.includes('unsplash.com')) {
-      avatarSrc = 'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(handle || name || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b';
+    var avatarSrc = c.avatar_url || '';
+    if (avatarSrc.includes('unsplash.com') || avatarSrc.includes('api.dicebear.com')) {
+      avatarSrc = '';
     }
 
     var row = document.createElement('div');
@@ -8237,11 +8263,15 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
   var headerHandle = document.getElementById('headerChatHandle');
   var headerCampus = document.getElementById('headerChatCampus');
   
-  var cleanHandle = state.activeChatPartner.handle;
-  var fallbackAvatar = 'https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(cleanHandle.replace('@', '') || name || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b';
-
   if (headerAvatar) {
-    headerAvatar.src = (avatarUrl && avatarUrl.trim()) ? avatarUrl : fallbackAvatar;
+    if (avatarUrl && avatarUrl.trim() && !avatarUrl.includes('api.dicebear.com')) {
+      headerAvatar.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+      headerAvatar.onload = function() { this.style.display = 'block'; };
+      headerAvatar.src = avatarUrl;
+    } else {
+      headerAvatar.style.display = 'none';
+      headerAvatar.removeAttribute('src');
+    }
   }
   if (headerName) {
     headerName.textContent = state.activeChatPartner.name;
@@ -8279,7 +8309,14 @@ function openChatActionMenu() {
   var nm = document.getElementById('chatActionName');
   var hd = document.getElementById('chatActionHandle');
   if (av) {
-    av.src = partner.avatarUrl || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(partner.handle.replace('@', '')) + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+    if (partner.avatarUrl && partner.avatarUrl.trim() && !partner.avatarUrl.includes('api.dicebear.com')) {
+      av.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+      av.onload = function() { this.style.display = 'block'; };
+      av.src = partner.avatarUrl;
+    } else {
+      av.style.display = 'none';
+      av.removeAttribute('src');
+    }
   }
   if (nm) nm.textContent = partner.name;
   if (hd) hd.textContent = partner.handle;
@@ -9043,36 +9080,44 @@ function openEditProfileModal() {
     if (cityInp) cityInp.value = state.currentUser.location_city || state.currentUser.city || 'Supaul, Bihar';
     if (vibeInp) vibeInp.value = state.currentUser.vibe || 'Creator';
     
-    var curAvatar = state.currentUser.avatar_url || state.currentUser.avatar || '';
+    if (initsEl) {
+      initsEl.style.display = 'none';
+      initsEl.textContent = '';
+    }
+
+    var curAvatar = (state.currentUser.avatar_url || state.currentUser.avatar || '').trim();
     if (curAvatar && !curAvatar.includes('api.dicebear.com')) {
       if (previewImg) {
+        previewImg.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+        previewImg.onload = function() { this.style.display = 'block'; };
         previewImg.src = curAvatar;
-        previewImg.style.display = 'block';
       }
-      if (initsEl) initsEl.style.display = 'none';
     } else {
-      if (previewImg) previewImg.style.display = 'none';
-      if (initsEl) {
-        initsEl.style.display = 'block';
-        initsEl.textContent = (state.currentUser.name ? state.currentUser.name.substring(0, 2).toUpperCase() : 'AN');
+      if (previewImg) {
+        previewImg.style.display = 'none';
+        previewImg.removeAttribute('src');
       }
     }
 
-    var curCover = state.currentUser.cover_url || '';
+    var curCover = (state.currentUser.cover_url || state.currentUser.cover || '').trim();
     var coverPreview = document.getElementById('modalEditCoverPreview');
     var coverPlaceholder = document.getElementById('modalEditCoverPlaceholder');
+    if (coverPlaceholder) {
+      coverPlaceholder.style.display = 'none';
+      coverPlaceholder.textContent = '';
+    }
+
     if (curCover && !curCover.includes('unsplash.com')) {
       if (coverPreview) {
+        coverPreview.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+        coverPreview.onload = function() { this.style.display = 'block'; };
         coverPreview.src = curCover;
-        coverPreview.style.display = 'block';
       }
-      if (coverPlaceholder) coverPlaceholder.style.display = 'none';
     } else {
       if (coverPreview) {
         coverPreview.style.display = 'none';
         coverPreview.removeAttribute('src');
       }
-      if (coverPlaceholder) coverPlaceholder.style.display = 'block';
     }
   }
 
@@ -9341,7 +9386,7 @@ async function loadConnectedFriends() {
       var item = document.createElement('div');
       item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-md hover:border-zinc-700 transition';
       
-      var avatarSrc = f.avatar_url || ('https://api.dicebear.com/7.x/initials/svg?seed=' + encodeURIComponent(f.handle || 'user') + '&backgroundColor=18181b,27272a&textColor=f59e0b');
+      var avatarSrc = (f.avatar_url && !f.avatar_url.includes('api.dicebear.com')) ? f.avatar_url : '';
       var name = escapeHtml(f.name || 'Student');
       var handle = escapeHtml(f.handle || 'user');
       var campus = escapeHtml(f.campus || 'North City University');
