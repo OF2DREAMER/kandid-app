@@ -6837,6 +6837,25 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True, "searches": rows})
 
+        if path == "/api/user/blocked":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Unauthorized"})
+
+            # Users the current user has blocked (direction: user_id = blocker, blocked_user_id = target)
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT u.id, u.handle, u.name, u.avatar_url, b.created_at
+                FROM blocks b
+                JOIN users u ON u.id = b.blocked_user_id
+                WHERE b.user_id = ?
+                ORDER BY b.created_at DESC
+            """, (user["id"],))
+            blocked = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+            return self.send_json(200, {"success": True, "blocked": blocked})
+
         if path == "/api/search":
             q = query.get("q", [""])[0].strip().lower()[:80]
             type_param = query.get("type", ["all"])[0].lower()
