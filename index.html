@@ -1674,7 +1674,7 @@
                           </div>
                           <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
                       </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="switchScreenView('block')">
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="switchScreenView('block-list')">
                           <h3 class="text-xs font-bold text-white tracking-wide">BLOCKED PEOPLE</h3>
                           <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
                       </div>
@@ -2098,6 +2098,22 @@
               <div class="pt-4">
                   <p class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase">YOU'RE IN CONTROL. KANDID HAS YOUR BACK.</p>
               </div>
+          </div>
+      </section>
+
+      <!-- =================================================================
+           SECTION 15b: BLOCK LIST (MANAGE BLOCKED PEOPLE)
+           ================================================================= -->
+      <section class="app-screen bg-[#09090b] flex flex-col h-full" id="screen-block-list" style="display:none;">
+          <div class="px-5 pt-6 pb-3 border-b border-zinc-800/80 flex items-center justify-between bg-[#09090b]/95 sticky top-0 z-10">
+              <div>
+                  <h2 class="text-sm font-extrabold text-white tracking-widest uppercase font-mono-tag">BLOCKED PEOPLE</h2>
+                  <p class="text-[10px] text-zinc-500 font-mono-tag">They can't see your Moments or message you</p>
+              </div>
+              <button class="text-zinc-400 hover:text-white font-bold text-xs uppercase tracking-wider cursor-pointer" onclick="switchScreenView('settings')">BACK</button>
+          </div>
+          <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3 pb-32" id="blockListContainer">
+              <div class="text-center py-12 text-xs text-zinc-500 font-mono-tag">Loading blocked people...</div>
           </div>
       </section>
 
