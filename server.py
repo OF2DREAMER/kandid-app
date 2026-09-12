@@ -883,7 +883,7 @@ def archive_drop_to_memory(drop_id, actor_user_id=None):
     mem_id = f"mem_{drop_id}"
     now_iso = datetime.now(timezone.utc).isoformat()
     story = drop.get("description") or f"A verified shared community experience with {checked_in_count} attendees."
-    cover_img = drop.get("cover_img") or "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80"
+    cover_img = drop.get("cover_img") or ""
 
     comm_name = drop.get("community_name") or "Community"
     try:
@@ -9559,8 +9559,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             raw_main = body.get("mainImg") or body.get("main_img") or ""
             raw_pip = body.get("pipImg") or body.get("pip_img") or ""
             
-            main_img = save_base64_image(raw_main, "main") if raw_main else "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80"
-            pip_img = save_base64_image(raw_pip, "pip") if raw_pip else "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80"
+            main_img = save_base64_image(raw_main, "main") if raw_main else ""
+            pip_img = save_base64_image(raw_pip, "pip") if raw_pip else ""
             
             # Strict Production Media Integrity Check (only if Cloudinary CDN is configured)
             cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
