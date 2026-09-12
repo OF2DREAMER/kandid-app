@@ -8013,10 +8013,14 @@ function renderChatConversations(convos, filterQuery = '') {
   filtered.forEach(function(c) {
     var p = c.participant || {};
     var partnerId = p.id || c.id;
-    var name = escapeHtml(p.name || c.name || 'Student');
-    var handle = escapeHtml(p.handle || c.handle || 'user');
-    var campus = escapeHtml(p.campus || c.campus || '');
+    var rawName = p.name || c.name || 'Student';
+    var rawHandle = (p.handle || c.handle || 'user').replace('@', '');
+    var rawCampus = p.campus || c.campus || '';
     var isOnline = (p.is_online !== undefined) ? p.is_online : (c.is_online || false);
+
+    var name = escapeHtml(rawName);
+    var handle = escapeHtml(rawHandle);
+    var campus = escapeHtml(rawCampus);
 
     var avatarSrc = p.avatar_url || c.avatar_url || '';
     if (avatarSrc.includes('unsplash.com') || avatarSrc.includes('api.dicebear.com')) {
@@ -8033,6 +8037,7 @@ function renderChatConversations(convos, filterQuery = '') {
 
     var article = document.createElement('article');
     article.className = 'py-3.5 flex items-center justify-between group cursor-pointer hover:bg-neutral-900/30 px-2 -mx-2 rounded-xl transition';
+    article.setAttribute('data-user-id', partnerId);
 
     var messagePreviewHtml = '';
     if (isMoment) {
@@ -8053,7 +8058,7 @@ function renderChatConversations(convos, filterQuery = '') {
           (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full"></div>' : '') +
         '</div>' +
         '<div class="min-w-0 flex-1 pr-2">' +
-          '<h4 class="text-xs font-bold text-white truncate">' + name + '</h4>' +
+        '<h4 class="text-xs font-bold text-white truncate">' + name + '</h4>' +
           messagePreviewHtml +
           (campus ? '<p class="text-[10px] text-gray-500 truncate mt-0.5 font-mono-meta">' + campus + '</p>' : '') +
         '</div>' +
@@ -8064,7 +8069,7 @@ function renderChatConversations(convos, filterQuery = '') {
       '</div>';
 
     article.addEventListener('click', function() {
-      openChatThread(partnerId, name, '@' + handle, avatarSrc, isOnline);
+      openChatThread(partnerId, rawName, '@' + rawHandle, avatarSrc, isOnline, rawCampus);
     });
 
     listContainer.appendChild(article);
@@ -8139,10 +8144,14 @@ function renderChatConnections(connections, filterQuery = '') {
   }
 
   filtered.forEach(function(c) {
-    var name = escapeHtml(c.name || 'Student');
-    var handle = escapeHtml(c.handle || 'user');
-    var campus = escapeHtml(c.campus || 'Connected');
+    var rawName = c.name || 'Student';
+    var rawHandle = (c.handle || 'user').replace('@', '');
+    var rawCampus = c.campus || 'Connected';
     var isOnline = !!c.is_online;
+
+    var name = escapeHtml(rawName);
+    var handle = escapeHtml(rawHandle);
+    var campus = escapeHtml(rawCampus);
 
     var avatarSrc = c.avatar_url || '';
     if (avatarSrc.includes('unsplash.com') || avatarSrc.includes('api.dicebear.com')) {
@@ -8151,6 +8160,7 @@ function renderChatConnections(connections, filterQuery = '') {
 
     var row = document.createElement('div');
     row.className = 'flex items-center justify-between p-2 -mx-2 rounded-xl hover:bg-neutral-900/60 cursor-pointer transition';
+    row.setAttribute('data-user-id', c.id);
 
     row.innerHTML = 
       '<div class="flex items-center space-x-3 min-w-0 flex-1">' +
@@ -8166,7 +8176,7 @@ function renderChatConnections(connections, filterQuery = '') {
       '<button type="button" class="px-2.5 py-1 bg-neutral-900 hover:bg-amber-500 hover:text-black border border-neutral-800 text-gray-300 text-[10px] font-mono-meta font-bold rounded-lg transition cursor-pointer flex-shrink-0">CHAT</button>';
 
     row.addEventListener('click', function() {
-      openChatThread(c.id, name, '@' + handle, avatarSrc, isOnline);
+      openChatThread(c.id, rawName, '@' + rawHandle, avatarSrc, isOnline, rawCampus);
     });
 
     container.appendChild(row);
@@ -8273,7 +8283,7 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
     }
   }
   if (headerHandle) {
-    headerHandle.textContent = cleanHandle;
+    headerHandle.textContent = state.activeChatPartner.handle;
   }
 
   switchScreenView('chat-conversation');
