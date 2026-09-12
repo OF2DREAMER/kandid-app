@@ -176,20 +176,36 @@ async function apiRequest(endpoint, options) {
     options.body = JSON.stringify(options.body);
   }
 
+  // Timeout guard — prevent indefinite hangs (e.g. cold server start, network stall)
+  var controller = new AbortController();
+  var timeoutMs = options._timeout || 12000;
+  var timerId = setTimeout(function() { controller.abort(); }, timeoutMs);
+  options.signal = controller.signal;
+
   try {
     var res = await fetch(endpoint, options);
+    clearTimeout(timerId);
     var contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
-      // Server returned non-JSON (HTML error page, etc.)
+      // Server returned non-JSON (HTML error page, cold-start 502, etc.)
       var text = await res.text();
       console.warn('[API] Non-JSON response for', endpoint, 'status:', res.status, 'body:', text.substring(0, 200));
-      return { success: false, error: 'Server error (' + res.status + ')' };
+      return { success: false, error: 'Server error (' + res.status + ')', _status: res.status };
     }
     var data = await res.json();
+    // Propagate HTTP status for auth-specific handling
+    if (!data._status) data._status = res.status;
     return data;
   } catch (err) {
-    console.warn('[API] fetch error for', endpoint, err && err.message);
-    return { success: false, error: (err && err.message) ? err.message : 'Network error' };
+    clearTimeout(timerId);
+    var isTimeout = err && err.name === 'AbortError';
+    console.warn('[API] fetch error for', endpoint, isTimeout ? 'TIMEOUT' : (err && err.message));
+    return {
+      success: false,
+      error: isTimeout ? 'Request timed out' : ((err && err.message) ? err.message : 'Network error'),
+      _timeout: isTimeout,
+      _network: !isTimeout
+    };
   }
 }
 
@@ -1681,34 +1697,54 @@ async function loadFeedMoments(circle) {
   circle = circle || state.activeCircle || 'foryou';
   var endpoint = (circle === 'foryou') ? '/api/feed?circle=all' : ('/api/feed?circle=' + circle);
 
+  // Show loading spinner — always cleared by finally{}
+  container.innerHTML =
+    '<div class="py-12 text-center text-zinc-500 font-mono-tag text-xs flex flex-col items-center gap-2">' +
+      '<span class="w-4 h-4 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></span>' +
+      '<span>Loading Authentic Moments...</span>' +
+    '</div>';
+
+  var data = null;
   try {
-    var data = await apiRequest(endpoint);
+    data = await apiRequest(endpoint);
+  } catch(e) {
+    data = { success: false, error: e && e.message ? e.message : 'Network error', _network: true };
+  } finally {
+    // Always run — guarantees spinner is never the final state
     if (data && data.success && Array.isArray(data.feed)) {
+      // ── STATE A: SUCCESS WITH POSTS ──────────────────────────────────
       if (data.feed.length === 0) {
-        container.innerHTML = 
-          '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-8 text-center space-y-3 shadow-xl">' +
+        // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
+        container.innerHTML =
+          '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
             '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">📷</div>' +
-            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">NO COMMUNITY MOMENTS YET</h3>' +
-            '<p class="text-[11px] text-zinc-400">Be the first to capture today\'s unfiltered moment in your community!</p>' +
+            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">NO MOMENTS YET</h3>' +
+            '<p class="text-[11px] text-zinc-400">Be the first to capture today\'s unfiltered perspective.</p>' +
             '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="openCameraStudio()">CAPTURE TODAY\'S MOMENT</button>' +
           '</div>';
       } else {
         renderFeedCards(data.feed, container);
       }
+    } else if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
+      // ── STATE C: AUTH FAILURE ─────────────────────────────────────
+      container.innerHTML =
+        '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+          '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">🔒</div>' +
+          '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">SESSION EXPIRED</h3>' +
+          '<p class="text-[11px] text-zinc-400">Please log in again to see your feed.</p>' +
+          '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="switchScreenView(\'login\')">LOG IN</button>' +
+        '</div>';
     } else {
-      // Server returned no feed items — show empty state
-      container.innerHTML = '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-        '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">📷</div>' +
-        '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">NO MOMENTS YET</h3>' +
-        '<p class="text-[11px] text-zinc-400">Be the first to capture today's unfiltered perspective.</p>' +
-        '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="openCameraStudio()">CAPTURE TODAY'S MOMENT</button>' +
+      // ── STATE D: SERVER / NETWORK / TIMEOUT ERROR ─────────────────
+      var errLabel = (data && data._timeout) ? "Couldn't reach server." : "Couldn't load Moments.";
+      container.innerHTML =
+        '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+          '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto text-lg">⚠</div>' +
+          '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">' + errLabel + '</h3>' +
+          '<p class="text-[11px] text-zinc-400">Check your connection and try again.</p>' +
+          '<button class="mt-2 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer active:scale-95 transition border border-zinc-700" onclick="loadFeedMoments(\'' + circle + '\')">TRY AGAIN</button>' +
         '</div>';
     }
-  } catch(e) {
-    console.error('Error loading feed moments:', e);
-    container.innerHTML = '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-      '<p class="text-xs text-zinc-500">Unable to load feed. Check your connection.</p>' +
-      '</div>';
   }
 }
 
