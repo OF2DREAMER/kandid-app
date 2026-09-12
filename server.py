@@ -1271,9 +1271,12 @@ def generate_secure_otp(email, ip_address=""):
             "delivery_status": "rate_limited"
         }
         
-    # 2. Invalidate previous pending OTPs in both email_otps and otps tables
+    # 2. Invalidate previous pending OTPs in email_otps table
     cursor.execute("UPDATE email_otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
-    cursor.execute("UPDATE otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
+    try:
+        cursor.execute("UPDATE otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
+    except Exception:
+        pass
     
     # 3. Generate 6-digit numeric OTP using secrets
     code = f"{secrets.randbelow(900000) + 100000}"
@@ -1290,10 +1293,13 @@ def generate_secure_otp(email, ip_address=""):
         VALUES (?, ?, ?, ?, 0, 5, ?, 0, ?, ?)
     """, (otp_id, clean_email, otp_hash, salt, expires_at, ip_address, now_str))
     
-    cursor.execute("""
-        INSERT INTO otps (id, email, otp_code, expires_at, is_used, created_at)
-        VALUES (?, ?, ?, ?, 0, ?)
-    """, (otp_id, clean_email, code, expires_at, now_str))
+    try:
+        cursor.execute("""
+            INSERT INTO otps (id, email, otp_code, expires_at, is_used, created_at)
+            VALUES (?, ?, ?, ?, 0, ?)
+        """, (otp_id, clean_email, code, expires_at, now_str))
+    except Exception:
+        pass
     
     conn.commit()
     conn.close()
@@ -10433,9 +10439,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "message": "Password changed successfully."})
 
         if path == "/api/auth/switch":
-            # Disabled in production to prevent account takeover (B-20)
-            if ENVIRONMENT == "production":
-                return self.send_json(403, {"error": "Account switching is disabled in production", "success": False})
+            return self.send_json(403, {"error": "Account switching is disabled", "success": False})
             handle = body.get("handle", "").lower().strip()
             if not handle:
                 return self.send_json(400, {"error": "Handle required", "success": False})
