@@ -2214,7 +2214,15 @@ def init_db():
     );
     CREATE INDEX IF NOT EXISTS idx_recent_searches_user ON recent_searches(user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_users_name_handle ON users(name, handle);
-    CREATE INDEX IF NOT EXISTS idx_posts_search ON posts(is_private, created_at);
+
+    CREATE TABLE IF NOT EXISTS xp_history (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        amount INTEGER DEFAULT 0,
+        reason TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
 
     CREATE TABLE IF NOT EXISTS user_public_keys (
         user_id TEXT PRIMARY KEY,
@@ -2267,6 +2275,8 @@ def init_db():
         cursor.execute("ALTER TABLE posts ADD COLUMN is_private INTEGER DEFAULT 0")
     if "motion_url" not in columns:
         cursor.execute("ALTER TABLE posts ADD COLUMN motion_url TEXT DEFAULT ''")
+
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_posts_search ON posts(is_private, created_at)")
 
     cursor.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cursor.fetchall()]
