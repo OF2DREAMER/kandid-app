@@ -4799,12 +4799,8 @@ async function loadYouScreen() {
     var reqBadge = document.getElementById('youRequestsBadge');
     if (reqBadge) {
       var reqCount = u.pending_requests_count || 0;
-      if (reqCount > 0) {
-        reqBadge.textContent = reqCount;
-        reqBadge.style.display = 'flex';
-      } else {
-        reqBadge.style.display = 'none';
-      }
+      reqBadge.textContent = reqCount > 0 ? reqCount : '';
+      reqBadge.style.display = 'none';
     }
 
     // Render Dynamic TODAY card (Captured vs Capture Prompt)
@@ -5431,12 +5427,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                   // Update YOU page Requests Badge
                   var youReqBadge = document.getElementById('youRequestsBadge');
                   if (youReqBadge) {
-                      if (hb.pendingRequestsCount > 0) {
-                          youReqBadge.textContent = hb.pendingRequestsCount;
-                          youReqBadge.style.display = 'flex';
-                      } else {
-                          youReqBadge.style.display = 'none';
-                      }
+                      youReqBadge.textContent = hb.pendingRequestsCount > 0 ? hb.pendingRequestsCount : '';
+                      youReqBadge.style.display = 'none';
                   }
 
                   // Trigger In-App Live Notification Toast Banner
@@ -7657,12 +7649,8 @@ async function loadConnectionRequests() {
     
     // Update YOU page Requests Badge
     if (youBadge) {
-      if (reqs.length > 0) {
-        youBadge.textContent = reqs.length;
-        youBadge.style.display = 'flex';
-      } else {
-        youBadge.style.display = 'none';
-      }
+      youBadge.textContent = reqs.length > 0 ? reqs.length : '';
+      youBadge.style.display = 'none';
     }
 
     if (!sec || !container) return;
