@@ -134,7 +134,7 @@ def calculate_drop_economics(price_paise=DROP_FIXED_PRICE_PAISE):
     }
 
 def validate_drop_existence(drop_id, cursor):
-    cursor.execute("SELECT * FROM community_drops WHERE id = ?", (drop_id,))
+    drop = None
     return cursor.fetchone()
 
 def validate_drop_capacity(drop_id, cursor):
@@ -3314,11 +3314,7 @@ def get_community_health_context(conn, community_id: str):
     """, (cid, fourteen_days_ago))
     joins_count = cursor.fetchone()[0]
 
-    cursor.execute("""
-        SELECT COUNT(*) FROM community_drops
-        WHERE community_id = ? AND status = 'active' AND (scheduled_start >= ? OR created_at >= ?)
-    """, (cid, fourteen_days_ago, fourteen_days_ago))
-    upcoming_drops_count = cursor.fetchone()[0]
+    upcoming_drops_count = 0
 
     cursor.execute("""
         SELECT COUNT(*) FROM community_user_state
@@ -3446,11 +3442,7 @@ def get_community_reactivation_context(conn, user_id: str, community_id: str):
     """, (cid, cid, last_seen))
     new_moments = cursor.fetchone()[0]
 
-    cursor.execute("""
-        SELECT COUNT(*) FROM community_drops 
-        WHERE community_id = ? AND status = 'active' AND scheduled_start >= datetime('now')
-    """, (cid,))
-    upcoming_drops = cursor.fetchone()[0]
+    upcoming_drops = 0
 
     cursor.execute("""
         SELECT COUNT(*) FROM collective_memories 
@@ -3575,11 +3567,7 @@ def get_personalized_community_recommendations(conn, user_id: str = None, limit:
             reasons.append("You've participated here before")
 
         # 4. Upcoming active drop
-        cursor.execute("""
-            SELECT COUNT(*) FROM community_drops 
-            WHERE community_id = ? AND status = 'active' AND scheduled_start >= datetime('now')
-        """, (cid,))
-        has_upcoming_drop = cursor.fetchone()[0] > 0
+        has_upcoming_drop = False
         if has_upcoming_drop:
             score += 15
             reasons.append("An experience is coming up")
@@ -4514,14 +4502,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     if req_q not in c_name and req_q not in c_desc and req_q not in c_city and req_q not in c_type:
                         continue
 
-                # Drops activity (active / scheduled)
-                cursor.execute("""
-                    SELECT COUNT(*) FROM community_drops 
-                    WHERE community_id = ? 
-                      AND lifecycle_state IN ('active', 'published', 'scheduled', 'live', 'upcoming', 'ACTIVE', 'PUBLISHED', 'SCHEDULED', 'LIVE', 'UPCOMING')
-                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-                """, (cid,))
-                upcoming_drops_count = cursor.fetchone()[0]
+                # Drops activity (Drops disabled in V1)
+                upcoming_drops_count = 0
 
                 # Recent moments within 7 days
                 seven_days_ago_campus = (datetime.now() - timedelta(days=7)).isoformat()
@@ -6698,7 +6680,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Radar derives coarse context nodes from active public communities/places/campuses
             # SECURITY: Never returns GPS, angle, distance, or any geographic data
             # Uses opaque slot/ring visual positions only
-            import hashlib
             nodes = []
 
             # Active campuses with public posts
@@ -7264,8 +7245,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             flagged_comms = cursor.fetchone()[0]
             
             # Drop metrics by lifecycle
-            cursor.execute("SELECT lifecycle_state, COUNT(*) FROM community_drops GROUP BY lifecycle_state")
-            drop_states = {r[0]: r[1] for r in cursor.fetchall()}
+            drops_lifecycle = {}
+            drop_states = {}
             
             # Financial metrics
             cursor.execute("SELECT COUNT(*), COALESCE(SUM(gross_amount_paise), 0), COALESCE(SUM(platform_fee_paise), 0), COALESCE(SUM(creator_amount_paise), 0) FROM financial_ledger")
@@ -7426,23 +7407,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "city": community.get("city", "")
                 }
 
-            # Drop preview if attached
+            # Drop preview if attached (Drops disabled in V1)
             safe_drop = None
-            if invite.get("drop_id"):
-                cursor.execute("SELECT * FROM community_drops WHERE id = ?", (invite["drop_id"],))
-                d_row = cursor.fetchone()
-                if d_row:
-                    drop = dict(d_row)
-                    safe_drop = {
-                        "id": drop["id"],
-                        "title": drop["title"],
-                        "date_str": drop.get("date_str", ""),
-                        "time_str": drop.get("time_str", ""),
-                        "price": drop.get("price", 19.0),
-                        "price_paise": drop.get("price_paise", 1900),
-                        "status": drop.get("status", "active"),
-                        "lifecycle_state": drop.get("lifecycle_state", "DRAFT")
-                    }
 
             # Moment preview if attached
             safe_moment = None
@@ -8748,7 +8714,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 """, (user["id"], cnt - 9))
             # Remove duplicate if same query exists
             cursor.execute("DELETE FROM recent_searches WHERE user_id = ? AND LOWER(query) = LOWER(?)", (user["id"], q))
-            import uuid
             rec_id = "rs_" + str(uuid.uuid4())[:8]
             cursor.execute("INSERT INTO recent_searches (id, user_id, query, search_type) VALUES (?, ?, ?, ?)",
                            (rec_id, user["id"], q, stype))
@@ -10480,7 +10445,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(404, {"error": "User handle not found"})
             u = dict(row)
-            import secrets
             token = secrets.token_urlsafe(32)
             expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
             conn.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
@@ -10594,12 +10558,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     conn.close()
                     return self.send_json(403, {"success": False, "error": "Only community members can create invites for private communities"})
 
-            # Validate drop if provided
+            # Validate drop if provided (Drops disabled in V1)
             if drop_id:
-                cursor.execute("SELECT * FROM community_drops WHERE id = ? AND community_id = ?", (drop_id, actual_community_id))
-                if not cursor.fetchone():
-                    conn.close()
-                    return self.send_json(400, {"success": False, "error": "Drop not found in this community"})
+                drop_id = None
 
             # Validate moment if provided
             if moment_id:
