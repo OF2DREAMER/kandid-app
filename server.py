@@ -83,6 +83,7 @@ RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "").strip().strip("'
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", os.environ.get("WEBHOOK_SECRET", "")).strip().strip("'\"")
 APP_URL = os.environ.get("APP_URL", "https://kindid.in").strip()
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 
 # ==============================================================================
 # COMMUNITY & DROP LIFECYCLE CONSTANTS & ECONOMICS (SERVER-AUTHORITATIVE)
@@ -1831,6 +1832,86 @@ def generate_token(nbytes: int = 32) -> str:
 
 def generate_otp(length: int = 6) -> str:
     return "".join(secrets.choice("0123456789") for _ in range(length))
+
+def verify_google_id_token(token_str: str) -> dict:
+    if not token_str or not isinstance(token_str, str):
+        return None
+    token_str = token_str.strip()
+    if not token_str:
+        return None
+
+    client_id = GOOGLE_CLIENT_ID.strip() if GOOGLE_CLIENT_ID else ""
+    if not client_id:
+        return None
+
+    # Try official google-auth library
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+        req = google_requests.Request()
+        claims = google_id_token.verify_oauth2_token(token_str, req, audience=client_id)
+
+        iss = claims.get("iss", "")
+        if iss not in ["accounts.google.com", "https://accounts.google.com"]:
+            return None
+
+        sub = str(claims.get("sub", "")).strip()
+        if not sub:
+            return None
+
+        email = str(claims.get("email", "")).strip().lower()
+        email_verified = claims.get("email_verified", False)
+        if email and not (email_verified is True or str(email_verified).lower() == "true"):
+            return None
+
+        return {
+            "sub": sub,
+            "email": email,
+            "name": str(claims.get("name") or "Kandid User").strip(),
+            "picture": str(claims.get("picture") or "").strip()
+        }
+    except Exception:
+        # Fallback to Google OAuth tokeninfo endpoint verification
+        try:
+            import urllib.request
+            import urllib.parse
+            import time
+            url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + urllib.parse.quote(token_str)
+            req = urllib.request.Request(url, headers={"User-Agent": "Kandid-Server/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                if response.status != 200:
+                    return None
+                data = json.loads(response.read().decode("utf-8"))
+
+            iss = data.get("iss", "")
+            if iss not in ["accounts.google.com", "https://accounts.google.com"]:
+                return None
+
+            sub = str(data.get("sub", "")).strip()
+            if not sub:
+                return None
+
+            aud = str(data.get("aud", "")).strip()
+            if aud != client_id:
+                return None
+
+            exp = int(data.get("exp", 0))
+            if exp < time.time():
+                return None
+
+            email = str(data.get("email", "")).strip().lower()
+            email_verified = data.get("email_verified", False)
+            if email and not (email_verified is True or str(email_verified).lower() == "true"):
+                return None
+
+            return {
+                "sub": sub,
+                "email": email,
+                "name": str(data.get("name") or "Kandid User").strip(),
+                "picture": str(data.get("picture") or "").strip()
+            }
+        except Exception:
+            return None
 
 class PostgresCursorWrapper:
     def __init__(self, raw_cursor):
@@ -9046,31 +9127,42 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True, "token": token, "user": user_obj, "message": "Password updated successfully!"})
 
         if path == "/api/auth/google":
-            email = (body.get("email") or "").strip().lower()
-            name = (body.get("name") or "Kandid Creator").strip()
-            picture = (body.get("picture") or body.get("avatar_url") or "").strip()
-            google_id = (body.get("sub") or body.get("google_id") or "").strip()
-            if not google_id:
-                google_id = "g_" + (hashlib.sha256(email.encode()).hexdigest()[:16] if email else secrets.token_hex(8))
+            raw_token = (body.get("id_token") or body.get("credential") or body.get("token") or "").strip()
+            if not raw_token:
+                return self.send_json(401, {"success": False, "error": "Missing Google ID token", "error_code": "MISSING_TOKEN"})
 
-            if not email:
-                email = f"google_user_{secrets.token_hex(3)}@gmail.com"
+            claims = verify_google_id_token(raw_token)
+            if not claims:
+                return self.send_json(401, {"success": False, "error": "Invalid, expired, or unverified Google token", "error_code": "INVALID_TOKEN"})
+
+            google_id = claims["sub"]
+            email = claims["email"]
+            name = claims["name"]
+            picture = claims["picture"]
+
+            if not google_id:
+                return self.send_json(401, {"success": False, "error": "Invalid Google token claims", "error_code": "INVALID_CLAIMS"})
 
             conn = get_db()
             cursor = conn.cursor()
 
-            # Check if active user exists via auth_identities or email
+            # Check if active user exists via auth_identities or email match
             cursor.execute("""
-                SELECT u.* FROM users u
-                LEFT JOIN auth_identities ai ON u.id = ai.user_id
+                SELECT u.*, ai.provider_subject as linked_google_id FROM users u
+                LEFT JOIN auth_identities ai ON u.id = ai.user_id AND ai.provider = 'google'
                 WHERE (ai.provider = 'google' AND ai.provider_subject = ?)
-                   OR (LOWER(u.email) = ? AND (u.onboarding_status IS NULL OR u.onboarding_status = 'active'))
+                   OR (LOWER(u.email) = ? AND ? != '' AND (u.onboarding_status IS NULL OR u.onboarding_status = 'active'))
                 LIMIT 1
-            """, (google_id, email))
+            """, (google_id, email, email))
             row = cursor.fetchone()
 
             if row:
                 u = dict(row)
+                linked_id = u.get("linked_google_id")
+                if linked_id and linked_id != google_id:
+                    conn.close()
+                    return self.send_json(401, {"success": False, "error": "Account linked to another Google identity", "error_code": "IDENTITY_MISMATCH"})
+
                 token = "token_" + u["handle"] + "_" + secrets.token_hex(6)
                 expires = (datetime.now() + timedelta(days=365)).isoformat()
                 conn.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
@@ -9111,9 +9203,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             now_iso = datetime.now().isoformat()
             cursor.execute("""
                 SELECT * FROM onboarding_sessions
-                WHERE (provider_subject = ? OR LOWER(email) = ?) AND expires_at > ?
+                WHERE (provider_subject = ? OR (LOWER(email) = ? AND ? != '')) AND expires_at > ?
                 ORDER BY created_at DESC LIMIT 1
-            """, (google_id, email, now_iso))
+            """, (google_id, email, email, now_iso))
             session_row = cursor.fetchone()
 
             if session_row:
@@ -9141,11 +9233,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 })
 
             # Create new onboarding session (24 hour expiry)
-            base_handle = email.split("@")[0].lower()
+            email_for_handle = email if email else f"user_{secrets.token_hex(4)}@kandid.app"
+            base_handle = email_for_handle.split("@")[0].lower()
             base_handle = "".join(c for c in base_handle if c.isalnum() or c == "_")
             if not base_handle or len(base_handle) < 3:
                 base_handle = "user"
-            
+
             handle = base_handle
             suffix = 1
             while True:

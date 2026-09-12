@@ -1,3 +1,4 @@
 # Kandid Production Dependencies
 psycopg2-binary>=2.9.9
 pg8000>=1.31.0
+google-auth>=2.27.0
