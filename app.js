@@ -9747,35 +9747,9 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
         openMomentClusterModal(res.cluster_id, momentId);
       }
     } else if (res && res.code === 'CAMPUS_DISCOVERY_ONLY') {
-      var commId = res.community_id;
-      if (!commId && state.currentFeedMoments) {
-        var mMatch = state.currentFeedMoments.find(function(item) { return item.id === momentId; });
-        if (mMatch) commId = mMatch.primary_community_id || mMatch.context_community_id;
-      }
-      if (commId) {
-        var joinRes = await apiRequest('/api/community/join', {
-          method: 'POST',
-          body: JSON.stringify({ community_id: commId })
-        });
-        if (joinRes && (joinRes.success || joinRes.joined || joinRes.is_joined)) {
-          var retryRes = await apiRequest('/api/moment/' + encodeURIComponent(momentId) + '/i-was-there', {
-            method: 'POST',
-            body: JSON.stringify({ moment_id: momentId })
-          });
-          if (retryRes && retryRes.success) {
-            showToast('Participation recorded! ✦');
-            state.activeClusterContext = retryRes.cluster_id;
-            if (openCaptureAfter) {
-              closeMomentClusterModal();
-              openCameraStudio();
-            } else {
-              openMomentClusterModal(retryRes.cluster_id, momentId);
-            }
-            return;
-          }
-        }
-      }
-      showToast('Campus discovery: "I WAS THERE" is reserved for community members or event attendees.');
+      // B-12: Do NOT auto-join to bypass campus discovery boundary — show user-facing error
+      showToast('This moment is only available to community members. Join the community first to participate.');
+
     } else {
       var err = 'Participation not authorized.';
       if (res && res.code === 'OWN_MOMENT') {

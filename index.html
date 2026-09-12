@@ -1637,102 +1637,9 @@
         </div>
       </div>
 
-      <!-- End Modals -->    <!-- =================================================================
-           SECTION 9: EVENT DETAIL SCREEN
-           ================================================================= -->
-      <section class="app-screen bg-[#09090b]" id="screen-event-detail" style="display:none;">
-          
+      <!-- Event detail screen removed — Events not active in V1 -->
 
-          <div class="px-4 py-4 space-y-4 pb-32">
-              
-              <div class="w-full aspect-[16/10] bg-black rounded-2xl relative overflow-hidden border border-zinc-800 shadow-xl">
-                  <img id="eventDetailCover" src="" class="w-full h-full object-cover">
-                  
-                  <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent flex flex-col justify-end p-4 space-y-1">
-                      <div class="flex items-center gap-2">
-                          <span class="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-[9px] text-amber-400 font-mono-tag rounded font-bold uppercase tracking-wider">
-                              COMMUNITY LIVE
-                          </span>
-                          <span class="text-[9px] text-zinc-300 font-mono-tag" id="eventDetailCampus">...</span>
-                      </div>
-                      <h2 class="text-lg font-extrabold text-white tracking-tight uppercase font-mono-tag" id="eventDetailName">...</h2>
-                      <p class="text-[10px] text-zinc-400 font-mono-tag" id="eventDetailTime">...</p>
-                  </div>
-              </div>
 
-              <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex items-center justify-between shadow-md">
-                  <div class="flex items-center gap-2.5">
-                      <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-                      <div>
-                          <h3 class="text-xs font-bold text-white font-mono-tag tracking-wider uppercase">LIVE NOW</h3>
-                          <p class="text-[11px] text-zinc-400" id="eventDetailSummary">...</p>
-                      </div>
-                  </div>
-                  <span class="text-[10px] text-amber-400 font-mono-tag font-bold">THE COMMUNITY IS HERE</span>
-              </div>
-
-              <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 space-y-2 shadow-md font-mono-tag">
-                  <div class="flex justify-between items-center text-xs">
-                      <span class="font-bold text-white uppercase" id="eventDetailNameSmall">...</span>
-                      <span class="text-zinc-500 text-[10px]">STARTED <span id="eventDetailStartAgo">...</span></span>
-                  </div>
-                  <p class="text-[11px] text-zinc-300 font-sans" id="eventDetailLocation">...</p>
-                  <div class="flex items-center gap-1.5 text-[10px] text-zinc-400 pt-1 border-t border-zinc-900">
-                      <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                      <span id="eventDetailCount">...</span>
-                  </div>
-              </div>
-
-              <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 space-y-3 shadow-lg text-center">
-                  <div class="space-y-0.5">
-                      <h3 class="text-xs font-extrabold text-white uppercase font-mono-tag">YOU'RE HERE?</h3>
-                      <p class="text-xs text-zinc-400 font-normal">Document what's actually happening around you.</p>
-                  </div>
-                  <button class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl tracking-wider transition-all uppercase cursor-pointer font-mono-tag shadow-[0_4px_20px_rgba(245,158,11,0.4)]" onclick="captureEventMoment()">
-                      CAPTURE A MOMENT
-                  </button>
-              </div>
-
-              <div class="space-y-3 pt-2">
-                  <div class="flex justify-between items-center px-1">
-                      <span class="text-[10px] text-white font-mono-tag tracking-widest uppercase font-bold">LIVE MOMENTS</span>
-                      <span class="text-[9px] text-zinc-500 font-mono-tag">Captured by people here</span>
-                  </div>
-
-                  <div id="eventDetailMomentsContainer" class="space-y-3">
-                      <!-- Moments will be injected here -->
-                  </div>
-              </div>
-
-              <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 space-y-3 shadow-md font-mono-tag text-xs">
-                  <div class="flex justify-between items-center">
-                      <span class="font-extrabold text-white uppercase">ABOUT THIS EVENT</span>
-                      <span class="text-zinc-500">▼</span>
-                  </div>
-                  <p class="text-[11px] text-zinc-300 font-sans leading-relaxed" id="eventDetailDesc">
-                      ...
-                  </p>
-                  <div class="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-900 text-[10px]">
-                      <div>
-                          <span class="text-zinc-500 uppercase block">When</span>
-                          <span class="text-white font-bold" id="eventDetailWhen">...</span>
-                      </div>
-                      <div>
-                          <span class="text-zinc-500 uppercase block">Where</span>
-                          <span class="text-white font-bold" id="eventDetailWhere">...</span>
-                      </div>
-                  </div>
-              </div>
-
-              <div class="text-center pt-2 pb-4">
-                  <p class="text-[10px] text-zinc-500 font-mono-tag">
-                      Only Moments you're allowed to discover appear here.
-                  </p>
-              </div>
-
-          </div>
-      </section>
-    
       <!-- =================================================================
            SECTION 10: SETTINGS SCREEN
            ================================================================= -->
@@ -4776,6 +4683,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.4.0"></script>
+  <script src="app.js?v=5.5.0"></script>
 </body>
 </html>
