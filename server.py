@@ -1392,9 +1392,9 @@ def generate_secure_otp(email, ip_address=""):
         "message": "Verification code sent to your email.",
         "email": clean_email,
         "email_id": dispatch_res.get("id"),
-        "delivery_status": "accepted",
-        "dev_otp": code if ENVIRONMENT != "production" else None
+        "delivery_status": "accepted"
     }
+
 
 def verify_secure_otp(email, code_entered):
     clean_email = email.strip().lower()
@@ -8901,9 +8901,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "email": user_email,
                 "masked_email": masked_email,
                 "email_id": res.get("email_id"),
-                "delivery_status": res.get("delivery_status", "accepted"),
-                "dev_otp": res.get("dev_otp")
+                "delivery_status": res.get("delivery_status", "accepted")
             })
+
 
         if path == "/api/auth/login" or path == "/api/login":
             client_ip = self.client_address[0] if hasattr(self, 'client_address') and self.client_address else "unknown"
