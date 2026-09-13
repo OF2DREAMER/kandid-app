@@ -89,9 +89,9 @@ class TestOTPC3Security(unittest.TestCase):
     @patch("server.send_email_resend")
     def test_01_send_otp_api_does_not_leak_otp_or_dev_otp(self, mock_send_email):
         mock_send_email.return_value = {"success": True, "status_code": 200, "id": "msg_123"}
-        
+
         resp = self._call_post("/api/auth/send-otp", {"email": "otptest@example.com"})
-        
+
         self.assertEqual(resp.get("status"), 200)
         body = resp.get("body", {})
         self.assertTrue(body.get("success"))
@@ -102,9 +102,9 @@ class TestOTPC3Security(unittest.TestCase):
     @patch("server.send_email_resend")
     def test_02_forgot_password_api_does_not_leak_otp_or_dev_otp(self, mock_send_email):
         mock_send_email.return_value = {"success": True, "status_code": 200, "id": "msg_123"}
-        
+
         resp = self._call_post("/api/auth/forgot-password", {"identifier": "otptest@example.com"})
-        
+
         self.assertEqual(resp.get("status"), 200)
         body = resp.get("body", {})
         self.assertTrue(body.get("success"))
