@@ -1919,19 +1919,20 @@ class PostgresCursorWrapper:
         clean_upper = clean_sql.upper()
 
         # Handle SQLite PRAGMA table_info gracefully in PostgreSQL
-        if "PRAGMA TABLE_INFO" in clean_upper:
-            try:
-                tbl = clean_sql.split("(")[1].split(")")[0].strip().strip("'\"").lower()
-                self.raw_cursor.execute("""
-                    SELECT ordinal_position, column_name, data_type, is_nullable, column_default, 0
-                    FROM information_schema.columns
-                    WHERE LOWER(table_name) = %s
-                    ORDER BY ordinal_position
-                """, (tbl,))
-                return self
-            except Exception:
-                pass
-        elif clean_upper.startswith("PRAGMA"):
+        if "PRAGMA TABLE_INFO" in clean_upper or clean_upper.startswith("PRAGMA"):
+            if "PRAGMA TABLE_INFO" in clean_upper:
+                import re
+                m = re.search(r'(?i)pragma\s+table_info\s*\(\s*[\'"]?([a-zA-Z0-9_]+)[\'"]?\s*\)', clean_sql)
+                tbl = m.group(1).lower() if m else clean_sql.split("(")[1].split(")")[0].strip().strip("'\"").lower()
+                try:
+                    self.raw_cursor.execute("""
+                        SELECT ordinal_position, column_name, data_type, is_nullable, column_default, 0
+                        FROM information_schema.columns
+                        WHERE LOWER(table_name) = %s
+                        ORDER BY ordinal_position
+                    """, (tbl,))
+                except Exception:
+                    pass
             return self
 
         # Convert SQLite ? placeholders to PostgreSQL %s
@@ -2696,6 +2697,21 @@ def init_db():
                 cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {col_def}")
             except:
                 pass
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS drop_reminders (
+        id TEXT PRIMARY KEY,
+        drop_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        reminder_type TEXT DEFAULT '1_hour_before',
+        delivery_status TEXT DEFAULT 'pending',
+        scheduled_for TEXT,
+        sent_at TEXT,
+        acknowledged_at TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(drop_id, user_id, reminder_type)
+    );
+    ''')
 
     # Auto-migrations for drop_reminders table (acknowledged_at)
     cursor.execute("PRAGMA table_info(drop_reminders)")
@@ -4328,11 +4344,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         query = parse_qs(parsed.query)
 
-        # Enforce privacy: Never serve raw database or chat attachments via static file handler
+        # Enforce privacy & bandwidth protection: Never serve raw database, binaries, or chat attachments via static handler
         import posixpath
         from urllib.parse import unquote
         norm_path = posixpath.normpath(unquote(path))
-        if norm_path.startswith("/data") or norm_path.startswith("/data/") or "chat_attachments" in norm_path or norm_path.endswith(".db") or norm_path.endswith(".sqlite"):
+        blocked_exts = (".db", ".sqlite", ".tgz", ".gz", ".tar", ".exe", ".zip", ".py")
+        blocked_names = ("/cloudflared", "/ngrok", "/cf.tgz")
+        if (norm_path.startswith("/data") or norm_path.startswith("/data/") or "chat_attachments" in norm_path or
+            any(norm_path.endswith(ext) for ext in blocked_exts) or
+            any(norm_path == name or norm_path.startswith(name + "/") for name in blocked_names)):
             return self.send_json(403, {"error": "Access denied"})
 
         if path in ["/health", "/healthz", "/api/health"]:
@@ -4442,16 +4462,63 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/feed":
             circle = query.get("circle", ["all"])[0]
+            cursor_param = query.get("cursor", [""])[0].strip()
+            try:
+                limit_val = int(query.get("limit", ["20"])[0])
+                limit_val = max(1, min(50, limit_val))
+            except (ValueError, TypeError):
+                limit_val = 20
+
+            user = get_current_user(self.headers)
+            user_id = user["id"] if user else ""
+
             conn = get_db()
             cursor = conn.cursor()
-            if circle == "nearby":
-                cursor.execute("SELECT * FROM posts WHERE circle IN ('nearby', 'campus') ORDER BY created_at DESC")
-            elif circle in ["campus", "global"]:
-                cursor.execute("SELECT * FROM posts WHERE circle = ? ORDER BY created_at DESC", (circle,))
+
+            where_clauses = ["(moderation_status IS NULL OR moderation_status != 'removed')"]
+            params = []
+
+            if user_id:
+                where_clauses.append("(is_private = 0 OR is_private IS NULL OR user_id = ?)")
+                params.append(user_id)
             else:
-                cursor.execute("SELECT * FROM posts ORDER BY created_at DESC")
-            posts = [dict(r) for r in cursor.fetchall()]
-            
+                where_clauses.append("(is_private = 0 OR is_private IS NULL)")
+
+            if circle == "nearby":
+                where_clauses.append("circle IN ('nearby', 'campus')")
+            elif circle in ["campus", "global"]:
+                where_clauses.append("circle = ?")
+                params.append(circle)
+
+            if cursor_param:
+                where_clauses.append("created_at < ?")
+                params.append(cursor_param)
+
+            blocked_user_ids = set()
+            if user_id:
+                cursor.execute("""
+                    SELECT blocked_user_id FROM blocks WHERE user_id = ?
+                    UNION
+                    SELECT user_id FROM blocks WHERE blocked_user_id = ?
+                """, (user_id, user_id))
+                blocked_user_ids = {r[0] for r in cursor.fetchall()}
+
+            sql = "SELECT * FROM posts WHERE " + " AND ".join(where_clauses) + " ORDER BY created_at DESC LIMIT ?"
+            params.append(limit_val + 1)
+
+            cursor.execute(sql, tuple(params))
+            raw_posts = [dict(r) for r in cursor.fetchall()]
+
+            if blocked_user_ids:
+                raw_posts = [p for p in raw_posts if p.get("user_id") not in blocked_user_ids]
+
+            has_more = len(raw_posts) > limit_val
+            posts = raw_posts[:limit_val]
+
+            next_cursor = ""
+            if has_more and posts:
+                next_cursor = posts[-1].get("created_at", "")
+
             cursor.execute("SELECT id, name FROM communities")
             comm_map = {r["id"]: r["name"] for r in cursor.fetchall()}
 
@@ -4483,7 +4550,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {
                 "success": True,
                 "feed": posts,
-                "posts": posts
+                "next_cursor": next_cursor,
+                "has_more": has_more
             })
 
         if path == "/api/community/discover":
