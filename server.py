@@ -6694,9 +6694,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 SELECT id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id
                 FROM messages
                 WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
-                ORDER BY created_at ASC
+                ORDER BY created_at DESC, id DESC
+                LIMIT 50
             """, (user_id, resolved_partner_id, resolved_partner_id, user_id))
+            # Newest 50 persisted messages only (bandwidth bound); reversed to chronological order.
             msgs = [dict(r) for r in cursor.fetchall()]
+            msgs.reverse()
 
             for m in msgs:
                 # 1. Resolve quoted reply from authorized conversation data

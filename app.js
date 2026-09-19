@@ -5446,11 +5446,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           }).catch(function(){});
       }
 
-      if (state.activeScreen === 'chat') {
-          loadChatConversations(true);
-      } else if (state.activeScreen === 'chat-conversation' && state.activeChatUser) {
-          loadChatMessages(state.activeChatUser, true);
-      } else if (state.activeScreen === 'notifications') {
+      if (state.activeScreen === 'notifications') {
           loadNotifications();
       }
   }, 3000);
