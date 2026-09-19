@@ -4270,18 +4270,85 @@ def resolve_user_id(raw_val, conn=None):
         if should_close:
             conn.close()
 
+# ---------------------------------------------------------------------------
+# Static path protection: sensitive files/directories that must never be served.
+# Module level so duck-typed handler stubs can reuse the same check.
+# ---------------------------------------------------------------------------
+BLOCKED_STATIC_EXTENSIONS = (
+    ".db", ".sqlite", ".tgz", ".gz", ".tar", ".exe", ".zip",
+    ".py", ".pyc", ".md", ".txt", ".lock", ".gitignore", ".env",
+)
+BLOCKED_STATIC_DIRS = ("/cloudflared", "/ngrok", "/backend", "/scratch")
+BLOCKED_STATIC_NAMES = ("/cf.tgz",)
+
+
+def is_blocked_static_path(norm_path):
+    """True when a normalized request path must never be served over HTTP."""
+    import posixpath
+    if norm_path == "/data" or norm_path.startswith("/data/") or "chat_attachments" in norm_path:
+        return True
+    basename = posixpath.basename(norm_path)
+    if basename == ".env" or basename.startswith(".env."):
+        return True
+    if norm_path.endswith(BLOCKED_STATIC_EXTENSIONS):
+        return True
+    if norm_path in BLOCKED_STATIC_NAMES:
+        return True
+    return any(norm_path == blocked or norm_path.startswith(blocked + "/") for blocked in BLOCKED_STATIC_DIRS)
+
+
 class KandidThreadingServer(socketserver.ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
 class KandidHandler(SimpleHTTPRequestHandler):
+    # Static assets that may be cached by browsers/CDNs (API responses never are).
+    STATIC_CACHEABLE_EXTS = (
+        ".js", ".mjs", ".css", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+        ".avif", ".ico", ".bmp", ".woff", ".woff2", ".ttf", ".otf", ".eot",
+        ".html", ".htm", ".json", ".webmanifest", ".map",
+        ".mp4", ".webm", ".mp3", ".wav", ".ogg",
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=STATIC_DIR, **kwargs)
 
+    def send_response(self, code, message=None):
+        # Remember the status code so end_headers() can pick the right cache policy.
+        self._response_status = code
+        super().send_response(code, message)
+
+    @staticmethod
+    def _static_asset_etag(fs_path):
+        """Deterministic ETag derived from file metadata (mtime + size)."""
+        try:
+            st = os.stat(fs_path)
+        except OSError:
+            return None
+        return '"%x-%x"' % (int(st.st_mtime), st.st_size)
+
     def end_headers(self):
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.send_header("Pragma", "no-cache")
-        self.send_header("Expires", "0")
+        # ---- Cache policy: API responses stay non-cacheable; uploads immutable; static assets cacheable ----
+        req_path = urlparse(self.path).path
+        status = getattr(self, "_response_status", 0)
+        is_api = req_path.startswith(("/api", "/health"))
+        is_cacheable_status = status in (200, 304)
+
+        if is_cacheable_status and not is_api and req_path.startswith("/uploads/"):
+            cache_control = "public, max-age=31536000, immutable"
+        elif is_cacheable_status and not is_api and (req_path == "/manifest.json" or req_path.lower().endswith(self.STATIC_CACHEABLE_EXTS)):
+            cache_control = "public, max-age=86400"
+        else:
+            cache_control = "no-cache, no-store, must-revalidate"
+
+        self.send_header("Cache-Control", cache_control)
+        if cache_control.startswith("no-cache"):
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        elif status == 200:
+            etag = self._static_asset_etag(self.translate_path(req_path))
+            if etag:
+                self.send_header("ETag", etag)
 
         # CORS Origin Control
         origin = self.headers.get("Origin", "")
@@ -4314,6 +4381,40 @@ class KandidHandler(SimpleHTTPRequestHandler):
         self.send_header("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(self)")
         super().end_headers()
 
+    def list_directory(self, path):
+        """Directory listings are never exposed (every directory request returns 403)."""
+        self.send_json(403, {"error": "Access denied"})
+        return None
+
+    def send_head(self):
+        """Static file serving with conditional GET (If-None-Match -> 304). API routes never reach here."""
+        try:
+            fs_path = self.translate_path(self.path)
+            if os.path.isfile(fs_path):
+                etag = self._static_asset_etag(fs_path)
+                if etag:
+                    if_none_match = self.headers.get("If-None-Match", "")
+                    if if_none_match and etag in [candidate.strip() for candidate in if_none_match.split(",")]:
+                        self.send_response(304)
+                        self.send_header("ETag", etag)
+                        self.end_headers()
+                        return None
+        except Exception:
+            pass
+        return super().send_head()
+
+    def do_HEAD(self):
+        import posixpath
+        from urllib.parse import unquote
+        norm_path = posixpath.normpath(unquote(urlparse(self.path).path))
+        if is_blocked_static_path(norm_path):
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        return super().do_HEAD()
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
@@ -4344,15 +4445,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         query = parse_qs(parsed.query)
 
-        # Enforce privacy & bandwidth protection: Never serve raw database, binaries, or chat attachments via static handler
+        # Enforce privacy & bandwidth protection: never serve the database, secrets, docs, or binaries statically
         import posixpath
         from urllib.parse import unquote
         norm_path = posixpath.normpath(unquote(path))
-        blocked_exts = (".db", ".sqlite", ".tgz", ".gz", ".tar", ".exe", ".zip", ".py")
-        blocked_names = ("/cloudflared", "/ngrok", "/cf.tgz")
-        if (norm_path.startswith("/data") or norm_path.startswith("/data/") or "chat_attachments" in norm_path or
-            any(norm_path.endswith(ext) for ext in blocked_exts) or
-            any(norm_path == name or norm_path.startswith(name + "/") for name in blocked_names)):
+        if is_blocked_static_path(norm_path):
             return self.send_json(403, {"error": "Access denied"})
 
         if path in ["/health", "/healthz", "/api/health"]:
