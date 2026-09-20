@@ -4194,6 +4194,37 @@ def haversine_distance_km(coords1, coords2):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return 6371.0 * c
 
+GLOBAL_CURSOR_MAX_LEN = 512
+
+
+def encode_global_cursor(created_at, post_id, region):
+    """Opaque keyset cursor for /api/global encoding (created_at, id) plus the
+    region context it was generated for, so a cursor is only meaningful for
+    the same region request."""
+    payload = {"t": str(created_at or ""), "i": str(post_id or ""), "r": str(region or "")}
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def decode_global_cursor(cursor_str):
+    """Decode an /api/global cursor. Returns None for malformed, oversized or
+    cross-region cursors so the caller safely falls back to the first page
+    instead of erroring."""
+    if not cursor_str or not isinstance(cursor_str, str) or len(cursor_str) > GLOBAL_CURSOR_MAX_LEN:
+        return None
+    try:
+        padded = cursor_str + "=" * (-len(cursor_str) % 4)
+        data = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        created_at = str(data.get("t") or "")
+        post_id = str(data.get("i") or "")
+        region = str(data.get("r") or "")
+        if not created_at or not post_id:
+            return None
+        return {"created_at": created_at, "id": post_id, "region": region}
+    except Exception:
+        return None
+
+
 def get_current_user(headers, body=None, query=None, require_session=False):
     auth = headers.get("Authorization", "")
     token = None
@@ -6027,34 +6058,107 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/global":
             region = query.get("region", ["all"])[0].lower()
+            region_branch = region in ["asia", "europe", "americas"]
+
+            # Defensive pagination parsing (max page size 50, /api/feed
+            # clamping conventions). Unparseable/zero/negative values fall
+            # back safely and can never bypass the 50-item ceiling.
+            limit_raw = (query.get("limit", [""])[0] or "").strip()
+            cursor_raw = (query.get("cursor", [""])[0] or "").strip()
+            paginated = bool(limit_raw) or bool(cursor_raw)
+            limit_val = 50
+            if limit_raw:
+                try:
+                    limit_val = int(limit_raw)
+                except (ValueError, TypeError):
+                    limit_val = 50
+            limit_val = max(1, min(50, limit_val))
+
+            # Composite keyset cursor (created_at, id), scoped to this region.
+            cursor_page = None
+            if cursor_raw:
+                cursor_page = decode_global_cursor(cursor_raw)
+                if cursor_page and cursor_page.get("region") != region:
+                    cursor_page = None
+
+            user = get_current_user(self.headers)
+            user_id = user["id"] if user else ""
+
             conn = get_db()
-            cursor = conn.cursor()
-            
-            if region in ["asia", "europe", "americas"]:
-                cursor.execute("""
-                    SELECT * FROM posts
-                    WHERE circle = 'global' AND is_private = 0 AND LOWER(region) = ?
-                    AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-                    ORDER BY created_at DESC
-                """, (region,))
-            else:
-                cursor.execute("""
-                    SELECT * FROM posts
-                    WHERE circle = 'global' AND is_private = 0
-                    AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-                    ORDER BY created_at DESC
-                """)
-            
-            moments = [dict(r) for r in cursor.fetchall()]
+            try:
+                cursor = conn.cursor()
+
+                where = [
+                    "circle = 'global'",
+                    "is_private = 0",
+                    "(moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))",
+                ]
+                params = []
+                if region_branch:
+                    where.append("LOWER(region) = ?")
+                    params.append(region)
+                if cursor_page:
+                    where.append("(created_at < ? OR (created_at = ? AND id < ?))")
+                    params.append(cursor_page["created_at"])
+                    params.append(cursor_page["created_at"])
+                    params.append(cursor_page["id"])
+                if user_id:
+                    # Block filtering INSIDE the SQL so it happens BEFORE the
+                    # LIMIT+1 fetch: pages stay full and has_more stays correct.
+                    where.append(
+                        "user_id NOT IN ("
+                        "SELECT blocked_user_id FROM blocks WHERE user_id = ? "
+                        "UNION "
+                        "SELECT user_id FROM blocks WHERE blocked_user_id = ?)"
+                    )
+                    params.append(user_id)
+                    params.append(user_id)
+
+                cursor.execute(
+                    """
+                    SELECT id, user_id, author_name, author_handle, avatar_letter, avatar_url,
+                           campus, main_img, pip_img, caption, exif_iso, exif_shutter,
+                           created_at, region, location_city, location_coords, audio_url,
+                           primary_community_id, circle
+                    FROM posts
+                    WHERE """ + " AND ".join(where) + """
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT ?
+                    """,
+                    tuple(params + [limit_val + 1]),
+                )
+                rows = [dict(r) for r in cursor.fetchall()]
+
+                has_more = len(rows) > limit_val
+                moments = rows[:limit_val]
+
+                # One grouped reaction query (constant statement count).
+                # Skipped entirely for an empty page: `IN ()` is invalid SQL.
+                realmoji_map = {}
+                if moments:
+                    post_ids = [m["id"] for m in moments]
+                    placeholders = ",".join("?" for _ in post_ids)
+                    cursor.execute(
+                        "SELECT post_id, emoji, COUNT(*) as cnt FROM reactions "
+                        "WHERE post_id IN (%s) GROUP BY post_id, emoji" % placeholders,
+                        tuple(post_ids),
+                    )
+                    for r in cursor.fetchall():
+                        realmoji_map.setdefault(r["post_id"], {})[r["emoji"]] = r["cnt"]
+
+                next_cursor = ""
+                if paginated and has_more and moments:
+                    last = moments[-1]
+                    next_cursor = encode_global_cursor(last["created_at"], last["id"], region)
+            finally:
+                conn.close()
+
             for m in moments:
-                cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
-                m["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
+                m["realmojis"] = realmoji_map.get(m["id"], {})
                 if not m.get("timeAgo"):
                     m["timeAgo"] = "18 MIN AGO"
-            
-            conn.close()
 
-            return self.send_json(200, {
+            body = {
                 "success": True,
                 "window": {
                     "title": "WORLD WINDOW",
@@ -6063,7 +6167,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 },
                 "region": region,
                 "moments": moments
-            })
+            }
+            if paginated:
+                body["next_cursor"] = next_cursor
+                body["has_more"] = has_more
+            return self.send_json(200, body)
 
         if path == "/api/moments/active-window":
             return self.send_json(200, {
