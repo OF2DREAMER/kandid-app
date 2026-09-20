@@ -4572,7 +4572,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn = get_db()
             cursor = conn.cursor()
 
-            where_clauses = ["(moderation_status IS NULL OR moderation_status != 'removed')"]
+            where_clauses = ["(moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))"]
             params = []
 
             if user_id:
@@ -6034,12 +6034,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 cursor.execute("""
                     SELECT * FROM posts
                     WHERE circle = 'global' AND is_private = 0 AND LOWER(region) = ?
+                    AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
                     ORDER BY created_at DESC
                 """, (region,))
             else:
                 cursor.execute("""
                     SELECT * FROM posts
                     WHERE circle = 'global' AND is_private = 0
+                    AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
                     ORDER BY created_at DESC
                 """)
             
