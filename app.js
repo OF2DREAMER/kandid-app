@@ -5417,6 +5417,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // 5b. Real-time Heartbeat, Notification, & Presence Poller
   setInterval(function() {
+      // D3-3: skip network polling while the tab/document is hidden
+      if (document.hidden) return;
       if (state.token) {
           apiRequest('/api/heartbeat', { method: 'POST' }).then(function(hb) {
               if (hb && hb.success) {
@@ -9091,6 +9093,8 @@ window.sendChatMessageV2 = sendChatMessageV2;
 // Background Real-Time Poller for Chat & Notifications
 if (window.chatSyncGlobalInterval) clearInterval(window.chatSyncGlobalInterval);
 window.chatSyncGlobalInterval = setInterval(function() {
+  // D3-3: skip network polling while the tab/document is hidden
+  if (document.hidden) return;
   checkChatUnreadBadge();
   if (state.activeScreen === 'chat-conversation' && state.activeChatUser) {
     loadChatMessages(state.activeChatUser, true);
@@ -9102,6 +9106,8 @@ window.chatSyncGlobalInterval = setInterval(function() {
 // Background Heartbeat Ping (keeps active status live every 45s)
 if (window.chatHeartbeatInterval) clearInterval(window.chatHeartbeatInterval);
 window.chatHeartbeatInterval = setInterval(function() {
+  // D3-3: skip network polling while the tab/document is hidden
+  if (document.hidden) return;
   if (state.currentUser && state.token) {
     apiRequest('/api/auth/ping').catch(function(){});
   }
