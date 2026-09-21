@@ -4349,6 +4349,31 @@ class KandidHandler(SimpleHTTPRequestHandler):
         self._response_status = code
         super().send_response(code, message)
 
+    def handle_one_request(self):
+        """D4-03: centralized boundary for unhandled route exceptions.
+
+        - BrokenPipeError / ConnectionResetError are quiet disconnects: no
+          response is attempted and no error page is generated.
+        - Any other unexpected exception returns ONE generic JSON 500, but only
+          when no response has started (self._response_status, set by the
+          overridden send_response and read by end_headers). If a response has
+          already started, the connection is simply closed safely.
+        - The connection is closed after an unexpected exception; route-local
+          DB connections are intentionally left alone.
+        """
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+        except Exception:
+            self.close_connection = True
+            started = getattr(self, "_response_status", 0)
+            if not started:
+                try:
+                    self.send_json(500, {"success": False, "error": "Internal server error"})
+                except Exception:
+                    pass
+
     @staticmethod
     def _static_asset_etag(fs_path):
         """Deterministic ETag derived from file metadata (mtime + size)."""
