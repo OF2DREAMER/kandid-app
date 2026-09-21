@@ -1455,13 +1455,27 @@ import threading
 
 class RateLimiter:
     """Thread-safe sliding-window in-memory rate limiter for abuse mitigation"""
+    # D4-04: amortized selective TTL cleanup. Every current call site uses a
+    # 60-second window, so a bucket whose newest timestamp is older than
+    # MAX_WINDOW_SECONDS can never become active again and is safe to delete.
+    # Active buckets (recent timestamps) are never touched, so a sweep can
+    # never reset an in-flight rate limit.
+    MAX_WINDOW_SECONDS = 60
+    CLEANUP_INTERVAL = 512  # sweep at most once per 512 checks (amortized)
+
     def __init__(self):
         self.lock = threading.Lock()
         self.buckets = {}
+        self._ops = 0
 
     def check_rate_limit(self, key: str, max_requests: int, window_seconds: int) -> bool:
         now = time.time()
         with self.lock:
+            # D4-04: amortized selective TTL sweep while holding the existing
+            # lock (see _sweep_expired). Never resets active rate limits.
+            self._ops += 1
+            if self._ops % self.CLEANUP_INTERVAL == 0:
+                self._sweep_expired(now)
             history = self.buckets.get(key, [])
             valid_history = [t for t in history if now - t < window_seconds]
             if len(valid_history) >= max_requests:
@@ -1470,6 +1484,22 @@ class RateLimiter:
             valid_history.append(now)
             self.buckets[key] = valid_history
             return True
+
+    def _sweep_expired(self, now: float):
+        """D4-04: delete only buckets that can never be active again.
+
+        Caller must hold self.lock. A bucket is deleted only when it is empty
+        or its newest timestamp is older than MAX_WINDOW_SECONDS (the maximum
+        window any call site configures). Such a bucket can never contribute a
+        valid timestamp to any future check, so deleting it cannot reset an
+        active rate limit. Per-key deletion only — self.buckets is never
+        cleared or rebuilt.
+        """
+        cutoff = now - self.MAX_WINDOW_SECONDS
+        for key in list(self.buckets.keys()):
+            history = self.buckets.get(key)
+            if not history or history[-1] < cutoff:
+                del self.buckets[key]
 
 rate_limiter = RateLimiter()
 
