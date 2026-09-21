@@ -9617,14 +9617,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(400, {"success": False, "error": "session_id is required"})
 
             conn = get_db()
-            conn.execute("""
+            cursor = conn.execute("""
                 UPDATE onboarding_sessions
                 SET step = ?, chosen_handle = COALESCE(NULLIF(?, ''), chosen_handle),
                     chosen_campus_id = COALESCE(NULLIF(?, ''), chosen_campus_id),
                     chosen_campus_name = COALESCE(NULLIF(?, ''), chosen_campus_name),
                     chosen_city = COALESCE(NULLIF(?, ''), chosen_city)
-                WHERE id = ?
-            """, (step, handle, campus_id, campus_name, city, session_id))
+                WHERE id = ? AND expires_at > ?
+            """, (step, handle, campus_id, campus_name, city, session_id, datetime.now().isoformat()))
+            if cursor.rowcount == 0:
+                # D4-05: no unexpired session matched, so nothing was mutated.
+                conn.close()
+                return self.send_json(400, {"success": False, "error": "Onboarding session expired or not found. Please start over."})
             conn.commit()
             conn.close()
             return self.send_json(200, {"success": True})
@@ -9636,7 +9640,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM onboarding_sessions WHERE id = ?", (session_id,))
+            cursor.execute("SELECT * FROM onboarding_sessions WHERE id = ? AND expires_at > ?", (session_id, datetime.now().isoformat()))
             session_row = cursor.fetchone()
             if not session_row:
                 conn.close()
