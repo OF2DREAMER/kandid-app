@@ -6263,7 +6263,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             today_prefix = datetime.utcnow().strftime('%Y-%m-%d')
             cursor.execute("""
                 SELECT * FROM posts 
-                WHERE user_id = ? AND (DATE(created_at) = DATE('now') OR created_at LIKE ?)
+                WHERE user_id = ? AND created_at LIKE ?
                 ORDER BY created_at DESC LIMIT 1
             """, (user["id"], f"{today_prefix}%"))
             today_row = cursor.fetchone()
