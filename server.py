@@ -4393,7 +4393,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "https://kandid.in",
                 "https://www.kandid.in",
             ]
-            if origin in allowed_origins or (origin and any(origin.endswith(d) for d in [".kindid.in", "kindid.in", ".onrender.com"])):
+            if origin in allowed_origins:
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Access-Control-Allow-Credentials", "true")
             else:
