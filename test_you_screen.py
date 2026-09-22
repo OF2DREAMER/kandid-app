@@ -5,7 +5,9 @@ Tests all 21+ points specified in the implementation requirements.
 """
 
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 import json
 from datetime import datetime, timedelta
@@ -15,10 +17,75 @@ sys.path.insert(0, PROJECT_DIR)
 
 import server
 
+# D4-07: pristine DB path captured at import time — the isolation source.
+_ORIGINAL_DB_FILE = server.DB_FILE
+_ORIGINAL_DATABASE_URL = server.DATABASE_URL
+
+
+def _restore_server_globals():
+    server.DB_FILE = _ORIGINAL_DB_FILE
+    server.DATABASE_URL = _ORIGINAL_DATABASE_URL
+
+
+def _isolate_db(testcase_cls, prefix):
+    """D4-07: run this test class against a disposable temp database so the
+    repository's data/kandid.db is never opened, mutated or deleted.
+
+    Both cleanup callbacks are registered BEFORE any global is mutated.
+    unittest fires class cleanups in LIFO order, so execution is:
+      1. restore server.DB_FILE / server.DATABASE_URL
+      2. remove the temporary directory
+    """
+    tmpdir = tempfile.mkdtemp(prefix=prefix)
+    # Registration order matters: LIFO makes the globals restore run first.
+    testcase_cls.addClassCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+    testcase_cls.addClassCleanup(_restore_server_globals)
+    server.DATABASE_URL = ""
+    server.DB_FILE = os.path.join(tmpdir, "kandid.db")
+    server.init_db()
+    return tmpdir
+
+
+def _seed_min_you_fixture():
+    """D4-07: deterministic minimum data the assertions actually read.
+    init_db() seeds catalogs only, so the suite seeds the two authenticated
+    users, their sessions and their non-private posts (exactly what /api/me,
+    the streak, the memory count and /api/me/moments assertions require)."""
+    conn = server.get_db()
+    expires = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
+    for uid, handle, name, campus, streak in [
+        ("u_casey", "casey.rx", "Casey Rhodes", "North City University", 14),
+        ("u_maya", "maya_s", "Maya Sharma", "St Stephens College", 16),
+    ]:
+        conn.execute(
+            "INSERT INTO users (id, email, handle, name, password_hash, salt, campus, streak_count) VALUES (?,?,?,?,?,?,?,?)",
+            (uid, f"{handle}@example.test", handle, name, "x", "s", campus, streak),
+        )
+    for pid, uid, author, handle, campus, circle in [
+        ("p_casey_g1", "u_casey", "Casey Rhodes", "casey.rx", "North City University", "global"),
+        ("p_casey_c1", "u_casey", "Casey Rhodes", "casey.rx", "North City University", "campus"),
+        ("p_maya_1", "u_maya", "Maya Sharma", "maya_s", "St Stephens College", "campus"),
+    ]:
+        conn.execute(
+            """INSERT INTO posts (id, user_id, author_name, author_handle, campus, main_img, pip_img,
+                                   caption, circle, region, is_private, moderation_status)
+               VALUES (?,?,?,?,?,'img.jpg','pip.jpg',?, ?, 'all', 0, 'approved')""",
+            (pid, uid, author, handle, campus, f"Moment {pid}", circle),
+        )
+    for sid, uid, token in [("s_casey", "u_casey", "token_casey_prod"), ("s_maya", "u_maya", "token_maya_s_prod")]:
+        conn.execute(
+            "INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?,?,?,?)",
+            (sid, uid, token, expires),
+        )
+    conn.commit()
+    conn.close()
+
+
 class TestYouScreen(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        server.init_db()
+        _isolate_db(cls, "kandid_you_")
+        _seed_min_you_fixture()
 
     def simulate_get(self, path, headers=None):
         if headers is None:

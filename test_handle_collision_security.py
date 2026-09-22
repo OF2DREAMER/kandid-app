@@ -10,9 +10,24 @@ if PROJECT_ROOT not in sys.path:
 
 import server
 
+# D4-07: pristine globals captured at import time (all test modules are imported
+# before any test runs). They are restored after every test so a fixture can
+# never leak a temporary/deleted DB path into the rest of the suite.
+_ORIGINAL_DB_FILE = server.DB_FILE
+_ORIGINAL_DATABASE_URL = server.DATABASE_URL
+
+
+def _restore_server_globals():
+    server.DB_FILE = _ORIGINAL_DB_FILE
+    server.DATABASE_URL = _ORIGINAL_DATABASE_URL
+
+
 class TestHandleCollisionSecurity(unittest.TestCase):
     def setUp(self):
         self.db_fd, self.db_path = tempfile.mkstemp()
+        # Registered BEFORE mutating the globals, so even a raising setUp or a
+        # failing test cannot leave DB_FILE pointing at the deleted temp DB.
+        self.addCleanup(_restore_server_globals)
         server.DB_FILE = self.db_path
         server.DATABASE_URL = ""
 

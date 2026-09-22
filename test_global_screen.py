@@ -4,9 +4,11 @@ Test Suite: Kandid.app Approved Global Window Screen
 """
 
 import os
+import shutil
 import sys
 import json
 import sqlite3
+import tempfile
 import unittest
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -14,10 +16,76 @@ sys.path.insert(0, PROJECT_DIR)
 
 import server
 
+# D4-07: pristine DB path captured at import time — the isolation source.
+_ORIGINAL_DB_FILE = server.DB_FILE
+_ORIGINAL_DATABASE_URL = server.DATABASE_URL
+
+
+def _restore_server_globals():
+    server.DB_FILE = _ORIGINAL_DB_FILE
+    server.DATABASE_URL = _ORIGINAL_DATABASE_URL
+
+
+def _isolate_db(testcase_cls, prefix):
+    """D4-07: run this test class against a disposable temp database so the
+    repository's data/kandid.db is never opened, mutated or deleted.
+
+    Both cleanup callbacks are registered BEFORE any global is mutated.
+    unittest fires class cleanups in LIFO order, so execution is:
+      1. restore server.DB_FILE / server.DATABASE_URL
+      2. remove the temporary directory
+    """
+    tmpdir = tempfile.mkdtemp(prefix=prefix)
+    # Registration order matters: LIFO makes the globals restore run first.
+    testcase_cls.addClassCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+    testcase_cls.addClassCleanup(_restore_server_globals)
+    server.DATABASE_URL = ""
+    server.DB_FILE = os.path.join(tmpdir, "kandid.db")
+    server.init_db()
+    return tmpdir
+
+
+def _seed_min_global_fixture():
+    """D4-07: deterministic minimum data the assertions actually read.
+    init_db() seeds catalogs only (users/posts/reactions stay empty), so the
+    suite seeds exactly the rows its region filters, privacy exclusion and
+    realmoji aggregation require."""
+    conn = server.get_db()
+    for uid, handle, name, campus, city in [
+        ("u_hana", "hana_k", "Hana K", "Waseda University", "TOKYO · 35.6762° N"),
+        ("u_euro", "euro_eli", "Eli G", "University of Iceland", "REYKJAVÍK · 64.1466° N"),
+        ("u_am", "am_casey", "Casey R", "New York University", "NEW YORK · 40.7128° N"),
+        ("u_seed", "seed_user", "Seed User", "Central Campus", "Supaul, India"),
+        # tests 06/10 INSERT rows referencing this user id directly.
+        ("u_casey", "casey.rx", "Casey Rhodes", "North City University", "New Delhi"),
+    ]:
+        conn.execute(
+            "INSERT INTO users (id, email, handle, name, password_hash, salt, campus, location_city) VALUES (?,?,?,?,?,?,?,?)",
+            (uid, f"{handle}@example.test", handle, name, "x", "s", campus, city),
+        )
+    for pid, uid, author, handle, campus, city, region, private in [
+        ("post_g_asia_1", "u_hana", "Hana K", "hana_k", "Waseda University", "TOKYO · 35.6762° N", "asia", 0),
+        ("post_hana_1", "u_hana", "Hana K", "hana_k", "Waseda University", "TOKYO · 35.6762° N", "asia", 0),
+        ("post_g_europe_1", "u_euro", "Eli G", "euro_eli", "University of Iceland", "REYKJAVÍK · 64.1466° N", "europe", 0),
+        ("post_g_americas_1", "u_am", "Casey R", "am_casey", "New York University", "NEW YORK · 40.7128° N", "americas", 0),
+        ("post_secret_1", "u_seed", "Secret", "secret_user", "Private Zone", "Hidden City", "asia", 1),
+    ]:
+        conn.execute(
+            """INSERT INTO posts (id, user_id, author_name, author_handle, campus, main_img, pip_img,
+                                   caption, circle, region, location_city, is_private, moderation_status)
+               VALUES (?,?,?,?,?,'img','pip',?, 'global', ?, ?, ?, 'approved')""",
+            (pid, uid, author, handle, campus, f"Moment {pid}", region, city, private),
+        )
+    conn.execute("INSERT INTO reactions (id, post_id, user_id, emoji) VALUES ('react_g_1', 'post_hana_1', 'u_hana', '🔥')")
+    conn.commit()
+    conn.close()
+
+
 class TestGlobalScreen(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        server.init_db()
+        _isolate_db(cls, "kandid_global_")
+        _seed_min_global_fixture()
 
     def simulate_get(self, path, token=None):
         from urllib.parse import urlparse, parse_qs
