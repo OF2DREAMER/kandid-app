@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -8,10 +10,39 @@ sys.path.insert(0, PROJECT_DIR)
 
 import server
 
+# D4-07: pristine DB path captured at import time — the isolation source.
+_ORIGINAL_DB_FILE = server.DB_FILE
+_ORIGINAL_DATABASE_URL = server.DATABASE_URL
+
+
+def _restore_server_globals():
+    server.DB_FILE = _ORIGINAL_DB_FILE
+    server.DATABASE_URL = _ORIGINAL_DATABASE_URL
+
+
+def _isolate_db(testcase_cls, prefix):
+    """D4-07: run this test class against a disposable temp database so the
+    repository's data/kandid.db is never opened, mutated or deleted.
+
+    Both cleanup callbacks are registered BEFORE any global is mutated.
+    unittest fires class cleanups in LIFO order, so execution is:
+      1. restore server.DB_FILE / server.DATABASE_URL
+      2. remove the temporary directory
+    """
+    tmpdir = tempfile.mkdtemp(prefix=prefix)
+    # Registration order matters: LIFO makes the globals restore run first.
+    testcase_cls.addClassCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+    testcase_cls.addClassCleanup(_restore_server_globals)
+    server.DATABASE_URL = ""
+    server.DB_FILE = os.path.join(tmpdir, "kandid.db")
+    server.init_db()
+    return tmpdir
+
+
 class TestProfileSystem(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        server.init_db()
+        _isolate_db(cls, "kandid_profile_")
         conn = server.get_db()
         cursor = conn.cursor()
 

@@ -4,8 +4,10 @@ Test Suite: Kandid Search 2.0 — Updated for Production DOM
 """
 
 import os
+import shutil
 import sys
 import json
+import tempfile
 import unittest
 
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,10 +15,63 @@ sys.path.insert(0, PROJECT_DIR)
 
 import server
 
+# D4-07: pristine DB path captured at import time — the isolation source.
+_ORIGINAL_DB_FILE = server.DB_FILE
+_ORIGINAL_DATABASE_URL = server.DATABASE_URL
+
+
+def _restore_server_globals():
+    server.DB_FILE = _ORIGINAL_DB_FILE
+    server.DATABASE_URL = _ORIGINAL_DATABASE_URL
+
+
+def _isolate_db(testcase_cls, prefix):
+    """D4-07: run this test class against a disposable temp database so the
+    repository's data/kandid.db is never opened, mutated or deleted.
+
+    Both cleanup callbacks are registered BEFORE any global is mutated.
+    unittest fires class cleanups in LIFO order, so execution is:
+      1. restore server.DB_FILE / server.DATABASE_URL
+      2. remove the temporary directory
+    """
+    tmpdir = tempfile.mkdtemp(prefix=prefix)
+    # Registration order matters: LIFO makes the globals restore run first.
+    testcase_cls.addClassCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+    testcase_cls.addClassCleanup(_restore_server_globals)
+    server.DATABASE_URL = ""
+    server.DB_FILE = os.path.join(tmpdir, "kandid.db")
+    server.init_db()
+    return tmpdir
+
+
+def _seed_min_search_fixture():
+    """D4-07: deterministic minimum data the assertions actually read.
+    init_db() seeds catalogs only, so the suite seeds 3 users and 2 campus
+    posts — enough for its aggregate checks (>=1 active nodes, >=1 campus
+    moments_count) without touching any untracked repository data."""
+    conn = server.get_db()
+    for i in (1, 2, 3):
+        conn.execute(
+            "INSERT INTO users (id, email, handle, name, password_hash, salt, campus) VALUES (?,?,?,?,?,?,?)",
+            (f"u_search_{i}", f"search{i}@example.test", f"search_user_{i}", f"Search User {i}", "x", "s", "North City University"),
+        )
+    for i in (1, 2):
+        conn.execute(
+            """INSERT INTO posts (id, user_id, author_name, author_handle, campus, main_img, pip_img,
+                                   caption, circle, region, is_private, moderation_status)
+               VALUES (?,?,?,?,?,'img','pip',?, 'campus', 'all', 0, 'approved')""",
+            (f"post_search_{i}", f"u_search_{i}", f"Search User {i}", f"search_user_{i}",
+             "North City University", f"Study session #{i} at the library"),
+        )
+    conn.commit()
+    conn.close()
+
+
 class TestSearchScreen(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        server.init_db()
+        _isolate_db(cls, "kandid_search_")
+        _seed_min_search_fixture()
 
     # ── Helper: replicate /api/search handler logic ─────────────────────
     def _call_search(self, q='', type_param='all'):

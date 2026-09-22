@@ -5,7 +5,9 @@ Covers all screens, APIs, user flows, database persistence, and interactions.
 """
 
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 import json
 from urllib.parse import urlparse, parse_qs
@@ -15,10 +17,65 @@ sys.path.insert(0, PROJECT_DIR)
 
 import server
 
+# D4-07: pristine DB path captured at import time — the isolation source.
+_ORIGINAL_DB_FILE = server.DB_FILE
+_ORIGINAL_DATABASE_URL = server.DATABASE_URL
+
+
+def _restore_server_globals():
+    server.DB_FILE = _ORIGINAL_DB_FILE
+    server.DATABASE_URL = _ORIGINAL_DATABASE_URL
+
+
+def _isolate_db(testcase_cls, prefix):
+    """D4-07: run this test class against a disposable temp database so the
+    repository's data/kandid.db is never opened, mutated or deleted.
+
+    Both cleanup callbacks are registered BEFORE any global is mutated.
+    unittest fires class cleanups in LIFO order, so execution is:
+      1. restore server.DB_FILE / server.DATABASE_URL
+      2. remove the temporary directory
+    """
+    tmpdir = tempfile.mkdtemp(prefix=prefix)
+    # Registration order matters: LIFO makes the globals restore run first.
+    testcase_cls.addClassCleanup(shutil.rmtree, tmpdir, ignore_errors=True)
+    testcase_cls.addClassCleanup(_restore_server_globals)
+    server.DATABASE_URL = ""
+    server.DB_FILE = os.path.join(tmpdir, "kandid.db")
+    server.init_db()
+    return tmpdir
+
+
+def _seed_min_beta_fixture():
+    """D4-07: deterministic minimum data the assertions actually read.
+    init_db() seeds catalogs only, so the suite seeds 3 users (its per-test
+    queries pick a couple of arbitrary existing users/posts), 6 non-private
+    posts (>= the 5 asserted by test_01) and 2 campus posts for test_02's
+    campus/foryou discovery check."""
+    conn = server.get_db()
+    for i in (1, 2, 3):
+        conn.execute(
+            "INSERT INTO users (id, email, handle, name, password_hash, salt, campus, location_city) VALUES (?,?,?,?,?,?,?,?)",
+            (f"u_beta_{i}", f"beta{i}@example.test", f"beta_user_{i}", f"Beta User {i}", "x", "s", "Beta Campus", "Supaul"),
+        )
+    for i in range(1, 7):
+        conn.execute(
+            """INSERT INTO posts (id, user_id, author_name, author_handle, campus, main_img, pip_img,
+                                   caption, circle, region, location_city, is_private, moderation_status)
+               VALUES (?,?,?,?,?,'img','pip',?, ?, 'all', 'Near Beta Campus', 0, 'approved')""",
+            (f"post_beta_{i}", f"u_beta_{i if i <= 3 else 1}", f"Beta User {i if i <= 3 else 1}",
+             f"beta_user_{i if i <= 3 else 1}", "Beta Campus", f"Beta moment {i}",
+             "campus" if i <= 2 else "foryou"),
+        )
+    conn.commit()
+    conn.close()
+
+
 class TestKandidProductionBeta(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        server.init_db()
+        _isolate_db(cls, "kandid_beta_")
+        _seed_min_beta_fixture()
 
     def test_01_feed_and_subtabs(self):
         conn = server.get_db()
