@@ -543,7 +543,6 @@ function switchScreenView(screenName) {
 
 
   var globalHeader = document.getElementById("mainGlobalHeader");
-  var eventHeader = document.getElementById("eventDetailHeader");
   var settingsHeader = document.getElementById("settingsHeader");
   var headerEmptySearch = document.getElementById("headerEmptySearch");
   var headerError = document.getElementById("headerError");
@@ -565,7 +564,6 @@ function switchScreenView(screenName) {
   if (globalHeader) {
     // Hide all headers first
     globalHeader.style.display = "none";
-    if (eventHeader) eventHeader.style.display = "none";
     if (settingsHeader) settingsHeader.style.display = "none";
     if (headerEmptySearch) headerEmptySearch.style.display = "none";
     if (headerError) headerError.style.display = "none";
@@ -589,9 +587,7 @@ function switchScreenView(screenName) {
     var statusColorClass = "text-amber-500";
     var dotClass = "w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse";
     
-    if (screenName === "event-detail") {
-      if (eventHeader) eventHeader.style.display = "flex";
-    } else if (screenName === "settings") {
+    if (screenName === "settings") {
       if (settingsHeader) settingsHeader.style.display = "block";
       statusText = "SETTINGS";
     } else if (screenName === "empty-search") {
@@ -1498,7 +1494,7 @@ async function openCollectiveMemoryPage(memoryId) {
     var m = res.memory;
     if (titleEl) titleEl.textContent = m.title;
     if (dateEl) dateEl.textContent = m.date_str;
-    if (badgeEl) badgeEl.textContent = (m.moments_count || 14) + ' Moments captured together';
+    if (badgeEl) badgeEl.textContent = (m.moments_count ?? 0) + ' Moments captured together';
     if (commEl) commEl.textContent = m.community_name;
     if (storyEl) storyEl.textContent = m.story || 'Unfiltered community moments captured together.';
 
@@ -1506,37 +1502,49 @@ async function openCollectiveMemoryPage(memoryId) {
     if (heroContainer) {
       var heroImg = m.cover_img || (res.moments && res.moments[0] ? (res.moments[0].main_img || res.moments[0].image_url) : '');
       var heroCaption = (res.moments && res.moments[0] && res.moments[0].caption) ? res.moments[0].caption : 'Opening the day together.';
-      heroContainer.innerHTML =
-        '<div class="relative w-full aspect-[4/3] bg-zinc-950 overflow-hidden">' +
-          '<img src="' + escapeHtml(heroImg) + '" class="w-full h-full object-cover">' +
-          '<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-4">' +
-            '<span class="font-mono-tag text-[8px] text-amber-400 font-bold uppercase tracking-widest block mb-1">⭐ HERO MOMENT</span>' +
-            '<p class="text-xs text-white font-medium italic">“' + escapeHtml(heroCaption) + '”</p>' +
-          '</div>' +
-        '</div>';
+      if (heroImg) {
+        heroContainer.innerHTML =
+          '<div class="relative w-full aspect-[4/3] bg-zinc-950 overflow-hidden">' +
+            '<img src="' + escapeHtml(heroImg) + '" class="w-full h-full object-cover">' +
+            '<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-4">' +
+              '<span class="font-mono-tag text-[8px] text-amber-400 font-bold uppercase tracking-widest block mb-1">⭐ HERO MOMENT</span>' +
+              '<p class="text-xs text-white font-medium italic">“' + escapeHtml(heroCaption) + '”</p>' +
+            '</div>' +
+          '</div>';
+      } else {
+        heroContainer.innerHTML = '';
+      }
     }
 
     // 2. Render Unique Contributors ("CAPTURED BY")
-    if (capturedByEl && Array.isArray(res.moments) && res.moments.length > 0) {
-      var authors = [];
-      res.moments.forEach(function(post) {
-        var name = post.author_name || post.user_name || post.author_handle || post.user_handle || 'Member';
-        if (!authors.includes(name)) authors.push(name);
-      });
-      if (authors.length > 0) {
-        var displayAuthors = authors.slice(0, 4).join(' · ');
-        if (authors.length > 4) {
-          displayAuthors += ' · +' + (authors.length - 4) + ' others';
+    if (capturedByEl) {
+      if (Array.isArray(res.moments) && res.moments.length > 0) {
+        var authors = [];
+        res.moments.forEach(function(post) {
+          var name = post.author_name || post.user_name || post.author_handle || post.user_handle || 'Member';
+          if (!authors.includes(name)) authors.push(name);
+        });
+        if (authors.length > 0) {
+          var displayAuthors = authors.slice(0, 4).join(' · ');
+          if (authors.length > 4) {
+            displayAuthors += ' · +' + (authors.length - 4) + ' others';
+          }
+          capturedByEl.textContent = displayAuthors;
+        } else {
+          capturedByEl.textContent = 'Community members';
         }
-        capturedByEl.textContent = displayAuthors;
       } else {
-        capturedByEl.textContent = 'Community members';
+        capturedByEl.textContent = 'No contributors yet';
       }
     }
 
     // 3. Render Timeline Moments
-    if (momentsContainer && Array.isArray(res.moments)) {
-      renderFeedCards(res.moments, momentsContainer);
+    if (momentsContainer) {
+      if (Array.isArray(res.moments) && res.moments.length > 0) {
+        renderFeedCards(res.moments, momentsContainer);
+      } else {
+        momentsContainer.innerHTML = '<div class="text-center text-zinc-500 font-mono-tag text-xs py-8">No moments captured yet.</div>';
+      }
     }
   }
 }
@@ -5463,75 +5471,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     handleNewUserFeedEntry();
   }
 });
-
-// === EVENT DETAIL SCREEN ===
-async function openEventDetail(eventId) {
-  state.previousScreen = state.activeScreen;
-  state.activeEventId = eventId;
-  
-  // Show loading state or skeleton here if needed
-  
-  var data = await apiRequest('/api/event?id=' + eventId);
-  if (data && data.success) {
-      var ev = data.event;
-      document.getElementById('eventDetailName').textContent = ev.name;
-      document.getElementById('eventDetailNameSmall').textContent = ev.name;
-      document.getElementById('eventDetailCampus').textContent = "NORTH CITY UNIVERSITY";
-      document.getElementById('eventDetailTime').textContent = ev.start_time;
-      document.getElementById('eventDetailSummary').textContent = ev.summary || 'Tap to explore';
-      
-      // Calculate time ago
-      var diffMins = Math.floor((new Date() - new Date(ev.created_at)) / 60000);
-      document.getElementById('eventDetailStartAgo').textContent = (diffMins > 0 ? diffMins : 1) + " MIN AGO";
-      
-      document.getElementById('eventDetailLocation').textContent = ev.location || 'Campus';
-      document.getElementById('eventDetailWhere').textContent = ev.location || 'Campus';
-      document.getElementById('eventDetailWhen').textContent = ev.start_time;
-      document.getElementById('eventDetailDesc').textContent = ev.description;
-      document.getElementById('eventDetailCover').src = ev.cover_image;
-      
-      var momentsContainer = document.getElementById('eventDetailMomentsContainer');
-      document.getElementById('eventDetailCount').textContent = "Approximately " + (data.moments.length * 15 + 30) + " people nearby";
-      
-      if (data.moments && data.moments.length > 0) {
-          momentsContainer.innerHTML = '';
-          data.moments.forEach(function(m) {
-              var mHtml = `
-              <article class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3 shadow-xl">
-                  <div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner">
-                      <img src="${escapeHtml(m.main_img)}" class="w-full h-full object-cover">
-                      <div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">
-                          <img src="${escapeHtml(m.pip_img)}" class="w-full h-full object-cover">
-                      </div>
-                  </div>
-                  <div class="flex justify-between items-center px-0.5 pt-1 font-mono-tag">
-                      <span class="text-[10px] text-zinc-400 font-bold uppercase">${escapeHtml(ev.location)} · ${escapeHtml(m.timeAgo)}</span>
-                      <span class="text-[11px] text-amber-400 font-medium">@${escapeHtml(m.author_handle)}</span>
-                  </div>
-              </article>`;
-              momentsContainer.insertAdjacentHTML('beforeend', mHtml);
-          });
-      } else {
-          momentsContainer.innerHTML = '<div class="text-center text-zinc-500 text-[10px] py-4">No moments captured yet.</div>';
-      }
-      
-      switchScreenView('event-detail');
-  }
-}
-
-function closeEventDetail() {
-  state.activeEventId = null;
-  switchScreenView(state.previousScreen || 'feed');
-}
-
-function captureEventMoment() {
-  // We can pass context to camera by setting activeEventId
-  openCameraStudio();
-}
-window.openEventDetail = openEventDetail;
-window.closeEventDetail = closeEventDetail;
-window.captureEventMoment = captureEventMoment;
-
 
 window.openSettings = function() {
     switchScreenView('settings');

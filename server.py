@@ -5436,18 +5436,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     p["drop_context"] = {"drop_id": p["drop_id"], "label": "From this Drop"}
 
             # Server-authoritative activity state: LIVE NOW, ACTIVE, or QUIET RIGHT NOW
-            cursor.execute("""
-                SELECT 1 FROM community_drops 
-                WHERE (community_id = ? OR community_name = ?) 
-                  AND lifecycle_state IN ('LIVE', 'ACTIVE', 'CHECK_IN', 'live', 'active', 'check_in')
-                LIMIT 1
-            """, (comm_id, comm_name))
-            has_live_drop = bool(cursor.fetchone())
-
             pulse_state = "QUIET RIGHT NOW"
-            if has_live_drop:
-                pulse_state = "LIVE NOW"
-            elif len(pulse_posts) > 0:
+            if len(pulse_posts) > 0:
                 # Check how recent the latest moment is
                 latest_dt_str = pulse_posts[0].get("created_at", "")
                 try:
@@ -5506,64 +5496,33 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 cd["user_role"] = role
                 managed_communities.append(cd)
 
-            active_drops = []
-            upcoming_drops = []
-            draft_drops = []
-            past_drops = []
-            recent_checkins = []
-
-            # Real integer-paise earnings calculation
-            cursor.execute("""
-                SELECT gross_amount_paise, platform_fee_paise, creator_amount_paise, settlement_status
-                FROM financial_ledger
-                WHERE creator_id = ? AND payment_status = 'successful'
-            """, (user_id,))
-            ledger_rows = cursor.fetchall()
-            
-            if len(ledger_rows) > 0:
-                gross_paise = sum(r["gross_amount_paise"] for r in ledger_rows)
-                platform_paise = sum(r["platform_fee_paise"] for r in ledger_rows)
-                creator_paise = sum(r["creator_amount_paise"] for r in ledger_rows)
-                settled_paise = sum(r["creator_amount_paise"] for r in ledger_rows if r["settlement_status"] == 'settled')
-                pending_paise = sum(r["creator_amount_paise"] for r in ledger_rows if r["settlement_status"] != 'settled')
-            else:
-                cursor.execute("""
-                    SELECT gross_amount, platform_fee, creator_amount, status
-                    FROM community_transactions
-                    WHERE creator_id = ? AND status = 'completed'
-                """, (user_id,))
-                ctx_rows = cursor.fetchall()
-                gross_paise = int(round(sum(r["gross_amount"] for r in ctx_rows) * 100))
-                platform_paise = int(round(sum(r["platform_fee"] for r in ctx_rows) * 100))
-                creator_paise = int(round(sum(r["creator_amount"] for r in ctx_rows) * 100))
-                settled_paise = 0
-                pending_paise = creator_paise
-
             conn.close()
 
             return self.send_json(200, {
                 "success": True,
                 "operations": {
-                    "communities": managed_communities,
-                    "active_drops": active_drops,
-                    "upcoming_drops": upcoming_drops,
-                    "draft_drops": draft_drops,
-                    "past_drops": past_drops,
-                    "recent_checkins": recent_checkins,
-                    "earnings": {
-                        "gross_paise": gross_paise,
-                        "gross_rupees": gross_paise / 100.0,
-                        "platform_fee_paise": platform_paise,
-                        "platform_fee_rupees": platform_paise / 100.0,
-                        "creator_amount_paise": creator_paise,
-                        "creator_amount_rupees": creator_paise / 100.0,
-                        "pending_paise": pending_paise,
-                        "pending_rupees": pending_paise / 100.0,
-                        "settled_paise": settled_paise,
-                        "settled_rupees": settled_paise / 100.0,
-                        "currency": "INR"
-                    }
+                    "communities": managed_communities
                 }
+            })
+
+        if path == "/api/community/memories/detail":
+            memory_id = query.get("id", [""])[0].strip()
+            if not memory_id:
+                return self.send_json(404, {"success": False, "error": "Memory not found"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM collective_memories WHERE id = ?", (memory_id,))
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row:
+                return self.send_json(404, {"success": False, "error": "Memory not found"})
+
+            return self.send_json(200, {
+                "success": True,
+                "memory": dict(row),
+                "moments": []
             })
 
         if path == "/api/community/earnings":
@@ -5828,15 +5787,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     {"name": "Sports Ground", "momentsCount": 4}
                 ]
 
-            # 5. Campus Events (Live / Memory)
-            try:
-                cursor.execute("SELECT * FROM campus_events ORDER BY created_at DESC LIMIT 3")
-                event_rows = cursor.fetchall()
-                events = [dict(r) for r in event_rows]
-            except:
-                events = []
-
-            # Events feature not active in V1 — return empty list only
+            # 5. Campus Events (Live / Memory) — Events feature not active in V1
+            events = []
             # 6. Collective Memory Layer
             cursor.execute("SELECT * FROM collective_memories WHERE campus = ? OR community_name = ? OR community_id = ? ORDER BY created_at DESC LIMIT 12", (target_campus, comm_name, comm_id))
             mem_rows = cursor.fetchall()
@@ -6078,37 +6030,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     },
                     "personal": personal_context
                 }
-            })
-
-        if path == "/api/event":
-            event_id = query.get("id", [""])[0]
-            if not event_id:
-                return self.send_json(400, {"success": False, "error": "Missing event id"})
-                
-            conn = get_db()
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT * FROM campus_events WHERE id = ?", (event_id,))
-            event_row = cursor.fetchone()
-            if not event_row:
-                conn.close()
-                return self.send_json(404, {"success": False, "error": "Event not found"})
-                
-            event = dict(event_row)
-            
-            # Fetch moments associated with this event
-            cursor.execute("SELECT * FROM posts WHERE event_id = ? ORDER BY created_at DESC", (event_id,))
-            moments = [dict(r) for r in cursor.fetchall()]
-            for m in moments:
-                cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
-                m["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
-                m["timeAgo"] = "4 MIN AGO" # mock for now
-                
-            conn.close()
-            return self.send_json(200, {
-                "success": True,
-                "event": event,
-                "moments": moments
             })
 
         if path == "/api/global":
@@ -8562,62 +8483,62 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if not any(m["id"] == cd["id"] for m in managed_comms):
                     managed_comms.append(cd)
 
-            # 2. Drops Hosted (drops removed)
-            all_drops = []
-            upcoming_drops = []
-            active_drops = []
-            past_drops = []
+            # Calculate truthful statistics from live tables for managed communities
+            total_members = 0
+            total_moments = 0
+            live_pulse_count = 0
 
-            # 3. Attendees & Verified Check-ins
-            total_attendees = 0
-            total_checkins = 0
+            managed_comm_ids = [m["id"] for m in managed_comms if m.get("id")]
 
-            # 4. Earnings Summary (₹19 fixed economic invariant)
-            cursor.execute("""
-                SELECT * FROM financial_ledger 
-                WHERE creator_id = ? AND payment_status = 'successful'
-            """, (user["id"],))
-            ledger_rows = [dict(r) for r in cursor.fetchall()]
-            if ledger_rows:
-                gross_paise = sum(r.get("gross_amount_paise", 1900) for r in ledger_rows)
-                creator_amount_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows)
-                platform_fee_paise = sum(r.get("platform_fee_paise", 380) for r in ledger_rows)
-                settled_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows if r.get("settlement_status") == "settled")
-                pending_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows if r.get("settlement_status") != "settled")
-            else:
-                cursor.execute("""
-                    SELECT * FROM community_transactions 
-                    WHERE creator_id = ? AND status = 'completed'
-                """, (user["id"],))
-                tx_rows = [dict(r) for r in cursor.fetchall()]
-                gross_paise = int(sum(r.get("gross_amount", 19.0) * 100 for r in tx_rows))
-                creator_amount_paise = int(sum(r.get("creator_amount", 15.20) * 100 for r in tx_rows))
-                platform_fee_paise = int(sum(r.get("platform_fee", 3.80) * 100 for r in tx_rows))
-                settled_paise = 0
-                pending_paise = creator_amount_paise
+            if managed_comm_ids:
+                id_ph = ",".join("?" for _ in managed_comm_ids)
+                cursor.execute(f"""
+                    SELECT COUNT(DISTINCT user_id)
+                    FROM community_members
+                    WHERE community_id IN ({id_ph}) AND status = 'active'
+                """, managed_comm_ids)
+                count_row = cursor.fetchone()
+                total_members = count_row[0] if count_row else 0
 
-            creator_share_rupees = creator_amount_paise / 100.0
-            settled_rupees = settled_paise / 100.0
-            pending_rupees = pending_paise / 100.0
-            earnings_summary = {
-                "currency": "INR",
-                "price_per_attendee_rupees": 19.0,
-                "creator_share_percentage": 80,
-                "creator_cut_per_attendee_rupees": 15.20,
-                "platform_fee_cut_per_attendee_rupees": 3.80,
-                "gross_rupees": gross_paise / 100.0,
-                "creator_share_rupees": creator_share_rupees,
-                "creator_earnings_rupees": creator_share_rupees,
-                "platform_fee_rupees": platform_fee_paise / 100.0,
-                "settled_rupees": settled_rupees,
-                "pending_rupees": pending_rupees,
-                "gross_paise": gross_paise,
-                "creator_share_paise": creator_amount_paise,
-                "platform_fee_paise": platform_fee_paise,
-                "settled_paise": settled_paise,
-                "pending_paise": pending_paise,
-                "fixed_price_model": "₹19 per attendee (80% creator, 20% platform)"
-            }
+                query_params = list(managed_comm_ids) + list(managed_comm_ids)
+                cursor.execute(f"""
+                    SELECT COUNT(DISTINCT id) FROM posts
+                    WHERE (primary_community_id IN ({id_ph}) OR context_community_id IN ({id_ph}))
+                      AND is_private = 0
+                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                """, query_params)
+                moments_row = cursor.fetchone()
+                total_moments = moments_row[0] if moments_row else 0
+
+                # Live Pulse: posts with age_seconds <= 7200, matching /api/community/pulse LIVE NOW
+                now_utc = datetime.now(timezone.utc)
+                now_local = datetime.now()
+                cutoff_window = min(
+                    (now_utc - timedelta(hours=36)).strftime("%Y-%m-%d %H:%M:%S"),
+                    (now_local - timedelta(hours=36)).strftime("%Y-%m-%d %H:%M:%S")
+                )
+                cursor.execute(f"""
+                    SELECT DISTINCT id, created_at FROM posts
+                    WHERE (primary_community_id IN ({id_ph}) OR context_community_id IN ({id_ph}))
+                      AND is_private = 0
+                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                      AND created_at >= ?
+                """, query_params + [cutoff_window])
+
+                live_ids = set()
+                for r in cursor.fetchall():
+                    c_str = (r["created_at"] or "").strip()
+                    try:
+                        dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
+                        if dt.tzinfo is None:
+                            age_seconds = (now_local - dt).total_seconds()
+                        else:
+                            age_seconds = (now_utc - dt).total_seconds()
+                        if -60 <= age_seconds <= 7200:
+                            live_ids.add(r["id"])
+                    except Exception:
+                        pass
+                live_pulse_count = len(live_ids)
 
             conn.close()
             return self.send_json(200, {
@@ -8625,24 +8546,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "overview": {
                     "spaces_managed": len(managed_comms),
                     "communities_managed_count": len(managed_comms),
-                    "total_drops_hosted": len(all_drops),
-                    "active_drops": len(active_drops),
-                    "upcoming_drops_count": len(upcoming_drops),
-                    "active_drops_count": len(active_drops),
-                    "total_attendees": total_attendees,
-                    "total_registered_attendees": total_attendees,
-                    "verified_checkins": total_checkins,
-                    "verified_checkins_count": total_checkins
+                    "total_members": total_members,
+                    "total_moments": total_moments,
+                    "live_pulse_count": live_pulse_count
                 },
                 "spaces": managed_comms,
-                "communities": managed_comms,
-                "drops": all_drops,
-                "drops_by_state": {
-                    "upcoming": upcoming_drops,
-                    "active": active_drops,
-                    "past": past_drops
-                },
-                "earnings": earnings_summary
+                "communities": managed_comms
             })
 
         if path.startswith("/api/"):
@@ -8838,7 +8747,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not comm_id:
                 return self.send_json(400, {"error": "community_id is required"})
             if target_type not in ("community", "moment", "user"):
-                return self.send_json(400, {"error": "Invalid target_type. Must be community, drop, moment, or user"})
+                return self.send_json(400, {"error": "Invalid target_type. Must be community, moment, or user"})
             if not target_id:
                 return self.send_json(400, {"error": "target_id is required"})
 
@@ -8853,11 +8762,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     conn.close()
                     return self.send_json(404, {"error": "Community not found"})
                 target_id = crow[0]
-            elif target_type == "drop":
-                cursor.execute("SELECT id FROM community_drops WHERE id = ?", (target_id,))
-                if not cursor.fetchone():
-                    conn.close()
-                    return self.send_json(404, {"error": "Drop not found"})
 
             # Prevent duplicate report spam from same user on same target
             cursor.execute("""
@@ -8926,11 +8830,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Check moderation authority
             role = get_user_community_role(comm_id, user["id"], cursor)
             is_authorized = (role in ("owner", "admin")) or (user.get("role") == "admin")
-            if not is_authorized and target_type == "drop" and target_id:
-                cursor.execute("SELECT creator_id FROM community_drops WHERE id = ?", (target_id,))
-                drow = cursor.fetchone()
-                if drow and drow[0] == user["id"]:
-                    is_authorized = True
 
             if not is_authorized:
                 conn.close()
@@ -8963,19 +8862,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if report_id:
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'removed', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
             elif action == "suspend":
-                if target_type == "drop" and target_id:
-                    cursor.execute("""
-                        UPDATE community_drops 
-                        SET moderation_status = 'suspended', status = 'suspended', updated_at = ?
-                        WHERE id = ?
-                    """, (now_iso, target_id))
                 if report_id:
-                    cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'drop_suspended', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
+                    cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'suspended', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
             elif action == "restore":
                 if target_type == "moment" and target_id:
                     cursor.execute("UPDATE posts SET moderation_status = 'active', is_private = 0 WHERE id = ?", (target_id,))
-                elif target_type == "drop" and target_id:
-                    cursor.execute("UPDATE community_drops SET moderation_status = 'active', status = 'active', updated_at = ? WHERE id = ?", (now_iso, target_id))
                 if report_id:
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'restored', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
 
