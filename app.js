@@ -430,9 +430,9 @@ function renderGlobalCards(moments, container) {
 
     card.innerHTML =
       '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
-        '<img src="' + mainImgSrc + '" class="w-full h-full object-cover main-stage-img" alt="Global Moment">' +
+        '<img src="' + escapeHtml(mainImgSrc) + '" class="w-full h-full object-cover main-stage-img" alt="Global Moment">' +
         '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
-          '<img src="' + pipImgSrc + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
+          '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
           '<div class="absolute bottom-1 left-1.5 px-1 py-0.5 bg-black/60 backdrop-blur text-[8px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
         '</div>' +
         '<div class="double-tap-burst">🔥</div>' +
@@ -786,7 +786,7 @@ function renderCommunityCards(moments, container) {
 
     card.innerHTML = 
       '<div class="moment-image aspect-[4/5] rounded-[28px] overflow-hidden relative border border-white/[.08] shadow-2xl moment-viewport-stage cursor-pointer select-none">' +
-        '<img class="w-full h-full object-cover main-stage-img" src="' + mainImgSrc + '" alt="Real moment">' +
+        '<img class="w-full h-full object-cover main-stage-img" src="' + escapeHtml(mainImgSrc) + '" alt="Real moment">' +
         '<div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/35 pointer-events-none"></div>' +
         
         '<!-- Time Badge -->' +
@@ -799,7 +799,7 @@ function renderCommunityCards(moments, container) {
 
         '<!-- Selfie PiP Layer (Tap to swap) -->' +
         '<div class="sub-camera-pip absolute top-4 left-4 w-20 h-28 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-20 active:scale-95 transition-transform" title="Tap to Swap Views">' +
-          '<img src="' + pipImgSrc + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
+          '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
         '</div>' +
 
         '<!-- Bottom Overlay -->' +
@@ -1156,7 +1156,7 @@ async function openCampusPage(campusName) {
           tile.onclick = function() { openPlacePage(p.area); };
           tile.innerHTML = 
             '<div class="w-full aspect-square rounded-lg overflow-hidden bg-black">' +
-              '<img src="' + (p.main_img || '') + '" class="w-full h-full object-cover">' +
+              '<img src="' + escapeHtml(p.main_img || '') + '" class="w-full h-full object-cover">' +
             '</div>' +
             '<p class="text-[10px] font-bold text-white truncate">' + escapeHtml(p.area) + '</p>' +
             '<p class="font-mono-tag text-[8px] text-zinc-500">' + escapeHtml(p.timeAgo) + '</p>';
@@ -1958,9 +1958,9 @@ function renderFeedCards(moments, container) {
       '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
         liveBadgeHtml +
         motionVideoHtml +
-        '<img src="' + mainImgSrc + '" class="w-full h-full object-cover main-stage-img" alt="Moment Photo">' +
+        '<img src="' + escapeHtml(mainImgSrc) + '" class="w-full h-full object-cover main-stage-img" alt="Moment Photo">' +
         '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
-          '<img src="' + pipImgSrc + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
+          '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
           '<div class="absolute bottom-1 left-1.5 px-1 py-0.5 bg-black/60 backdrop-blur text-[8px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
         '</div>' +
         '<div class="double-tap-burst">🔥</div>' +
@@ -8734,7 +8734,7 @@ async function openChatMomentPicker() {
       };
       var imgUrl = m.image_url || m.main_img || '';
       item.innerHTML = 
-        '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
+        '<img src="' + escapeHtml(imgUrl) + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
         '<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 p-1.5 flex flex-col justify-between">' +
           '<span class="text-[8px] font-mono-tag text-amber-400 font-bold uppercase truncate">' + escapeHtml(m.campus || 'CAMPUS') + '</span>' +
           '<span class="text-[8px] text-zinc-200 line-clamp-1 font-sans">' + escapeHtml(m.caption || '') + '</span>' +

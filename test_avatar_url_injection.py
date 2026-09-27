@@ -410,8 +410,14 @@ class TestCStaticSinks(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestDCacheBust(unittest.TestCase):
     def test_30_index_references_app_js_5_6_1(self):
+        # Version pin maintained across mandated cache-bust bumps (5.6.1 ->
+        # 5.6.2 micro commit -> 5.6.3 in B2-SEC-16). The invariant under test
+        # is: index.html references the CURRENT app.js cache-bust version and
+        # no older stale version.
         src = _read("index.html")
-        self.assertIn("app.js?v=5.6.1", src)
+        self.assertIn("app.js?v=5.6.3", src)
+        self.assertNotIn("app.js?v=5.6.2", src)
+        self.assertNotIn("app.js?v=5.6.1", src)
         self.assertNotIn("app.js?v=5.6.0", src)
 
 
