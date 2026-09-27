@@ -1594,6 +1594,56 @@ def validate_media_url(value, field="url"):
         raise ValueError("%s is not an allowed image URL" % field)
     return value.strip()
 
+
+# --- B2-SEC-16: stored post-media URL hardening ---------------------------
+# posts.main_img / posts.pip_img are interpolated into raw <img src> HTML
+# attributes by the client, so only proven media origins may be persisted:
+# relative /uploads/... files produced by save_base64_image(), and the
+# Cloudinary delivery host its upload API always returns
+# (res.cloudinary.com). DiceBear is avatar-only and deliberately NOT valid
+# for post media. Anything else (javascript:, data:, http:, scheme-relative,
+# arbitrary https hosts, quotes/angle brackets/backticks/backslashes,
+# control characters) is rejected BEFORE the post row is written.
+_B16_POST_MEDIA_HOSTS = ("res.cloudinary.com",)
+
+
+def _b16_post_media_url_is_safe(url):
+    if not isinstance(url, str):
+        return False
+    url = url.strip()
+    if url == "":
+        return True
+    for ch in url:
+        code = ord(ch)
+        if code <= 0x20 or code == 0x7F:
+            return False
+        if code in (34, 39, 60, 62, 92, 96):
+            # Quotes, angle brackets, backslashes and backticks would break
+            # out of HTML attributes or confuse URL parsers; they never
+            # appear in a legitimate media URL (they would be %-encoded).
+            return False
+    if url.startswith("/uploads/"):
+        return True
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return False
+    hostname = (parsed.hostname or "").lower()
+    return any(
+        hostname == host or hostname.endswith("." + host)
+        for host in _B16_POST_MEDIA_HOSTS
+    )
+
+
+def validate_post_media_url(value, field="media"):
+    """B2-SEC-16: return the (stripped) value if it is an allowed post-media
+    URL, otherwise raise ValueError. Callers translate this into HTTP 400
+    BEFORE the post row is written."""
+    if not isinstance(value, str):
+        raise ValueError("%s must be a string" % field)
+    if not _b16_post_media_url_is_safe(value):
+        raise ValueError("%s is not an allowed media URL" % field)
+    return value.strip()
+
 def serialize_user(u_dict):
     """Sanitizes user dictionary, preventing sensitive credentials and hashes from leaking"""
     if not u_dict:
@@ -10189,6 +10239,30 @@ class KandidHandler(SimpleHTTPRequestHandler):
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""
             if ENVIRONMENT == "production" and cloudinary_is_setup and raw_audio and not audio_url:
                 return self.send_json(502, {"success": False, "error": "Failed to upload ambient audio to cloud storage. Moment was not created."})
+
+            # B2-SEC-16: validate persisted media URLs BEFORE the post row
+            # is written. save_base64_image() passes http(s):// and /uploads/
+            # strings through verbatim, so a hostile request could otherwise
+            # persist arbitrary markup into posts.main_img / posts.pip_img.
+            # Dangerous raw schemes (javascript:, vbscript:, and data: types
+            # other than data:image/...) are rejected outright instead of
+            # being silently discarded into an empty-but-successful capture;
+            # the normal base64 capture flow (data:image/...) is preserved.
+            for _b16_raw in (raw_main, raw_pip):
+                _b16_s = str(_b16_raw or "").strip()
+                _b16_low = _b16_s.lower()
+                if not _b16_s:
+                    continue
+                if _b16_low.startswith("//"):
+                    # Scheme-relative URLs are never legitimate media input.
+                    return self.send_json(400, {"error": "Invalid media URL", "success": False})
+                if _b16_low.startswith(("javascript:", "vbscript:", "data:")) and not _b16_low.startswith("data:image/"):
+                    return self.send_json(400, {"error": "Invalid media URL", "success": False})
+            try:
+                main_img = validate_post_media_url(main_img, "main_img")
+                pip_img = validate_post_media_url(pip_img, "pip_img")
+            except ValueError:
+                return self.send_json(400, {"error": "Invalid media URL", "success": False})
 
             post_id = "post_" + secrets.token_hex(6)
             conn = get_db()
