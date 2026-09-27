@@ -10234,6 +10234,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             context_comm = body.get("context_community_id") or ""
             context_loc = body.get("context_location") or body.get("locationCity") or ""
             cluster_id = (body.get("cluster_id") or "").strip()
+            # B2-SEC-15 (final blocker): cluster_id is interpolated into an
+            # inline openMomentClusterModal(...) handler string client-side,
+            # so only a strict identifier format may ever be persisted.
+            if cluster_id and not re.match(r"^[A-Za-z0-9_-]+$", cluster_id):
+                return self.send_json(400, {"error": "Invalid cluster id", "success": False})
 
             raw_audio = body.get("audioData") or body.get("audio_data") or ""
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""
@@ -10287,6 +10292,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
             raw_motion = body.get("motionData") or body.get("motion_data") or ""
             motion_url = save_base64_video(raw_motion, "motion") if raw_motion else ""
             
+            # B2-SEC-15: resolve the cluster BEFORE the post row is written.
+            # A well-formed but unknown/stale id degrades to '' (the post is
+            # simply not attributed to a cluster); only REAL active cluster
+            # ids are ever persisted, so no attacker-controlled string can
+            # reach posts.cluster_id.
+            if cluster_id:
+                _cls_pre = conn.cursor()
+                _cls_pre.execute("SELECT 1 FROM moment_clusters WHERE id = ? AND status = 'active'", (cluster_id,))
+                if not _cls_pre.fetchone():
+                    cluster_id = ""
+
             conn.execute("""
                 INSERT INTO posts (id, user_id, author_name, author_handle, avatar_letter, avatar_url, campus, main_img, pip_img, caption, circle, region, location_city, location_coords, exif_iso, exif_aperture, exif_shutter, is_private, event_id, audio_url, audio_duration, motion_url, primary_community_id, context_community_id, context_location, drop_id, cluster_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)

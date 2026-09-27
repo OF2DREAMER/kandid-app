@@ -141,6 +141,10 @@ function buildJsonAttr(m) {
   // object literal itself, producing 'Invalid or unexpected token'.)
   return '<div class="x" onclick="openMomentDetail(' + escapeHtml(JSON.stringify(m)) + ')"></div>';
 }
+// Actual cluster badge template (post-fix form) — mirrors app.js 776/1946.
+function buildClusterAttr(m) {
+  return '<button class="x" onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')">CLUSTER</button>';
+}
 
 const cases = JSON.parse(process.argv[3]);
 const out = { results: [] };
@@ -165,6 +169,12 @@ for (const c of cases) {
   } else if (c.kind === 'json') {
     html = buildJsonAttr({ id: 'post_x', caption: c.value, main_img: '/uploads/a.png' });
     fake = 'openMomentDetail';
+  } else if (c.kind === 'cluster') {
+    html = buildClusterAttr({ cluster_id: c.value, id: 'post_deadbeef' });
+    fake = 'openMomentClusterModal';
+  } else if (c.kind === 'cluster_legit') {
+    html = buildClusterAttr({ cluster_id: c.value, id: 'post_deadbeef' });
+    fake = 'openMomentClusterModal';
   }
   const r = runHandler(firstHandler(html), fake);
   out.results.push({
@@ -302,6 +312,7 @@ class TestBehavioralHandlers(unittest.TestCase):
             cases.append({"kind": "friend_avatar", "value": p})
             cases.append({"kind": "moderation", "value": p})
             cases.append({"kind": "json", "value": p})
+            cases.append({"kind": "cluster", "value": p})
         cls.results = _run_node(cases)["results"]
         cls.by_kind = {}
         for r in cls.results:
@@ -329,6 +340,26 @@ class TestBehavioralHandlers(unittest.TestCase):
 
     def test_06_json_object_literal_handler_inert(self):
         self._assert_inert("json")
+
+    def test_06b_cluster_id_handler_inert(self):
+        # The final raw sink: (m.cluster_id || '') is now jsAttr-wrapped.
+        self._assert_inert("cluster")
+
+    def test_06c_cluster_id_poc_payload_specifically(self):
+        # Arena's exact PoC shape, run through the REAL app.js jsAttr + the
+        # ACTUAL badge template.
+        r = _run_node([{"kind": "cluster", "value": "');globalThis.__OWNED_CLUSTER=true;//"}])["results"][0]
+        self.assertFalse(r["executed"], "cluster_id PoC payload executed attacker JS")
+        self.assertFalse(r["handlerError"])
+
+    def test_06d_normal_cluster_ids_still_work(self):
+        for cid in ("cls_ab12cd34ef56", "", "cls-X_9"):
+            r = _run_node([{"kind": "cluster_legit", "value": cid}])["results"][0]
+            self.assertTrue(r["called"], "cluster id %r must still reach openMomentClusterModal" % cid)
+            self.assertFalse(r["executed"])
+            self.assertFalse(r["handlerError"])
+            self.assertEqual(r["args"][0], cid)
+            self.assertEqual(r["args"][1], "post_deadbeef")  # m.id untouched
 
     def test_07_friend_handler_preserves_server_id_and_safe_values(self):
         # f.id must remain passed through raw; name/handle/avatar round-trip.
@@ -404,12 +435,78 @@ class TestStaticConversions(unittest.TestCase):
         self.assertNotIn("escapeHtml(avatarSrc)", line)
         self.assertIn("+ f.id +", line)
 
-    def test_21_escapehtml_count_inside_handlers_is_classified_safe_only(self):
-        # After this commit, the ONLY escapeHtml occurrences on inline-handler
-        # lines are: server-generated IDs, the server-validated enum
-        # (r.target_type), an event-time dataset read (m.media_url), and
-        # HTML-context values sharing the line (c.name @3097 radio value,
-        # avatarSrc @9423 img src, locBanner @445 span text).
+    def test_21_full_expression_sweep_no_raw_attacker_interpolation(self):
+        # WHOLE-EXPRESSION sweep (replaces the escapeHtml-only scan, which
+        # missed raw interpolations like (m.cluster_id || '')). For every
+        # inline on*= handler attribute, tokenize the interpolation joints
+        # (" + ") and require each interpolated expression to be jsAttr(...)
+        # or an explicitly allowlisted safe value.
+        import re
+        src = _read("app.js")
+        ON_ATTR = re.compile(r"\bon[a-z]+=\"([^\"]*)\"")
+        # Category B/D allowlist — server-generated identifiers whose charset
+        # is guaranteed server-side, plus deterministic UI values.
+        RAW_SAFE_IDS = {
+            "m.id", "f.id", "u.id", "r.id", "c.id", "curCommId", "commId",
+            "(m.id || 'mem_1')", "circle", "k",
+            # circle: only ever assigned UI literals (foryou/nearby/community/
+            # campus) via selectSubTab/static buttons; k: server timestamp
+            # substring (YYYY-MM keys) used by the memories month filter.
+        }
+        # escapeHtml()-wrapped SERVER IDs (safe charset; escapeHtml on top is
+        # harmless defense-in-depth, not JS-string encoding of user data).
+        ESCAPED_ID_INNER = {"r.id", "commId", "u.id", "curCommId", "c.id"}
+        # escapeHtml()-wrapped expressions that are NOT used as JS-string
+        # encoding: HTML-attribute/text contexts sharing the handler line,
+        # the server-validated enum, and the category-E object literal.
+        ESCAPED_SAFE_INNER = {
+            "c.name",          # radio input value="..." (~3097)
+            "avatarSrc",       # <img src> on the onerror line (~9423)
+            "locBanner",       # visible span text (~445)
+            "m.media_url",     # img src + data-media-url attribute
+            "JSON.stringify(m)",  # category E: raw object-literal context
+            "r.target_type",   # server-validated enum at report creation
+        }
+        problems = []
+        raw_count = 0
+        checked = 0
+        for lineno, line in enumerate(src.splitlines(), 1):
+            if "' +" not in line:
+                continue
+            for attr in ON_ATTR.findall(line):
+                # Interpolation joints are always written " + EXPR + " in this
+                # codebase; split and inspect odd indices (the expressions).
+                parts = attr.split(" + ")
+                for idx in range(1, len(parts), 2):
+                    expr = parts[idx].strip()
+                    checked += 1
+                    if expr.startswith("jsAttr("):
+                        continue
+                    if expr in RAW_SAFE_IDS:
+                        continue
+                    if expr.startswith("escapeHtml(") and expr.endswith(")"):
+                        inner = expr[len("escapeHtml("):-1]
+                        if inner in ESCAPED_SAFE_INNER or inner in ESCAPED_ID_INNER:
+                            continue
+                    problems.append((lineno, expr))
+                    raw_count += 1
+        self.assertEqual(
+            problems, [],
+            "attacker-controllable or unclassified interpolation inside inline JS: %r" % problems,
+        )
+        self.assertEqual(raw_count, 0)
+        # Sanity: the sweep must actually have inspected the known sinks.
+        self.assertGreaterEqual(checked, 25)
+
+    def test_21b_cluster_id_specifically_jsattr_wrapped(self):
+        src = _read("app.js")
+        self.assertEqual(src.count("jsAttr(m.cluster_id || '')"), 2)
+        self.assertNotIn("+ (m.cluster_id || '') +", src)
+
+    def test_21c_escapehtml_in_handlers_classified_safe_only(self):
+        # Complementary invariant to test_21: the only escapeHtml calls on
+        # handler lines are the classified-safe set (IDs/enum/dataset/
+        # HTML-context/object-literal).
         src = _read("app.js")
         import re
         handler_lines = [l for l in src.splitlines() if re.search(r"on(click|change|input|load|error|dblclick|mousedown|mouseup|keydown|keyup)=", l) and "' +" in l]
@@ -423,8 +520,7 @@ class TestStaticConversions(unittest.TestCase):
         }
         unexpected = [f for f in found if f not in allowed]
         self.assertEqual(unexpected, [], "unclassified escapeHtml inside handler lines: %r" % unexpected)
-        # And the known attacker-controlled ones must be jsAttr now.
-        for must in ("jsAttr(r.target_id)", "jsAttr(audioUrl)"):
+        for must in ("jsAttr(r.target_id)", "jsAttr(audioUrl)", "jsAttr(m.cluster_id || '')"):
             self.assertIn(must, src)
         self.assertEqual(src.count("jsAttr(r.target_id)"), 3)
 
@@ -441,10 +537,10 @@ class TestStaticConversions(unittest.TestCase):
 # Group H — cache-bust
 # ---------------------------------------------------------------------------
 class TestCacheBust(unittest.TestCase):
-    def test_30_index_references_app_js_5_6_4_only(self):
+    def test_30_index_references_app_js_5_6_5_only(self):
         src = _read("index.html")
-        self.assertIn("app.js?v=5.6.4", src)
-        for stale in ("5.6.3", "5.6.2", "5.6.1", "5.6.0"):
+        self.assertIn("app.js?v=5.6.5", src)
+        for stale in ("5.6.4", "5.6.3", "5.6.2", "5.6.1", "5.6.0"):
             self.assertNotIn("app.js?v=" + stale, src)
 
 
@@ -507,6 +603,75 @@ class TestServerAudioHardening(ServerBase):
         status, body = self._capture({"mainImg": "/uploads/main_ok.png"})
         self.assertEqual(status, 201)
         self.assertEqual(body["post"]["main_img"], "/uploads/main_ok.png")
+
+    # ---- cluster_id server-side hardening (final B2-SEC-15 blocker) ----
+
+    def _seed_cluster(self, cluster_id="cls_ab12cd34ef56"):
+        # Seed a real originating post first (FK target), then the cluster.
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO posts (id, user_id, author_name, author_handle, main_img, pip_img) VALUES (?, ?, ?, ?, ?, ?)",
+            ("post_seedcluster", "u_b15c", "Seed Author", "seed_handle", "a.png", "b.png"),
+        )
+        cursor.execute(
+            "INSERT OR REPLACE INTO moment_clusters (id, originator_moment_id, originator_user_id, status) VALUES (?, ?, ?, 'active')",
+            (cluster_id, "post_seedcluster", "u_b15c"),
+        )
+        conn.commit()
+        conn.close()
+
+    def _post_rows(self):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT cluster_id FROM posts")
+        rows = [r[0] for r in cursor.fetchall()]
+        conn.close()
+        return rows
+
+    def test_47_hostile_cluster_id_format_rejected_400(self):
+        for payload in (
+            "');globalThis.__OWNED_CLUSTER=true;//",
+            "abc'def",
+            'abc"def',
+            "a<b>c",
+            "back\\\\slash",
+            "sp ace",
+            "semi;colon",
+        ):
+            status, _ = self._capture({"cluster_id": payload})
+            self.assertEqual(status, 400, "hostile cluster_id %r must be rejected" % payload)
+
+    def test_48_hostile_cluster_id_never_persisted(self):
+        conn = server.get_db()
+        conn.execute("DELETE FROM posts")
+        conn.commit()
+        conn.close()
+        for payload in ("');globalThis.__OWNED_CLUSTER=true;//", "x'y", 'a"b', "a<b"):
+            self._capture({"cluster_id": payload})
+        for stored in self._post_rows():
+            self.assertNotIn("__OWNED_CLUSTER", stored or "")
+            self.assertNotIn("'", stored or "")
+            self.assertNotIn('"', stored or "")
+
+    def test_49_unknown_but_wellformed_cluster_id_degrades_to_empty(self):
+        status, body = self._capture({"cluster_id": "cls_doesnotexist99"})
+        self.assertEqual(status, 201)
+        self.assertEqual(body["post"]["cluster_id"], "", "unknown cluster id must not be persisted")
+
+    def test_50_real_active_cluster_id_round_trips(self):
+        self._seed_cluster("cls_real12345678")
+        status, body = self._capture({"cluster_id": "cls_real12345678"})
+        self.assertEqual(status, 201)
+        self.assertEqual(body["post"]["cluster_id"], "cls_real12345678")
+
+    def test_51_empty_and_missing_cluster_id_still_allowed(self):
+        status, body = self._capture({"cluster_id": ""})
+        self.assertEqual(status, 201)
+        self.assertEqual(body["post"]["cluster_id"], "")
+        status, body = self._capture({})
+        self.assertEqual(status, 201)
+        self.assertEqual(body["post"]["cluster_id"], "")
 
 
 if __name__ == "__main__":
