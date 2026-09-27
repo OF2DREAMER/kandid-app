@@ -398,11 +398,14 @@ class TestCStaticSinks(unittest.TestCase):
         self.assertIn(expected, src, "escapeHtml() must remain byte-for-byte unchanged")
 
     def test_23_inline_onclick_handlers_untouched(self):
-        # B2-SEC-15 is explicitly out of scope: the openChatWithUser inline
-        # onclick (one of the 43 handlers) must remain byte-for-byte intact.
+        # Originally pinned during B2-SEC-14 to prevent unauthorized inline
+        # handler edits. B2-SEC-15 completion (mandated) converted the three
+        # attacker-controlled arguments of this handler to jsAttr(); the pin
+        # now guards the AUTHORIZED state: f.id stays raw (server-generated)
+        # and name/handle/avatarSrc use jsAttr.
         src = _read("app.js")
-        marker = r"""onclick="openChatWithUser(\'' + f.id + '\', \'' + escapeHtml(name) + '\', \'' + escapeHtml(handle) + '\', \'' + escapeHtml(avatarSrc) + '\')">' +"""
-        self.assertIn(marker, src, "inline onclick handlers must not be modified in this commit")
+        marker = r"""onclick="openChatWithUser(\'' + f.id + '\', \'' + jsAttr(name) + '\', \'' + jsAttr(handle) + '\', \'' + jsAttr(avatarSrc) + '\')">' +"""
+        self.assertIn(marker, src, "inline onclick handler must match the authorized post-B2-SEC-15-completion form")
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +418,8 @@ class TestDCacheBust(unittest.TestCase):
         # is: index.html references the CURRENT app.js cache-bust version and
         # no older stale version.
         src = _read("index.html")
-        self.assertIn("app.js?v=5.6.3", src)
+        self.assertIn("app.js?v=5.6.4", src)
+        self.assertNotIn("app.js?v=5.6.3", src)
         self.assertNotIn("app.js?v=5.6.2", src)
         self.assertNotIn("app.js?v=5.6.1", src)
         self.assertNotIn("app.js?v=5.6.0", src)
