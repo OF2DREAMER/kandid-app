@@ -395,8 +395,8 @@ function renderGlobalCards(moments, container) {
     var reactionPillsHtml = '';
     for (var emoji in realmojis) {
       if (realmojis[emoji] > 0) {
-        reactionPillsHtml += '<button class="realmoji-btn inline-flex items-center gap-1 px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded-md text-[9px] font-mono-tag active:scale-95 transition-transform cursor-pointer" data-emoji="' + emoji + '">' +
-          '<span>' + emoji + '</span>' +
+        reactionPillsHtml += '<button class="realmoji-btn inline-flex items-center gap-1 px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded-md text-[9px] font-mono-tag active:scale-95 transition-transform cursor-pointer" data-emoji="' + escapeHtml(emoji) + '">' +
+          '<span>' + escapeHtml(emoji) + '</span>' +
           '<span class="emoji-count-num text-[8px] font-bold text-zinc-300">' + realmojis[emoji] + '</span>' +
         '</button>';
       }
@@ -1886,8 +1886,8 @@ function renderFeedCards(moments, container) {
     var reactionPillsHtml = '';
     for (var emoji in realmojis) {
       if (realmojis[emoji] > 0) {
-        reactionPillsHtml += '<button class="realmoji-btn inline-flex items-center gap-1 px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded-md text-[9px] font-mono-tag active:scale-95 transition-transform cursor-pointer" data-emoji="' + emoji + '">' +
-          '<span>' + emoji + '</span>' +
+        reactionPillsHtml += '<button class="realmoji-btn inline-flex items-center gap-1 px-2 py-0.5 bg-zinc-900 border border-zinc-800 rounded-md text-[9px] font-mono-tag active:scale-95 transition-transform cursor-pointer" data-emoji="' + escapeHtml(emoji) + '">' +
+          '<span>' + escapeHtml(emoji) + '</span>' +
           '<span class="emoji-count-num text-[8px] font-bold text-zinc-300">' + realmojis[emoji] + '</span>' +
         '</button>';
       }
@@ -8934,7 +8934,7 @@ async function loadChatMessages(userId, isSilent = false) {
           var pillBtn = document.createElement('button');
           var cls = item.me ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold' : 'bg-zinc-850 text-zinc-300 border-zinc-800';
           pillBtn.className = 'text-[10px] px-2 py-0.5 rounded-full border ' + cls + ' font-mono-tag flex items-center gap-1 active:scale-95 transition-all cursor-pointer';
-          pillBtn.innerHTML = em + ' <span class="text-[9px]">' + item.count + '</span>';
+          pillBtn.innerHTML = escapeHtml(em) + ' <span class="text-[9px]">' + item.count + '</span>';
           pillBtn.onclick = function() {
             toggleChatReaction(m.id, em);
           };

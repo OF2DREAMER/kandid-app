@@ -1511,6 +1511,40 @@ ALLOWED_VIDEO_MIMES = {"video/mp4", "video/webm", "video/quicktime"}
 MAX_MEDIA_PAYLOAD_BYTES = 15 * 1024 * 1024  # 15 MB payload limit
 MAX_DROP_VIDEO_PAYLOAD_BYTES = 25 * 1024 * 1024  # 25 MB payload limit for 3s drop video
 
+# --- B2-SEC-01: stored reaction XSS remediation ---------------------------
+# Only these reaction values may ever be stored or echoed back. The set is
+# derived from the reaction pickers the app actually ships: the moment
+# reaction popover in app.js (fire, bolt, wow, heart, clap, coffee), the
+# moment modal buttons in index.html (heart, laugh, fire, clap, wow), the
+# chat message reaction sheet in index.html (heart, fire, laugh, wow, clap,
+# hundred), and the selfie Realmoji capture in app.js ('\U0001F933').
+REACTION_ALLOWLIST = frozenset([
+    "\U0001F525",  # fire
+    "\u26A1",      # bolt
+    "\U0001F62E",  # wow
+    "\u2764\uFE0F",  # heart (with VS16, byte-for-byte as shipped)
+    "\U0001F44F",  # clap
+    "\u2615",      # coffee
+    "\U0001F602",  # laugh
+    "\U0001F4AF",  # hundred
+    "\U0001F933",  # selfie (selfie Realmoji)
+])
+MAX_EMOJI_LEN = 16
+
+
+def validate_reaction_emoji(value):
+    """B2-SEC-01: return the reaction value if it is exactly an approved
+    emoji, otherwise raise ValueError. Called before ANY database write for
+    both /api/react and /api/chat/reactions, so arbitrary HTML/JS payloads
+    can never reach the DB or be echoed back into markup."""
+    if not isinstance(value, str):
+        raise ValueError("reaction must be a string")
+    if len(value) > MAX_EMOJI_LEN:
+        raise ValueError("reaction value too long")
+    if value not in REACTION_ALLOWLIST:
+        raise ValueError("reaction value not in approved set")
+    return value
+
 def serialize_user(u_dict):
     """Sanitizes user dictionary, preventing sensitive credentials and hashes from leaking"""
     if not u_dict:
@@ -10311,6 +10345,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user_id = user["id"]
             post_id = body.get("postId")
             emoji = body.get("emoji", "🔥")
+            try:
+                emoji = validate_reaction_emoji(emoji)
+            except ValueError:
+                return self.send_json(400, {"error": "Invalid reaction emoji", "success": False})
             custom_photo = body.get("customPhoto") or body.get("photo") or ""
             photo_url = ""
             if custom_photo and custom_photo.startswith("data:image"):
@@ -10623,6 +10661,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             if not msg_id or not emoji:
                 return self.send_json(400, {"error": "message_id and emoji are required", "success": False})
+
+            # B2-SEC-01: allowlist check BEFORE any DB read/write. The legacy
+            # 400 above already covers empty values; this rejects everything
+            # outside the approved set (HTML/JS payloads, over-length junk).
+            try:
+                emoji = validate_reaction_emoji(emoji)
+            except ValueError:
+                return self.send_json(400, {"error": "Invalid reaction emoji", "success": False})
 
             conn = get_db()
             cursor = conn.cursor()
