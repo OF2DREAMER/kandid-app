@@ -4676,7 +4676,10 @@ def internal_ops_authorized(headers, user):
     if not INTERNAL_OPS_SECRET or not presented:
         return False
 
-    return hmac.compare_digest(presented, INTERNAL_OPS_SECRET)
+    return hmac.compare_digest(
+        presented.encode("utf-8"),
+        INTERNAL_OPS_SECRET.encode("utf-8"),
+    )
 
 
 def resolve_user_id(raw_val, conn=None):
