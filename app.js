@@ -773,7 +773,7 @@ function renderCommunityCards(moments, container) {
     var clusterBadgeHtml = '';
     if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
       var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + (m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
+      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
         '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
       '</button>';
     }
@@ -1943,7 +1943,7 @@ function renderFeedCards(moments, container) {
     var clusterBadgeHtml = '';
     if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
       var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + (m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
+      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
         '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
       '</button>';
     }
