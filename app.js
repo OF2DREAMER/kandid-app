@@ -389,7 +389,7 @@ function renderGlobalCards(moments, container) {
     var shutter = escapeHtml(m.exif_shutter || '1/250S');
 
     var avatarSrc = (m.avatar_url && !m.avatar_url.includes('api.dicebear.com')) ? m.avatar_url : '';
-    var avatarHtml = '<img src="' + avatarSrc + '" class="w-full h-full object-cover">';
+    var avatarHtml = '<img src="' + escapeHtml(avatarSrc) + '" class="w-full h-full object-cover">';
 
     var realmojis = m.realmojis || {};
     var reactionPillsHtml = '';
@@ -1879,7 +1879,7 @@ function renderFeedCards(moments, container) {
 
     var avatarSrc = m.avatar_url;
     var avatarHtml = avatarSrc
-      ? '<img src="' + avatarSrc + '" class="w-full h-full object-cover">'
+      ? '<img src="' + escapeHtml(avatarSrc) + '" class="w-full h-full object-cover">'
       : '<span class="text-[9px] font-mono-tag font-bold text-zinc-300">K</span>';
 
     var realmojis = m.realmojis || {};
@@ -3732,7 +3732,7 @@ function renderPeopleSearchResults(people) {
 
     item.innerHTML =
       '<div class="flex items-center space-x-3.5 min-w-0 cursor-pointer user-profile-target">' +
-        '<img src="' + avatarSrc + '" alt="" class="w-11 h-11 rounded-full object-cover flex-shrink-0 border border-neutral-800">' +
+        '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="w-11 h-11 rounded-full object-cover flex-shrink-0 border border-neutral-800">' +
         '<div class="min-w-0">' +
           '<h4 class="text-xs font-bold text-white truncate">' + name + '</h4>' +
           '<p class="text-[10px] text-gray-400 font-mono-meta truncate">@' + handle + ' · ' + campus + '</p>' +
@@ -6916,7 +6916,7 @@ function renderChatNewUserList(users, container, title) {
     item.innerHTML = 
       '<div class="flex items-center gap-3">' +
         '<div class="w-11 h-11 rounded-full bg-zinc-900 overflow-hidden border border-zinc-800 flex-shrink-0">' +
-          '<img src="' + avatarSrc + '" class="w-full h-full object-cover">' +
+          '<img src="' + escapeHtml(avatarSrc) + '" class="w-full h-full object-cover">' +
         '</div>' +
         '<div>' +
           '<h3 class="text-xs font-bold text-white">' + name + '</h3>' +
@@ -7676,7 +7676,7 @@ async function loadConnectionRequests() {
       item.innerHTML =
         '<div class="flex items-center gap-3 min-w-0 flex-1 cursor-pointer" onclick="openUserProfile(\'' + r.id + '\')">' +
           '<div class="w-11 h-11 rounded-2xl bg-zinc-900 overflow-hidden border border-zinc-700 flex-shrink-0 flex items-center justify-center">' +
-            '<img src="' + avSrc + '" class="w-full h-full object-cover">' +
+            '<img src="' + escapeHtml(avSrc) + '" class="w-full h-full object-cover">' +
           '</div>' +
           '<div class="space-y-0.5 min-w-0">' +
             '<h4 class="text-xs font-extrabold text-white uppercase font-mono-tag truncate">' + name + '</h4>' +
@@ -7777,7 +7777,7 @@ async function loadNotifications() {
       item.innerHTML =
         '<div class="flex items-center gap-3 min-w-0">' +
           '<div class="w-10 h-10 rounded-xl bg-zinc-900 overflow-hidden border border-zinc-800 flex-shrink-0 flex items-center justify-center">' +
-            '<img src="' + avatarSrc + '" class="w-full h-full object-cover">' +
+            '<img src="' + escapeHtml(avatarSrc) + '" class="w-full h-full object-cover">' +
           '</div>' +
           '<div class="space-y-0.5 min-w-0">' +
             '<p class="text-xs text-white font-medium leading-snug truncate">' + title + '</p>' +
@@ -8052,7 +8052,7 @@ function renderChatConversations(convos, filterQuery = '') {
     article.innerHTML = 
       '<div class="flex items-center space-x-3.5 min-w-0 flex-1">' +
         '<div class="relative w-11 h-11 rounded-full overflow-hidden bg-neutral-800 flex-shrink-0 border border-neutral-800">' +
-          '<img src="' + avatarSrc + '" alt="' + name + '" class="w-full h-full object-cover">' +
+          '<img src="' + escapeHtml(avatarSrc) + '" alt="' + escapeHtml(name) + '" class="w-full h-full object-cover">' +
           (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full"></div>' : '') +
         '</div>' +
         '<div class="min-w-0 flex-1 pr-2">' +
@@ -8163,7 +8163,7 @@ function renderChatConnections(connections, filterQuery = '') {
     row.innerHTML = 
       '<div class="flex items-center space-x-3 min-w-0 flex-1">' +
         '<div class="relative w-10 h-10 rounded-full overflow-hidden bg-neutral-800 flex-shrink-0 border border-neutral-800">' +
-          '<img src="' + avatarSrc + '" alt="" class="w-full h-full object-cover">' +
+          '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="w-full h-full object-cover">' +
           (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full"></div>' : '') +
         '</div>' +
         '<div class="min-w-0 flex-1 pr-2">' +
@@ -9397,7 +9397,7 @@ async function loadConnectedFriends() {
       item.innerHTML = 
         '<div class="flex items-center gap-3 cursor-pointer" onclick="openUserProfile(\'' + f.id + '\')">' +
           '<div class="relative w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden flex-shrink-0 flex items-center justify-center">' +
-            '<img src="' + avatarSrc + '" class="w-full h-full object-cover">' +
+            (avatarSrc ? '<img src="' + escapeHtml(avatarSrc) + '" class="w-full h-full object-cover" onerror="this.style.display=\047none\047">' : '') +
           '</div>' +
           '<div class="space-y-0.5">' +
             '<div class="flex items-center gap-1.5">' +

@@ -26,7 +26,7 @@ import uuid
 import ipaddress
 import shlex
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlsplit
 from datetime import datetime, timedelta, timezone
 
 try:
@@ -1544,6 +1544,55 @@ def validate_reaction_emoji(value):
     if value not in REACTION_ALLOWLIST:
         raise ValueError("reaction value not in approved set")
     return value
+
+
+# --- B2-SEC-14: avatar / cover / media URL attribute-injection hardening ---
+# Client code interpolates these values into HTML attributes, so only a
+# closed set of origins is accepted: empty, relative /uploads/... paths, and
+# the two image CDNs the app already relies on. Everything else
+# (javascript:, data:, http:, scheme-relative, arbitrary https hosts,
+# embedded whitespace/control characters) is rejected BEFORE any write.
+_B14_ALLOWED_REMOTE_HOSTS = ("res.cloudinary.com", "api.dicebear.com")
+
+
+def _b14_host_matches(url, host):
+    hostname = (urlsplit(url).hostname or "").lower()
+    if not hostname:
+        return False
+    return hostname == host or hostname.endswith("." + host)
+
+
+def _b14_url_is_safe(url):
+    if not isinstance(url, str):
+        return False
+    url = url.strip()
+    if url == "":
+        return True
+    for ch in url:
+        if ord(ch) <= 0x20 or ord(ch) == 0x7F:
+            return False
+        if ord(ch) in (34, 39, 60, 62, 92, 96):
+            # Quotes, angle brackets, backslashes and backticks can break
+            # out of HTML attributes or confuse URL parsers; they never
+            # appear in a legitimate image URL (they would be %-encoded).
+            return False
+    if url.startswith("/uploads/"):
+        return True
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return False
+    return any(_b14_host_matches(url, host) for host in _B14_ALLOWED_REMOTE_HOSTS)
+
+
+def validate_media_url(value, field="url"):
+    """B2-SEC-14: return the (stripped) value if it is an allowed image URL,
+    otherwise raise ValueError. Callers translate this into HTTP 400 before
+    any database write."""
+    if not isinstance(value, str):
+        raise ValueError("%s must be a string" % field)
+    if not _b14_url_is_safe(value):
+        raise ValueError("%s is not an allowed image URL" % field)
+    return value.strip()
 
 def serialize_user(u_dict):
     """Sanitizes user dictionary, preventing sensitive credentials and hashes from leaking"""
@@ -10670,6 +10719,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
             except ValueError:
                 return self.send_json(400, {"error": "Invalid reaction emoji", "success": False})
 
+            # B2-SEC-14 (latent hardening): media_url is stored with chat
+            # reactions and echoed back to clients, so restrict it to the
+            # same approved image URL set BEFORE any database write. Empty
+            # stays allowed; response contract unchanged.
+            try:
+                media_url = validate_media_url(media_url, "media_url")
+            except ValueError:
+                return self.send_json(400, {"error": "Invalid media URL", "success": False})
+
             conn = get_db()
             cursor = conn.cursor()
 
@@ -11015,6 +11073,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if cover_url and cover_url.startswith("data:image"):
                 cover_url = save_base64_image(cover_url, "cover")
 
+            # B2-SEC-14: validate user-supplied image URLs BEFORE any write.
+            try:
+                avatar_url = validate_media_url(avatar_url, "avatar_url")
+                cover_url = validate_media_url(cover_url, "cover_url")
+            except ValueError:
+                return self.send_json(400, {"error": "Invalid image URL", "success": False})
+
             conn = get_db()
             cursor = conn.cursor()
 
@@ -11054,6 +11119,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(400, {"error": "photo required", "success": False})
             if avatar_url.startswith("data:image"):
                 avatar_url = save_base64_image(avatar_url, "avatar")
+            # B2-SEC-14: validate the resolved avatar URL before any write.
+            try:
+                avatar_url = validate_media_url(avatar_url, "avatar_url")
+            except ValueError:
+                return self.send_json(400, {"error": "Invalid image URL", "success": False})
             conn = get_db()
             conn.execute("UPDATE users SET avatar_url = ? WHERE id = ?", (avatar_url, user_id))
             conn.commit()
@@ -11078,6 +11148,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     return self.send_json(400, {"error": "Invalid image format", "success": False})
                 cover_url = save_base64_image(cover_url, "cover")
             elif not (cover_url.startswith("http://") or cover_url.startswith("https://") or cover_url.startswith("/uploads/")):
+                return self.send_json(400, {"error": "Invalid image URL", "success": False})
+            # B2-SEC-14: tighten the legacy prefix check to the approved
+            # image URL allowlist before any write.
+            try:
+                cover_url = validate_media_url(cover_url, "cover_url")
+            except ValueError:
                 return self.send_json(400, {"error": "Invalid image URL", "success": False})
             if not cover_url:
                 return self.send_json(400, {"error": "Invalid image format or size exceeds limit", "success": False})
