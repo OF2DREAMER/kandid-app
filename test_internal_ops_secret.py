@@ -80,6 +80,10 @@ class TestInternalOpsSecretUnit(unittest.TestCase):
         headers = {"X-Internal-Secret": FORMER_LITERAL_2}
         self.assertFalse(internal_ops_authorized(headers, None))
 
+    def test_non_ascii_header_denied(self):
+        headers = {"X-Internal-Secret": "café"}
+        self.assertFalse(internal_ops_authorized(headers, None))
+
     def test_anonymous_correct_configured_secret_allowed(self):
         headers = {"X-Internal-Secret": TEST_OPS_SECRET}
         self.assertTrue(internal_ops_authorized(headers, None))
@@ -343,6 +347,15 @@ class TestInternalOpsHttpEndpoints(unittest.TestCase):
                 self.assertEqual(status, 401, f"{endpoint} expected 401 with former literal 2")
             else:
                 self.assertEqual(status, 403, f"{endpoint} expected 403 with former literal 2")
+                self.assertEqual(data.get("code"), "AUTH_FORBIDDEN")
+
+    def test_non_ascii_header_denied_http(self):
+        for endpoint in SIX_ENDPOINTS:
+            status, data = self._request(endpoint, ops_secret="café")
+            if endpoint == "/api/internal/growth/metrics":
+                self.assertEqual(status, 401, f"{endpoint} expected 401 with non-ASCII secret")
+            else:
+                self.assertEqual(status, 403, f"{endpoint} expected 403 with non-ASCII secret")
                 self.assertEqual(data.get("code"), "AUTH_FORBIDDEN")
 
     def test_anonymous_correct_secret_passes_auth_all_six(self):
