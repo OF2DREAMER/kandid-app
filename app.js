@@ -25,6 +25,29 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+// B2-SEC-15: safe encoding for values interpolated into inline JavaScript
+// event-handler attributes (e.g. onclick="fn('...')").
+// Order matters: JS-string escaping FIRST, then HTML-attribute escaping via
+// the existing escapeHtml(). The legacy ordering — HTML-encode first, then
+// a trailing JS-level apostrophe backslash-replace on the already-encoded
+// text — was a silent no-op: no literal apostrophe remained to escape, yet
+// the browser entity-decodes the attribute value before compiling the
+// handler, re-materializing a raw apostrophe and breaking out of the
+// JavaScript string.
+function jsAttr(value) {
+  if (value === null || value === undefined) return '';
+  return escapeHtml(
+    String(value)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\r/g, '\\r')
+      .replace(/\n/g, '\\n')
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029')
+  );
+}
+
 function showToast(msg) {
   var t = document.getElementById('toastBanner');
   if (!t) return;
@@ -418,7 +441,7 @@ function renderGlobalCards(moments, container) {
       '<div class="space-y-2 px-0.5">' +
         '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider flex-wrap gap-1">' +
           (commTarget
-            ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="text-amber-400/90 hover:text-amber-300 hover:underline cursor-pointer active:scale-95 transition text-left">◉ ' + escapeHtml(locBanner) + '</button>'
+            ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="text-amber-400/90 hover:text-amber-300 hover:underline cursor-pointer active:scale-95 transition text-left">◉ ' + escapeHtml(locBanner) + '</button>'
             : '<span>' + escapeHtml(locBanner) + '</span>') +
           '<span class="text-amber-400">' + timeAgo + '</span>' +
         '</div>' +
@@ -783,7 +806,7 @@ function renderCommunityCards(moments, container) {
         '<div class="absolute bottom-4 inset-x-4 z-10 space-y-2.5">' +
           '<div class="flex items-center gap-1.5 flex-wrap">' +
             (commTarget
-              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10 hover:border-amber-500/50 hover:bg-black/80 transition cursor-pointer text-left active:scale-95" title="Open Community Page">' +
+              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10 hover:border-amber-500/50 hover:bg-black/80 transition cursor-pointer text-left active:scale-95" title="Open Community Page">' +
                   '<span class="text-amber-400 text-xs">⌖</span>' +
                   '<span class="text-[10px] text-zinc-200 hover:text-amber-300 font-medium font-mono-tag">' + locName + '</span>' +
                 '</button>'
@@ -878,7 +901,7 @@ async function openCommunitySwitcher() {
       var textClass = isActive ? 'text-amber-400 font-extrabold' : 'text-zinc-200 font-bold';
       var badge = isActive ? '<span class="font-mono-tag text-[9px] text-amber-400 font-bold bg-amber-500/20 px-2 py-0.5 rounded">● Active</span>' : ('<span class="font-mono-tag text-[9px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">' + escapeHtml(c.type || 'Community') + '</span>');
 
-      return '<div onclick="switchCommunity(\'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')" class="p-3.5 rounded-2xl ' + borderClass + ' border flex items-center justify-between cursor-pointer active:scale-95 transition shadow-sm group">' +
+      return '<div onclick="switchCommunity(\'' + jsAttr(c.name) + '\')" class="p-3.5 rounded-2xl ' + borderClass + ' border flex items-center justify-between cursor-pointer active:scale-95 transition shadow-sm group">' +
         '<div class="flex items-center gap-2.5">' +
           '<span class="text-base">' + (c.icon || '📍') + '</span>' +
           '<div>' +
@@ -1179,7 +1202,7 @@ async function openCampusPage(campusName) {
         if (isEligibleToContribute) {
           momentsEl.innerHTML = '<div class="py-6 text-center space-y-2 rounded-2xl bg-zinc-950/60 border border-white/[.04] p-4">' +
             '<p class="text-xs text-zinc-500 font-mono-tag">No shared moments yet. Be the first to share an authentic moment.</p>' +
-            '<button onclick="openCommunityMomentCapture(\'' + escapeHtml(curCommId) + '\', \'' + escapeHtml(curCommName).replace(/'/g, "\\'") + '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono-tag font-bold text-[10px] uppercase cursor-pointer active:scale-95 transition">📸 + SHARE FIRST MOMENT</button>' +
+            '<button onclick="openCommunityMomentCapture(\'' + escapeHtml(curCommId) + '\', \'' + jsAttr(curCommName) + '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono-tag font-bold text-[10px] uppercase cursor-pointer active:scale-95 transition">📸 + SHARE FIRST MOMENT</button>' +
           '</div>';
         } else {
           momentsEl.innerHTML = '<div class="py-6 text-center space-y-2 rounded-2xl bg-zinc-950/60 border border-white/[.04] p-4">' +
@@ -1460,7 +1483,7 @@ async function loadMoreAroundYou() {
   if (list && list.length > 0) {
     container.innerHTML = list.map(function(c) {
       var badge = c.context_reason || 'Active Community';
-      return '<div onclick="openCampusPage(\'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')" class="w-36 shrink-0 p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 cursor-pointer transition shadow-md active:scale-95 group">' +
+      return '<div onclick="openCampusPage(\'' + jsAttr(c.name) + '\')" class="w-36 shrink-0 p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 cursor-pointer transition shadow-md active:scale-95 group">' +
         '<div class="flex items-center justify-between">' +
           '<div class="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center font-bold text-sm">' + (c.icon || '📍') + '</div>' +
         '</div>' +
@@ -1947,7 +1970,7 @@ function renderFeedCards(moments, container) {
         '<div class="flex items-center justify-between gap-1 flex-wrap">' +
           '<div class="flex items-center gap-1.5">' +
             (commTarget
-              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + escapeHtml(commTarget).replace(/'/g, "\\'") + '\')" class="text-[10px] text-amber-400 hover:text-amber-300 font-mono-tag font-bold tracking-wider uppercase inline-flex items-center gap-1 cursor-pointer transition hover:underline active:scale-95" title="Open Community Page"><span>◉</span> <span>' + campusName + '</span></button>'
+              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="text-[10px] text-amber-400 hover:text-amber-300 font-mono-tag font-bold tracking-wider uppercase inline-flex items-center gap-1 cursor-pointer transition hover:underline active:scale-95" title="Open Community Page"><span>◉</span> <span>' + campusName + '</span></button>'
               : '<span class="text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider uppercase">' + campusName + '</span>') +
             '<span class="text-[10px] text-zinc-600 font-mono-tag">·</span>' +
             '<span class="text-[10px] text-zinc-400 font-mono-tag uppercase moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' + timeAgo + '</span>' +
@@ -5713,7 +5736,7 @@ function renderPlaceSuggestions(type, filterText) {
     }
     
     container.innerHTML = items.map(function(it) {
-        return '<div onclick="selectPlace(\'' + escapeHtml(it.name).replace(/'/g, "\\'") + '\')" class="p-2.5 bg-zinc-900/60 hover:bg-zinc-900 active:scale-98 border border-zinc-800/80 hover:border-amber-500/40 rounded-xl cursor-pointer flex justify-between items-center transition-all shadow-sm group">' +
+        return '<div onclick="selectPlace(\'' + jsAttr(it.name) + '\')" class="p-2.5 bg-zinc-900/60 hover:bg-zinc-900 active:scale-98 border border-zinc-800/80 hover:border-amber-500/40 rounded-xl cursor-pointer flex justify-between items-center transition-all shadow-sm group">' +
             '<div class="flex items-center gap-2.5 min-w-0">' +
                 '<span class="text-sm">' + (it.icon || '📍') + '</span>' +
                 '<div class="min-w-0">' +
@@ -6128,7 +6151,7 @@ window.searchCampuses = async function(query) {
         }
 
         dropdown.innerHTML = campuses.map(function(c) {
-            return '<div onclick="selectCampus(\'' + escapeHtml(c.id) + '\', \'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\', \'' + escapeHtml(c.city || '').replace(/'/g, "\\'") + '\')" class="p-3 hover:bg-zinc-800/80 cursor-pointer flex items-center justify-between transition-colors group">' +
+            return '<div onclick="selectCampus(\'' + escapeHtml(c.id) + '\', \'' + jsAttr(c.name) + '\', \'' + jsAttr(c.city || '') + '\')" class="p-3 hover:bg-zinc-800/80 cursor-pointer flex items-center justify-between transition-colors group">' +
                 '<div>' +
                     '<h5 class="text-xs font-bold text-white group-hover:text-amber-400 transition-colors">' + escapeHtml(c.name) + '</h5>' +
                     '<p class="text-[10px] text-zinc-400 font-mono-tag">' + escapeHtml(c.city + (c.state ? ', ' + c.state : '')) + '</p>' +
@@ -7446,7 +7469,7 @@ async function openCreatorDashboardModal() {
             '</div>' +
             '<div class="flex items-center gap-2 flex-shrink-0">' +
               '<span class="text-[9px] font-mono-tag font-bold px-2 py-0.5 rounded border ' + roleBadgeClass + '">' + escapeHtml(role) + '</span>' +
-              '<button onclick="closeCreatorDashboardModal(); openCampusPage(\'' + escapeHtml(s.name).replace(/'/g, "\\'") + '\')" class="text-[10px] font-mono-tag font-bold text-amber-400 hover:text-amber-300 p-1">OPEN ›</button>' +
+              '<button onclick="closeCreatorDashboardModal(); openCampusPage(\'' + jsAttr(s.name) + '\')" class="text-[10px] font-mono-tag font-bold text-amber-400 hover:text-amber-300 p-1">OPEN ›</button>' +
             '</div>' +
           '</div>';
         }).join('');
