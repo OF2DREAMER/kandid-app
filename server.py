@@ -86,6 +86,7 @@ RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", os.environ.g
 APP_URL = os.environ.get("APP_URL", "https://kindid.in").strip()
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+INTERNAL_OPS_SECRET = os.environ.get("INTERNAL_OPS_SECRET", "").strip()
 
 # ==============================================================================
 # COMMUNITY & DROP LIFECYCLE CONSTANTS & ECONOMICS (SERVER-AUTHORITATIVE)
@@ -4665,6 +4666,19 @@ def get_current_user(headers, body=None, query=None, require_session=False):
     conn.close()
     return None
 
+
+def internal_ops_authorized(headers, user):
+    if user and user.get("role") in ("admin", "founder"):
+        return True
+
+    presented = (headers.get("X-Internal-Secret") or "").strip()
+
+    if not INTERNAL_OPS_SECRET or not presented:
+        return False
+
+    return hmac.compare_digest(presented, INTERNAL_OPS_SECRET)
+
+
 def resolve_user_id(raw_val, conn=None):
     if not raw_val:
         return None
@@ -7928,9 +7942,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/internal/database/integrity":
             # Protected by internal secret or admin/founder role
-            secret_hdr = self.headers.get("X-Internal-Secret", "")
             user = get_current_user(self.headers)
-            is_authorized = (secret_hdr in ["kandid_internal_ops_secret_2026", "kandid_ops_key"]) or (user and user.get("role") in ["admin", "founder"])
+            is_authorized = internal_ops_authorized(self.headers, user)
             
             if not is_authorized:
                 return self.send_json(403, {
@@ -7947,9 +7960,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/internal/community/ops":
             # Protected by internal secret or admin/founder role
-            secret_hdr = self.headers.get("X-Internal-Secret", "")
             user = get_current_user(self.headers)
-            is_authorized = (secret_hdr in ["kandid_internal_ops_secret_2026", "kandid_ops_key"]) or (user and user.get("role") in ["admin", "founder"])
+            is_authorized = internal_ops_authorized(self.headers, user)
             
             if not is_authorized:
                 return self.send_json(403, {
@@ -8021,9 +8033,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
         # =========================================================================
 
         if path == "/api/internal/config/status":
-            secret_hdr = self.headers.get("X-Internal-Secret", "")
             user = get_current_user(self.headers)
-            is_authorized = (secret_hdr in ["kandid_internal_ops_secret_2026", "kandid_ops_key"]) or (user and user.get("role") in ["admin", "founder"])
+            is_authorized = internal_ops_authorized(self.headers, user)
             
             if not is_authorized:
                 return self.send_json(403, {
@@ -8039,9 +8050,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             })
 
         if path == "/api/internal/database/backup-readiness":
-            secret_hdr = self.headers.get("X-Internal-Secret", "")
             user = get_current_user(self.headers)
-            is_authorized = (secret_hdr in ["kandid_internal_ops_secret_2026", "kandid_ops_key"]) or (user and user.get("role") in ["admin", "founder"])
+            is_authorized = internal_ops_authorized(self.headers, user)
             
             if not is_authorized:
                 return self.send_json(403, {
@@ -8380,8 +8390,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/graph/funnel":
             user = get_current_user(self.headers)
-            secret_hdr = self.headers.get("X-Internal-Secret", "")
-            is_authorized = (secret_hdr in ["kandid_internal_ops_secret_2026", "kandid_ops_key"]) or (user and user.get("role") in ["admin", "founder"])
+            is_authorized = internal_ops_authorized(self.headers, user)
             if not is_authorized:
                 return self.send_json(403, {"success": False, "error": "Internal or admin authorization required", "code": "AUTH_FORBIDDEN"})
 
@@ -8456,9 +8465,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             })
 
         if path == "/api/internal/growth/metrics":
-            secret_hdr = self.headers.get("X-Internal-Secret", "")
             user = get_current_user(self.headers)
-            is_admin_or_ops = (secret_hdr in ["kandid_internal_ops_secret_2026", "kandid_ops_key"]) or (user and user.get("role") in ["admin", "founder"])
+            is_admin_or_ops = internal_ops_authorized(self.headers, user)
             
             conn = get_db()
             cursor = conn.cursor()
