@@ -664,18 +664,63 @@ class TestGOnboardingAvatarPrecedence(AvatarUrlBase):
         self.assertEqual(body["user"]["avatar_url"], GOOGLE_AVATAR_URL)
         self.assertEqual(self._stored_avatar(self._email_for("onb_case_b")), GOOGLE_AVATAR_URL)
 
-    def test_case_c_valid_body_wins_byte_exact(self):
+    def test_case_c_session_google_avatar_authoritative_over_valid_body(self):
+        # B2-SEC-14: verified Google avatar provenance enforcement.
+        # When session.google_avatar exists and validates, it is authoritative.
+        # body.avatar_url (even if valid) is ignored.
         for i, valid in enumerate((DICEBEAR_URL, CLOUDINARY_URL, "/uploads/onboard_capture.jpg",
                                    GOOGLE_AVATAR_SUB_URL)):
             sid = "onb_case_c%d" % i
             self._seed_session(sid, GOOGLE_AVATAR_URL)
             status, body = self._complete(sid, valid)
             self.assertEqual(status, 200)
+            self.assertEqual(body["user"]["avatar_url"], GOOGLE_AVATAR_URL)
+            self.assertEqual(
+                self._stored_avatar(sid.replace("onb_", "u") + "@example.test"), GOOGLE_AVATAR_URL,
+                "authoritative verified session.google_avatar must win over body.avatar_url",
+            )
+
+    def test_case_c2_empty_session_valid_body_wins_byte_exact(self):
+        # When session.google_avatar is absent/empty, valid body.avatar_url is accepted and stored byte-exact.
+        for i, valid in enumerate((DICEBEAR_URL, CLOUDINARY_URL, "/uploads/onboard_capture.jpg",
+                                   GOOGLE_AVATAR_SUB_URL)):
+            sid = "onb_case_c2_%d" % i
+            self._seed_session(sid, "")
+            status, body = self._complete(sid, valid)
+            self.assertEqual(status, 200)
             self.assertEqual(body["user"]["avatar_url"], valid)
             self.assertEqual(
                 self._stored_avatar(sid.replace("onb_", "u") + "@example.test"), valid,
-                "valid body.avatar_url must win byte-exact over the session value",
+                "valid body.avatar_url must win byte-exact when session has no google_avatar",
             )
+
+    def test_case_e1_invalid_session_avatar_falls_back_to_valid_body(self):
+        # When session.google_avatar exists but is invalid, it is not stored; valid body.avatar_url is used as fallback.
+        self._seed_session("onb_case_e1", "javascript:alert(1)")
+        status, body = self._complete("onb_case_e1", DICEBEAR_URL)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["user"]["avatar_url"], DICEBEAR_URL)
+        self.assertEqual(
+            self._stored_avatar(self._email_for("onb_case_e1")),
+            DICEBEAR_URL,
+            "invalid session.google_avatar must not be stored; valid body.avatar_url must be fallback",
+        )
+
+    def test_case_e2_invalid_session_avatar_and_hostile_body_degrades_to_empty(self):
+        # When both session.google_avatar and body.avatar_url are invalid/hostile, degrades cleanly to empty string.
+        self._seed_session("onb_case_e2", "https://attacker.example.com/evil.png")
+        status, body = self._complete("onb_case_e2", "javascript:alert(1)")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["user"]["avatar_url"], "")
+        self.assertEqual(self._stored_avatar(self._email_for("onb_case_e2")), "")
+
+    def test_case_e3_invalid_session_avatar_and_empty_body_degrades_to_empty(self):
+        # When session.google_avatar is invalid and body.avatar_url is empty, degrades cleanly to empty string.
+        self._seed_session("onb_case_e3", "javascript:alert(1)")
+        status, body = self._complete("onb_case_e3", "")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["user"]["avatar_url"], "")
+        self.assertEqual(self._stored_avatar(self._email_for("onb_case_e3")), "")
 
     def test_case_d_no_google_avatar_hostile_body_degrades_to_empty(self):
         self._seed_session("onb_case_d", "")

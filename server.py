@@ -9911,26 +9911,31 @@ class KandidHandler(SimpleHTTPRequestHandler):
             campus_name = (body.get("campus_name") or s.get("chosen_campus_name") or "").strip()
             campus_id = (body.get("campus_id") or s.get("chosen_campus_id") or "").strip()
             city = (body.get("city") or s.get("chosen_city") or "").strip()
-            # B2-SEC-14 residual: body-vs-session avatar precedence.
-            #   - body.avatar_url present AND passes the B2-SEC-14 validator:
-            #     the client-provided value wins byte-exact (e.g. DiceBear or
-            #     an /uploads/ capture).
-            #   - body.avatar_url hostile/invalid: never persisted; fall back
-            #     to the verified session.google_avatar (Google-derived via the
-            #     issuer/audience-pinned ID-token flow), itself re-validated.
-            #   - body empty -> trusted session.google_avatar wins.
-            #   - both unavailable/invalid -> degrade to "" without breaking
-            #     onboarding completion.
-            body_avatar = (body.get("avatar_url") or "").strip()
+            # B2-SEC-14: verified Google avatar provenance enforcement.
+            #   1. If session.google_avatar exists AND validates:
+            #      use session.google_avatar as authoritative. Ignore body.avatar_url.
+            #   2. If session.google_avatar is absent/empty:
+            #      validate body.avatar_url and use it if valid.
+            #   3. If session.google_avatar exists but is invalid:
+            #      do not store it; validate body.avatar_url as fallback.
+            #   4. Hostile body.avatar_url must never override a valid verified Google avatar.
+            #   5. Both absent/invalid degrades to "" without breaking onboarding completion.
             session_avatar = (s.get("google_avatar") or "").strip()
+            body_avatar = (body.get("avatar_url") or "").strip()
             avatar_url = ""
-            for candidate in (body_avatar, session_avatar):
+
+            if session_avatar:
                 try:
-                    avatar_url = validate_media_url(candidate, "avatar_url")
+                    avatar_url = validate_media_url(session_avatar, "avatar_url")
                 except ValueError:
-                    continue
-                if avatar_url:
-                    break
+                    # session.google_avatar is invalid: do not store it; fall through to body fallback
+                    avatar_url = ""
+
+            if not avatar_url and body_avatar:
+                try:
+                    avatar_url = validate_media_url(body_avatar, "avatar_url")
+                except ValueError:
+                    avatar_url = ""
             raw_pwd = (body.get("password") or "").strip()
 
             # Validate Handle format & uniqueness
