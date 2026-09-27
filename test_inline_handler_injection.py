@@ -357,10 +357,13 @@ class TestEAllTenSitesUseJsAttr(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestGIdOnlyHandlersUnchanged(unittest.TestCase):
     UNTOUCHED_MARKERS = [
-        # moderation actions: server-generated ids/types (3 buttons each)
+        # moderation actions: server-generated ids/types (3 buttons each).
+        # r.target_id was converted to jsAttr by the mandated B2-SEC-15
+        # completion (it is attacker-controlled for moment/user reports);
+        # r.id / r.target_type / commId remain escapeHtml (ID / enum).
         ("handleModerationAction(\\'' + escapeHtml(r.id)", 3),
         ("escapeHtml(r.target_type)", 4),
-        ("escapeHtml(r.target_id)", 3),
+        ("jsAttr(r.target_id)", 3),
         ("escapeHtml(commId)", 3),
         # collective memories: server-generated id with static fallback
         ("openCollectiveMemoryPage(\\'' + (m.id || 'mem_1')", 1),
@@ -370,7 +373,9 @@ class TestGIdOnlyHandlersUnchanged(unittest.TestCase):
         ("selectCampus(\\'' + escapeHtml(c.id)", 1),
         # openCommunityMomentCapture id argument remains escapeHtml(curCommId)
         ("openCommunityMomentCapture(\\'' + escapeHtml(curCommId)", 1),
-        # openChatWithUser inline handler (pre-existing escaping, not this finding)
+        # openChatWithUser inline handler: the three attacker-controlled
+        # arguments were converted to jsAttr by the mandated B2-SEC-15
+        # completion; f.id remains raw (server-generated token_hex id).
         ("openChatWithUser(\\'' + f.id", 1),
     ]
 

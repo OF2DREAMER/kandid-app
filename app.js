@@ -1396,9 +1396,9 @@ async function openCommunityModerationModal(communityId) {
             '</div>' +
             (r.details ? '<p class="text-[10px] text-zinc-300 font-sans bg-zinc-950 p-2 rounded-lg border border-white/[.03]">' + escapeHtml(r.details) + '</p>' : '') +
             '<div class="flex items-center gap-2 pt-1 border-t border-zinc-800">' +
-              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'review\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-amber-400 hover:underline cursor-pointer text-[10px]">Review</button>' : '') +
-              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'dismiss\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-zinc-400 hover:underline cursor-pointer text-[10px]">Dismiss</button>' : '') +
-              (r.target_type === 'moment' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'hide\', \'' + escapeHtml(r.target_type) + '\', \'' + escapeHtml(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-rose-400 hover:underline cursor-pointer text-[10px]">Hide Content</button>' : '') +
+              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'review\', \'' + escapeHtml(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-amber-400 hover:underline cursor-pointer text-[10px]">Review</button>' : '') +
+              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'dismiss\', \'' + escapeHtml(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-zinc-400 hover:underline cursor-pointer text-[10px]">Dismiss</button>' : '') +
+              (r.target_type === 'moment' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'hide\', \'' + escapeHtml(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-rose-400 hover:underline cursor-pointer text-[10px]">Hide Content</button>' : '') +
             '</div>' +
           '</div>';
         }).join('');
@@ -1926,7 +1926,7 @@ function renderFeedCards(moments, container) {
           '<span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>' +
           '<span class="text-[9px] text-zinc-300 font-mono-tag font-bold tracking-wider uppercase">3.0s Ambient Sound</span>' +
         '</div>' +
-        '<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[8px] font-mono-tag rounded-lg flex items-center gap-1 transition shadow-sm cursor-pointer" onclick="event.stopPropagation(); playFeedAudio(\'' + escapeHtml(audioUrl) + '\')">' +
+        '<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[8px] font-mono-tag rounded-lg flex items-center gap-1 transition shadow-sm cursor-pointer" onclick="event.stopPropagation(); playFeedAudio(\'' + jsAttr(audioUrl) + '\')">' +
           '<span>▶ PLAY SOUND</span>' +
         '</button>' +
       '</div>' : '';
@@ -9431,7 +9431,7 @@ async function loadConnectedFriends() {
             '<span class="text-[9px] text-zinc-500 font-mono-tag uppercase">' + campus + '</span>' +
           '</div>' +
         '</div>' +
-        '<button class="px-3 py-1.5 bg-zinc-900 hover:bg-amber-500 hover:text-black border border-zinc-800 text-zinc-300 font-mono-tag text-[10px] font-bold rounded-xl transition cursor-pointer active:scale-95 flex items-center gap-1 flex-shrink-0" onclick="openChatWithUser(\'' + f.id + '\', \'' + escapeHtml(name) + '\', \'' + escapeHtml(handle) + '\', \'' + escapeHtml(avatarSrc) + '\')">' +
+        '<button class="px-3 py-1.5 bg-zinc-900 hover:bg-amber-500 hover:text-black border border-zinc-800 text-zinc-300 font-mono-tag text-[10px] font-bold rounded-xl transition cursor-pointer active:scale-95 flex items-center gap-1 flex-shrink-0" onclick="openChatWithUser(\'' + f.id + '\', \'' + jsAttr(name) + '\', \'' + jsAttr(handle) + '\', \'' + jsAttr(avatarSrc) + '\')">' +
           '<span>💬</span> <span>MESSAGE</span>' +
         '</button>';
 

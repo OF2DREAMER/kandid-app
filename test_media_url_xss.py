@@ -392,10 +392,12 @@ class TestDStaticSinks(unittest.TestCase):
         self.assertIn(expected, src)
 
     def test_35_no_inline_handler_changes(self):
-        # B2-SEC-15 is out of scope here: the jsAttr usage set must be exactly
-        # the 10 conversions from that commit (10 usages + 1 definition).
+        # Originally pinned at 11 (10 conversions + 1 definition) during
+        # B2-SEC-16. The mandated B2-SEC-15 completion added 6 more
+        # attacker-controlled conversions (audioUrl, friend name/handle/
+        # avatarSrc, r.target_id x3), so the pin is now 17 usages + 1 def.
         src = _read("app.js")
-        self.assertEqual(src.count("jsAttr("), 11)
+        self.assertEqual(src.count("jsAttr("), 18)
 
 
 # ---------------------------------------------------------------------------
@@ -403,8 +405,12 @@ class TestDStaticSinks(unittest.TestCase):
 # ---------------------------------------------------------------------------
 class TestECacheBust(unittest.TestCase):
     def test_40_index_references_app_js_5_6_3(self):
+        # Version pin maintained across mandated cache-bust bumps (now 5.6.4
+        # from the B2-SEC-15 completion). Invariant: current version present,
+        # all older ones absent.
         src = _read("index.html")
-        self.assertIn("app.js?v=5.6.3", src)
+        self.assertIn("app.js?v=5.6.4", src)
+        self.assertNotIn("app.js?v=5.6.3", src)
         self.assertNotIn("app.js?v=5.6.2", src)
         self.assertNotIn("app.js?v=5.6.1", src)
 

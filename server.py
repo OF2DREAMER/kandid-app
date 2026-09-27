@@ -10258,9 +10258,25 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     return self.send_json(400, {"error": "Invalid media URL", "success": False})
                 if _b16_low.startswith(("javascript:", "vbscript:", "data:")) and not _b16_low.startswith("data:image/"):
                     return self.send_json(400, {"error": "Invalid media URL", "success": False})
+            for _b16_raw_audio in (raw_audio,):
+                # B2-SEC-15: same raw-scheme guard for ambient audio.
+                # save_base64_audio() silently discards hostile values into an
+                # empty-but-successful capture, so they are rejected outright;
+                # legitimate data:audio / data:video/webm capture is preserved.
+                _b16_a = str(_b16_raw_audio or "").strip()
+                _b16_a_low = _b16_a.lower()
+                if not _b16_a:
+                    continue
+                if _b16_a_low.startswith("//"):
+                    return self.send_json(400, {"error": "Invalid media URL", "success": False})
+                if _b16_a_low.startswith(("javascript:", "vbscript:", "data:")) and not _b16_a_low.startswith(("data:audio", "data:video/webm")):
+                    return self.send_json(400, {"error": "Invalid media URL", "success": False})
             try:
                 main_img = validate_post_media_url(main_img, "main_img")
                 pip_img = validate_post_media_url(pip_img, "pip_img")
+                # B2-SEC-15: audio_url flows into an inline playFeedAudio(...)
+                # handler string client-side, so it gets the same treatment.
+                audio_url = validate_post_media_url(audio_url, "audio_url")
             except ValueError:
                 return self.send_json(400, {"error": "Invalid media URL", "success": False})
 
