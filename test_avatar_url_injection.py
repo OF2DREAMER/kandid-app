@@ -26,6 +26,22 @@ Groups:
        arbitrary external host rejected
      - valid /uploads/... accepted unchanged, response contract unchanged
      - empty media_url stays allowed
+  F. /api/register avatar_url residual hardening (B2-SEC-14 completion)
+     - hostile payloads (javascript:, vbscript:, //host, http://, httpfoo,
+       arbitrary hosts, suffix spoofs, quote/control payloads) -> 400,
+       no user row written
+     - accepted sources preserved: "", /uploads/, Cloudinary, DiceBear,
+       googleusercontent.com (lh3..lh6/s2/arbitrary subdomains), data:image
+  G. /api/onboarding/complete body-vs-session avatar precedence
+     - Case A: hostile body -> verified session google_avatar wins
+     - Case B: empty body -> session google_avatar wins
+     - Case C: valid body -> byte-exact body value wins
+     - Case D: session invalid/empty + hostile/empty body -> "" (no 500)
+     - legacy DiceBear substring blanking replaced by the validator
+  H. validator-level googleusercontent.com host rules
+     - lh3..lh6/s2/arbitrary subdomains accepted; apex accepted
+     - suffix spoofs (googleusercontent.com.attacker.com) rejected
+     - httpfoo / uppercase-scheme / control-char / traversal rejected
 
 Test harness rule: environment is configured BEFORE importing server so the
 module-level configuration picks up a development SQLite setup.
@@ -55,6 +71,27 @@ TOKEN = "test_token_editor"
 
 CLOUDINARY_URL = "https://res.cloudinary.com/kandid/image/upload/v123/avatar.png"
 DICEBEAR_URL = "https://api.dicebear.com/9x/avataaars.svg?seed=kandid"
+GOOGLE_AVATAR_URL = "https://lh3.googleusercontent.com/a/ACg8ocK_test=v3"
+GOOGLE_AVATAR_SUB_URL = "https://s2.googleusercontent.com/a/sub_test.png"
+
+# B2-SEC-14 residual: payloads that /api/register and
+# /api/onboarding/complete must refuse to persist.
+HOSTILE_REGISTER_PAYLOADS = [
+    "javascript:alert(1)",
+    "vbscript:alert(1)",
+    "//evil.com/x.png",
+    "HTTPS://evil.com/x.png",
+    "http://evil.com/x.png",
+    "httpfoo",
+    "https://evil.example.com/x.png",
+    "https://googleusercontent.com.attacker.com/x",
+    "https://evil.googleusercontent.com.attacker.com/x",
+    'http" onerror="alert(1)',
+    "http' onmouseover='alert(1)",
+    'http"><img src=x onerror=alert(1)>',
+    "https://res.cloudinary.com/a.png\x01",
+    "/uploads/../../etc/passwd",
+]
 
 HOSTILE_AVATAR_PAYLOADS = [
     "javascript:alert(document.cookie)",
@@ -475,6 +512,250 @@ class TestEChatReactionMediaUrl(AvatarUrlBase):
         )
         self.assertEqual(status, 200)
         self.assertTrue(body.get("success"))
+
+
+# ---------------------------------------------------------------------------
+# Group F — /api/register avatar_url residual hardening
+# ---------------------------------------------------------------------------
+class TestFRegisterAvatar(AvatarUrlBase):
+    def _stored_avatar(self, handle):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT avatar_url FROM users WHERE handle = ?", (handle,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def _register(self, handle, avatar):
+        return self._request(
+            "/api/register", method="POST",
+            body={"name": "Reg User", "handle": handle, "avatar_url": avatar},
+        )
+
+    def test_01_hostile_payloads_rejected_400_no_row(self):
+        for i, payload in enumerate(HOSTILE_REGISTER_PAYLOADS):
+            handle = "reg_hostile_%02d" % i
+            status, body = self._request(
+                "/api/register", method="POST",
+                body={"name": "Reg User", "handle": handle, "avatar_url": payload},
+            )
+            self.assertEqual(status, 400, "expected 400 for avatar %r" % payload[:60])
+            self.assertFalse(body.get("success", True))
+            self.assertIsNone(self._stored_avatar(handle), "no user row may be written for %r" % payload[:60])
+
+    def test_02_avatar_alias_field_also_validated(self):
+        status, _ = self._request(
+            "/api/register", method="POST",
+            body={"name": "Reg User", "handle": "reg_alias_hostile", "avatar": "javascript:alert(1)"},
+        )
+        self.assertEqual(status, 400)
+        self.assertIsNone(self._stored_avatar("reg_alias_hostile"))
+
+    def test_03_empty_avatar_creates_user_with_empty_avatar(self):
+        status, body = self._register("reg_avatar_user", "")
+        self.assertEqual(status, 201)
+        self.assertTrue(body.get("success"))
+        self.assertEqual(body["user"]["avatar_url"], "")
+        self.assertEqual(self._stored_avatar("reg_avatar_user"), "")
+
+    def test_04_uploads_path_preserved(self):
+        status, body = self._register("reg_uploads_ok", "/uploads/example.jpg")
+        self.assertEqual(status, 201)
+        self.assertEqual(body["user"]["avatar_url"], "/uploads/example.jpg")
+        self.assertEqual(self._stored_avatar("reg_uploads_ok"), "/uploads/example.jpg")
+
+    def test_05_cloudinary_preserved(self):
+        status, body = self._register("reg_cloud_ok", CLOUDINARY_URL)
+        self.assertEqual(status, 201)
+        self.assertEqual(self._stored_avatar("reg_cloud_ok"), CLOUDINARY_URL)
+
+    def test_06_dicebear_preserved(self):
+        status, body = self._register("reg_dice_ok", DICEBEAR_URL)
+        self.assertEqual(status, 201)
+        self.assertEqual(self._stored_avatar("reg_dice_ok"), DICEBEAR_URL)
+
+    def test_07_googleusercontent_preserved(self):
+        for i, url in enumerate((GOOGLE_AVATAR_URL, GOOGLE_AVATAR_SUB_URL)):
+            handle = "reg_google_%d" % i
+            status, body = self._register(handle, url)
+            self.assertEqual(status, 201, "legitimate Google avatar %r must be accepted" % url)
+            self.assertEqual(self._stored_avatar(handle), url)
+
+    def test_08_data_image_capture_flow_preserved(self):
+        data_image = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        status, body = self._register("reg_dataimage_ok", data_image)
+        self.assertEqual(status, 201)
+        stored = self._stored_avatar("reg_dataimage_ok")
+        self.assertTrue(
+            stored.startswith("/uploads/") or stored.startswith("https://res.cloudinary.com/"),
+            "data:image capture must resolve to /uploads/ (dev) or Cloudinary (got %r)" % stored,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Group G — /api/onboarding/complete body-vs-session avatar precedence
+# ---------------------------------------------------------------------------
+class TestGOnboardingAvatarPrecedence(AvatarUrlBase):
+    def _seed_session(self, session_id, google_avatar):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        future_iso = (datetime.now() + timedelta(days=1)).isoformat()
+        cursor.execute(
+            """INSERT INTO onboarding_sessions
+                   (id, provider, provider_subject, email, google_name, google_avatar,
+                    step, chosen_handle, chosen_campus_id, chosen_campus_name, chosen_city, expires_at)
+               VALUES (?, 'google', ?, ?, 'Google User', ?, 2, ?, '', '', '', ?)""",
+            (session_id, "sub_" + session_id, session_id.replace("onb_", "u") + "@example.test",
+             google_avatar, session_id.replace("onb_", "hdl_"), future_iso),
+        )
+        conn.commit()
+        conn.close()
+
+    def _complete(self, session_id, avatar):
+        return self._request(
+            "/api/onboarding/complete", method="POST",
+            body={"session_id": session_id, "handle": session_id.replace("onb_", "hdl_"), "avatar_url": avatar},
+        )
+
+    def _stored_avatar(self, email):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT avatar_url FROM users WHERE LOWER(email) = ?", (email.lower(),))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    def _email_for(self, session_id):
+        return session_id.replace("onb_", "u") + "@example.test"
+
+    def _user_exists(self, email):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM users WHERE LOWER(email) = ?", (email.lower(),))
+        row = cursor.fetchone()
+        conn.close()
+        return row is not None
+
+    def test_case_a_hostile_body_never_persisted_session_fallback(self):
+        for i, payload in enumerate(HOSTILE_REGISTER_PAYLOADS):
+            sid = "onb_case_a_r%02d" % i
+            self._seed_session(sid, GOOGLE_AVATAR_URL)
+            status, _ = self._complete(sid, payload)
+            self.assertEqual(status, 200, "hostile avatar must not break onboarding (%r)" % payload[:50])
+            stored = self._stored_avatar(sid.replace("onb_", "u") + "@example.test")
+            self.assertNotEqual(stored, payload)
+            self.assertEqual(stored, GOOGLE_AVATAR_URL, "verified session google_avatar must win over hostile body")
+
+    def test_case_a2_single_hostile_body_falls_back_to_session(self):
+        self._seed_session("onb_case_a2", GOOGLE_AVATAR_URL)
+        status, _ = self._complete("onb_case_a2", "javascript:alert(1)")
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            self._stored_avatar(self._email_for("onb_case_a2")),
+            GOOGLE_AVATAR_URL,
+            "hostile body.avatar_url must fall back to the verified session google_avatar",
+        )
+
+    def test_case_b_empty_body_keeps_session_google_avatar(self):
+        self._seed_session("onb_case_b", GOOGLE_AVATAR_URL)
+        status, body = self._complete("onb_case_b", "")
+        self.assertEqual(status, 200)
+        self.assertTrue(body.get("success"))
+        self.assertEqual(body["user"]["avatar_url"], GOOGLE_AVATAR_URL)
+        self.assertEqual(self._stored_avatar(self._email_for("onb_case_b")), GOOGLE_AVATAR_URL)
+
+    def test_case_c_valid_body_wins_byte_exact(self):
+        for i, valid in enumerate((DICEBEAR_URL, CLOUDINARY_URL, "/uploads/onboard_capture.jpg",
+                                   GOOGLE_AVATAR_SUB_URL)):
+            sid = "onb_case_c%d" % i
+            self._seed_session(sid, GOOGLE_AVATAR_URL)
+            status, body = self._complete(sid, valid)
+            self.assertEqual(status, 200)
+            self.assertEqual(body["user"]["avatar_url"], valid)
+            self.assertEqual(
+                self._stored_avatar(sid.replace("onb_", "u") + "@example.test"), valid,
+                "valid body.avatar_url must win byte-exact over the session value",
+            )
+
+    def test_case_d_no_google_avatar_hostile_body_degrades_to_empty(self):
+        self._seed_session("onb_case_d", "")
+        status, body = self._complete("onb_case_d", "javascript:alert(1)")
+        self.assertEqual(status, 200, "onboarding must not 500 when avatar validation degrades")
+        self.assertTrue(body.get("success"))
+        self.assertEqual(self._stored_avatar(self._email_for("onb_case_d")), "")
+
+    def test_case_d2_no_google_avatar_empty_body_degrades_to_empty(self):
+        self._seed_session("onb_case_d2", "")
+        status, _ = self._complete("onb_case_d2", "")
+        self.assertEqual(status, 200)
+        self.assertEqual(self._stored_avatar(self._email_for("onb_case_d2")), "")
+
+    def test_dicebear_substring_blanking_replaced_by_validator(self):
+        # Legacy behavior blanked ANY DiceBear URL; the validator now accepts
+        # it as a legitimate avatar source (parity with /api/user/update).
+        self._seed_session("onb_dice_valid", "")
+        status, _ = self._complete("onb_dice_valid", DICEBEAR_URL)
+        self.assertEqual(status, 200)
+        self.assertEqual(self._stored_avatar(self._email_for("onb_dice_valid")), DICEBEAR_URL)
+
+
+# ---------------------------------------------------------------------------
+# Group H — validator-level googleusercontent.com host rules
+# ---------------------------------------------------------------------------
+class TestHGoogleHostRules(unittest.TestCase):
+    def test_01_google_subdomains_accepted(self):
+        for host in ("lh3", "lh4", "lh5", "lh6", "s2"):
+            url = "https://%s.googleusercontent.com/a/photo" % host
+            self.assertEqual(server.validate_media_url(url, "avatar_url"), url)
+
+    def test_02_arbitrary_subdomain_and_apex_accepted(self):
+        for url in ("https://sub.googleusercontent.com/a/x.png",
+                    "https://googleusercontent.com/a/apex.png"):
+            self.assertEqual(server.validate_media_url(url, "avatar_url"), url)
+
+    def test_03_suffix_spoofs_rejected(self):
+        for url in ("https://googleusercontent.com.attacker.com/x",
+                    "https://evil.googleusercontent.com.attacker.com/x"):
+            with self.assertRaises(ValueError):
+                server.validate_media_url(url, "avatar_url")
+
+    def test_04_google_avatar_requires_https_allowlisted_host(self):
+        # urlsplit() lowercases the scheme, so "HTTPS://..." is only accepted
+        # when the HOST itself is allowlisted (HTTPS://evil.com is rejected
+        # via hostname mismatch; HTTPS://lh3.googleusercontent.com is a
+        # legitimate Google image URL and stays accepted).
+        for url in ("http://lh3.googleusercontent.com/a/x.png",
+                    "//lh3.googleusercontent.com/a/x.png",
+                    "HTTPS://evil.com/x.png"):
+            with self.assertRaises(ValueError):
+                server.validate_media_url(url, "avatar_url")
+        self.assertEqual(
+            server.validate_media_url("HTTPS://lh3.googleusercontent.com/a/x.png", "avatar_url"),
+            "HTTPS://lh3.googleusercontent.com/a/x.png",
+        )
+
+    def test_05_httpfoo_control_chars_and_traversal_rejected(self):
+        for url in ("httpfoo",
+                    "https://res.cloudinary.com/a.png\x01",
+                    "/uploads/../../etc/passwd",
+                    "/uploads/ok.png/../../../etc"):
+            with self.assertRaises(ValueError):
+                server.validate_media_url(url, "avatar_url")
+
+    def test_06_uploads_traversal_rejected_but_valid_paths_kept(self):
+        with self.assertRaises(ValueError):
+            server.validate_media_url("/uploads/../../etc/passwd", "avatar_url")
+        self.assertEqual(
+            server.validate_media_url("/uploads/example.jpg", "avatar_url"),
+            "/uploads/example.jpg",
+        )
+
+    def test_07_sinks_and_cache_state_untouched(self):
+        # B2-SEC-15/16 sink regressions + cache state must remain unchanged.
+        app_src = _read("app.js")
+        self.assertIn("jsAttr(avatarSrc)", app_src)
+        self.assertIn("function escapeHtml(str)", app_src)
+        self.assertIn("app.js?v=5.6.5", _read("index.html"))
 
 
 if __name__ == "__main__":

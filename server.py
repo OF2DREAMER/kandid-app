@@ -1549,10 +1549,13 @@ def validate_reaction_emoji(value):
 # --- B2-SEC-14: avatar / cover / media URL attribute-injection hardening ---
 # Client code interpolates these values into HTML attributes, so only a
 # closed set of origins is accepted: empty, relative /uploads/... paths, and
-# the two image CDNs the app already relies on. Everything else
+# the image CDNs the app already relies on (Cloudinary, DiceBear, and
+# Google account photos on googleusercontent.com). Everything else
 # (javascript:, data:, http:, scheme-relative, arbitrary https hosts,
 # embedded whitespace/control characters) is rejected BEFORE any write.
-_B14_ALLOWED_REMOTE_HOSTS = ("res.cloudinary.com", "api.dicebear.com")
+_B14_ALLOWED_REMOTE_HOSTS = (
+    "res.cloudinary.com", "api.dicebear.com", "googleusercontent.com",
+)
 
 
 def _b14_host_matches(url, host):
@@ -1577,7 +1580,10 @@ def _b14_url_is_safe(url):
             # appear in a legitimate image URL (they would be %-encoded).
             return False
     if url.startswith("/uploads/"):
-        return True
+        # B2-SEC-14 residual: reject traversal inside /uploads/ paths
+        # ("/uploads/../../etc/passwd"). Legitimate /uploads/ filenames are
+        # produced by save_base64_image() and never contain path separators.
+        return ".." not in url
     parsed = urlsplit(url)
     if parsed.scheme != "https" or not parsed.netloc:
         return False
@@ -1623,7 +1629,8 @@ def _b16_post_media_url_is_safe(url):
             # appear in a legitimate media URL (they would be %-encoded).
             return False
     if url.startswith("/uploads/"):
-        return True
+        # B2-SEC-16 parity: reject traversal inside /uploads/ paths too.
+        return ".." not in url
     parsed = urlsplit(url)
     if parsed.scheme != "https" or not parsed.netloc:
         return False
@@ -9904,9 +9911,26 @@ class KandidHandler(SimpleHTTPRequestHandler):
             campus_name = (body.get("campus_name") or s.get("chosen_campus_name") or "").strip()
             campus_id = (body.get("campus_id") or s.get("chosen_campus_id") or "").strip()
             city = (body.get("city") or s.get("chosen_city") or "").strip()
-            avatar_url = (body.get("avatar_url") or s.get("google_avatar") or "").strip()
-            if "api.dicebear.com" in avatar_url:
-                avatar_url = ""
+            # B2-SEC-14 residual: body-vs-session avatar precedence.
+            #   - body.avatar_url present AND passes the B2-SEC-14 validator:
+            #     the client-provided value wins byte-exact (e.g. DiceBear or
+            #     an /uploads/ capture).
+            #   - body.avatar_url hostile/invalid: never persisted; fall back
+            #     to the verified session.google_avatar (Google-derived via the
+            #     issuer/audience-pinned ID-token flow), itself re-validated.
+            #   - body empty -> trusted session.google_avatar wins.
+            #   - both unavailable/invalid -> degrade to "" without breaking
+            #     onboarding completion.
+            body_avatar = (body.get("avatar_url") or "").strip()
+            session_avatar = (s.get("google_avatar") or "").strip()
+            avatar_url = ""
+            for candidate in (body_avatar, session_avatar):
+                try:
+                    avatar_url = validate_media_url(candidate, "avatar_url")
+                except ValueError:
+                    continue
+                if avatar_url:
+                    break
             raw_pwd = (body.get("password") or "").strip()
 
             # Validate Handle format & uniqueness
@@ -10550,13 +10574,31 @@ class KandidHandler(SimpleHTTPRequestHandler):
             pw, salt = hash_password(password)
             avatar_letter = (name[0].upper() if name else "K")
             
-            req_avatar = body.get("avatar_url") or body.get("avatar") or ""
+            req_avatar = (body.get("avatar_url") or body.get("avatar") or "").strip()
             if req_avatar and req_avatar.startswith("data:image"):
                 avatar_url = save_base64_image(req_avatar, "avatar")
-            elif req_avatar and (req_avatar.startswith("http") or req_avatar.startswith("/uploads/")):
+            elif req_avatar and req_avatar.startswith("/uploads/"):
+                avatar_url = req_avatar
+            elif req_avatar and req_avatar.startswith(("http://", "https://")):
+                # B2-SEC-14 residual: the legacy startswith("http") prefix also
+                # matched "httpfoo"-style scheme abuse; restrict to real
+                # http(s) schemes and enforce the approved image-URL allowlist
+                # on every resolved value below.
                 avatar_url = req_avatar
             else:
                 avatar_url = ""
+            # B2-SEC-14 residual: validate the RESOLVED avatar URL against the
+            # B2-SEC-14 image allowlist before any database write (mirrors the
+            # /api/user/update contract; hostile values become HTTP 400). A
+            # non-empty request avatar that could not be resolved into a
+            # legitimate image URL is rejected outright (400) instead of being
+            # silently dropped to "" and stored with the new account.
+            try:
+                avatar_url = validate_media_url(avatar_url, "avatar_url")
+            except ValueError:
+                return self.send_json(400, {"success": False, "error": "Invalid image URL"})
+            if req_avatar and not avatar_url:
+                return self.send_json(400, {"success": False, "error": "Invalid image URL"})
             
             conn = get_db()
             try:
