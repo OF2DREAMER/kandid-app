@@ -3369,7 +3369,7 @@
                     <div class="space-y-1">
                         <div class="flex justify-between items-center">
                             <label class="text-[9px] text-zinc-500 uppercase tracking-widest block font-bold">Password</label>
-                            <span onclick="openResetPasswordModal()" class="text-[9px] text-amber-400 hover:underline cursor-pointer font-bold">Forgot password?</span>
+                            <button type="button" id="forgotPasswordBtn" onclick="openResetPasswordModal()" class="text-[9px] text-amber-400 hover:underline cursor-pointer font-bold bg-transparent border-0 p-0 focus:outline-none">Forgot password?</button>
                         </div>
                         <div class="relative">
                             <input id="loginPassword" type="password" placeholder="••••••••••••" class="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 rounded-2xl px-4 py-3.5 text-xs text-white outline-none font-sans transition-colors pr-10">
@@ -4634,6 +4634,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.6.5"></script>
+  <script src="app.js?v=5.6.6"></script>
 </body>
 </html>

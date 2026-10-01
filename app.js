@@ -6676,7 +6676,14 @@ window.submitUserLogin = async function() {
         } else {
             var errMsg = (res && res.error) ? res.error : 'Invalid username or password.';
             if (errBox && errText) {
-                errText.textContent = errMsg;
+                if (errMsg.indexOf('Forgot password') !== -1) {
+                    errText.innerHTML = escapeHtml(errMsg).replace(
+                        /(&#039;|')Forgot password\?(&#039;|')/g,
+                        "<button type='button' onclick='openResetPasswordModal()' class='text-amber-400 font-bold underline cursor-pointer bg-transparent border-0 p-0 inline'>Forgot password?</button>"
+                    );
+                } else {
+                    errText.textContent = errMsg;
+                }
                 errBox.classList.remove('hidden');
             } else {
                 showToast(errMsg);
@@ -6705,8 +6712,15 @@ window.openResetPasswordModal = function() {
     if (loginId && resetId && loginId.value.trim()) {
         resetId.value = loginId.value.trim();
     }
-    if (modal) modal.style.display = 'flex';
-    if (resetId) resetId.focus();
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.remove('hidden');
+    }
+    if (resetId) {
+        setTimeout(function() {
+            try { resetId.focus(); } catch(e) {}
+        }, 50);
+    }
 };
 
 window.closeResetPasswordModal = function() {
@@ -6857,6 +6871,15 @@ function dismissFounderModal() {
 window.dismissFounderModal = dismissFounderModal;
 
 document.addEventListener('DOMContentLoaded', async function() {
+    var forgotBtn = document.getElementById('forgotPasswordBtn');
+    if (forgotBtn) {
+        forgotBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            openResetPasswordModal();
+        });
+    }
+
     await checkOnboarding();
     checkAndShowFounderModal();
     if (state.activeScreen === 'feed' && typeof handleNewUserFeedEntry === 'function') {
