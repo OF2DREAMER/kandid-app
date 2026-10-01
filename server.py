@@ -6959,8 +6959,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         'communities': []
                     })
 
-                # Public moments for this user
-                cursor.execute("SELECT * FROM posts WHERE user_id = ? AND is_private = 0 ORDER BY created_at DESC", (target_user["id"],))
+                # Public moments for this user (exclude private and non-visible moderated posts)
+                cursor.execute("""
+                    SELECT * FROM posts
+                    WHERE user_id = ? AND is_private = 0
+                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                    ORDER BY created_at DESC
+                """, (target_user["id"],))
                 moments = [dict(r) for r in cursor.fetchall()]
                 for m in moments:
                     cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
@@ -6968,7 +6973,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     m["timeAgo"] = format_time_ago(m.get("created_at", ""))
                     m["mediaUrl"] = m.get("main_img", "")
                 
-                cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_private = 0", (target_user["id"],))
+                cursor.execute("""
+                    SELECT COUNT(*) FROM posts
+                    WHERE user_id = ? AND is_private = 0
+                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                """, (target_user["id"],))
                 target_user["momentCount"] = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ?", (target_user["id"],))
                 target_user["memoryCount"] = cursor.fetchone()[0]
@@ -8152,14 +8161,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Drop preview if attached (Drops disabled in V1)
             safe_drop = None
 
-            # Moment preview if attached
+            # Moment preview if attached (exclude non-visible moderation states)
             safe_moment = None
             if invite.get("moment_id"):
                 cursor.execute("SELECT * FROM posts WHERE id = ?", (invite["moment_id"],))
                 p_row = cursor.fetchone()
                 if p_row:
                     post = dict(p_row)
-                    if post.get("is_private") == 1:
+                    mod_status = post.get("moderation_status")
+                    if mod_status in ("hidden", "removed", "suspended"):
+                        safe_moment = None
+                    elif post.get("is_private") == 1:
                         safe_moment = {"id": post["id"], "is_private": True}
                     else:
                         safe_moment = {
@@ -8302,15 +8314,28 @@ class KandidHandler(SimpleHTTPRequestHandler):
             safe_primary = None
             if p_row:
                 p_dict = dict(p_row)
-                p_dict.pop("location_coords", None)
-                p_dict.pop("raw_audio", None)
-                safe_primary = p_dict
+                p_mod = p_dict.get("moderation_status")
+                is_mod = p_mod in ("hidden", "removed", "suspended")
+                is_priv = (p_dict.get("is_private") == 1)
+                is_blocked = False
+                if user and user.get("id") != p_dict.get("user_id"):
+                    cursor.execute(
+                        "SELECT 1 FROM blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)",
+                        (user["id"], p_dict["user_id"], p_dict["user_id"], user["id"])
+                    )
+                    is_blocked = bool(cursor.fetchone())
+
+                if not is_mod and not is_priv and not is_blocked:
+                    p_dict.pop("location_coords", None)
+                    p_dict.pop("raw_audio", None)
+                    safe_primary = p_dict
 
             cursor.execute("""
                 SELECT p.id, p.user_id, p.author_name, p.author_handle, p.avatar_letter, p.avatar_url, p.campus, p.main_img, p.pip_img, p.caption, p.location_city, p.exif_iso, p.exif_aperture, p.exif_shutter, p.audio_url, p.motion_url, p.created_at, m.joined_at
                 FROM posts p
                 JOIN moment_cluster_members m ON p.id = m.moment_id
                 WHERE m.cluster_id = ? AND m.participation_type = 'perspective' AND p.is_private = 0
+                  AND (p.moderation_status IS NULL OR p.moderation_status NOT IN ('hidden', 'removed', 'suspended'))
                 ORDER BY p.created_at ASC
             """, (cluster_id,))
             safe_perspectives = []
