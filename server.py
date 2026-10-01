@@ -18,6 +18,7 @@ import socketserver
 import struct
 import time
 import threading
+import queue
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -61,6 +62,24 @@ def load_env_file(filepath=None):
 load_env_file()
 
 # Environment Configuration
+def is_production_env(env: str = None) -> bool:
+    """
+    Determines if the environment string or runtime configuration represents production.
+    Recognizes 'production', 'prod', or Render/cloud production flags.
+    """
+    if env is not None:
+        val = str(env).strip().lower()
+        return val in ("production", "prod")
+    
+    current_raw = os.environ.get("ENVIRONMENT", "").strip().lower()
+    if current_raw in ("production", "prod"):
+        return True
+    if current_raw in ("development", "dev", "test", "testing", "local"):
+        return False
+    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"):
+        return True
+    return ENVIRONMENT in ("production", "prod")
+
 RAW_ENV = os.environ.get("ENVIRONMENT", "").strip().lower()
 if not RAW_ENV:
     if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID") or os.environ.get("PORT", "8080") != "8080":
@@ -84,7 +103,101 @@ RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "").strip().strip("'\"")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "").strip().strip("'\"")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", os.environ.get("WEBHOOK_SECRET", "")).strip().strip("'\"")
 APP_URL = os.environ.get("APP_URL", "https://kindid.in").strip()
-SESSION_SECRET = os.environ.get("SESSION_SECRET", "kandid_secure_session_key_2026").strip()
+DEV_SESSION_SECRET_FALLBACK = "kandid_dev_only_session_key_do_not_use_in_prod"
+MIN_SESSION_SECRET_LENGTH = 32
+MAX_SESSION_SECRET_LENGTH = 512
+
+WEAK_SECRET_SUBSTRINGS = (
+    "kandid", "secret", "example", "sample", "placeholder", "changeme",
+    "password", "default", "super_secure", "session", "admin", "demo",
+    "testing", "replace_in_prod", "your_secret", "my_key",
+    "kandid_super_secure_session_secret_2026", "kandid_secure_session_key_2026"
+)
+
+def is_cryptographically_generated(secret: str) -> bool:
+    """
+    Validates that a string has the structural characteristics of cryptographically generated
+    secret material (e.g., openssl rand -hex 32, openssl rand -base64 32, or secrets.token_urlsafe(32)).
+    Rejects human-readable phrases, repetitive patterns, or dictionary words.
+    Bounded execution: enforces maximum length and bounded chunk pattern checks to prevent quadratic cost.
+    """
+    import string
+
+    if not secret or not isinstance(secret, str):
+        return False
+
+    sec_len = len(secret)
+    if sec_len < MIN_SESSION_SECRET_LENGTH or sec_len > MAX_SESSION_SECRET_LENGTH:
+        return False
+
+    # 1. Obvious words, samples, or placeholders
+    lower_sec = secret.lower()
+    for word in WEAK_SECRET_SUBSTRINGS:
+        if word in lower_sec:
+            return False
+
+    # 2. Check for repeating cyclic chunk patterns (bounded chunk window up to 32 chars)
+    max_k = min(sec_len // 2, 32)
+    for k in range(1, max_k + 1):
+        pattern = secret[:k]
+        reps = sec_len // k
+        if reps >= 2 and pattern * reps == secret[:reps * k]:
+            return False
+
+    # 3. Check for valid cryptographic encodings:
+    # A) Hex encoding: >= 64 characters (32+ bytes), all hex digits, diverse character set
+    is_hex = all(c in string.hexdigits for c in secret)
+    if is_hex and sec_len >= 64:
+        if len(set(lower_sec)) >= 10:
+            return True
+
+    # B) Base64 / URL-safe encoding: >= 32 characters, mixture of character classes, diverse character set
+    b64_chars = set(string.ascii_letters + string.digits + "-_=/+")
+    if all(c in b64_chars for c in secret) and sec_len >= 32:
+        has_upper = any(c in string.ascii_uppercase for c in secret)
+        has_lower = any(c in string.ascii_lowercase for c in secret)
+        has_digit = any(c in string.digits for c in secret)
+        if has_upper and has_lower and has_digit and len(set(secret)) >= 16:
+            # Reject if it contains underscores forming readable word fragments (e.g. foo_bar_baz)
+            if "_" in secret:
+                parts = secret.split("_")
+                if len(parts) >= 3 and any(len(p) <= 6 and p.isalpha() for p in parts):
+                    return False
+            return True
+
+    return False
+
+def validate_session_secret(secret: str = None, env: str = None) -> bool:
+    """
+    Validates that SESSION_SECRET meets production security requirements:
+    - Explicitly configured in production (no default literal fallback)
+    - Defensible minimum length (>= 32 chars; >= 64 for hex) and maximum length (<= 512 chars)
+    - Rejects documented samples, placeholders, and predictable human-readable strings
+    - Requires cryptographically generated secret material
+    Fails closed with descriptive RuntimeError in production / prod.
+    """
+    in_prod = is_production_env(env)
+    if secret is None:
+        secret = os.environ.get("SESSION_SECRET", "").strip()
+        if not in_prod and not secret:
+            secret = DEV_SESSION_SECRET_FALLBACK
+
+    if in_prod:
+        if not secret:
+            raise RuntimeError("CRITICAL: SESSION_SECRET must be explicitly configured in production environment.")
+        if len(secret) < MIN_SESSION_SECRET_LENGTH:
+            raise RuntimeError(f"CRITICAL: SESSION_SECRET is too short ({len(secret)} chars). Must be at least {MIN_SESSION_SECRET_LENGTH} characters in production.")
+        if len(secret) > MAX_SESSION_SECRET_LENGTH:
+            raise RuntimeError(f"CRITICAL: SESSION_SECRET is too long ({len(secret)} chars). Must be at most {MAX_SESSION_SECRET_LENGTH} characters in production.")
+        if not is_cryptographically_generated(secret):
+            raise RuntimeError("CRITICAL: SESSION_SECRET must be a cryptographically generated high-entropy secret (e.g. 64-char hex or 32+ char base64/urlsafe token) and cannot be a sample, placeholder, or human-readable string in production.")
+    return True
+
+if is_production_env():
+    SESSION_SECRET = os.environ.get("SESSION_SECRET", "").strip()
+else:
+    SESSION_SECRET = os.environ.get("SESSION_SECRET", DEV_SESSION_SECRET_FALLBACK).strip()
+
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 INTERNAL_OPS_SECRET = os.environ.get("INTERNAL_OPS_SECRET", "").strip()
 
@@ -362,7 +475,7 @@ def validate_production_config():
     Safe production configuration validator.
     Strictly NEVER returns or logs secrets, API keys, tokens, or credentials.
     """
-    db_configured = bool(DATABASE_URL) if ENVIRONMENT == "production" else True
+    db_configured = bool(DATABASE_URL) if is_production_env() else True
     brevo_configured = bool(BREVO_API_KEY)
     razorpay_configured = bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
     cloudinary_configured = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
@@ -372,7 +485,7 @@ def validate_production_config():
         "database": {
             "configured": db_configured,
             "engine": "postgresql" if DATABASE_URL else "sqlite3",
-            "production_ready": bool(DATABASE_URL) if ENVIRONMENT == "production" else True
+            "production_ready": bool(DATABASE_URL) if is_production_env() else True
         },
         "email_delivery": {
             "provider": "brevo",
@@ -480,7 +593,7 @@ def send_drop_reminder(user_dict, drop_dict, reminder_dict):
     date_str = drop_dict.get("date_str", "Today")
     time_str = drop_dict.get("time_str", "6:00 PM")
 
-    if user_email and (BREVO_API_KEY or ENVIRONMENT != "production"):
+    if user_email and (BREVO_API_KEY or not is_production_env()):
         subject = f"Reminder: {drop_title} starts soon!"
         html = f"""
         <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; background: #09090b; color: #f4f4f5; padding: 24px; border-radius: 16px;">
@@ -498,7 +611,7 @@ def send_drop_reminder(user_dict, drop_dict, reminder_dict):
             return {"success": True, "delivery_status": "sent", "channel": "email"}
         else:
             return {"success": False, "delivery_status": "failed", "error": res.get("error_code")}
-    elif ENVIRONMENT != "production":
+    elif not is_production_env():
         return {"success": True, "delivery_status": "sent", "channel": "simulator"}
     else:
         return {"success": False, "delivery_status": "pending", "error": "PROVIDER_UNCONFIGURED"}
@@ -1043,7 +1156,9 @@ def validate_environment():
     print(f"BREVO_FROM_EMAIL: {masked_from}")
     print(f"EMAIL PROVIDER: BREVO")
     print(f"APP_URL: {APP_URL}")
-    if ENVIRONMENT == "production":
+    validate_session_secret(SESSION_SECRET, ENVIRONMENT)
+    print(f"[SECURITY] SESSION_SECRET: configured={'true' if bool(SESSION_SECRET) else 'false'}, length={len(SESSION_SECRET)}")
+    if is_production_env():
         if not DATABASE_URL:
             print("⚠️  [PRODUCTION DB] DATABASE_URL not configured. Embedded SQLite active.")
         else:
@@ -1125,8 +1240,8 @@ def send_email_brevo(to_email, subject, html_content, text_content=""):
     print(f"[EMAIL] provider=brevo configured={'true' if key_configured else 'false'}", flush=True)
 
     if not key_configured:
-        if ENVIRONMENT == "production":
-            print(f"⚠️ [EMAIL] Production email to {masked} requested without BREVO_API_KEY.", flush=True)
+        if is_production_env():
+            print(f"⚠️ [EMAIL] Production email dispatch requested without BREVO_API_KEY.", flush=True)
             print(f"[EMAIL] provider_request_started=false", flush=True)
             print(f"[EMAIL] provider_response_status=503", flush=True)
             print(f"[EMAIL] provider_accepted=false", flush=True)
@@ -1134,7 +1249,7 @@ def send_email_brevo(to_email, subject, html_content, text_content=""):
             return {"success": False, "error_code": "EMAIL_PROVIDER_UNCONFIGURED", "error": "Email delivery service is currently unconfigured and unavailable. Please contact support.", "status_code": 503, "delivery_status": "unconfigured"}
         else:
             dev_id = "dev_" + secrets.token_hex(8)
-            print(f"📬 [DEV EMAIL LOG - BREVO SIMULATOR] To: {masked} | Subject: {subject}", flush=True)
+            print(f"📬 [DEV EMAIL LOG - BREVO SIMULATOR] Subject: {subject}", flush=True)
             print(f"[EMAIL] provider_request_started=true", flush=True)
             print(f"[EMAIL] provider_response_status=200", flush=True)
             print(f"[EMAIL] provider_accepted=true", flush=True)
@@ -1208,10 +1323,10 @@ def send_email_brevo(to_email, subject, html_content, text_content=""):
         print(f"[EMAIL] provider_error_code={error_code}", flush=True)
         return {"success": False, "error_code": error_code, "error": err_msg, "status_code": status_code, "delivery_status": "rejected"}
     except Exception as e:
-        print(f"[EMAIL] provider_response_status=500", flush=True)
+        print(f"[EMAIL] provider_response_status=503", flush=True)
         print(f"[EMAIL] provider_accepted=false", flush=True)
         print(f"[EMAIL] provider_error_code=EMAIL_PROVIDER_UNAVAILABLE", flush=True)
-        return {"success": False, "error_code": "EMAIL_PROVIDER_UNAVAILABLE", "error": str(e), "status_code": 500, "delivery_status": "failed"}
+        return {"success": False, "error_code": "EMAIL_PROVIDER_UNAVAILABLE", "error": "Email delivery service is temporarily unavailable. Please try again shortly.", "status_code": 503, "delivery_status": "failed"}
 
 # Alias for backwards compatibility
 send_email_resend = send_email_brevo
@@ -1235,72 +1350,364 @@ def get_resend_email_status(email_id):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-def generate_secure_otp(email, ip_address=""):
-    clean_email = email.strip().lower()
-    conn = get_db()
-    cursor = conn.cursor()
+
+def hash_otp_code(code: str, salt_hex: str = None) -> tuple:
+    """
+    Derives a cryptographically stretched hash for low-entropy (6-digit numeric) OTPs
+    using a memory-hard key derivation function (scrypt with N=16384, r=8, p=1).
     
-    # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email (Kandid Rate Limiter)
-    fifteen_mins_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
-    cursor.execute("SELECT created_at FROM email_otps WHERE email = ? AND created_at > ? ORDER BY created_at ASC", (clean_email, fifteen_mins_ago))
-    rows = cursor.fetchall()
-    count = len(rows)
+    SECURITY RATIONALE (OTP Database-Disclosure Hardening):
+    A 6-digit numeric OTP has a finite search space of 1,000,000 combinations.
+    Standard fast hashes (such as unsalted or salted SHA-256) offer negligible resistance
+    if the database is disclosed, as an attacker can search 10^6 values in milliseconds on modern hardware.
     
-    if count >= 3:
-        # Calculate retry_after_seconds based on the oldest request in the current 15-minute sliding window
+    Using scrypt with N=16384, r=8, p=1 enforces ~16MB of memory per derivation and requires
+    substantially higher computational and memory bandwidth per candidate evaluation, significantly
+    increasing the cost and resource requirements of offline dictionary or brute-force attacks
+    against disclosed OTP hashes.
+    
+    In production, scrypt is required. A controlled PBKDF2 fallback is permitted only in
+    development/test environments if scrypt is unavailable on the runtime OpenSSL build.
+    """
+    if not salt_hex:
+        salt_hex = secrets.token_hex(16)
+    try:
+        salt_bytes = bytes.fromhex(salt_hex)
+    except ValueError:
+        salt_bytes = salt_hex.encode("utf-8")
+        
+    if hasattr(hashlib, "scrypt"):
+        n, r, p = 16384, 8, 1
         try:
-            oldest_created = datetime.fromisoformat(rows[0][0])
-            window_end = oldest_created + timedelta(minutes=15)
-            remaining_seconds = max(1, int((window_end - datetime.now()).total_seconds()))
+            derived = hashlib.scrypt(code.encode("utf-8"), salt=salt_bytes, n=n, r=r, p=p, maxmem=0).hex()
+            return f"scrypt${n}${r}${p}${derived}", salt_hex
+        except Exception as e:
+            if is_production_env():
+                raise RuntimeError("CRITICAL: hashlib.scrypt runtime failure during OTP hashing in production.") from e
+            iterations = 100000
+            derived = hashlib.pbkdf2_hmac("sha256", code.encode("utf-8"), salt_bytes, iterations).hex()
+            return f"pbkdf2$sha256${iterations}${derived}", salt_hex
+    else:
+        if is_production_env():
+            raise RuntimeError("CRITICAL: hashlib.scrypt is required in production environment for secure OTP hashing.")
+        iterations = 100000
+        derived = hashlib.pbkdf2_hmac("sha256", code.encode("utf-8"), salt_bytes, iterations).hex()
+        return f"pbkdf2$sha256${iterations}${derived}", salt_hex
+
+
+def verify_otp_code_hash(code: str, salt_hex: str, stored_hash: str) -> bool:
+    """
+    Verifies an OTP code against its stored hash. Supports:
+    1. Modern memory-hard scrypt (N=16384, r=8, p=1) with strict parameter bounds
+    2. Stretched PBKDF2-HMAC-SHA256 (100,000 iterations) with strict parameter bounds
+    3. Legacy unsalted/salted SHA-256 for backward compatibility with active in-flight OTPs
+       during the 10-minute migration window.
+    """
+    if not code or not salt_hex or not stored_hash:
+        return False
+
+    try:
+        salt_bytes = bytes.fromhex(salt_hex) if len(salt_hex) % 2 == 0 else salt_hex.encode("utf-8")
+    except ValueError:
+        salt_bytes = salt_hex.encode("utf-8")
+        
+    if stored_hash.startswith("scrypt$"):
+        parts = stored_hash.split("$")
+        if len(parts) == 5:
+            try:
+                _, n_str, r_str, p_str, expected_hex = parts
+                n, r, p = int(n_str), int(r_str), int(p_str)
+            except ValueError:
+                return False
+
+            # Strict bounds checking to prevent resource exhaustion / DoS
+            if not (1024 <= n <= 32768 and (n & (n - 1)) == 0):
+                return False
+            if not (1 <= r <= 16):
+                return False
+            if not (1 <= p <= 4):
+                return False
+            if 128 * r * n > 33554432:  # Enforce 32MB max memory envelope
+                return False
+            if len(expected_hex) != 128 or not all(c in "0123456789abcdefABCDEF" for c in expected_hex):
+                return False
+
+            try:
+                derived = hashlib.scrypt(code.encode("utf-8"), salt=salt_bytes, n=n, r=r, p=p, maxmem=0).hex()
+                return hmac.compare_digest(derived, expected_hex)
+            except Exception:
+                return False
+
+    elif stored_hash.startswith("pbkdf2$"):
+        # In production, strict adherence to scrypt is required; PBKDF2 downgrade is rejected.
+        if is_production_env():
+            return False
+
+        parts = stored_hash.split("$")
+        if len(parts) == 4:
+            _, algo, iter_str, expected_hex = parts
+        elif len(parts) == 5:
+            _, algo, iter_str, _, expected_hex = parts
+        else:
+            return False
+
+        if algo != "sha256":
+            return False
+
+        try:
+            iterations = int(iter_str)
+        except ValueError:
+            return False
+
+        # Strict iteration bounds checking
+        if not (1000 <= iterations <= 200000):
+            return False
+        if len(expected_hex) != 64 or not all(c in "0123456789abcdefABCDEF" for c in expected_hex):
+            return False
+
+        try:
+            derived = hashlib.pbkdf2_hmac(algo, code.encode("utf-8"), salt_bytes, iterations).hex()
+            return hmac.compare_digest(derived, expected_hex)
         except Exception:
-            remaining_seconds = 900
+            return False
+
+    elif len(stored_hash) == 64 and all(c in "0123456789abcdefABCDEF" for c in stored_hash):
+        # In production/prod, legacy SHA-256 OTP hashes are strictly forbidden.
+        if is_production_env():
+            return False
+        # Controlled backward compatibility for development/test environments only
+        legacy_hash = hashlib.sha256((code + salt_hex).encode("utf-8")).hexdigest()
+        return hmac.compare_digest(legacy_hash, stored_hash)
+        
+    return False
+
+
+def hash_reset_token(raw_token: str) -> str:
+    """
+    Derives a secure one-way HMAC-SHA256 verifier for high-entropy reset tokens (192 bits of entropy).
+    Uses SESSION_SECRET as the key so the verifier cannot be generated or checked without server credentials.
+    In production / prod, fails closed if SESSION_SECRET is missing or invalid.
+    """
+    in_prod = is_production_env()
+    active_secret = (SESSION_SECRET or os.environ.get("SESSION_SECRET", "")).strip()
+    if in_prod:
+        if not active_secret or not is_cryptographically_generated(active_secret):
+            raise RuntimeError("CRITICAL: Cannot derive reset token verifier without valid production SESSION_SECRET.")
+        key = active_secret.encode("utf-8")
+    else:
+        key = (active_secret or DEV_SESSION_SECRET_FALLBACK).encode("utf-8")
+    mac = hmac.new(key, raw_token.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"v1$hmac_sha256${mac}"
+
+
+def verify_reset_token_hash(raw_token: str, stored_verifier: str) -> bool:
+    """
+    Constant-time verification of a presented reset token against stored verifier.
+    Supports:
+    1. Modern HMAC-SHA256 verifier (v1$hmac_sha256$<64-hex>)
+    2. Legacy plaintext token comparison during migration/test (development/test ONLY)
+    """
+    if not raw_token or not stored_verifier:
+        return False
+    if stored_verifier.startswith("v1$hmac_sha256$"):
+        parts = stored_verifier.split("$")
+        if len(parts) == 3 and len(parts[2]) == 64 and all(c in "0123456789abcdefABCDEF" for c in parts[2]):
+            expected = hash_reset_token(raw_token)
+            return hmac.compare_digest(expected, stored_verifier)
+        return False
+    elif stored_verifier.startswith("prt_"):
+        # In production/prod, legacy plaintext reset tokens are strictly rejected.
+        if is_production_env():
+            return False
+        # Legacy fallback for in-flight/test tokens in development/test only (constant-time)
+        return hmac.compare_digest(raw_token, stored_verifier)
+    return False
+
+
+_EMAIL_DISPATCH_MAX_WORKERS = 4
+_EMAIL_DISPATCH_QUEUE_MAX_SIZE = 100
+_email_dispatch_queue = queue.Queue(maxsize=_EMAIL_DISPATCH_QUEUE_MAX_SIZE)
+_email_dispatch_workers = []
+_email_dispatch_lock = threading.Lock()
+_email_dispatch_initialized = False
+_email_otp_rate_lock = threading.Lock()
+_last_otp_dispatch_thread = None
+
+
+def _invalidate_email_otp_by_id(otp_id: str) -> bool:
+    """
+    Safely invalidates a specific OTP record by its exact row ID.
+    Guarantees connection closure and rollback attempt upon exception.
+    Never modifies other OTP records (never deletes/invalidates by email).
+    """
+    if not otp_id:
+        return False
+    conn = None
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        print(f"[AUTH] OTP cleanup failure for ID {otp_id}: {type(e).__name__}")
+        return False
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _email_worker_loop():
+    while True:
+        try:
+            item = _email_dispatch_queue.get()
+            if item is None:
+                _email_dispatch_queue.task_done()
+                break
+            clean_email, subject, html, text, otp_id = item
+            try:
+                dispatch_res = send_email_resend(clean_email, subject, html, text)
+            except Exception as e:
+                dispatch_res = {
+                    "success": False,
+                    "error_code": "EMAIL_PROVIDER_UNAVAILABLE",
+                    "error": "Email delivery service is temporarily unavailable.",
+                    "status_code": 503,
+                    "delivery_status": "failed"
+                }
+            delivery_accepted = dispatch_res.get("success", False)
+            provider_status = dispatch_res.get("status_code", "none")
+            print(f"OTP request (async): provider_configured={'true' if (BREVO_API_KEY or RESEND_API_KEY) else 'false'}, provider_status={provider_status}, delivery_accepted={'true' if delivery_accepted else 'false'}")
+            if not delivery_accepted:
+                _invalidate_email_otp_by_id(otp_id)
+        except Exception:
+            pass
+        finally:
+            _email_dispatch_queue.task_done()
+
+
+def _ensure_email_dispatch_workers():
+    global _email_dispatch_initialized
+    if _email_dispatch_initialized:
+        return
+    with _email_dispatch_lock:
+        if _email_dispatch_initialized:
+            return
+        for i in range(_EMAIL_DISPATCH_MAX_WORKERS):
+            t = threading.Thread(target=_email_worker_loop, name=f"email-dispatch-worker-{i}", daemon=True)
+            t.start()
+            _email_dispatch_workers.append(t)
+        _email_dispatch_initialized = True
+
+
+_ensure_email_dispatch_workers()
+
+
+def drain_otp_dispatch_queue(timeout=5.0):
+    """
+    Waits for all currently queued OTP email dispatch tasks to finish processing.
+    Useful for deterministic test synchronization.
+    """
+    try:
+        _email_dispatch_queue.join()
+    except Exception:
+        pass
+
+
+def generate_secure_otp(email, ip_address="", async_dispatch=False):
+    clean_email = email.strip().lower()
+    
+    with _email_otp_rate_lock:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Cross-process advisory lock when running against PostgreSQL (fail-closed)
+        if isinstance(conn, PostgresConnectionWrapper):
+            try:
+                cursor.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (clean_email,))
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                print(f"[AUTH] PostgreSQL advisory lock acquisition failed: {type(e).__name__}")
+                return {
+                    "success": False,
+                    "error_code": "LOCK_ACQUISITION_FAILED",
+                    "error": "Temporary server error while processing verification code.",
+                    "status": 500
+                }
+
+        # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email (Kandid Rate Limiter)
+        fifteen_mins_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
+        cursor.execute("SELECT created_at FROM email_otps WHERE email = ? AND created_at > ? ORDER BY created_at ASC", (clean_email, fifteen_mins_ago))
+        rows = cursor.fetchall()
+        count = len(rows)
+        
+        if count >= 3:
+            # Calculate retry_after_seconds based on the oldest request in the current 15-minute sliding window
+            try:
+                oldest_created = datetime.fromisoformat(rows[0][0])
+                window_end = oldest_created + timedelta(minutes=15)
+                remaining_seconds = max(1, int((window_end - datetime.now()).total_seconds()))
+            except Exception:
+                remaining_seconds = 900
+                
+            conn.close()
             
-        conn.close()
+            # Safe diagnostic log
+            print(f"OTP request: provider_configured={'true' if (BREVO_API_KEY or RESEND_API_KEY) else 'false'}, kandid_rate_limited=true, resend_status=none, delivery_accepted=false")
+            
+            return {
+                "success": False,
+                "error_code": "OTP_RATE_LIMITED",
+                "error": f"Maximum OTP limit reached. Please wait {max(1, (remaining_seconds + 59)//60)} minutes before requesting again.",
+                "retry_after_seconds": remaining_seconds,
+                "status": 429,
+                "delivery_status": "rate_limited"
+            }
+            
+        # 2. Invalidate previous pending OTPs in email_otps table
+        cursor.execute("UPDATE email_otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
         
-        # Safe diagnostic log
-        print(f"OTP request: provider_configured={'true' if RESEND_API_KEY else 'false'}, kandid_rate_limited=true, resend_status=none, delivery_accepted=false")
+        # 3. Generate 6-digit numeric OTP using secrets and stretch hash using memory-hard KDF
+        code = f"{secrets.randbelow(900000) + 100000}"
+        try:
+            otp_hash, salt = hash_otp_code(code)
+        except Exception as e:
+            conn.close()
+            print(f"[AUTH] OTP hashing failed: {type(e).__name__}")
+            return {
+                "success": False,
+                "error_code": "OTP_GENERATION_FAILED",
+                "error": "Failed to generate verification code. Please try again later.",
+                "status": 500
+            }
         
-        return {
-            "success": False,
-            "error_code": "OTP_RATE_LIMITED",
-            "error": f"Maximum OTP limit reached. Please wait {max(1, (remaining_seconds + 59)//60)} minutes before requesting again.",
-            "retry_after_seconds": remaining_seconds,
-            "status": 429,
-            "delivery_status": "rate_limited"
-        }
+        # 4. 10-minute expiry
+        expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+        otp_id = "otp_" + secrets.token_hex(8)
+        now_str = datetime.now().isoformat()
         
-    # 2. Invalidate previous pending OTPs in email_otps table
-    cursor.execute("UPDATE email_otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
-    try:
-        cursor.execute("UPDATE otps SET is_used = 1 WHERE email = ? AND is_used = 0", (clean_email,))
-    except Exception:
-        pass
-    
-    # 3. Generate 6-digit numeric OTP using secrets
-    code = f"{secrets.randbelow(900000) + 100000}"
-    salt = secrets.token_hex(16)
-    otp_hash = hashlib.sha256((code + salt).encode("utf-8")).hexdigest()
-    
-    # 4. 10-minute expiry
-    expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
-    otp_id = "otp_" + secrets.token_hex(8)
-    now_str = datetime.now().isoformat()
-    
-    cursor.execute("""
-        INSERT INTO email_otps (id, email, otp_hash, salt, attempts, max_attempts, expires_at, is_used, ip_address, created_at)
-        VALUES (?, ?, ?, ?, 0, 5, ?, 0, ?, ?)
-    """, (otp_id, clean_email, otp_hash, salt, expires_at, ip_address, now_str))
-    
-    try:
         cursor.execute("""
-            INSERT INTO otps (id, email, otp_code, expires_at, is_used, created_at)
-            VALUES (?, ?, ?, ?, 0, ?)
-        """, (otp_id, clean_email, code, expires_at, now_str))
-    except Exception:
-        pass
-    
-    conn.commit()
-    conn.close()
+            INSERT INTO email_otps (id, email, otp_hash, salt, attempts, max_attempts, expires_at, is_used, ip_address, created_at)
+            VALUES (?, ?, ?, ?, 0, 5, ?, 0, ?, ?)
+        """, (otp_id, clean_email, otp_hash, salt, expires_at, ip_address, now_str))
+        
+        conn.commit()
+        conn.close()
     
     # 5. Email Template & Dispatch
     subject = "Your Kandid verification code"
@@ -1320,25 +1727,50 @@ def generate_secure_otp(email, ip_address=""):
     """
     text = f"Your Kandid verification code is: {code} (Valid for 10 minutes)."
     
-    dispatch_res = send_email_resend(clean_email, subject, html, text)
+    # Asynchronous background dispatch for flows requiring decoupled provider latency (e.g. forgot password)
+    if async_dispatch:
+        _ensure_email_dispatch_workers()
+        queue_accepted = True
+        try:
+            _email_dispatch_queue.put_nowait((clean_email, subject, html, text, otp_id))
+        except queue.Full:
+            queue_accepted = False
+            # Queue is full: do NOT block the request, do NOT leak account existence.
+            # Mark the newly generated OTP as unusable so it cannot be guessed.
+            _invalidate_email_otp_by_id(otp_id)
+            print(f"OTP request (async): provider_configured={'true' if (BREVO_API_KEY or RESEND_API_KEY) else 'false'}, queue_status=full, delivery_accepted=false")
+
+        return {
+            "success": True,
+            "error_code": "BREVO_ACCEPTED",
+            "message": "Verification code dispatched.",
+            "email": clean_email,
+            "delivery_status": "accepted" if queue_accepted else "dropped"
+        }
+    
+    try:
+        dispatch_res = send_email_resend(clean_email, subject, html, text)
+    except Exception as e:
+        dispatch_res = {
+            "success": False,
+            "error_code": "EMAIL_PROVIDER_UNAVAILABLE",
+            "error": "Email delivery service is temporarily unavailable.",
+            "status_code": 503,
+            "delivery_status": "failed"
+        }
     brevo_http_status = dispatch_res.get("status_code", "none")
     delivery_accepted = dispatch_res.get("success", False)
     
     # Safe diagnostic logging:
-    print(f"OTP request: provider_configured={'true' if BREVO_API_KEY else 'false'}, kandid_rate_limited=false, provider_status={brevo_http_status}, delivery_accepted={'true' if delivery_accepted else 'false'}")
+    print(f"OTP request: provider_configured={'true' if (BREVO_API_KEY or RESEND_API_KEY) else 'false'}, kandid_rate_limited=false, provider_status={brevo_http_status}, delivery_accepted={'true' if delivery_accepted else 'false'}")
     
     # 6. Strict Verification of Email Dispatch Result
     if not delivery_accepted:
         # Invalidate the OTP record in DB since email could not be delivered
-        conn = get_db()
-        conn.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_id,))
-        conn.execute("UPDATE otps SET is_used = 1 WHERE id = ?", (otp_id,))
-        conn.commit()
-        conn.close()
+        _invalidate_email_otp_by_id(otp_id)
         
-        status_code = dispatch_res.get("status_code", 500)
-        raw_err = str(dispatch_res.get("error", ""))
-        err_code = dispatch_res.get("error_code", "EMAIL_PROVIDER_ERROR")
+        status_code = dispatch_res.get("status_code", 503)
+        err_code = dispatch_res.get("error_code", "EMAIL_PROVIDER_UNAVAILABLE")
         
         if err_code == "EMAIL_PROVIDER_RATE_LIMITED" or status_code == 429:
             user_err = "Email delivery rate limit reached by provider. Please wait a few minutes before requesting again."
@@ -1350,40 +1782,31 @@ def generate_secure_otp(email, ip_address=""):
                 "status": 429,
                 "delivery_status": "rejected"
             }
-        elif err_code == "BREVO_AUTH_FAILURE" or status_code in (401, 403):
-            user_err = "Email delivery is temporarily unavailable. Please contact support or try again later."
+        elif err_code in ("BREVO_AUTH_FAILURE", "BREVO_SENDER_FAILURE") or status_code in (401, 403, 422):
+            user_err = "Email delivery service is temporarily unavailable. Please try again shortly."
             ret_dict = {
                 "success": False,
-                "error_code": "BREVO_AUTH_FAILURE",
+                "error_code": err_code,
                 "error": user_err,
                 "status": 503,
                 "delivery_status": "rejected"
             }
-        elif err_code == "BREVO_SENDER_FAILURE" or status_code in (400, 422):
-            user_err = "Email delivery is temporarily unavailable. Please verify a domain or sender configuration."
+        elif status_code == 503 or err_code in ("EMAIL_PROVIDER_UNCONFIGURED", "EMAIL_PROVIDER_UNAVAILABLE"):
+            user_err = "Email delivery service is temporarily unavailable. Please try again shortly."
             ret_dict = {
                 "success": False,
-                "error_code": "BREVO_SENDER_FAILURE",
-                "error": user_err,
-                "status": 422,
-                "delivery_status": "rejected"
-            }
-        elif status_code == 503:
-            user_err = "Email service is temporarily unavailable. Please contact support."
-            ret_dict = {
-                "success": False,
-                "error_code": "EMAIL_PROVIDER_UNCONFIGURED",
+                "error_code": err_code if err_code != "EMAIL_PROVIDER_ERROR" else "EMAIL_PROVIDER_UNAVAILABLE",
                 "error": user_err,
                 "status": 503,
-                "delivery_status": "unconfigured"
+                "delivery_status": dispatch_res.get("delivery_status", "unconfigured" if err_code == "EMAIL_PROVIDER_UNCONFIGURED" else "failed")
             }
         else:
-            user_err = "Failed to dispatch verification email. Please verify your address and try again."
+            user_err = "Email delivery service is temporarily unavailable. Please try again shortly."
             ret_dict = {
                 "success": False,
-                "error_code": "EMAIL_DISPATCH_FAILED",
+                "error_code": "EMAIL_PROVIDER_UNAVAILABLE",
                 "error": user_err,
-                "status": status_code if status_code >= 400 else 500,
+                "status": 503,
                 "delivery_status": dispatch_res.get("delivery_status", "rejected")
             }
             
@@ -1433,26 +1856,43 @@ def verify_secure_otp(email, code_entered):
         conn.close()
         return {"success": False, "error": "Maximum verification attempts exceeded. Please request a new code."}
         
-    # Verify Hash
-    expected_hash = hashlib.sha256((clean_code + otp_data["salt"]).encode("utf-8")).hexdigest()
-    if secrets.compare_digest(expected_hash, otp_data["otp_hash"]):
-        cursor.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_data["id"],))
+    # Verify Hash with algorithm-aware KDF verification (scrypt / pbkdf2 / legacy sha256)
+    if verify_otp_code_hash(clean_code, otp_data["salt"], otp_data["otp_hash"]):
+        now_str = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE email_otps
+            SET is_used = 1
+            WHERE id = ? AND is_used = 0 AND attempts < max_attempts AND expires_at > ?
+        """, (otp_data["id"], now_str))
+        if cursor.rowcount < 1:
+            conn.commit()
+            conn.close()
+            return {"success": False, "error": "This verification code has expired, already been used, or invalidated."}
         cursor.execute("UPDATE users SET email_verified = 1 WHERE email = ?", (clean_email,))
         conn.commit()
         conn.close()
         return {"success": True, "message": "Email verified successfully!"}
     else:
-        new_attempts = otp_data["attempts"] + 1
-        remaining = otp_data["max_attempts"] - new_attempts
-        cursor.execute("UPDATE email_otps SET attempts = ? WHERE id = ?", (new_attempts, otp_data["id"]))
-        if new_attempts >= otp_data["max_attempts"]:
-            cursor.execute("UPDATE email_otps SET is_used = 1 WHERE id = ?", (otp_data["id"],))
+        cursor.execute("""
+            UPDATE email_otps
+            SET attempts = attempts + 1,
+                is_used = CASE WHEN attempts + 1 >= max_attempts THEN 1 ELSE is_used END
+            WHERE id = ? AND is_used = 0
+        """, (otp_data["id"],))
+        cursor.execute("SELECT attempts, max_attempts FROM email_otps WHERE id = ?", (otp_data["id"],))
+        attempt_row = cursor.fetchone()
         conn.commit()
         conn.close()
-        if remaining > 0:
-            return {"success": False, "error": f"Invalid verification code. {remaining} attempts remaining."}
+        if attempt_row:
+            cur_attempts = attempt_row[0]
+            max_att = attempt_row[1]
+            rem = max(0, max_att - cur_attempts)
+            if rem > 0:
+                return {"success": False, "error": f"Invalid verification code. {rem} attempts remaining."}
+            else:
+                return {"success": False, "error": "Too many failed attempts. This code has been invalidated."}
         else:
-            return {"success": False, "error": "Too many failed attempts. This code has been invalidated."}
+            return {"success": False, "error": "This verification code has expired or been invalidated."}
 
 import threading
 
@@ -1679,7 +2119,7 @@ def save_base64_audio(data_str, prefix="audio"):
         return cloud_url
         
     cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
-    if ENVIRONMENT == "production" and cloudinary_is_setup:
+    if is_production_env() and cloudinary_is_setup:
         print(f"❌ [MEDIA ERROR] Failed to upload audio to Cloudinary in production.")
         return ""
         
@@ -1724,7 +2164,7 @@ def save_base64_video(data_str, prefix="motion", max_bytes=None):
         return cloud_url
         
     cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
-    if ENVIRONMENT == "production" and cloudinary_is_setup:
+    if is_production_env() and cloudinary_is_setup:
         print(f"❌ [MEDIA ERROR] Failed to upload motion video to Cloudinary in production.")
         return ""
         
@@ -1957,7 +2397,7 @@ def save_base64_image(data_str, prefix="img"):
         return cloud_url
         
     cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
-    if ENVIRONMENT == "production" and cloudinary_is_setup:
+    if is_production_env() and cloudinary_is_setup:
         print(f"❌ [MEDIA ERROR] Failed to upload image to Cloudinary in production.")
         return ""
         
@@ -2468,11 +2908,11 @@ def get_db():
                 raw_conn = pg8000.dbapi.connect(**kwargs)
                 return PostgresConnectionWrapper(raw_conn)
             except Exception as e:
-                if ENVIRONMENT == "production":
+                if is_production_env():
                     raise RuntimeError(f"CRITICAL: Failed to connect to production PostgreSQL database: {e}")
                 print(f"⚠️ PostgreSQL connection error: {e}. Falling back to SQLite in development.")
         except Exception as e:
-            if ENVIRONMENT == "production":
+            if is_production_env():
                 raise RuntimeError(f"CRITICAL: Failed to connect to production PostgreSQL database: {e}")
             print(f"⚠️ PostgreSQL connection error: {e}. Falling back to SQLite in development.")
 
@@ -4820,8 +5260,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 self.send_header("ETag", etag)
 
         # CORS Origin Control
-        origin = self.headers.get("Origin", "")
-        if ENVIRONMENT == "production":
+        origin = self.headers.get("Origin", "").strip()
+        self.send_header("Vary", "Origin")
+
+        if is_production_env():
             allowed_origins = [
                 APP_URL,
                 "https://kindid.in",
@@ -4831,16 +5273,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "https://kandid.in",
                 "https://www.kandid.in",
             ]
+            allowed_origins = [o.strip() for o in allowed_origins if o and o.strip()]
             if origin in allowed_origins:
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Access-Control-Allow-Credentials", "true")
-            else:
-                self.send_header("Access-Control-Allow-Origin", APP_URL if APP_URL else "*")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-Id")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         else:
-            self.send_header("Access-Control-Allow-Origin", origin if origin else "*")
-
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-Id")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-User-Id")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 
         # HTTP Security Headers
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -4848,6 +5291,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(self)")
+        if is_production_env():
+            self.send_header("Strict-Transport-Security", "max-age=31536000")
         super().end_headers()
 
     def list_directory(self, path):
@@ -9480,7 +9925,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             if not raw_id:
                 return self.send_json(400, {"success": False, "error_code": "INVALID_INPUT", "error": "Username or registered email is required"})
-                
+
+            # Rate limit reset requests per identifier (3 requests per 15 minutes) uniformly
+            # for both existing and non-existing accounts, preventing rate-limit based account enumeration.
+            if not rate_limiter.check_rate_limit(f"forgot_pw_id:{normalized_id}", max_requests=3, window_seconds=900):
+                return self.send_json(429, {
+                    "success": False,
+                    "error_code": "OTP_RATE_LIMITED",
+                    "error": "Maximum OTP limit reached. Please wait a few minutes before requesting again.",
+                    "status": 429,
+                    "delivery_status": "rate_limited"
+                })
+
             identifier_type = "email" if "@" in normalized_id else "handle"
             
             conn = get_db()
@@ -9492,43 +9948,81 @@ class KandidHandler(SimpleHTTPRequestHandler):
             )
             row = cursor.fetchone()
             
-            # Safe diagnostic logging (no full emails, no secrets)
-            print(f"Forgot password lookup: identifier_type={identifier_type}, normalized_lookup=true, account_found={'true' if row else 'false'}, database_backend={db_backend}")
+            # Safe diagnostic logging (no account existence signal, no full emails, no secrets)
+            print(f"Forgot password request processed: identifier_type={identifier_type}, database_backend={db_backend}")
             
+            # Uniform generic response shape to prevent account enumeration
+            generic_response = {
+                "success": True,
+                "message": "If an account is associated with this handle or email, a verification code has been sent.",
+                "delivery_status": "accepted"
+            }
+
             if not row:
+                # Perform structurally symmetric dummy cryptographic & DB work under rate lock to neutralize timing analysis
                 conn.close()
-                return self.send_json(404, {
-                    "success": False,
-                    "error_code": "ACCOUNT_NOT_FOUND",
-                    "error": f"Account '{raw_id}' not found. Please verify your handle or email."
-                })
+                with _email_otp_rate_lock:
+                    dummy_conn = get_db()
+                    dummy_cur = dummy_conn.cursor()
+                    if isinstance(dummy_conn, PostgresConnectionWrapper):
+                        try:
+                            dummy_cur.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (normalized_id,))
+                        except Exception:
+                            pass
+                    fifteen_mins_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
+                    dummy_cur.execute("SELECT created_at FROM email_otps WHERE email = ? AND created_at > ? ORDER BY created_at ASC", (normalized_id, fifteen_mins_ago))
+                    dummy_cur.fetchall()
+                    dummy_cur.execute("UPDATE email_otps SET is_used = 1 WHERE email = ? AND is_used = 0", (normalized_id,))
+                    dummy_salt = secrets.token_hex(16)
+                    try:
+                        hash_otp_code("000000", dummy_salt)
+                    except Exception:
+                        pass
+                    dummy_cur.execute("SELECT id FROM email_otps WHERE email = ? LIMIT 1", (normalized_id,))
+                    dummy_cur.fetchone()
+                    dummy_conn.commit()
+                    dummy_conn.close()
+                return self.send_json(200, generic_response)
                 
             u = dict(row)
             conn.close()
             
             user_email = (u.get("email") or "").strip()
             if not user_email or "@" not in user_email:
-                return self.send_json(400, {
-                    "success": False,
-                    "error_code": "INVALID_ACCOUNT_EMAIL",
-                    "error": "No valid email address linked with this account. Contact support."
-                })
+                with _email_otp_rate_lock:
+                    dummy_conn = get_db()
+                    dummy_cur = dummy_conn.cursor()
+                    if isinstance(dummy_conn, PostgresConnectionWrapper):
+                        try:
+                            dummy_cur.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (normalized_id,))
+                        except Exception:
+                            pass
+                    fifteen_mins_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
+                    dummy_cur.execute("SELECT created_at FROM email_otps WHERE email = ? AND created_at > ? ORDER BY created_at ASC", (normalized_id, fifteen_mins_ago))
+                    dummy_cur.fetchall()
+                    dummy_cur.execute("UPDATE email_otps SET is_used = 1 WHERE email = ? AND is_used = 0", (normalized_id,))
+                    dummy_salt = secrets.token_hex(16)
+                    try:
+                        hash_otp_code("000000", dummy_salt)
+                    except Exception:
+                        pass
+                    dummy_cur.execute("SELECT id FROM email_otps WHERE email = ? LIMIT 1", (normalized_id,))
+                    dummy_cur.fetchone()
+                    dummy_conn.commit()
+                    dummy_conn.close()
+                return self.send_json(200, generic_response)
                 
-            res = generate_secure_otp(user_email, client_ip)
-            status_code = res.get("status", 200)
-            if not res.get("success"):
-                return self.send_json(status_code if status_code >= 400 else 500, res)
-                
-            masked_email = mask_email_safe(user_email)
-            
-            return self.send_json(200, {
-                "success": True,
-                "message": f"Verification code sent to {masked_email}",
-                "email": user_email,
-                "masked_email": masked_email,
-                "email_id": res.get("email_id"),
-                "delivery_status": res.get("delivery_status", "accepted")
-            })
+            # Attempt secure OTP generation and decoupled asynchronous dispatch.
+            # Email delivery is decoupled from the synchronous HTTP request path, eliminating
+            # remote network provider latency as an account-existence timing oracle.
+            try:
+                res = generate_secure_otp(user_email, client_ip, async_dispatch=True)
+                if not res.get("success"):
+                    print(f"[AUTH] Forgot password internal dispatch failure: error_code={res.get('error_code')}", flush=True)
+            except Exception as e:
+                print(f"[AUTH] Forgot password internal exception: {type(e).__name__}", flush=True)
+
+            return self.send_json(200, generic_response)
 
 
         if path == "/api/auth/login" or path == "/api/login":
@@ -9615,27 +10109,45 @@ class KandidHandler(SimpleHTTPRequestHandler):
             row = cursor.fetchone()
             if not row:
                 conn.close()
-                return self.send_json(404, {"success": False, "error_code": "ACCOUNT_NOT_FOUND", "error": f"Account '{raw_id}' not found."})
+                return self.send_json(400, {
+                    "success": False,
+                    "error_code": "INVALID_VERIFICATION_CODE",
+                    "error": "Invalid or expired verification code. Please check and try again."
+                })
 
             u = dict(row)
             user_email = (u.get("email") or "").strip()
             conn.close()
 
+            if not user_email or "@" not in user_email:
+                return self.send_json(400, {
+                    "success": False,
+                    "error_code": "INVALID_VERIFICATION_CODE",
+                    "error": "Invalid or expired verification code. Please check and try again."
+                })
+
             # Verify OTP
             verify_res = verify_secure_otp(user_email, otp)
             if not verify_res.get("success"):
-                return self.send_json(400, verify_res)
+                return self.send_json(400, {
+                    "success": False,
+                    "error_code": "INVALID_VERIFICATION_CODE",
+                    "error": "Invalid or expired verification code. Please check and try again."
+                })
 
             # Generate short-lived password reset token (10 minutes)
+            # Store HMAC-SHA256 verifier in database; never store raw bearer token
             reset_token = "prt_" + secrets.token_hex(24)
+            token_verifier = hash_reset_token(reset_token)
             reset_id = "pr_" + secrets.token_hex(8)
             expires_at = (datetime.now() + timedelta(minutes=10)).isoformat()
+            now_str = datetime.now().isoformat()
 
             conn = get_db()
             conn.execute("DELETE FROM password_resets WHERE email = ?", (user_email,))
             conn.execute(
                 "INSERT INTO password_resets (id, email, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
-                (reset_id, user_email, reset_token, expires_at, datetime.now().isoformat())
+                (reset_id, user_email, token_verifier, expires_at, now_str)
             )
             conn.commit()
             conn.close()
@@ -9643,7 +10155,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {
                 "success": True,
                 "reset_token": reset_token,
-                "email": user_email,
                 "message": "Verification code accepted. Please enter your new password."
             })
 
@@ -9664,24 +10175,62 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Check if reset_token flow is used
             if reset_token:
                 now_str = datetime.now().isoformat()
-                cursor.execute("SELECT * FROM password_resets WHERE token = ? AND expires_at > ?", (reset_token, now_str))
+                token_verifier = hash_reset_token(reset_token)
+                if is_production_env():
+                    cursor.execute(
+                        "SELECT id, email, token, expires_at FROM password_resets WHERE token = ? AND expires_at > ?",
+                        (token_verifier, now_str)
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT id, email, token, expires_at FROM password_resets WHERE (token = ? OR token = ?) AND expires_at > ?",
+                        (token_verifier, reset_token, now_str)
+                    )
                 reset_row = cursor.fetchone()
                 if not reset_row:
                     conn.close()
-                    return self.send_json(400, {"success": False, "error_code": "INVALID_RESET_TOKEN", "error": "Invalid or expired password reset token. Please request a new code."})
+                    return self.send_json(400, {
+                        "success": False,
+                        "error_code": "INVALID_RESET_TOKEN",
+                        "error": "Invalid or expired password reset token. Please request a new code."
+                    })
                 
                 reset_data = dict(reset_row)
+                if not verify_reset_token_hash(reset_token, reset_data["token"]):
+                    conn.close()
+                    return self.send_json(400, {
+                        "success": False,
+                        "error_code": "INVALID_RESET_TOKEN",
+                        "error": "Invalid or expired password reset token. Please request a new code."
+                    })
+
                 target_email = reset_data["email"]
+
+                # Atomic single-use claim: delete the token record checking affected rowcount
+                # Capture a fresh timestamp immediately before deletion to prevent claiming tokens expired during verification
+                fresh_claim_time = datetime.now().isoformat()
+                cursor.execute("DELETE FROM password_resets WHERE id = ? AND expires_at > ?", (reset_data["id"], fresh_claim_time))
+                if cursor.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    return self.send_json(400, {
+                        "success": False,
+                        "error_code": "INVALID_RESET_TOKEN",
+                        "error": "Invalid or expired password reset token. Please request a new code."
+                    })
 
                 cursor.execute("SELECT * FROM users WHERE LOWER(TRIM(email)) = ?", (target_email.lower(),))
                 user_row = cursor.fetchone()
                 if not user_row:
+                    conn.rollback()
                     conn.close()
-                    return self.send_json(404, {"success": False, "error_code": "ACCOUNT_NOT_FOUND", "error": "Associated user account not found."})
+                    return self.send_json(400, {
+                        "success": False,
+                        "error_code": "INVALID_RESET_TOKEN",
+                        "error": "Invalid or expired password reset token. Please request a new code."
+                    })
 
                 u = dict(user_row)
-                # Invalidate the used reset token
-                conn.execute("DELETE FROM password_resets WHERE token = ?", (reset_token,))
             else:
                 # Direct flow with identifier & otp
                 raw_id = str(body.get("identifier") or body.get("handle") or body.get("username") or body.get("email") or "").strip()
@@ -9704,26 +10253,39 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 user_row = cursor.fetchone()
                 if not user_row:
                     conn.close()
-                    return self.send_json(404, {"success": False, "error": f"Account '{raw_id}' not found."})
+                    return self.send_json(400, {
+                        "success": False,
+                        "error_code": "OTP_INVALID",
+                        "error": "Invalid or expired verification code. Please check and try again."
+                    })
 
                 u = dict(user_row)
                 target_email = (u.get("email") or "").strip()
                 verify_res = verify_secure_otp(target_email, otp)
                 if not verify_res.get("success"):
                     conn.close()
-                    return self.send_json(400, verify_res)
+                    return self.send_json(400, {
+                        "success": False,
+                        "error_code": "OTP_INVALID",
+                        "error": "Invalid or expired verification code. Please check and try again."
+                    })
 
-            pw_hash, salt = hash_password(new_password)
-            conn.execute("UPDATE users SET password_hash = ?, salt = ?, email_verified = 1 WHERE id = ?", (pw_hash, salt, u["id"]))
-            
-            # Revoke all previous active sessions upon password reset for security
-            conn.execute("DELETE FROM sessions WHERE user_id = ?", (u["id"],))
-            
-            token = "token_" + u["handle"] + "_" + secrets.token_hex(24)
-            expires = (datetime.now() + timedelta(days=90)).isoformat()
-            conn.execute("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-                         ("sess_" + secrets.token_hex(16), u["id"], token, expires))
-            conn.commit()
+            try:
+                pw_hash, salt = hash_password(new_password)
+                cursor.execute("UPDATE users SET password_hash = ?, salt = ?, email_verified = 1 WHERE id = ?", (pw_hash, salt, u["id"]))
+                
+                # Revoke all previous active sessions upon password reset for security
+                cursor.execute("DELETE FROM sessions WHERE user_id = ?", (u["id"],))
+                
+                token = "token_" + u["handle"] + "_" + secrets.token_hex(24)
+                expires = (datetime.now() + timedelta(days=90)).isoformat()
+                cursor.execute("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
+                             ("sess_" + secrets.token_hex(16), u["id"], token, expires))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                conn.close()
+                return self.send_json(500, {"success": False, "error": "Failed to update password. Please try again."})
 
             avatar_url = u.get("avatar_url") or ""
             user_obj = serialize_user(u)
@@ -10283,7 +10845,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             # Strict Production Media Integrity Check (only if Cloudinary CDN is configured)
             cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
-            if ENVIRONMENT == "production" and cloudinary_is_setup:
+            if is_production_env() and cloudinary_is_setup:
                 if raw_main and not main_img:
                     return self.send_json(502, {"success": False, "error": "Failed to upload main capture to cloud storage. Moment was not created."})
                 if raw_pip and not pip_img:
@@ -10307,7 +10869,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             raw_audio = body.get("audioData") or body.get("audio_data") or ""
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""
-            if ENVIRONMENT == "production" and cloudinary_is_setup and raw_audio and not audio_url:
+            if is_production_env() and cloudinary_is_setup and raw_audio and not audio_url:
                 return self.send_json(502, {"success": False, "error": "Failed to upload ambient audio to cloud storage. Moment was not created."})
 
             # B2-SEC-16: validate persisted media URLs BEFORE the post row
