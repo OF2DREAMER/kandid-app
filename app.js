@@ -2015,6 +2015,11 @@ function renderFeedCards(moments, container) {
       }
     }
 
+    if (m && m.id) {
+      if (!state.momentCache) state.momentCache = {};
+      state.momentCache[m.id] = m;
+    }
+
     card.innerHTML =
       '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
         liveBadgeHtml +
@@ -2054,6 +2059,9 @@ function renderFeedCards(moments, container) {
               '</div>' +
               '<span class="text-[11px] text-zinc-400 font-medium">@' + authorHandle + '</span>' +
             '</div>' +
+            '<button type="button" onclick="event.stopPropagation(); shareMomentToWhatsAppStatus(\'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-amber-400 text-[9px] font-mono-tag font-semibold transition cursor-pointer active:scale-95 shadow-sm" title="Share to WhatsApp Status">' +
+              '<span>↗</span> <span>Status</span>' +
+            '</button>' +
           '</div>' +
 
           '<!-- Action row: [ I WAS THERE ] on left, [React] on right -->' +
@@ -5315,6 +5323,189 @@ function openMomentDetail(m) {
   if (modal) modal.style.display = 'flex';
 }
 window.openMomentDetail = openMomentDetail;
+
+// =====================================================================
+// SHARE TO WHATSAPP STATUS WITH SUBTLE KINDID WATERMARK
+// =====================================================================
+function createWatermarkedShareBlob(imgSrc, callback) {
+  var img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function() {
+    try {
+      var canvas = document.createElement('canvas');
+      var w = img.naturalWidth || img.width || 1080;
+      var h = img.naturalHeight || img.height || 1350;
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) {
+        callback(null, new Error('Canvas context unavailable'));
+        return;
+      }
+
+      // Draw original image untouched (no filters, no color alterations)
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // Subtle, tasteful Kindid watermark badge in safe bottom-right corner
+      // Proportional font size: ~2.2% of image width (min 13px, max 32px)
+      var fontSize = Math.max(13, Math.min(32, Math.round(w * 0.022)));
+      var watermarkText = 'Shot on Kindid · No Filter, Just Vibes.';
+
+      ctx.save();
+      ctx.font = '600 ' + fontSize + 'px "JetBrains Mono", monospace';
+
+      var metrics = ctx.measureText(watermarkText);
+      var textWidth = metrics.width;
+      var padH = Math.round(fontSize * 0.85);
+      var padV = Math.round(fontSize * 0.45);
+      var dotRadius = Math.round(fontSize * 0.22);
+      var dotSpacing = Math.round(fontSize * 0.5);
+
+      var badgeW = textWidth + (padH * 2) + (dotRadius * 2) + dotSpacing;
+      var badgeH = fontSize + (padV * 2.2);
+      var margin = Math.round(w * 0.038); // ~4% margin from edge
+      var badgeX = w - badgeW - margin;
+      var badgeY = h - badgeH - margin;
+      var radius = Math.round(badgeH / 2); // Pill shape
+
+      // Pill background: semi-translucent dark glass with subtle border for universal contrast
+      ctx.fillStyle = 'rgba(10, 10, 12, 0.65)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = Math.max(1, Math.round(w * 0.001));
+
+      if (typeof ctx.roundRect === 'function') {
+        ctx.beginPath();
+        ctx.roundRect(badgeX, badgeY, badgeW, badgeH, radius);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.rect(badgeX, badgeY, badgeW, badgeH);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // Camera indicator dot in subtle amber
+      var dotX = badgeX + padH + dotRadius;
+      var dotY = badgeY + (badgeH / 2);
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, dotRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Watermark text in crisp off-white
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(watermarkText, dotX + dotRadius + dotSpacing, dotY);
+
+      ctx.restore();
+
+      canvas.toBlob(function(blob) {
+        if (blob) {
+          callback(blob);
+        } else {
+          callback(null, new Error('Failed to generate image blob'));
+        }
+      }, 'image/jpeg', 0.94);
+    } catch(err) {
+      console.error('Error creating watermarked share copy:', err);
+      callback(null, err);
+    }
+  };
+  img.onerror = function(err) {
+    console.error('Failed to load image for share copy:', err);
+    callback(null, err);
+  };
+  img.src = imgSrc;
+}
+
+async function shareMomentToWhatsAppStatus(momentId) {
+  var m = (state.momentCache && state.momentCache[momentId]) || (state.activeDetailMoment && state.activeDetailMoment.id === momentId ? state.activeDetailMoment : null);
+  var imgSrc = '';
+  if (m) {
+    imgSrc = m.main_img || m.mediaUrl || m.media_url || m.mainImg || '';
+  }
+  if (!imgSrc) {
+    var card = document.querySelector('article[data-post-id="' + momentId + '"]');
+    if (card) {
+      var img = card.querySelector('.main-stage-img');
+      if (img) imgSrc = img.src;
+    }
+  }
+  if (!imgSrc && state.activeDetailMoment) {
+    imgSrc = state.activeDetailMoment.main_img || state.activeDetailMoment.mediaUrl || state.activeDetailMoment.mainImg || '';
+  }
+  if (!imgSrc) {
+    var detailImg = document.getElementById('momentDetailMainImg');
+    if (detailImg && detailImg.src) imgSrc = detailImg.src;
+  }
+
+  if (!imgSrc) {
+    showToast('Photo not found for sharing.');
+    return;
+  }
+
+  showToast('Preparing WhatsApp Status... ✦');
+
+  createWatermarkedShareBlob(imgSrc, async function(blob, err) {
+    if (err || !blob) {
+      showToast('Could not generate share copy.');
+      return;
+    }
+
+    var fileName = 'kindid-moment-status-' + Date.now() + '.jpg';
+    var file = null;
+    try {
+      file = new File([blob], fileName, { type: 'image/jpeg' });
+    } catch (e) {
+      file = blob;
+    }
+
+    // 1. Check Web Share API Level 2 (supports sharing files)
+    if (navigator.canShare && file instanceof File && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: 'Kindid',
+          text: 'Shot on Kindid · No Filter, Just Vibes.'
+        });
+        return;
+      } catch (shareErr) {
+        if (shareErr && shareErr.name === 'AbortError') {
+          return;
+        }
+        console.warn('Web Share API failed, falling back to download:', shareErr);
+      }
+    }
+
+    // 2. Fallback: Download watermarked share copy + direct instruction
+    var blobUrl = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 10000);
+
+    showToast('Image saved! Open WhatsApp → Status to share ✦');
+  });
+}
+window.shareMomentToWhatsAppStatus = shareMomentToWhatsAppStatus;
+
+function shareCurrentModalToWhatsAppStatus() {
+  if (state.activeDetailMoment && state.activeDetailMoment.id) {
+    shareMomentToWhatsAppStatus(state.activeDetailMoment.id);
+  } else {
+    var detailImg = document.getElementById('momentDetailMainImg');
+    if (detailImg && detailImg.src) {
+      shareMomentToWhatsAppStatus('active_modal');
+    } else {
+      showToast('No photo selected to share.');
+    }
+  }
+}
+window.shareCurrentModalToWhatsAppStatus = shareCurrentModalToWhatsAppStatus;
 
 function playCurrentModalAudio() {
   if (!state.activeDetailMoment) return;
