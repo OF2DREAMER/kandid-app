@@ -116,9 +116,9 @@ body {
   background: #18181b;
   border: 1px solid #f59e0b;
   color: #ffffff;
-  padding: 8px 16px;
-  border-radius: 9999px;
-  font-size: 11px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  font-size: 10.5px;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 600;
   z-index: 9999;
@@ -126,7 +126,12 @@ body {
   opacity: 0;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
-  white-space: nowrap;
+  max-width: calc(100% - 32px);
+  width: max-content;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+  box-sizing: border-box;
 }
 
 .toast-banner.show {
