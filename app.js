@@ -9861,8 +9861,14 @@ async function openMomentClusterModal(clusterId, momentId) {
         handleClusterModalIWasThere();
       };
     }
-    if (addBtn) addBtn.style.display = 'none';
-    if (noticeEl) noticeEl.style.display = 'block';
+    if (addBtn) {
+      addBtn.style.display = 'flex';
+      addBtn.className = 'w-full py-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-400 active:scale-[0.99] font-bold text-xs font-mono-tag rounded-2xl transition flex items-center justify-center gap-2 cursor-pointer shadow-sm';
+      addBtn.onclick = function() {
+        handleAddPerspectiveClick();
+      };
+    }
+    if (noticeEl) noticeEl.style.display = 'none';
     return;
   }
 
