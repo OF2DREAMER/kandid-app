@@ -8851,6 +8851,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "originating_context": cluster.get("originating_context", "Shared Context"),
                     "community_id": cluster.get("community_id", ""),
                     "drop_id": cluster.get("drop_id", ""),
+                    "originator_moment_id": cluster.get("originator_moment_id", ""),
+                    "moment_id": cluster.get("originator_moment_id", ""),
                     "created_at": cluster.get("created_at", ""),
                     "primary_moment": safe_primary,
                     "perspectives": safe_perspectives,

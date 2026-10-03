@@ -9855,6 +9855,11 @@ async function openMomentClusterModal(clusterId, momentId) {
     if (iWasThereBtn) {
       iWasThereBtn.textContent = 'I Was There';
       iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/60 text-zinc-300 hover:text-white text-[10px] font-mono-tag font-semibold transition cursor-pointer shrink-0';
+      iWasThereBtn.removeAttribute('disabled');
+      iWasThereBtn.onclick = function(e) {
+        if (e) e.stopPropagation();
+        handleClusterModalIWasThere();
+      };
     }
     if (addBtn) addBtn.style.display = 'none';
     if (noticeEl) noticeEl.style.display = 'block';
@@ -9875,12 +9880,17 @@ async function openMomentClusterModal(clusterId, momentId) {
   if (iWasThereBtn) {
     if (isAttended) {
       iWasThereBtn.innerHTML = '<span class="text-zinc-400 font-bold">✓</span> <span>I Was There</span>';
-      iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 font-medium text-[10px] font-mono-tag flex items-center gap-1.5 shrink-0 cursor-default pointer-events-none select-none';
+      iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 font-medium text-[10px] font-mono-tag flex items-center gap-1.5 shrink-0 cursor-default select-none';
       iWasThereBtn.setAttribute('disabled', 'true');
+      iWasThereBtn.onclick = null;
     } else {
       iWasThereBtn.textContent = 'I Was There';
       iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/60 text-zinc-300 hover:text-white text-[10px] font-mono-tag font-semibold transition cursor-pointer shrink-0';
       iWasThereBtn.removeAttribute('disabled');
+      iWasThereBtn.onclick = function(e) {
+        if (e) e.stopPropagation();
+        handleClusterModalIWasThere();
+      };
     }
   }
 
@@ -9966,13 +9976,17 @@ window.closeMomentClusterModal = closeMomentClusterModal;
 
 async function handleClusterModalIWasThere() {
   var c = state.currentViewingCluster;
-  var momentId = (c && c.primary_moment) ? c.primary_moment.id : (state.activeClusterMomentId || '');
+  var momentId = (c && c.primary_moment && c.primary_moment.id) 
+    ? c.primary_moment.id 
+    : (c && (c.originator_moment_id || c.moment_id))
+      ? (c.originator_moment_id || c.moment_id)
+      : (state.activeClusterMomentId || '');
   if (!momentId) {
     showToast('Moment reference not found.');
     return;
   }
   var iWasThereBtn = document.getElementById('momentClusterIWasThereBtn');
-  if (iWasThereBtn && (iWasThereBtn.disabled || iWasThereBtn.textContent.indexOf('✓') !== -1)) {
+  if (iWasThereBtn && (iWasThereBtn.disabled || (iWasThereBtn.textContent && iWasThereBtn.textContent.indexOf('✓') !== -1))) {
     showToast('I Was There is already recorded for you.');
     return;
   }
@@ -9992,8 +10006,9 @@ async function handleClusterModalIWasThere() {
       state.activeClusterContext = res.cluster_id;
       if (iWasThereBtn) {
         iWasThereBtn.innerHTML = '<span class="text-zinc-400 font-bold">✓</span> <span>I Was There</span>';
-        iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 font-medium text-[10px] font-mono-tag flex items-center gap-1.5 shrink-0 cursor-default pointer-events-none select-none';
+        iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 font-medium text-[10px] font-mono-tag flex items-center gap-1.5 shrink-0 cursor-default select-none';
         iWasThereBtn.setAttribute('disabled', 'true');
+        iWasThereBtn.onclick = null;
       }
       var attTextEl = document.getElementById('momentClusterAttendanceText');
       var finalCount = res.attendance_count || (c ? c.attendance_count : 1);
