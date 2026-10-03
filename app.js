@@ -9848,13 +9848,13 @@ async function openMomentClusterModal(clusterId, momentId) {
   state.currentViewingCluster = clusterData;
 
   if (!clusterData) {
-    if (listEl) listEl.innerHTML = '<div class="p-4 text-center text-xs text-zinc-500 font-mono-tag">This moment is waiting for its first shared perspective.</div>';
+    if (listEl) listEl.innerHTML = '<div class="py-6 text-center text-xs text-zinc-500 font-mono-tag">No perspectives yet</div>';
     if (countEl) countEl.textContent = '0 perspectives';
     if (headerPerspEl) headerPerspEl.textContent = 'PERSPECTIVES · 0';
     if (attTextEl) attTextEl.textContent = '0 people were there';
     if (iWasThereBtn) {
-      iWasThereBtn.textContent = '[ I WAS THERE ]';
-      iWasThereBtn.className = 'px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[10px] font-mono-tag uppercase transition shadow-md cursor-pointer shrink-0';
+      iWasThereBtn.textContent = 'I Was There';
+      iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/60 text-zinc-300 hover:text-white text-[10px] font-mono-tag font-semibold transition cursor-pointer shrink-0';
     }
     if (addBtn) addBtn.style.display = 'none';
     if (noticeEl) noticeEl.style.display = 'block';
@@ -9874,25 +9874,28 @@ async function openMomentClusterModal(clusterId, momentId) {
 
   if (iWasThereBtn) {
     if (isAttended) {
-      iWasThereBtn.innerHTML = '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>';
-      iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-800/90 border border-zinc-700/50 text-zinc-300 font-bold text-[10px] font-mono-tag uppercase flex items-center gap-1.5 shrink-0 cursor-default pointer-events-none select-none';
+      iWasThereBtn.innerHTML = '<span class="text-zinc-400 font-bold">✓</span> <span>I Was There</span>';
+      iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 font-medium text-[10px] font-mono-tag flex items-center gap-1.5 shrink-0 cursor-default pointer-events-none select-none';
       iWasThereBtn.setAttribute('disabled', 'true');
     } else {
-      iWasThereBtn.innerHTML = '[ I WAS THERE ]';
-      iWasThereBtn.className = 'px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[10px] font-mono-tag uppercase transition shadow-md cursor-pointer shrink-0';
+      iWasThereBtn.textContent = 'I Was There';
+      iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/60 text-zinc-300 hover:text-white text-[10px] font-mono-tag font-semibold transition cursor-pointer shrink-0';
       iWasThereBtn.removeAttribute('disabled');
     }
   }
 
-  if (addBtn) addBtn.style.display = 'flex';
+  if (addBtn) {
+    addBtn.style.display = 'flex';
+    addBtn.className = 'w-full py-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-400 active:scale-[0.99] font-bold text-xs font-mono-tag rounded-2xl transition flex items-center justify-center gap-2 cursor-pointer shadow-sm';
+  }
   if (noticeEl) noticeEl.style.display = 'none';
 
   if (primaryEl && clusterData.primary_moment) {
     var pm = clusterData.primary_moment;
     primaryEl.innerHTML = 
-      '<div class="p-3 rounded-2xl bg-zinc-900 border border-amber-500/20 space-y-2">' +
+      '<div class="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-2">' +
         '<div class="flex items-center justify-between text-[10px] font-mono-tag">' +
-          '<span class="text-amber-400 font-bold">PRIMARY MOMENT</span>' +
+          '<span class="text-amber-400 font-bold uppercase tracking-wider text-[9px]">PRIMARY MOMENT</span>' +
           '<span class="text-zinc-500">@' + escapeHtml(pm.author_handle || 'creator') + '</span>' +
         '</div>' +
         '<div class="aspect-[16/10] bg-black rounded-xl overflow-hidden relative">' +
@@ -9915,7 +9918,7 @@ async function openMomentClusterModal(clusterId, momentId) {
           : '<span class="text-zinc-500">' + escapeHtml(persp.location_city || 'Campus') + '</span>';
 
         var card = document.createElement('div');
-        card.className = 'p-3 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2';
+        card.className = 'p-3 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-2';
         card.innerHTML = 
           '<div class="flex items-center justify-between text-[10px] font-mono-tag">' +
             '<div class="flex items-center gap-1.5">' +
@@ -9931,7 +9934,7 @@ async function openMomentClusterModal(clusterId, momentId) {
         listEl.appendChild(card);
       });
     } else {
-      listEl.innerHTML = '<div class="p-4 text-center text-xs text-zinc-500 font-mono-tag">No additional perspectives added yet. Be the first to share what you saw.</div>';
+      listEl.innerHTML = '<div class="py-6 text-center text-xs text-zinc-500 font-mono-tag">No perspectives yet</div>';
     }
   }
 
@@ -9988,8 +9991,8 @@ async function handleClusterModalIWasThere() {
       }
       state.activeClusterContext = res.cluster_id;
       if (iWasThereBtn) {
-        iWasThereBtn.innerHTML = '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>';
-        iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-800/90 border border-zinc-700/50 text-zinc-300 font-bold text-[10px] font-mono-tag uppercase flex items-center gap-1.5 shrink-0 cursor-default pointer-events-none select-none';
+        iWasThereBtn.innerHTML = '<span class="text-zinc-400 font-bold">✓</span> <span>I Was There</span>';
+        iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 font-medium text-[10px] font-mono-tag flex items-center gap-1.5 shrink-0 cursor-default pointer-events-none select-none';
         iWasThereBtn.setAttribute('disabled', 'true');
       }
       var attTextEl = document.getElementById('momentClusterAttendanceText');
