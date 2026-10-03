@@ -185,8 +185,9 @@ async function apiRequest(endpoint, options) {
   options = options || {};
   var headers = options.headers || {};
   headers['Content-Type'] = 'application/json';
-  if (state.token && state.token !== 'null' && state.token !== 'undefined') {
-    var cleanTok = sanitizeHeaderValue(state.token);
+  var tok = state.token || (typeof localStorage !== 'undefined' ? localStorage.getItem('kandid_token') : null);
+  if (tok && tok !== 'null' && tok !== 'undefined') {
+    var cleanTok = sanitizeHeaderValue(tok);
     if (cleanTok) headers['Authorization'] = 'Bearer ' + cleanTok;
   }
   var uid = getActiveUserId();
@@ -3007,7 +3008,19 @@ const KandidCameraEngine = {
 window.KandidCameraEngine = KandidCameraEngine;
 
 // Legacy Adapter Bindings
-async function openCameraStudio() {
+async function openCameraStudio(source, communityId) {
+  if (!state.cameraContext || state.cameraContext.mode !== 'PERSPECTIVE') {
+    state.cameraContext = {
+      mode: 'NORMAL',
+      clusterId: null,
+      clusterName: null,
+      communityId: communityId || state.activeCommunityId || null,
+      source: source || 'feed'
+    };
+    state.activeClusterContext = null;
+    state.activeClusterCommunityId = null;
+    state.activeClusterContextName = null;
+  }
   await KandidCameraEngine.initialize();
 }
 window.openCameraStudio = openCameraStudio;
@@ -3018,6 +3031,16 @@ function closeCameraStudio() {
   if (hud) hud.style.display = 'none';
   var modal = document.getElementById('cameraStudioModal');
   if (modal) modal.style.display = 'none';
+  state.cameraContext = {
+    mode: 'NORMAL',
+    clusterId: null,
+    clusterName: null,
+    communityId: null,
+    source: 'feed'
+  };
+  state.activeClusterContext = null;
+  state.activeClusterCommunityId = null;
+  state.activeClusterContextName = null;
 }
 window.closeCameraStudio = closeCameraStudio;
 
@@ -3151,8 +3174,10 @@ async function setupReviewContextUI() {
 
   if (!listEl) return;
 
-  if (state.activeClusterContext) {
-    var clusterName = state.activeClusterContextName || 'Shared Event';
+  var isPerspective = Boolean(state.cameraContext && state.cameraContext.mode === 'PERSPECTIVE' && state.cameraContext.clusterId);
+
+  if (isPerspective) {
+    var clusterName = (state.cameraContext && state.cameraContext.clusterName) || state.activeClusterContextName || 'Shared Event';
     listEl.innerHTML = 
       '<div class="p-3 rounded-2xl bg-zinc-900 border border-amber-500/30 flex items-center justify-between">' +
         '<div class="flex items-center gap-2.5">' +
@@ -3187,10 +3212,11 @@ async function setupReviewContextUI() {
     }
   });
 
-  // Default selection is ALWAYS Personal (Feed) (index 0)
+  // Default selection is ALWAYS Personal (Feed) (index 0) unless explicitly provided in cameraContext
   var matchedIdx = 0;
-  if (state.activeCommunityId) {
-    var foundIdx = options.findIndex(function(c) { return c.id === state.activeCommunityId; });
+  var targetCommId = (state.cameraContext && state.cameraContext.communityId) || state.activeCommunityId;
+  if (targetCommId) {
+    var foundIdx = options.findIndex(function(c) { return c.id === targetCommId; });
     if (foundIdx !== -1) {
       matchedIdx = foundIdx;
     }
@@ -3220,6 +3246,13 @@ function closeMomentReview() {
   if (reviewStream) reviewStream.style.display = 'none';
   state.activeCommunityId = null;
   state.selectedReviewCommunity = null;
+  state.cameraContext = {
+    mode: 'NORMAL',
+    clusterId: null,
+    clusterName: null,
+    communityId: null,
+    source: 'feed'
+  };
   state.activeClusterContext = null;
   state.activeClusterCommunityId = null;
   state.activeClusterContextName = null;
@@ -3274,20 +3307,23 @@ async function publishCapturedMoment() {
     (state.currentGeoApprox.startsWith('Near ') ? state.currentGeoApprox : ('Near ' + state.currentGeoApprox)) : 
     (state.currentUser ? ('Near Quad · ' + (state.currentUser.campus || 'Supaul')) : 'Near Quad · Supaul');
 
-  var isPerspective = Boolean(state.activeClusterContext);
+  var isPerspective = Boolean(state.cameraContext && state.cameraContext.mode === 'PERSPECTIVE' && state.cameraContext.clusterId);
   var payload;
 
   if (isPerspective) {
+    var perspClusterId = state.cameraContext.clusterId;
+    var perspCommId = state.cameraContext.communityId || state.activeClusterCommunityId || '';
+    var perspLoc = state.cameraContext.clusterName || state.activeClusterContextName || approxLocName;
     payload = {
       caption: caption,
       circle: 'campus',
       region: 'all',
       locationCity: approxLocName,
       community: '',
-      community_id: state.activeClusterCommunityId || '',
-      primary_community_id: state.activeClusterCommunityId || '',
+      community_id: perspCommId,
+      primary_community_id: perspCommId,
       context_community_id: '',
-      context_location: state.activeClusterContextName || approxLocName,
+      context_location: perspLoc,
       mainImg: state.capturedMomentData ? state.capturedMomentData.mainImg : '',
       pipImg: state.capturedMomentData ? state.capturedMomentData.pipImg : '',
       audioData: state.capturedMomentData ? state.capturedMomentData.audioData : '',
@@ -3297,7 +3333,7 @@ async function publishCapturedMoment() {
       shutter: '1/250s',
       is_daily_mission: false,
       event_id: state.activeEventId || '',
-      cluster_id: state.activeClusterContext || ''
+      cluster_id: perspClusterId
     };
   } else {
     var selectedRadio = document.querySelector('input[name="reviewCommunityDest"]:checked');
@@ -3343,10 +3379,7 @@ async function publishCapturedMoment() {
     }
     if (isPerspective) {
       showToast('Perspective added to shared moment cluster! ✦');
-      var publishedClusterId = state.activeClusterContext;
-      state.activeClusterContext = null;
-      state.activeClusterCommunityId = null;
-      state.activeClusterContextName = null;
+      var publishedClusterId = state.cameraContext ? state.cameraContext.clusterId : state.activeClusterContext;
       closeMomentReview();
       if (publishedClusterId) {
         openMomentClusterModal(publishedClusterId);
@@ -5328,13 +5361,11 @@ window.openMomentDetail = openMomentDetail;
 // SHARE TO WHATSAPP STATUS WITH SUBTLE KINDID WATERMARK
 // =====================================================================
 function createWatermarkedShareBlob(imgSrc, callback) {
-  var img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = function() {
+  function renderFromImage(loadedImg) {
     try {
       var canvas = document.createElement('canvas');
-      var w = img.naturalWidth || img.width || 1080;
-      var h = img.naturalHeight || img.height || 1350;
+      var w = loadedImg.naturalWidth || loadedImg.width || 1080;
+      var h = loadedImg.naturalHeight || loadedImg.height || 1350;
       canvas.width = w;
       canvas.height = h;
       var ctx = canvas.getContext('2d');
@@ -5344,7 +5375,7 @@ function createWatermarkedShareBlob(imgSrc, callback) {
       }
 
       // Draw original image untouched (no filters, no color alterations)
-      ctx.drawImage(img, 0, 0, w, h);
+      ctx.drawImage(loadedImg, 0, 0, w, h);
 
       // Subtle, tasteful Kindid watermark badge in safe bottom-right corner
       // Proportional font size: ~2.2% of image width (min 13px, max 32px)
@@ -5411,10 +5442,41 @@ function createWatermarkedShareBlob(imgSrc, callback) {
       console.error('Error creating watermarked share copy:', err);
       callback(null, err);
     }
+  }
+
+  var isDataUrl = typeof imgSrc === 'string' && imgSrc.startsWith('data:');
+  var isSameOrigin = typeof imgSrc === 'string' && (imgSrc.startsWith('/') || imgSrc.startsWith(window.location.origin));
+
+  var img = new Image();
+  if (!isDataUrl && !isSameOrigin) {
+    img.crossOrigin = 'anonymous';
+  }
+  img.onload = function() {
+    renderFromImage(img);
   };
-  img.onerror = function(err) {
-    console.error('Failed to load image for share copy:', err);
-    callback(null, err);
+  img.onerror = function() {
+    if (!isDataUrl && typeof fetch === 'function') {
+      fetch(imgSrc)
+        .then(function(res) { return res.blob(); })
+        .then(function(b) {
+          var blobUrl = URL.createObjectURL(b);
+          var retryImg = new Image();
+          retryImg.onload = function() {
+            renderFromImage(retryImg);
+            URL.revokeObjectURL(blobUrl);
+          };
+          retryImg.onerror = function(e2) {
+            URL.revokeObjectURL(blobUrl);
+            callback(null, e2);
+          };
+          retryImg.src = blobUrl;
+        })
+        .catch(function(fetchErr) {
+          callback(null, fetchErr);
+        });
+    } else {
+      callback(null, new Error('Failed to load image for share copy'));
+    }
   };
   img.src = imgSrc;
 }
@@ -10131,8 +10193,6 @@ async function openMomentClusterModal(clusterId, momentId) {
     return;
   }
 
-  state.activeClusterContext = clusterData.id;
-
   var attCount = clusterData.attendance_count || (clusterData.participants ? clusterData.participants.length : 0);
   var isAttended = Boolean(clusterData.is_attended || (clusterData.participants && state.currentUser && clusterData.participants.some(function(p) { return p.id === state.currentUser.id; })));
 
@@ -10268,7 +10328,6 @@ async function handleClusterModalIWasThere() {
         c.is_attended = true;
         c.attendance_count = res.attendance_count || ((c.attendance_count || 0) + (res.already_participated ? 0 : 1));
       }
-      state.activeClusterContext = res.cluster_id;
       if (!state.attendedMoments) state.attendedMoments = new Set();
       state.attendedMoments.add(momentId);
       document.querySelectorAll('.i-was-there-btn[data-moment-id="' + momentId + '"]').forEach(function(btn) {
@@ -10315,7 +10374,6 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
     });
     if (res && res.success) {
       showToast(res.message || 'Participation recorded! ✦');
-      state.activeClusterContext = res.cluster_id;
       if (!state.attendedMoments) state.attendedMoments = new Set();
       state.attendedMoments.add(momentId);
       document.querySelectorAll('.i-was-there-btn[data-moment-id="' + momentId + '"]').forEach(function(btn) {
@@ -10364,11 +10422,18 @@ function handleAddPerspectiveClick() {
 window.handleAddPerspectiveClick = handleAddPerspectiveClick;
 
 function openPerspectiveCapture(clusterId, communityId, location) {
+  state.cameraContext = {
+    mode: 'PERSPECTIVE',
+    clusterId: clusterId,
+    clusterName: location || 'Shared Event',
+    communityId: communityId || null,
+    source: 'event'
+  };
   state.activeClusterContext = clusterId;
   state.activeClusterCommunityId = communityId || '';
   state.activeClusterContextName = location || 'Shared Event';
   closeMomentClusterModal();
-  openCameraStudio();
+  openCameraStudio('event', communityId);
   showToast('Optics ready. Capture your perspective for this cluster.');
 }
 window.openPerspectiveCapture = openPerspectiveCapture;
