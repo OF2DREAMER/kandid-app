@@ -1715,7 +1715,7 @@ def generate_secure_otp(email, ip_address="", async_dispatch=False):
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b; color: #f4f4f5; padding: 32px 20px; text-align: center; border-radius: 16px; max-width: 480px; margin: 0 auto; border: 1px solid #27272a;">
         <div style="margin-bottom: 24px;">
             <span style="font-size: 24px; font-weight: 900; letter-spacing: 0.25em; color: #f59e0b; text-transform: uppercase;">KANDID</span>
-            <p style="font-size: 11px; letter-spacing: 0.15em; color: #71717a; text-transform: uppercase; margin-top: 4px;">Authentic Campus Social</p>
+            <p style="font-size: 11px; letter-spacing: 0.15em; color: #71717a; text-transform: uppercase; margin-top: 4px;">No Filter · Just Real Moments</p>
         </div>
         <div style="background-color: #18181b; border-radius: 12px; padding: 24px; border: 1px solid #27272a; margin-bottom: 24px;">
             <p style="font-size: 13px; color: #a1a1aa; margin-bottom: 12px;">Your one-time verification passcode:</p>
