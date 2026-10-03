@@ -1315,14 +1315,14 @@
           <div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 space-y-2.5 shadow-md">
               <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold block">NEED AN IDEA?</span>
               <div class="grid grid-cols-3 gap-2">
-                  <div class="bg-zinc-900 border border-zinc-800/80 rounded-xl p-2.5 text-center flex items-center justify-center">
+                  <div class="bg-zinc-900 border border-zinc-800/80 rounded-xl p-2.5 text-center flex items-center justify-center min-h-[52px]">
                       <p class="text-[10px] text-zinc-300 font-medium leading-tight">Your walk to class</p>
                   </div>
-                  <div class="bg-zinc-900 border border-zinc-800/80 rounded-xl p-2.5 text-center flex items-center justify-center">
+                  <div class="bg-zinc-900 border border-zinc-800/80 rounded-xl p-2.5 text-center flex items-center justify-center min-h-[52px]">
                       <p class="text-[10px] text-zinc-300 font-medium leading-tight">What your desk looks like</p>
                   </div>
-                  <div class="bg-zinc-900 border border-zinc-800/80 rounded-xl p-2.5 text-center flex items-center justify-center">
-                      <p class="text-[10px] text-zinc-300 font-medium leading-tight">The moment you stopped somewhere</p>
+                  <div class="bg-zinc-900 border border-zinc-800/80 rounded-xl p-2.5 text-center flex items-center justify-center min-h-[52px]">
+                      <p class="text-[10px] text-zinc-300 font-medium leading-tight">Where you paused</p>
                   </div>
               </div>
           </div>
@@ -3241,19 +3241,19 @@
     <!-- Legacy Notifications Drawer (Kept for test backward compatibility) -->
     <div id="notificationsDrawer" style="display:none;"></div>
 
-    <!-- Simulated OS Push Notification (Fixed at top) -->
-    <div id="osPushNotification" class="fixed top-4 left-4 right-4 z-[100] transition-transform duration-500 transform -translate-y-[150%] cursor-pointer" onclick="handlePushClick()">
-      <div class="bg-[#1c1c1e]/90 apple-blur border border-zinc-700/50 rounded-[20px] p-3.5 shadow-[0_8px_30px_rgba(0,0,0,0.5)] flex items-start gap-3">
-        <div class="w-10 h-10 bg-black rounded-xl border border-zinc-800 flex items-center justify-center flex-shrink-0 text-white font-mono-tag font-bold">
+    <!-- Simulated OS Push Notification (Contained within mobile chassis) -->
+    <div id="osPushNotification" class="absolute top-4 left-4 right-4 z-[100] transition-transform duration-500 transform -translate-y-[150%] cursor-pointer" onclick="handlePushClick()">
+      <div class="bg-[#1c1c1e]/90 apple-blur border border-zinc-700/50 rounded-[20px] p-3 shadow-[0_8px_30px_rgba(0,0,0,0.5)] flex items-start gap-3">
+        <div class="w-9 h-9 bg-black rounded-xl border border-zinc-800 flex items-center justify-center flex-shrink-0 text-white font-mono-tag font-bold text-xs">
           K
         </div>
-        <div class="flex-1 space-y-0.5 pt-0.5">
+        <div class="flex-1 min-w-0 space-y-0.5 pt-0.5">
           <div class="flex justify-between items-center">
-            <h4 class="text-[13px] font-bold text-white tracking-wide">Kandid</h4>
+            <h4 class="text-[12px] font-bold text-white tracking-wide">Kandid</h4>
             <span class="text-[10px] text-zinc-400">now</span>
           </div>
-          <p class="text-[12px] font-bold text-amber-500">Daily Mission Available</p>
-          <p class="text-[12px] text-zinc-300 leading-snug">"Show us what your day actually looks like." Tap to capture.</p>
+          <p class="text-[11.5px] font-bold text-amber-500">Daily Mission Available</p>
+          <p class="text-[11px] text-zinc-300 leading-tight">"Show us what your day actually looks like." Tap to capture.</p>
         </div>
       </div>
     </div>
@@ -4652,6 +4652,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.6.6"></script>
+  <script src="app.js?v=5.6.7"></script>
 </body>
 </html>
