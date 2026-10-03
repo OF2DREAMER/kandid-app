@@ -3038,6 +3038,31 @@ function openMomentReview() {
 }
 window.openMomentReview = openMomentReview;
 
+function onReviewCommunityChange(inputEl) {
+  if (!inputEl) return;
+  state.selectedReviewCommunity = inputEl.value;
+  state.activeCommunityId = inputEl.getAttribute('data-comm-id') || '';
+
+  var listEl = document.getElementById('reviewCommunityOptionsList');
+  if (listEl) {
+    var labels = listEl.querySelectorAll('label');
+    labels.forEach(function(lbl) {
+      var inp = lbl.querySelector('input[name="reviewCommunityDest"]');
+      var badge = lbl.querySelector('.font-mono-tag');
+      if (inp && badge) {
+        if (inp.checked) {
+          badge.className = 'font-mono-tag text-[8px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded';
+          badge.textContent = 'SELECTED';
+        } else {
+          badge.className = 'font-mono-tag text-[8px] text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded';
+          badge.textContent = inp.getAttribute('data-comm-type') || 'Community';
+        }
+      }
+    });
+  }
+}
+window.onReviewCommunityChange = onReviewCommunityChange;
+
 async function setupReviewContextUI() {
   var locEl = document.getElementById('reviewApproxLocation');
   var listEl = document.getElementById('reviewCommunityOptionsList');
@@ -3049,52 +3074,60 @@ async function setupReviewContextUI() {
   if (locEl) locEl.textContent = '⌖ ' + approxLocName;
 
   if (!listEl) return;
-  listEl.innerHTML = '<div class="py-2 text-center text-[10px] text-zinc-500 font-mono-tag">Loading recommended communities...</div>';
 
-  var defaultComm = state.activeCommunity || (state.currentUser ? state.currentUser.campus : '');
-  state.selectedReviewCommunity = defaultComm;
+  if (state.activeClusterContext) {
+    var clusterName = state.activeClusterContextName || 'Shared Event';
+    listEl.innerHTML = 
+      '<div class="p-3 rounded-2xl bg-zinc-900 border border-amber-500/30 flex items-center justify-between">' +
+        '<div class="flex items-center gap-2.5">' +
+          '<div class="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xs">📷</div>' +
+          '<div>' +
+            '<span class="text-[9px] font-mono-tag text-amber-500 font-bold uppercase tracking-wider block">PERSPECTIVE</span>' +
+            '<span class="text-xs font-bold text-white">↳ ' + escapeHtml(clusterName) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<span class="font-mono-tag text-[8px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full uppercase">LOCKED</span>' +
+      '</div>';
+    return;
+  }
+
+  listEl.innerHTML = '<div class="py-2 text-center text-[10px] text-zinc-500 font-mono-tag">Loading options...</div>';
 
   var res = await apiRequest('/api/community/my');
-  var communities = (res && res.success && Array.isArray(res.communities)) ? res.communities : [];
+  var joinedCommunities = (res && res.success && Array.isArray(res.communities)) ? res.communities : [];
 
-  // Ensure target community from active context is present
-  if (state.activeCommunityId && defaultComm) {
-    var hasTarget = communities.some(function(c) { return c.id === state.activeCommunityId; });
-    if (!hasTarget) {
-      communities.unshift({ id: state.activeCommunityId, name: defaultComm, type: 'Community Space', icon: '📍' });
+  // Option 1: Personal (Feed) is ALWAYS the default top option
+  var options = [{ id: '', name: 'Personal (Feed)', type: 'Feed', icon: '✨' }];
+
+  // Option 2+: Only communities where the user is ACTUALLY a joined member or creator
+  joinedCommunities.forEach(function(c) {
+    if (c && c.name && c.name.toLowerCase() !== 'personal (feed)') {
+      options.push({
+        id: c.id || '',
+        name: c.name,
+        type: c.type || 'Community',
+        icon: c.icon || '📍'
+      });
+    }
+  });
+
+  // Default selection is ALWAYS Personal (Feed) (index 0)
+  var matchedIdx = 0;
+  if (state.activeCommunityId) {
+    var foundIdx = options.findIndex(function(c) { return c.id === state.activeCommunityId; });
+    if (foundIdx !== -1) {
+      matchedIdx = foundIdx;
     }
   }
 
-  // Always provide Personal (Feed) option
-  var hasPersonalFeed = communities.some(function(c) { return !c.id || c.name === 'Personal (Feed)'; });
-  if (!hasPersonalFeed) {
-    communities.push({ id: '', name: 'Personal (Feed)', type: 'Feed', icon: '✨' });
-  }
+  state.selectedReviewCommunity = options[matchedIdx].name;
+  state.activeCommunityId = options[matchedIdx].id || '';
 
-  // Determine pre-selected item index
-  var matchedIdx = -1;
-  if (state.activeCommunityId) {
-    matchedIdx = communities.findIndex(function(c) { return c.id === state.activeCommunityId; });
-  }
-  if (matchedIdx === -1 && defaultComm) {
-    matchedIdx = communities.findIndex(function(c) { 
-      return c.name && c.name.toLowerCase() === defaultComm.toLowerCase(); 
-    });
-  }
-  if (matchedIdx === -1) {
-    matchedIdx = 0;
-  }
-
-  if (communities[matchedIdx]) {
-    state.selectedReviewCommunity = communities[matchedIdx].name;
-    state.activeCommunityId = communities[matchedIdx].id || '';
-  }
-
-  listEl.innerHTML = communities.map(function(c, idx) {
+  listEl.innerHTML = options.map(function(c, idx) {
     var isChecked = (idx === matchedIdx);
     return '<label class="flex items-center justify-between p-2.5 rounded-xl bg-zinc-900/90 border border-white/[.04] hover:border-amber-500/40 cursor-pointer transition active:scale-[0.99]">' +
       '<div class="flex items-center gap-2">' +
-        '<input type="radio" name="reviewCommunityDest" value="' + escapeHtml(c.name).replace(/"/g, '&quot;') + '" data-comm-id="' + (c.id || '') + '" ' + (isChecked ? 'checked' : '') + ' onchange="state.selectedReviewCommunity = this.value; state.activeCommunityId = this.getAttribute(\'data-comm-id\');" class="accent-amber-500 w-3.5 h-3.5">' +
+        '<input type="radio" name="reviewCommunityDest" value="' + escapeHtml(c.name).replace(/"/g, '&quot;') + '" data-comm-id="' + (c.id || '') + '" data-comm-type="' + escapeHtml(c.type || 'Community') + '" ' + (isChecked ? 'checked' : '') + ' onchange="onReviewCommunityChange(this)" class="accent-amber-500 w-3.5 h-3.5">' +
         '<span class="text-xs">' + (c.icon || '📍') + '</span>' +
         '<span class="text-xs font-bold text-white">' + escapeHtml(c.name) + '</span>' +
       '</div>' +
@@ -3111,6 +3144,9 @@ function closeMomentReview() {
   if (reviewStream) reviewStream.style.display = 'none';
   state.activeCommunityId = null;
   state.selectedReviewCommunity = null;
+  state.activeClusterContext = null;
+  state.activeClusterCommunityId = null;
+  state.activeClusterContextName = null;
   selectSubTab(state.activeCircle || 'foryou');
 }
 window.closeMomentReview = closeMomentReview;
@@ -3162,36 +3198,62 @@ async function publishCapturedMoment() {
     (state.currentGeoApprox.startsWith('Near ') ? state.currentGeoApprox : ('Near ' + state.currentGeoApprox)) : 
     (state.currentUser ? ('Near Quad · ' + (state.currentUser.campus || 'Supaul')) : 'Near Quad · Supaul');
 
-  // Selected Community Context
-  var selectedRadio = document.querySelector('input[name="reviewCommunityDest"]:checked');
-  var chosenCommunity = selectedRadio ? selectedRadio.value : (state.selectedReviewCommunity || state.activeCommunity || '');
-  var chosenCommId = selectedRadio ? selectedRadio.getAttribute('data-comm-id') : (state.activeCommunityId || '');
+  var isPerspective = Boolean(state.activeClusterContext);
+  var payload;
 
-  var isPersonalFeed = (!chosenCommId && (!chosenCommunity || chosenCommunity.toLowerCase() === 'personal (feed)' || chosenCommunity.toLowerCase() === 'feed'));
-  var finalCommId = isPersonalFeed ? '' : (chosenCommId || '');
-  var finalPrimaryComm = isPersonalFeed ? '' : (chosenCommId || chosenCommunity || '');
+  if (isPerspective) {
+    payload = {
+      caption: caption,
+      circle: 'campus',
+      region: 'all',
+      locationCity: approxLocName,
+      community: '',
+      community_id: state.activeClusterCommunityId || '',
+      primary_community_id: state.activeClusterCommunityId || '',
+      context_community_id: '',
+      context_location: state.activeClusterContextName || approxLocName,
+      mainImg: state.capturedMomentData ? state.capturedMomentData.mainImg : '',
+      pipImg: state.capturedMomentData ? state.capturedMomentData.pipImg : '',
+      audioData: state.capturedMomentData ? state.capturedMomentData.audioData : '',
+      audioDuration: '3.0s',
+      iso: 'ISO 400',
+      aperture: 'f/2.8',
+      shutter: '1/250s',
+      is_daily_mission: false,
+      event_id: state.activeEventId || '',
+      cluster_id: state.activeClusterContext || ''
+    };
+  } else {
+    var selectedRadio = document.querySelector('input[name="reviewCommunityDest"]:checked');
+    var chosenCommunity = selectedRadio ? selectedRadio.value : (state.selectedReviewCommunity || state.activeCommunity || '');
+    var chosenCommId = selectedRadio ? selectedRadio.getAttribute('data-comm-id') : (state.activeCommunityId || '');
 
-  var payload = {
-    caption: caption,
-    circle: state.activeCircle || 'campus',
-    region: 'all',
-    locationCity: approxLocName,
-    community: isPersonalFeed ? 'Personal (Feed)' : chosenCommunity,
-    community_id: finalCommId,
-    primary_community_id: finalPrimaryComm,
-    context_community_id: state.activeCommunity || (state.currentUser ? state.currentUser.campus : ''),
-    context_location: approxLocName,
-    mainImg: state.capturedMomentData ? state.capturedMomentData.mainImg : '',
-    pipImg: state.capturedMomentData ? state.capturedMomentData.pipImg : '',
-    audioData: state.capturedMomentData ? state.capturedMomentData.audioData : '',
-    audioDuration: '3.0s',
-    iso: 'ISO 400',
-    aperture: 'f/2.8',
-    shutter: '1/250s',
-    is_daily_mission: (state.activeScreen === 'mission'),
-    event_id: state.activeEventId || '',
-    cluster_id: state.activeClusterContext || ''
-  };
+    var isPersonalFeed = (!chosenCommId && (!chosenCommunity || chosenCommunity.toLowerCase() === 'personal (feed)' || chosenCommunity.toLowerCase() === 'feed'));
+    var finalCommId = isPersonalFeed ? '' : (chosenCommId || '');
+    var finalPrimaryComm = isPersonalFeed ? '' : (chosenCommId || chosenCommunity || '');
+
+    payload = {
+      caption: caption,
+      circle: state.activeCircle || 'campus',
+      region: 'all',
+      locationCity: approxLocName,
+      community: isPersonalFeed ? 'Personal (Feed)' : chosenCommunity,
+      community_id: finalCommId,
+      primary_community_id: finalPrimaryComm,
+      context_community_id: state.activeCommunity || (state.currentUser ? state.currentUser.campus : ''),
+      context_location: approxLocName,
+      mainImg: state.capturedMomentData ? state.capturedMomentData.mainImg : '',
+      pipImg: state.capturedMomentData ? state.capturedMomentData.pipImg : '',
+      audioData: state.capturedMomentData ? state.capturedMomentData.audioData : '',
+      audioDuration: '3.0s',
+      iso: 'ISO 400',
+      aperture: 'f/2.8',
+      shutter: '1/250s',
+      is_daily_mission: (state.activeScreen === 'mission'),
+      event_id: state.activeEventId || '',
+      cluster_id: ''
+    };
+  }
 
   var data = await apiRequest('/api/moments/capture', {
     method: 'POST',
@@ -3203,13 +3265,21 @@ async function publishCapturedMoment() {
     if (typeof markDailyAlertCompleted === 'function') {
       markDailyAlertCompleted();
     }
-    if (state.activeClusterContext) {
+    if (isPerspective) {
       showToast('Perspective added to shared moment cluster! ✦');
+      var publishedClusterId = state.activeClusterContext;
       state.activeClusterContext = null;
+      state.activeClusterCommunityId = null;
+      state.activeClusterContextName = null;
+      closeMomentReview();
+      if (publishedClusterId) {
+        openMomentClusterModal(publishedClusterId);
+      }
     } else {
-      showToast('Moment shared to ' + (chosenCommunity || 'Feed') + '! 🔥 +50 XP');
+      var chosenName = payload.community || 'Feed';
+      showToast('Moment shared to ' + chosenName + '! 🔥 +50 XP');
+      closeMomentReview();
     }
-    closeMomentReview();
     
     // Refresh feeds and profile
     await loadFeedMoments('foryou');
@@ -9732,20 +9802,27 @@ setTimeout(function() {
 // =============================================================================
 state.activeClusterContext = null;
 state.currentViewingCluster = null;
+state.activeClusterMomentId = null;
 
 async function openMomentClusterModal(clusterId, momentId) {
   var modal = document.getElementById('momentClusterModal');
   if (!modal) return;
 
+  state.activeClusterMomentId = momentId || null;
+
   var titleEl = document.getElementById('momentClusterTitle');
   var contextTextEl = document.getElementById('momentClusterContextText');
   var countEl = document.getElementById('momentClusterPerspectivesCount');
+  var headerPerspEl = document.getElementById('momentClusterPerspectivesHeader');
+  var attTextEl = document.getElementById('momentClusterAttendanceText');
+  var iWasThereBtn = document.getElementById('momentClusterIWasThereBtn');
   var primaryEl = document.getElementById('momentClusterPrimaryShowcase');
   var listEl = document.getElementById('momentClusterPerspectivesList');
   var connArea = document.getElementById('momentClusterConnectionArea');
   var connPrompt = document.getElementById('momentClusterConnectionPrompt');
   var connBtn = document.getElementById('momentClusterConnectBtn');
   var addBtn = document.getElementById('momentClusterAddPerspectiveBtn');
+  var noticeEl = document.getElementById('momentClusterAttendanceNotice');
 
   if (listEl) listEl.innerHTML = '<div class="p-4 text-center text-xs text-zinc-500 font-mono-tag">Loading perspectives...</div>';
   modal.style.display = 'flex';
@@ -9773,24 +9850,42 @@ async function openMomentClusterModal(clusterId, momentId) {
   if (!clusterData) {
     if (listEl) listEl.innerHTML = '<div class="p-4 text-center text-xs text-zinc-500 font-mono-tag">This moment is waiting for its first shared perspective.</div>';
     if (countEl) countEl.textContent = '0 perspectives';
-    if (addBtn) {
-      addBtn.onclick = function() {
-        if (momentId) {
-          handleIWasThereClick(momentId, true);
-        } else {
-          closeMomentClusterModal();
-          openCameraStudio();
-        }
-      };
+    if (headerPerspEl) headerPerspEl.textContent = 'PERSPECTIVES · 0';
+    if (attTextEl) attTextEl.textContent = '0 people were there';
+    if (iWasThereBtn) {
+      iWasThereBtn.textContent = '[ I WAS THERE ]';
+      iWasThereBtn.className = 'px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[10px] font-mono-tag uppercase transition shadow-md cursor-pointer shrink-0';
     }
+    if (addBtn) addBtn.style.display = 'none';
+    if (noticeEl) noticeEl.style.display = 'block';
     return;
   }
 
   state.activeClusterContext = clusterData.id;
 
+  var attCount = clusterData.attendance_count || (clusterData.participants ? clusterData.participants.length : 0);
+  var isAttended = Boolean(clusterData.is_attended || (clusterData.participants && state.currentUser && clusterData.participants.some(function(p) { return p.id === state.currentUser.id; })));
+
   if (titleEl) titleEl.textContent = 'One Real Moment — ' + ((clusterData.perspectives_count || 0) + 1) + ' Perspectives';
   if (contextTextEl) contextTextEl.textContent = clusterData.originating_context || 'Shared Context';
   if (countEl) countEl.textContent = (clusterData.perspectives_count || 0) + ' perspective' + ((clusterData.perspectives_count === 1) ? '' : 's');
+  if (headerPerspEl) headerPerspEl.textContent = 'PERSPECTIVES · ' + (clusterData.perspectives_count || 0);
+  if (attTextEl) attTextEl.textContent = attCount + (attCount === 1 ? ' person was there' : ' people were there');
+
+  if (iWasThereBtn) {
+    if (isAttended) {
+      iWasThereBtn.innerHTML = '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>';
+      iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-800/90 border border-zinc-700/50 text-zinc-300 font-bold text-[10px] font-mono-tag uppercase flex items-center gap-1.5 shrink-0 cursor-default pointer-events-none select-none';
+      iWasThereBtn.setAttribute('disabled', 'true');
+    } else {
+      iWasThereBtn.innerHTML = '[ I WAS THERE ]';
+      iWasThereBtn.className = 'px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[10px] font-mono-tag uppercase transition shadow-md cursor-pointer shrink-0';
+      iWasThereBtn.removeAttribute('disabled');
+    }
+  }
+
+  if (addBtn) addBtn.style.display = 'flex';
+  if (noticeEl) noticeEl.style.display = 'none';
 
   if (primaryEl && clusterData.primary_moment) {
     var pm = clusterData.primary_moment;
@@ -9811,6 +9906,14 @@ async function openMomentClusterModal(clusterId, momentId) {
     if (clusterData.perspectives && clusterData.perspectives.length > 0) {
       listEl.innerHTML = '';
       clusterData.perspectives.forEach(function(persp) {
+        var isOwner = Boolean(state.currentUser && persp.user_id && state.currentUser.id === persp.user_id);
+        var rightActionHtml = isOwner
+          ? '<div class="flex items-center gap-1.5">' +
+              '<span class="text-zinc-500 text-[9px]">' + escapeHtml(persp.location_city || 'Campus') + '</span>' +
+              '<button onclick="event.stopPropagation(); handleDeletePerspectiveMoment(\'' + escapeHtml(persp.id) + '\')" class="px-2 py-0.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-400 hover:text-red-300 font-mono-tag text-[9px] font-bold transition cursor-pointer flex items-center gap-1 active:scale-95" title="Delete perspective"><span>🗑️</span></button>' +
+            '</div>'
+          : '<span class="text-zinc-500">' + escapeHtml(persp.location_city || 'Campus') + '</span>';
+
         var card = document.createElement('div');
         card.className = 'p-3 rounded-2xl bg-zinc-900/70 border border-zinc-800 space-y-2';
         card.innerHTML = 
@@ -9819,7 +9922,7 @@ async function openMomentClusterModal(clusterId, momentId) {
               '<div class="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-amber-400 text-[9px]">' + escapeHtml(persp.avatar_letter || 'K') + '</div>' +
               '<span class="text-zinc-300 font-bold">@' + escapeHtml(persp.author_handle || 'user') + '</span>' +
             '</div>' +
-            '<span class="text-zinc-500">' + escapeHtml(persp.location_city || 'Campus') + '</span>' +
+            rightActionHtml +
           '</div>' +
           '<div class="aspect-[16/10] bg-black rounded-xl overflow-hidden relative">' +
             '<img src="' + escapeHtml(persp.main_img || '') + '" class="w-full h-full object-cover">' +
@@ -9857,6 +9960,56 @@ function closeMomentClusterModal() {
   if (modal) modal.style.display = 'none';
 }
 window.closeMomentClusterModal = closeMomentClusterModal;
+
+async function handleClusterModalIWasThere() {
+  var c = state.currentViewingCluster;
+  var momentId = (c && c.primary_moment) ? c.primary_moment.id : (state.activeClusterMomentId || '');
+  if (!momentId) {
+    showToast('Moment reference not found.');
+    return;
+  }
+  var iWasThereBtn = document.getElementById('momentClusterIWasThereBtn');
+  if (iWasThereBtn && (iWasThereBtn.disabled || iWasThereBtn.textContent.indexOf('✓') !== -1)) {
+    showToast('I Was There is already recorded for you.');
+    return;
+  }
+  if (iWasThereBtn) iWasThereBtn.style.opacity = '0.5';
+  try {
+    var res = await apiRequest('/api/moment/' + encodeURIComponent(momentId) + '/i-was-there', {
+      method: 'POST',
+      body: JSON.stringify({ moment_id: momentId })
+    });
+    if (iWasThereBtn) iWasThereBtn.style.opacity = '1';
+    if (res && res.success) {
+      showToast(res.message || 'Participation recorded! ✦');
+      if (c) {
+        c.is_attended = true;
+        c.attendance_count = res.attendance_count || ((c.attendance_count || 0) + (res.already_participated ? 0 : 1));
+      }
+      state.activeClusterContext = res.cluster_id;
+      if (iWasThereBtn) {
+        iWasThereBtn.innerHTML = '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>';
+        iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-800/90 border border-zinc-700/50 text-zinc-300 font-bold text-[10px] font-mono-tag uppercase flex items-center gap-1.5 shrink-0 cursor-default pointer-events-none select-none';
+        iWasThereBtn.setAttribute('disabled', 'true');
+      }
+      var attTextEl = document.getElementById('momentClusterAttendanceText');
+      var finalCount = res.attendance_count || (c ? c.attendance_count : 1);
+      if (attTextEl) attTextEl.textContent = finalCount + (finalCount === 1 ? ' person was there' : ' people were there');
+      
+      var addBtn = document.getElementById('momentClusterAddPerspectiveBtn');
+      var noticeEl = document.getElementById('momentClusterAttendanceNotice');
+      if (addBtn) addBtn.style.display = 'flex';
+      if (noticeEl) noticeEl.style.display = 'none';
+    } else {
+      var err = (res && (res.error || res.message)) ? (res.error || res.message) : 'Participation not authorized.';
+      showToast(err);
+    }
+  } catch(e) {
+    if (iWasThereBtn) iWasThereBtn.style.opacity = '1';
+    showToast('Failed to record participation.');
+  }
+}
+window.handleClusterModalIWasThere = handleClusterModalIWasThere;
 
 async function handleIWasThereClick(momentId, openCaptureAfter) {
   try {
@@ -9910,6 +10063,8 @@ window.handleAddPerspectiveClick = handleAddPerspectiveClick;
 
 function openPerspectiveCapture(clusterId, communityId, location) {
   state.activeClusterContext = clusterId;
+  state.activeClusterCommunityId = communityId || '';
+  state.activeClusterContextName = location || 'Shared Event';
   closeMomentClusterModal();
   openCameraStudio();
   showToast('Optics ready. Capture your perspective for this cluster.');
@@ -9937,4 +10092,35 @@ async function connectWithClusterMember(targetUserId, targetHandle) {
   }
 }
 window.connectWithClusterMember = connectWithClusterMember;
+
+async function handleDeletePerspectiveMoment(postId) {
+  if (!postId) return;
+  if (!confirm('Are you sure you want to permanently delete your perspective?')) {
+    return;
+  }
+  showToast('Deleting perspective... 🗑️');
+  try {
+    var res = await apiRequest('/api/moments/delete', {
+      method: 'POST',
+      body: JSON.stringify({ postId: postId })
+    });
+    if (res && res.success) {
+      showToast('Perspective deleted successfully.');
+      var c = state.currentViewingCluster;
+      var clusterId = c ? c.id : state.activeClusterContext;
+      var momentId = (c && c.primary_moment) ? c.primary_moment.id : (state.activeClusterMomentId || '');
+      if (clusterId) {
+        openMomentClusterModal(clusterId, momentId);
+      }
+      if (typeof loadFeedMoments === 'function') loadFeedMoments('foryou');
+      if (typeof loadCampusScreen === 'function') loadCampusScreen();
+      if (typeof loadYouScreen === 'function') loadYouScreen();
+    } else {
+      showToast('Failed to delete: ' + (res ? (res.error || res.message) : 'Network error'));
+    }
+  } catch(e) {
+    showToast('Failed to delete perspective.');
+  }
+}
+window.handleDeletePerspectiveMoment = handleDeletePerspectiveMoment;
 

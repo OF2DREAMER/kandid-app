@@ -1556,6 +1556,17 @@
             <span class="text-[10px] font-mono-tag text-zinc-500" id="momentClusterPerspectivesCount">0 perspectives</span>
           </div>
 
+          <!-- Attendance & I Was There Action Row -->
+          <div class="p-3.5 rounded-2xl bg-zinc-900/90 border border-white/[.06] flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-sm">👥</span>
+              <span class="text-xs font-mono-tag text-zinc-300 font-semibold truncate" id="momentClusterAttendanceText">0 people were there</span>
+            </div>
+            <button id="momentClusterIWasThereBtn" onclick="handleClusterModalIWasThere()" class="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[10px] font-mono-tag uppercase transition shadow-md cursor-pointer shrink-0">
+              [ I WAS THERE ]
+            </button>
+          </div>
+
           <!-- Primary Moment Showcase -->
           <div id="momentClusterPrimaryShowcase" class="space-y-2">
             <!-- Rendered dynamically -->
@@ -1563,7 +1574,9 @@
 
           <!-- Documentary Perspectives Timeline -->
           <div class="space-y-3 pt-2 border-t border-zinc-900">
-            <span class="text-[9px] font-mono-tag uppercase tracking-widest text-zinc-500 font-bold">OTHER PERSPECTIVES</span>
+            <div class="flex items-center justify-between">
+              <span class="text-[9px] font-mono-tag uppercase tracking-widest text-zinc-500 font-bold" id="momentClusterPerspectivesHeader">PERSPECTIVES · 0</span>
+            </div>
             <div id="momentClusterPerspectivesList" class="space-y-3">
               <!-- Rendered dynamically -->
             </div>
@@ -1578,7 +1591,7 @@
           </div>
 
           <!-- Action Footer: Add Perspective Button -->
-          <div class="pt-2">
+          <div class="pt-2" id="momentClusterActionFooter">
             <button id="momentClusterAddPerspectiveBtn" onclick="handleAddPerspectiveClick()" class="w-full py-3 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-xs font-mono-tag rounded-xl transition shadow-lg flex items-center justify-center gap-2 cursor-pointer">
               <span>📷</span> <span>+ ADD YOUR PERSPECTIVE</span>
             </button>

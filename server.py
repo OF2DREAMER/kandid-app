@@ -5486,7 +5486,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn = get_db()
             cursor = conn.cursor()
 
-            where_clauses = ["(moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))"]
+            where_clauses = [
+                "(moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))",
+                "id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')"
+            ]
             params = []
 
             if user_id:
@@ -6208,22 +6211,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if path == "/api/community/my":
             user = get_current_user(self.headers)
             user_id = user["id"] if user else ""
-            user_campus = user.get("campus", "North City University") if user else "North City University"
+            user_campus = user.get("campus", "") if user else ""
 
             conn = get_db()
             cursor = conn.cursor()
             
-            cursor.execute("""
-                SELECT DISTINCT c.* FROM communities c
-                LEFT JOIN community_members cm ON c.id = cm.community_id
-                WHERE cm.user_id = ? OR LOWER(c.name) = ? OR c.creator_id = ?
-                ORDER BY c.created_at DESC
-            """, (user_id, user_campus.lower(), user_id))
-            my_comms = [dict(r) for r in cursor.fetchall()]
-
-            if not my_comms:
-                cursor.execute("SELECT * FROM communities WHERE visibility = 'public' LIMIT 4")
+            if user_id:
+                cursor.execute("""
+                    SELECT DISTINCT c.* FROM communities c
+                    LEFT JOIN community_members cm ON c.id = cm.community_id
+                    WHERE cm.user_id = ? OR c.creator_id = ?
+                    ORDER BY c.created_at DESC
+                """, (user_id, user_id))
                 my_comms = [dict(r) for r in cursor.fetchall()]
+            else:
+                my_comms = []
 
             conn.close()
             return self.send_json(200, {
@@ -6563,8 +6565,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("""
                 SELECT * FROM posts
                 WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ? OR context_community_id = ? OR (campus = 'North City University' AND ? = 'North City University' AND (circle = 'campus' OR circle = 'foryou')))
+                  AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                  AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
                 ORDER BY created_at DESC LIMIT 20
             """, (target_campus, comm_id, comm_id, comm_id, target_campus))
+
             pulse_posts = [dict(r) for r in cursor.fetchall()]
             for p in pulse_posts:
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
@@ -6763,6 +6768,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 FROM posts
                 WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ?)
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                  AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
                 ORDER BY created_at DESC LIMIT 15
             """, (comm["name"], comm["id"], comm["id"]))
             mom_rows = cursor.fetchall()
@@ -7955,6 +7961,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     LEFT JOIN users u ON p.user_id = u.id
                     WHERE p.is_private = 0 AND p.moderation_status != 'removed'
                       AND p.region = 'global'
+                      AND p.id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
                       AND p.created_at < ?
                     ORDER BY p.created_at DESC LIMIT ?
                 """, (cursor_param, limit + 1))
@@ -7964,6 +7971,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     LEFT JOIN users u ON p.user_id = u.id
                     WHERE p.is_private = 0 AND p.moderation_status != 'removed'
                       AND p.region = 'global'
+                      AND p.id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
                     ORDER BY p.created_at DESC LIMIT ?
                 """, (limit + 1,))
 
@@ -8703,9 +8711,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
             has_participated = False
             cluster_id = moment.get("cluster_id") or ""
             perspectives_count = 0
+            attendance_count = 0
             if cluster_id:
-                cursor.execute("SELECT 1 FROM moment_cluster_members WHERE cluster_id = ? AND user_id = ?", (cluster_id, user["id"]))
+                cursor.execute("SELECT 1 FROM moment_cluster_members WHERE cluster_id = ? AND user_id = ? AND participation_type = 'participant'", (cluster_id, user["id"]))
                 has_participated = bool(cursor.fetchone())
+                cursor.execute("SELECT COUNT(DISTINCT user_id) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'participant'", (cluster_id,))
+                attendance_count = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'perspective'", (cluster_id,))
                 perspectives_count = cursor.fetchone()[0]
 
@@ -8718,6 +8729,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "reason": reason,
                 "cluster_id": cluster_id,
                 "has_participated": has_participated,
+                "is_attended": has_participated,
+                "attendance_count": attendance_count,
                 "perspectives_count": perspectives_count,
                 "context": {
                     "community_id": moment.get("primary_community_id") or moment.get("context_community_id") or "",
@@ -8794,15 +8807,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 safe_perspectives.append(persp)
 
             cursor.execute("""
-                SELECT DISTINCT u.id, u.name, u.handle, u.avatar_letter, u.avatar_url, m.participation_type, m.joined_at
+                SELECT u.id, u.name, u.handle, u.avatar_letter, u.avatar_url, MIN(m.joined_at) as joined_at
                 FROM moment_cluster_members m
                 JOIN users u ON m.user_id = u.id
-                WHERE m.cluster_id = ?
-                ORDER BY m.joined_at ASC
+                WHERE m.cluster_id = ? AND m.participation_type = 'participant'
+                GROUP BY u.id, u.name, u.handle, u.avatar_letter, u.avatar_url
+                ORDER BY joined_at ASC
             """, (cluster_id,))
             safe_participants = [dict(r) for r in cursor.fetchall()]
 
+            cursor.execute("SELECT COUNT(DISTINCT user_id) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'participant'", (cluster_id,))
+            att_count = cursor.fetchone()[0]
+
             conn_suggestion = None
+            is_viewer_participant = False
+            can_add_perspective = False
             if user:
                 is_viewer_participant = any(p["id"] == user["id"] for p in safe_participants)
                 co_participants = [p for p in safe_participants if p["id"] != user["id"]]
@@ -8814,6 +8833,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         "target_handle": lead_peer["handle"],
                         "message": f"You shared a moment with @{lead_peer['handle']}. Connect?"
                     }
+
+                can_add_perspective = True
+                if cluster.get("community_id"):
+                    cursor.execute("SELECT visibility FROM communities WHERE id = ?", (cluster["community_id"],))
+                    _c_vis = cursor.fetchone()
+                    if _c_vis and _c_vis["visibility"] == "private":
+                        cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (cluster["community_id"], user["id"]))
+                        can_add_perspective = bool(cursor.fetchone()) or (user.get("role") in ("admin", "founder"))
 
             conn.close()
             return self.send_json(200, {
@@ -8829,6 +8856,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "perspectives": safe_perspectives,
                     "participants": safe_participants,
                     "perspectives_count": len(safe_perspectives),
+                    "attendance_count": att_count,
+                    "is_attended": is_viewer_participant,
+                    "can_add_perspective": can_add_perspective,
                     "connection_suggestion": conn_suggestion
                 }
             })
@@ -10694,14 +10724,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cluster = create_or_get_moment_cluster(conn, moment, moment["user_id"])
 
             # 4. Idempotency Check
-            cursor.execute("SELECT * FROM moment_cluster_members WHERE cluster_id = ? AND user_id = ?", (cluster["id"], user["id"]))
+            cursor.execute("SELECT * FROM moment_cluster_members WHERE cluster_id = ? AND user_id = ? AND participation_type = 'participant'", (cluster["id"], user["id"]))
             existing = cursor.fetchone()
             if existing:
+                cursor.execute("SELECT COUNT(DISTINCT user_id) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'participant'", (cluster["id"],))
+                att_cnt = cursor.fetchone()[0]
                 conn.close()
                 return self.send_json(200, {
                     "success": True,
                     "already_participated": True,
                     "cluster_id": cluster["id"],
+                    "attendance_count": att_cnt,
+                    "is_attended": True,
                     "cluster": {
                         "id": cluster["id"],
                         "originating_context": cluster.get("originating_context", ""),
@@ -10740,11 +10774,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # 8. Deduplicated Calm Notification to Moment Author
             send_calm_cluster_notification(conn, moment["user_id"], user.get("handle", "Someone"), "cluster_presence", cluster["id"], moment["id"])
 
+            cursor.execute("SELECT COUNT(DISTINCT user_id) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'participant'", (cluster["id"],))
+            att_cnt = cursor.fetchone()[0]
+
             conn.close()
             return self.send_json(200, {
                 "success": True,
                 "already_participated": False,
                 "cluster_id": cluster["id"],
+                "attendance_count": att_cnt,
+                "is_attended": True,
                 "participation_type": "participant",
                 "cluster": {
                     "id": cluster["id"],
@@ -10820,16 +10859,19 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     })
 
                 # 4. Authoritative Role & Membership Check
+                is_perspective_capture = bool((body.get("cluster_id") or "").strip())
+                is_public_comm = (target_comm.get("visibility") != "private")
                 user_role = get_user_community_role(target_comm["id"], user["id"], cursor_check)
                 is_platform_admin = user.get("role") in ("admin", "founder")
 
-                if not is_platform_admin and user_role not in ("owner", "admin", "creator", "member"):
+                if not is_platform_admin and not (is_perspective_capture and is_public_comm) and user_role not in ("owner", "admin", "creator", "member"):
                     conn_check.close()
                     return self.send_json(403, {
                         "success": False,
                         "error": "Active community membership required to contribute moments to this space.",
                         "code": "COMMUNITY_MEMBERSHIP_REQUIRED"
                     })
+
 
                 primary_comm = target_comm["id"]
                 conn_check.close()
@@ -10926,9 +10968,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # reach posts.cluster_id.
             if cluster_id:
                 _cls_pre = conn.cursor()
-                _cls_pre.execute("SELECT 1 FROM moment_clusters WHERE id = ? AND status = 'active'", (cluster_id,))
-                if not _cls_pre.fetchone():
-                    cluster_id = ""
+                _cls_pre.execute("SELECT * FROM moment_clusters WHERE id = ? AND status = 'active'", (cluster_id,))
+                _cls_row = _cls_pre.fetchone()
+                if not _cls_row:
+                    conn.close()
+                    return self.send_json(404, {"success": False, "error": "Event/Moment cluster not found.", "code": "CLUSTER_NOT_FOUND"})
+                
+                _cls_dict = dict(_cls_row)
+                if _cls_dict.get("community_id"):
+                    _cls_pre.execute("SELECT visibility FROM communities WHERE id = ?", (_cls_dict["community_id"],))
+                    _comm_v = _cls_pre.fetchone()
+                    if _comm_v and _comm_v["visibility"] == "private":
+                        _cls_pre.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (_cls_dict["community_id"], user["id"]))
+                        if not _cls_pre.fetchone() and user.get("role") not in ("admin", "founder"):
+                            conn.close()
+                            return self.send_json(403, {"success": False, "error": "Community membership required to add perspective.", "code": "COMMUNITY_RESTRICTED"})
 
             conn.execute("""
                 INSERT INTO posts (id, user_id, author_name, author_handle, avatar_letter, avatar_url, campus, main_img, pip_img, caption, circle, region, location_city, location_coords, exif_iso, exif_aperture, exif_shutter, is_private, event_id, audio_url, audio_duration, motion_url, primary_community_id, context_community_id, context_location, drop_id, cluster_id)
@@ -11009,6 +11063,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
             conn.execute("DELETE FROM reactions WHERE post_id = ?", (post_id,))
+            conn.execute("DELETE FROM moment_cluster_members WHERE moment_id = ?", (post_id,))
             conn.commit()
             conn.close()
             return self.send_json(200, {"success": True, "message": "Moment deleted successfully"})
