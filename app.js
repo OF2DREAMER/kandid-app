@@ -10068,7 +10068,12 @@ async function handleClusterModalIWasThere() {
       if (addBtn) addBtn.style.display = 'flex';
       if (noticeEl) noticeEl.style.display = 'none';
     } else {
-      var err = (res && (res.error || res.message)) ? (res.error || res.message) : 'Participation not authorized.';
+      var err = 'Participation not authorized.';
+      if (res && (res.code === 'COMMUNITY_MEMBERSHIP_REQUIRED' || res.code === 'COMMUNITY_RESTRICTED')) {
+        err = 'This private event is only accessible to community members.';
+      } else if (res && (res.error || res.message)) {
+        err = res.error || res.message;
+      }
       showToast(err);
     }
   } catch(e) {
@@ -10093,10 +10098,8 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
       } else {
         openMomentClusterModal(res.cluster_id, momentId);
       }
-    } else if (res && res.code === 'CAMPUS_DISCOVERY_ONLY') {
-      // B-12: Do NOT auto-join to bypass campus discovery boundary — show user-facing error
-      showToast('This moment is only available to community members. Join the community first to participate.');
-
+    } else if (res && (res.code === 'COMMUNITY_MEMBERSHIP_REQUIRED' || res.code === 'COMMUNITY_RESTRICTED')) {
+      showToast('This private event is only accessible to community members.');
     } else {
       var err = 'Participation not authorized.';
       if (res && res.code === 'OWN_MOMENT') {

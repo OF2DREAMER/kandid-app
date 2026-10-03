@@ -3928,8 +3928,14 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
         if cursor.fetchone():
             return True, "DROP_ATTENDEE", 1
 
-    # Tier 2: Active Member of the Associated Community
+    # Tier 2: Community Context & Authorization
     comm_key = moment.get("primary_community_id") or moment.get("context_community_id") or ""
+    if not comm_key and moment.get("cluster_id"):
+        cursor.execute("SELECT community_id FROM moment_clusters WHERE id = ?", (moment["cluster_id"],))
+        cl_row = cursor.fetchone()
+        if cl_row and cl_row["community_id"]:
+            comm_key = cl_row["community_id"]
+
     if not comm_key and moment.get("campus"):
         raw_campus = moment.get("campus", "").replace("Near ", "").strip()
         cursor.execute("SELECT id FROM communities WHERE LOWER(name) = ? OR id = ? OR LOWER(name) LIKE ? LIMIT 1", (raw_campus.lower(), raw_campus, f"%{raw_campus.lower()}%"))
@@ -3938,7 +3944,7 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
             comm_key = camp_row["id"]
 
     if comm_key:
-        cursor.execute("SELECT id, name, creator_id FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ? LIMIT 1", (comm_key, comm_key.lower(), comm_key))
+        cursor.execute("SELECT id, name, creator_id, visibility FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ? LIMIT 1", (comm_key, comm_key.lower(), comm_key))
         c_found = cursor.fetchone()
         target_cid = c_found["id"] if c_found else comm_key
 
@@ -3955,8 +3961,25 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
             WHERE community_id IN (?, ?) AND user_id = ?
         """, (target_cid, comm_key, viewer["id"]))
         mem = cursor.fetchone()
-        if mem and mem["status"] == "active" and mem["role"] in ('owner', 'admin', 'creator', 'member'):
+        is_member = bool(mem and mem["status"] == "active" and mem["role"] in ('owner', 'admin', 'creator', 'member'))
+        if is_member:
             return True, "ACTIVE_COMMUNITY_MEMBER", 2
+
+        # Public Community Rule for I Was There / Attendance:
+        # If community is PUBLIC, non-member can declare attendance without joining.
+        # If community is PRIVATE, non-member requires valid invitation or is blocked.
+        is_private = bool(c_found and dict(c_found).get("visibility") == "private")
+        if not is_private:
+            return True, "PUBLIC_COMMUNITY_ATTENDEE", 2
+        else:
+            if invite_code:
+                cursor.execute("""
+                    SELECT 1 FROM community_invites 
+                    WHERE invite_code = ? AND status = 'active' AND (moment_id = ? OR cluster_id = ?)
+                """, (invite_code, moment["id"], moment.get("cluster_id") or ""))
+                if cursor.fetchone():
+                    return True, "INVITED_CONTEXT", 3
+            return False, "COMMUNITY_MEMBERSHIP_REQUIRED", 2
 
     # Tier 3: Valid Contextual Invitation
     if invite_code:
@@ -10674,29 +10697,38 @@ class KandidHandler(SimpleHTTPRequestHandler):
         # =========================================================================
         # AUTHENTIC VIRAL GRAPH — POST /api/moment/<id>/i-was-there
         # =========================================================================
-        if (path.startswith("/api/moment/") and path.endswith("/i-was-there")) or path == "/api/moment/i-was-there":
+        if (path.startswith("/api/moment/") and path.endswith("/i-was-there")) or path == "/api/moment/i-was-there" or (path.startswith("/api/cluster/") and path.endswith("/i-was-there")):
             user = get_current_user(self.headers)
             if not user:
                 return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
 
-            moment_id = ""
+            target_ref = ""
             if path == "/api/moment/i-was-there":
-                moment_id = (body.get("moment_id") or "").strip()
+                target_ref = (body.get("moment_id") or body.get("cluster_id") or "").strip()
             else:
                 parts = [p for p in path.split("/") if p]
                 if len(parts) >= 3:
-                    moment_id = parts[2].strip()
+                    target_ref = parts[2].strip()
 
-            if not moment_id:
+            if not target_ref:
                 return self.send_json(400, {"success": False, "error": "moment_id is required", "code": "MISSING_MOMENT_ID"})
 
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM posts WHERE id = ?", (moment_id,))
+            cursor.execute("SELECT * FROM posts WHERE id = ?", (target_ref,))
             m_row = cursor.fetchone()
             if not m_row:
+                # Check if target_ref is a cluster_id
+                cursor.execute("SELECT originator_moment_id FROM moment_clusters WHERE id = ?", (target_ref,))
+                cls_r = cursor.fetchone()
+                if cls_r and cls_r["originator_moment_id"]:
+                    cursor.execute("SELECT * FROM posts WHERE id = ?", (cls_r["originator_moment_id"],))
+                    m_row = cursor.fetchone()
+
+            if not m_row:
                 conn.close()
-                return self.send_json(404, {"success": False, "error": "Moment not found", "code": "MOMENT_NOT_FOUND"})
+                code = "CLUSTER_NOT_FOUND" if (target_ref.startswith("cls_") or path.startswith("/api/cluster/")) else "MOMENT_NOT_FOUND"
+                return self.send_json(404, {"success": False, "error": "Moment or cluster not found", "code": code})
 
             moment = dict(m_row)
             invite_code = (body.get("invite_code") or "").strip()
