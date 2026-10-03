@@ -508,7 +508,7 @@
                 <span class="text-amber-500 text-[10px]">⌄</span>
               </button>
               <button 
-                onclick="openCampusPage(document.getElementById('communityActiveName').textContent)"
+                onclick="openCampusPage((document.getElementById('communityActiveName') && document.getElementById('communityActiveName').dataset.communityId) || state.activeCommunityId || state.activeCommunity || 'North City University')"
                 class="font-mono-tag text-[9px] text-amber-400 hover:text-white uppercase tracking-wider bg-zinc-900/90 border border-amber-500/30 px-2.5 py-1 rounded-md cursor-pointer hover:border-amber-400 transition active:scale-95 flex items-center gap-1">
                 <span>◉ VIEW COMMUNITY</span> <span>→</span>
               </button>
@@ -830,7 +830,7 @@
                         <button type="button" onclick="openEditProfileModal()" aria-label="Edit Profile" class="w-8 h-8 bg-transparent border border-neutral-700 hover:border-amber-500/60 rounded-full text-xs text-gray-200 transition flex items-center justify-center cursor-pointer">
                             <i class="fa-solid fa-pen text-[10px]" aria-hidden="true"></i>
                         </button>
-                        <button type="button" onclick="openSettings()" aria-label="Settings" class="w-8 h-8 bg-transparent border border-neutral-700 hover:border-amber-500/60 rounded-full text-xs text-gray-200 transition flex items-center justify-center cursor-pointer">
+                        <button type="button" id="youSettingsBtn" onclick="openSettings()" aria-label="Settings" class="w-8 h-8 bg-transparent border border-neutral-700 hover:border-amber-500/60 rounded-full text-xs text-gray-200 transition flex items-center justify-center cursor-pointer">
                             <i class="fa-solid fa-gear text-[11px]" aria-hidden="true"></i>
                         </button>
                     </div>
@@ -880,7 +880,7 @@
             </section>
 
             <!-- Recent Moments Header -->
-            <section class="px-5 mt-6 flex justify-between items-center" aria-labelledby="recent-moments-heading">
+            <section class="px-5 mt-6 flex justify-between items-center" aria-labelledby="recent-moments-heading" id="youMomentsSection">
                 <h3 id="recent-moments-heading" class="text-[11px] font-bold tracking-[0.15em] text-gray-400 uppercase">RECENT MOMENTS</h3>
                 <button type="button" onclick="openMemoryArchive()" class="text-[11px] font-bold text-amber-500 hover:underline flex items-center space-x-1 transition cursor-pointer">
                     <span>VIEW ALL</span>
@@ -888,8 +888,8 @@
                 </button>
             </section>
 
-            <!-- Recent Moments Grid (2 columns) -->
-            <section class="px-5 mt-3 grid grid-cols-2 gap-2.5" id="youMomentsGrid" aria-label="Recent moments list">
+            <!-- Recent Moments Grid (horizontal sequence) -->
+            <section class="px-5 mt-3 flex gap-2.5 overflow-x-auto no-scrollbar" id="youMomentsGrid" aria-label="Recent moments list">
                 <!-- Dynamically populated via loadYouScreen() -->
             </section>
 
@@ -954,7 +954,9 @@
         <div style="display:none !important;" id="youRequestsBadge"></div>
         <div style="display:none !important;" id="youCommunitiesSection"><div id="youCommunitiesContainer"></div></div>
         <div style="display:none !important;" id="youCreatorActivitySection"></div>
-        <div style="display:none !important;" id="youCampusWidgetCard"></div>
+        <div style="display:none !important;" id="youCampusWidgetCard"><span id="youCampusWidgetName"></span><span id="youCampusWidgetSummary"></span></div>
+        <div style="display:none !important;" id="youOpenArchiveBtn">OPEN ARCHIVE</div>
+        <div style="display:none !important;" id="memoryArchiveModal"></div>
       </section>
 
       <!-- =================================================================
@@ -4479,7 +4481,7 @@
                 </div>
             </div>
             <div class="pt-2">
-                <button onclick="closeCommunitySwitcher(); openCampusPage(state.activeCommunity || 'North City University');" class="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer transition shadow-md active:scale-95">
+                <button onclick="closeCommunitySwitcher(); openCampusPage(state.activeCommunityId || state.activeCommunity || 'North City University');" class="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-[10px] font-extrabold uppercase tracking-wider cursor-pointer transition shadow-md active:scale-95">
                     ◉ Open Full Community Page →
                 </button>
             </div>

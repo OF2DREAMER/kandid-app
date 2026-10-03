@@ -718,11 +718,41 @@ async function loadCommunityScreen() {
   var activeCount = document.getElementById('communityActiveCount');
   var contextDesc = document.getElementById('communityContextDesc');
 
-  var currentComm = state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
-  if (activeName) activeName.textContent = currentComm;
-  if (activeLoc) activeLoc.textContent = state.currentGeoApprox || 'New Delhi, India';
+  var currentCommId = state.activeCommunityId || '';
+  var currentCommName = state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
 
-  var data = await apiRequest('/api/feed?circle=campus');
+  // Load canonical community details
+  var targetParam = currentCommId || currentCommName;
+  var detailRes = await apiRequest('/api/community/detail?id=' + encodeURIComponent(targetParam) + '&campus=' + encodeURIComponent(targetParam));
+  if (detailRes && detailRes.success && detailRes.campus) {
+    var c = detailRes.campus;
+    state.activeCommunityId = c.id;
+    state.activeCommunity = c.name;
+    currentCommId = c.id;
+    currentCommName = c.name;
+    if (activeName) {
+      activeName.textContent = c.name;
+      activeName.dataset.communityId = c.id;
+    }
+    if (activeLoc) activeLoc.textContent = c.location || 'Local Region';
+    if (contextDesc) {
+      contextDesc.textContent = c.description || ('People capturing ordinary life around ' + c.name + ' without performance or rankings.');
+    }
+  } else {
+    if (activeName) {
+      activeName.textContent = currentCommName;
+      activeName.dataset.communityId = currentCommId;
+    }
+    if (activeLoc) activeLoc.textContent = state.currentGeoApprox || 'New Delhi, India';
+    if (contextDesc) {
+      contextDesc.textContent = 'People capturing ordinary life around ' + currentCommName + ' without performance or rankings.';
+    }
+  }
+
+  var feedUrl = currentCommId 
+    ? ('/api/feed?circle=campus&community_id=' + encodeURIComponent(currentCommId))
+    : ('/api/feed?circle=campus&campus=' + encodeURIComponent(currentCommName));
+  var data = await apiRequest(feedUrl);
   if (data && data.success && Array.isArray(data.feed)) {
     if (campusContainer) {
       if (data.feed.length > 0) {
@@ -733,15 +763,12 @@ async function loadCommunityScreen() {
           '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-2 shadow-lg">' +
             '<div class="text-amber-500 text-lg font-mono-tag">✦</div>' +
             '<h3 class="text-xs font-bold text-white uppercase font-mono-tag">NO COMMUNITY MOMENTS YET</h3>' +
-            '<p class="text-[11px] text-zinc-400">Capture the first authentic moment in ' + escapeHtml(currentComm) + '!</p>' +
+            '<p class="text-[11px] text-zinc-400">Capture the first authentic moment in ' + escapeHtml(currentCommName) + '!</p>' +
             '<button onclick="openCameraStudio()" class="mt-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[10px] rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer">Capture Now 📸</button>' +
           '</div>';
+        if (activeCount) activeCount.textContent = 'Quiet right now';
       }
     }
-  }
-
-  if (contextDesc) {
-    contextDesc.textContent = 'People capturing ordinary life around ' + currentComm + ' without performance or rankings.';
   }
 
   if (typeof loadMoreAroundYou === 'function') {
@@ -892,16 +919,25 @@ async function openCommunitySwitcher() {
   listEl.innerHTML = '<div class="py-4 text-center text-xs text-zinc-500 font-mono-tag">Loading your communities...</div>';
 
   var res = await apiRequest('/api/community/my');
-  var activeComm = state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
+  var activeCommId = state.activeCommunityId || '';
+  var activeCommName = state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
 
-  if (res && res.success && Array.isArray(res.communities) && res.communities.length > 0) {
-    listEl.innerHTML = res.communities.map(function(c) {
-      var isActive = (c.name.toLowerCase() === activeComm.toLowerCase());
+  var commList = (res && res.success && Array.isArray(res.communities) && res.communities.length > 0) ? res.communities : [];
+  if (commList.length === 0) {
+    var discRes = await apiRequest('/api/community/discover');
+    if (discRes && discRes.success && Array.isArray(discRes.communities)) {
+      commList = discRes.communities;
+    }
+  }
+
+  if (commList.length > 0) {
+    listEl.innerHTML = commList.map(function(c) {
+      var isActive = (activeCommId && c.id === activeCommId) || (c.name.toLowerCase() === activeCommName.toLowerCase());
       var borderClass = isActive ? 'border-amber-500/60 bg-amber-500/10' : 'border-white/[.06] bg-zinc-950 hover:border-zinc-700';
       var textClass = isActive ? 'text-amber-400 font-extrabold' : 'text-zinc-200 font-bold';
       var badge = isActive ? '<span class="font-mono-tag text-[9px] text-amber-400 font-bold bg-amber-500/20 px-2 py-0.5 rounded">● Active</span>' : ('<span class="font-mono-tag text-[9px] text-zinc-400 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800">' + escapeHtml(c.type || 'Community') + '</span>');
 
-      return '<div onclick="switchCommunity(\'' + jsAttr(c.name) + '\')" class="p-3.5 rounded-2xl ' + borderClass + ' border flex items-center justify-between cursor-pointer active:scale-95 transition shadow-sm group">' +
+      return '<div onclick="switchCommunity(\'' + jsAttr(c.id) + '\', \'' + jsAttr(c.name) + '\')" class="p-3.5 rounded-2xl ' + borderClass + ' border flex items-center justify-between cursor-pointer active:scale-95 transition shadow-sm group">' +
         '<div class="flex items-center gap-2.5">' +
           '<span class="text-base">' + (c.icon || '📍') + '</span>' +
           '<div>' +
@@ -925,15 +961,19 @@ function closeCommunitySwitcher() {
 }
 window.closeCommunitySwitcher = closeCommunitySwitcher;
 
-function switchCommunity(name) {
-  state.activeCommunity = name;
+function switchCommunity(commId, commName) {
+  var targetId = commId || '';
+  var targetName = commName || commId || 'North City University';
+  state.activeCommunityId = targetId;
+  state.activeCommunity = targetName;
   closeCommunitySwitcher();
   playTactileFeedback('click');
-  showToast('Switched to ' + name + ' ✦');
+  showToast('Switched to ' + targetName + ' ✦');
   
   if (state.activeScreen === 'campus-page') {
-    openCampusPage(name);
+    openCampusPage(targetId || targetName);
   } else {
+    loadCommunityScreen();
     selectSubTab('community');
   }
 }
@@ -989,8 +1029,8 @@ async function openCampusPage(campusName) {
   if (state.activeScreen && state.activeScreen !== 'campus-page') {
     state.previousScreen = state.activeScreen;
   }
-  campusName = campusName || state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
-  state.activeCommunity = campusName;
+  var targetParam = campusName || state.activeCommunityId || state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
+  state.activeCommunity = targetParam;
   switchScreenView('campus-page');
 
   var titleEl = document.getElementById('headerCampusTitle');
@@ -1009,17 +1049,21 @@ async function openCampusPage(campusName) {
   var memoriesGridEl = document.getElementById('campusPageMemoriesGrid');
   var peopleListEl = document.getElementById('campusPagePeopleList');
 
-  if (titleEl) titleEl.textContent = campusName;
-  if (nameEl) nameEl.textContent = campusName;
+  if (titleEl) titleEl.textContent = targetParam;
+  if (nameEl) nameEl.textContent = targetParam;
 
-  var data = await apiRequest('/api/community/detail?campus=' + encodeURIComponent(campusName));
+  var data = await apiRequest('/api/community/detail?id=' + encodeURIComponent(targetParam) + '&campus=' + encodeURIComponent(targetParam));
   if (data && data.success) {
     if (data.campus) {
       var c = data.campus;
       state.activeCommunityId = c.id || '';
-      state.activeCommunity = c.name || campusName;
+      state.activeCommunity = c.name || targetParam;
       state.activeCommunityData = c;
-      if (nameEl) nameEl.textContent = c.name;
+      if (titleEl) titleEl.textContent = c.name;
+      if (nameEl) {
+        nameEl.textContent = c.name;
+        nameEl.dataset.communityId = c.id || '';
+      }
       if (typeTagEl) typeTagEl.textContent = '◉ ' + (c.tag || 'COMMUNITY HUB');
       if (locEl) locEl.textContent = (c.location || 'Local Region') + (c.creator_handle ? ' · Created by @' + c.creator_handle : '');
       if (descEl) descEl.textContent = c.description || 'Authentic moments and shared daily life.';
@@ -1245,7 +1289,6 @@ async function openCampusPage(campusName) {
   }
 }
 window.openCampusPage = openCampusPage;
-window.switchCommunity = openCampusPage;
 
 function openCommunityMomentCapture(commId, commName) {
   var cName = commName || state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
@@ -5173,7 +5216,7 @@ function renderMomentsGrid(moments, grid) {
   grid.innerHTML = '';
   if (!moments || moments.length === 0) {
     grid.innerHTML =
-      '<div class="col-span-2 py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider">' +
+      '<div class="py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider w-full flex-shrink-0">' +
         'NO MOMENTS CAPTURED YET' +
       '</div>';
     return;
@@ -5181,7 +5224,7 @@ function renderMomentsGrid(moments, grid) {
 
   moments.slice(0, 10).forEach(function(m) {
     var article = document.createElement('article');
-    article.className = 'relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
+    article.className = 'relative h-[170px] w-[165px] flex-shrink-0 rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
     var imgUrl = escapeHtml(m.main_img || m.mediaUrl || m.media_url || m.mainImg || '');
     var locStr = escapeHtml(m.campus || m.location_city || (state.currentUser ? state.currentUser.campus : '') || 'Campus');
     var timeStr = escapeHtml((m.timeAgo || m.time_ago || (m.created_at ? formatTimeAgoClean(m.created_at) : 'RECENT'))).toUpperCase();

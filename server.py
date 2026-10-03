@@ -6236,7 +6236,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/api/community/pulse":
             user = get_current_user(self.headers)
-            target_comm = query.get("community_id", [""])[0].strip() or query.get("community", [""])[0].strip() or query.get("campus", [""])[0].strip()
+            target_comm = query.get("community_id", [""])[0].strip() or query.get("id", [""])[0].strip() or query.get("community", [""])[0].strip() or query.get("campus", [""])[0].strip()
             if not target_comm:
                 target_comm = user.get("campus", "North City University") if user else "North City University"
 
@@ -6247,13 +6247,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
             comm_row = cursor.fetchone()
             comm_id = comm_row["id"] if comm_row else target_comm
             comm_name = comm_row["name"] if comm_row else target_comm
-            comm_city = comm_row["city"] if comm_row else "Supaul, Bihar"
+            comm_city = comm_row["city"] if comm_row else ""
             
             cursor.execute("""
                 SELECT * FROM posts
-                WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ? OR circle = 'campus' OR circle = 'foryou')
+                WHERE is_private = 0 
+                  AND (campus = ? OR campus = ? OR primary_community_id = ? OR context_community_id = ?)
+                  AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                  AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
                 ORDER BY created_at DESC LIMIT 15
-            """, (comm_name, comm_id, comm_id))
+            """, (comm_name, target_comm, comm_id, comm_id))
             pulse_posts = [dict(r) for r in cursor.fetchall()]
             for p in pulse_posts:
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
@@ -6508,7 +6511,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path in ["/api/campus", "/api/campus/detail", "/api/community/detail"]:
             user = get_current_user(self.headers)
-            target_campus = query.get("id", [""])[0].strip() or query.get("campus", [""])[0].strip() or query.get("name", [""])[0].strip()
+            target_campus = query.get("id", [""])[0].strip() or query.get("community_id", [""])[0].strip() or query.get("campus", [""])[0].strip() or query.get("name", [""])[0].strip()
             if not target_campus:
                 target_campus = user.get("campus", "North City University") if user else "North City University"
 
@@ -6519,14 +6522,24 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (target_campus, target_campus.lower(), target_campus))
             comm_row = cursor.fetchone()
             
-            comm_id = comm_row["id"] if comm_row else "comm_1"
-            comm_name = comm_row["name"] if comm_row else target_campus
-            comm_type = comm_row["type"] if comm_row else "Campus"
-            comm_city = comm_row["city"] if comm_row else "Supaul, Bihar"
-            comm_desc = comm_row["description"] if comm_row else "Authentic moments and shared daily life."
-            comm_icon = comm_row["icon"] if comm_row else "🎓"
-            creator_handle = comm_row["creator_handle"] if comm_row else "kandid"
-            members_count = comm_row["members_count"] if comm_row else 142
+            if comm_row:
+                comm_id = comm_row["id"]
+                comm_name = comm_row["name"]
+                comm_type = comm_row["type"] or "Campus"
+                comm_city = comm_row["city"] or ""
+                comm_desc = comm_row["description"] or "Authentic moments and shared daily life."
+                comm_icon = comm_row["icon"] or "🎓"
+                creator_handle = comm_row["creator_handle"] or "kandid"
+                members_count = comm_row["members_count"] or 1
+            else:
+                comm_id = target_campus
+                comm_name = target_campus
+                comm_type = "Community"
+                comm_city = ""
+                comm_desc = "Authentic moments and shared daily life."
+                comm_icon = "📍"
+                creator_handle = "kandid"
+                members_count = 1
 
             # Check if user is joined & authoritative role
             is_joined = False
@@ -6564,11 +6577,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # 2. Campus Pulse & Moments Query
             cursor.execute("""
                 SELECT * FROM posts
-                WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ? OR context_community_id = ? OR (campus = 'North City University' AND ? = 'North City University' AND (circle = 'campus' OR circle = 'foryou')))
+                WHERE is_private = 0 
+                  AND (campus = ? OR campus = ? OR primary_community_id = ? OR context_community_id = ?)
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
                   AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
                 ORDER BY created_at DESC LIMIT 20
-            """, (target_campus, comm_id, comm_id, comm_id, target_campus))
+            """, (comm_name, target_campus, comm_id, comm_id))
 
             pulse_posts = [dict(r) for r in cursor.fetchall()]
             for p in pulse_posts:
