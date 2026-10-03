@@ -808,7 +808,16 @@ function renderCommunityCards(moments, container) {
     var iWasThereHtml = '';
     var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id || m.campus);
     if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
-      iWasThereHtml = '<button onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="px-2.5 py-1 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-bold cursor-pointer active:scale-95 transition shadow-sm" title="Self-assert contextual participation">+ I WAS THERE</button>';
+      var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
+      if (isAttended) {
+        iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
+          '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>' +
+        '</button>';
+      } else {
+        iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-3 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
+          'I WAS THERE' +
+        '</button>';
+      }
     }
 
     card.innerHTML = 
@@ -1994,7 +2003,16 @@ function renderFeedCards(moments, container) {
     var iWasThereHtml = '';
     var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id || m.campus);
     if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
-      iWasThereHtml = '<button onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="px-2 py-0.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-amber-500/30 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-bold cursor-pointer active:scale-95 transition shadow-sm" title="Self-assert contextual participation">+ I WAS THERE</button>';
+      var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
+      if (isAttended) {
+        iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
+          '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>' +
+        '</button>';
+      } else {
+        iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-3 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
+          'I WAS THERE' +
+        '</button>';
+      }
     }
 
     card.innerHTML =
@@ -2027,23 +2045,30 @@ function renderFeedCards(moments, container) {
 
         audioPlayerBarHtml +
 
-        '<div class="flex justify-between items-center pt-1 border-t border-zinc-900">' +
-          '<div class="flex items-center gap-2">' +
-            '<div class="w-5 h-5 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700 flex items-center justify-center">' +
-              avatarHtml +
+        '<div class="pt-1.5 border-t border-zinc-900 space-y-1.5">' +
+          '<!-- Author row -->' +
+          '<div class="flex items-center justify-between">' +
+            '<div class="flex items-center gap-2">' +
+              '<div class="w-5 h-5 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700 flex items-center justify-center">' +
+                avatarHtml +
+              '</div>' +
+              '<span class="text-[11px] text-zinc-400 font-medium">@' + authorHandle + '</span>' +
             '</div>' +
-            '<span class="text-[11px] text-zinc-400 font-medium">@' + authorHandle + '</span>' +
-            '<span class="text-[9px] text-zinc-600 font-mono-tag">· ' + iso + ' · ' + aperture + ' · ' + shutter + '</span>' +
           '</div>' +
 
-          '<div class="relative flex items-center gap-1.5 reaction-control-container">' +
-            '<div class="reaction-badge-group flex items-center gap-1">' +
-              reactionPillsHtml +
+          '<!-- Action row: [ I WAS THERE ] on left, [React] on right -->' +
+          '<div class="flex items-center justify-between gap-2 min-h-[28px]">' +
+            '<div class="flex items-center">' +
+              iWasThereHtml +
             '</div>' +
-            iWasThereHtml +
-            '<button class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 transition-all text-[9px] font-semibold text-zinc-300 rounded-lg border border-zinc-800 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center gap-1">' +
-              '<span>✦ React</span>' +
-            '</button>' +
+            '<div class="relative flex items-center gap-1.5 reaction-control-container">' +
+              '<div class="reaction-badge-group flex items-center gap-1">' +
+                reactionPillsHtml +
+              '</div>' +
+              '<button class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 transition-all text-[9px] font-semibold text-zinc-300 rounded-lg border border-zinc-800 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center gap-1">' +
+                '<span>✦ React</span>' +
+              '</button>' +
+            '</div>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -10053,6 +10078,14 @@ async function handleClusterModalIWasThere() {
         c.attendance_count = res.attendance_count || ((c.attendance_count || 0) + (res.already_participated ? 0 : 1));
       }
       state.activeClusterContext = res.cluster_id;
+      if (!state.attendedMoments) state.attendedMoments = new Set();
+      state.attendedMoments.add(momentId);
+      document.querySelectorAll('.i-was-there-btn[data-moment-id="' + momentId + '"]').forEach(function(btn) {
+        btn.innerHTML = '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>';
+        btn.className = 'i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap';
+        btn.setAttribute('disabled', 'true');
+        btn.onclick = null;
+      });
       if (iWasThereBtn) {
         iWasThereBtn.innerHTML = '<span class="text-zinc-400 font-bold">✓</span> <span>I Was There</span>';
         iWasThereBtn.className = 'px-3 py-1.5 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 font-medium text-[10px] font-mono-tag flex items-center gap-1.5 shrink-0 cursor-default select-none';
@@ -10092,6 +10125,14 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
     if (res && res.success) {
       showToast(res.message || 'Participation recorded! ✦');
       state.activeClusterContext = res.cluster_id;
+      if (!state.attendedMoments) state.attendedMoments = new Set();
+      state.attendedMoments.add(momentId);
+      document.querySelectorAll('.i-was-there-btn[data-moment-id="' + momentId + '"]').forEach(function(btn) {
+        btn.innerHTML = '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>';
+        btn.className = 'i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap';
+        btn.setAttribute('disabled', 'true');
+        btn.onclick = null;
+      });
       if (openCaptureAfter) {
         closeMomentClusterModal();
         openCameraStudio();
