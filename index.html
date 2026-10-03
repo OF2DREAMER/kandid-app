@@ -1527,12 +1527,17 @@
             </button>
           </div>
 
-          <!-- Bottom Action Row: Author Tag & Delete Button -->
-          <div class="flex items-center justify-between pt-2 border-t border-zinc-900">
+          <!-- Bottom Action Row: Author Tag, Share Button & Delete Button -->
+          <div class="flex items-center justify-between pt-2 border-t border-zinc-900 gap-2 flex-wrap">
             <span class="text-[9px] text-zinc-500 font-mono-tag" id="momentDetailAuthorHandle">@author</span>
-            <button id="momentDetailDeleteBtn" class="px-3 py-1.5 bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-400 hover:text-red-300 font-mono-tag text-[9px] font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1" onclick="handleDeleteCurrentMoment()">
-              <span>🗑️</span> <span>DELETE MOMENT</span>
-            </button>
+            <div class="flex items-center gap-2">
+              <button id="momentDetailShareWhatsAppBtn" class="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono-tag text-[9px] font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95" onclick="shareCurrentModalToWhatsAppStatus()" title="Share to WhatsApp Status">
+                <span>↗</span> <span>Share to WhatsApp Status</span>
+              </button>
+              <button id="momentDetailDeleteBtn" class="px-2.5 py-1.5 bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-400 hover:text-red-300 font-mono-tag text-[9px] font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1" onclick="handleDeleteCurrentMoment()">
+                <span>🗑️</span> <span>DELETE</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -4494,6 +4499,10 @@
         <div class="w-full rounded-t-[30px] bg-[#0d0d0f] border-t border-white/[.08] p-5 pb-8 space-y-2 animate-in slide-in-from-bottom duration-200">
             <div class="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-4"></div>
             <h3 class="text-sm font-bold text-white mb-2">About this Moment</h3>
+            <button onclick="shareMomentToWhatsAppStatus(activeTargetMomentId); closeMomentMenu()" class="w-full text-left py-2.5 text-xs text-amber-400 hover:text-amber-300 font-semibold cursor-pointer border-b border-zinc-900 flex items-center justify-between">
+              <span class="flex items-center gap-2"><span>↗</span> <span>Share to WhatsApp Status</span></span>
+              <span class="text-[9px] font-mono-tag text-zinc-500">WhatsApp</span>
+            </button>
             <button onclick="showToast('Captured in real-time within this community layer.'); closeMomentMenu()" class="w-full text-left py-2.5 text-xs text-zinc-300 hover:text-white cursor-pointer border-b border-zinc-900">Why am I seeing this?</button>
             <button onclick="showToast('Moment hidden from your feed.'); closeMomentMenu()" class="w-full text-left py-2.5 text-xs text-zinc-300 hover:text-white cursor-pointer border-b border-zinc-900">Hide this Moment</button>
             <button onclick="showToast('Report received. Thank you for keeping Kandid safe.'); closeMomentMenu()" class="w-full text-left py-2.5 text-xs text-rose-400 hover:text-rose-300 cursor-pointer">Report Content</button>
@@ -4652,6 +4661,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.6.7"></script>
+  <script src="app.js?v=5.6.8"></script>
 </body>
 </html>
