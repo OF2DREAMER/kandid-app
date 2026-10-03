@@ -6268,12 +6268,17 @@ window.togglePasswordVisibility = function(inputId, iconId) {
 
 window.openGoogleAuthModal = function() {
     var modal = document.getElementById('googleAuthModal');
-    if (modal) modal.style.display = 'flex';
+    if (modal) {
+        modal.style.setProperty('display', 'flex', 'important');
+        modal.classList.remove('hidden');
+    }
 };
 
 window.closeGoogleAuthModal = function() {
     var modal = document.getElementById('googleAuthModal');
-    if (modal) modal.style.display = 'none';
+    if (modal) {
+        modal.style.setProperty('display', 'none', 'important');
+    }
 };
 
 window.toggleCustomGoogleInput = function() {
@@ -7104,7 +7109,7 @@ window.openResetPasswordModal = function() {
         resetId.value = loginId.value.trim();
     }
     if (modal) {
-        modal.style.display = 'flex';
+        modal.style.setProperty('display', 'flex', 'important');
         modal.classList.remove('hidden');
     }
     if (resetId) {
@@ -7116,7 +7121,7 @@ window.openResetPasswordModal = function() {
 
 window.closeResetPasswordModal = function() {
     var modal = document.getElementById('resetPasswordModal');
-    if (modal) modal.style.display = 'none';
+    if (modal) modal.style.setProperty('display', 'none', 'important');
 };
 
 window.resetPasswordGoBack = function() {
