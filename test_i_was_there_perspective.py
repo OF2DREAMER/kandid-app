@@ -93,15 +93,19 @@ class TestIWasTherePerspective(unittest.TestCase):
             (cls.comm_id, "u_att3")
         )
 
-        # Create private community (u_att4 is NOT a member)
+        # Create private community (u_att1 is creator, u_att2 is member, u_att4 is NOT a member)
         cls.priv_comm_id = "comm_priv_1"
         cursor.execute(
             "INSERT INTO communities (id, name, type, visibility, members_count, creator_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (cls.priv_comm_id, "Secret Society", "Campus", "private", 1, "u_att1")
+            (cls.priv_comm_id, "Secret Society", "Campus", "private", 2, "u_att1")
+        )
+        cursor.execute(
+            "INSERT INTO community_members (community_id, user_id, role, status) VALUES (?, ?, 'creator', 'active')",
+            (cls.priv_comm_id, "u_att1")
         )
         cursor.execute(
             "INSERT INTO community_members (community_id, user_id, role, status) VALUES (?, ?, 'member', 'active')",
-            (cls.priv_comm_id, "u_att1")
+            (cls.priv_comm_id, "u_att2")
         )
 
         # Create primary event moment
@@ -511,6 +515,9 @@ class TestIWasTherePerspective(unittest.TestCase):
             "cluster_id": cluster_id,
             "community_id": self.comm_id
         }
+        status2, res2 = self._request("/api/moments/capture", token=USER1_TOKEN, method="POST", body=body2)
+        self.assertEqual(status2, 201)
+
     def test_15_public_community_non_member_cannot_create_ordinary_post(self):
         # 1. Non-member (User 4) tries to post ordinary community post (no cluster_id) -> MUST be 403
         body_non_member_ord = {
@@ -532,6 +539,108 @@ class TestIWasTherePerspective(unittest.TestCase):
         status_spoof, res_spoof = self._request("/api/moments/capture", token=USER4_TOKEN, method="POST", body=body_spoof_cls)
         self.assertEqual(status_spoof, 404)
         self.assertEqual(res_spoof.get("code"), "CLUSTER_NOT_FOUND")
+
+    # =========================================================================
+    # EXACT 15-CASE TEST MATRIX VERIFICATION (SECTION 17)
+    # =========================================================================
+
+    def test_16_matrix_test_1_public_community_non_member_i_was_there_success(self):
+        # Test 1: Non-member (User 4) -> I Was There on public event -> 200 success
+        status, res = self._request(f"/api/moment/{self.moment_id}/i-was-there", token=USER4_TOKEN, method="POST", body={"moment_id": self.moment_id})
+        self.assertEqual(status, 200)
+        self.assertTrue(res.get("success"))
+        self.assertTrue(res.get("is_attended"))
+
+    def test_17_matrix_test_3_non_member_i_was_there_twice_idempotent(self):
+        # Test 3: Non-member (User 4) -> I Was There twice -> idempotent, no duplicate
+        status, res = self._request(f"/api/moment/{self.moment_id}/i-was-there", token=USER4_TOKEN, method="POST", body={"moment_id": self.moment_id})
+        self.assertEqual(status, 200)
+        self.assertTrue(res.get("already_participated"))
+
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT cluster_id FROM posts WHERE id = ?", (self.moment_id,))
+        cluster_id = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND user_id = 'u_att4' AND participation_type = 'participant'", (cluster_id,))
+        self.assertEqual(cursor.fetchone()[0], 1)
+        conn.close()
+
+    def test_18_matrix_test_4_i_was_there_only_no_perspective_created(self):
+        # Test 4: I Was There only -> participant record exists, perspective record does NOT exist
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT cluster_id FROM posts WHERE id = ?", (self.moment_id,))
+        cluster_id = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND user_id = 'u_att4' AND participation_type = 'participant'", (cluster_id,))
+        self.assertEqual(cursor.fetchone()[0], 1)
+        cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND user_id = 'u_att4' AND participation_type = 'perspective'", (cluster_id,))
+        # User 4 has perspective from test_12, so check on moment2 for User 2 who only marked I Was There
+        cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = (SELECT cluster_id FROM posts WHERE id = 'post_event_primary_2') AND user_id = 'u_att3' AND participation_type = 'participant'", ())
+        self.assertEqual(cursor.fetchone()[0], 1)
+        conn.close()
+
+    def test_19_matrix_test_9_private_community_non_member_i_was_there_blocked(self):
+        # Test 9: Private Community Non-member (User 4) -> I Was There -> BLOCKED 403
+        status, res = self._request("/api/moment/post_priv_event_1/i-was-there", token=USER4_TOKEN, method="POST", body={"moment_id": "post_priv_event_1"})
+        self.assertEqual(status, 403)
+        self.assertIn(res.get("code"), ["COMMUNITY_MEMBERSHIP_REQUIRED", "COMMUNITY_RESTRICTED"])
+
+    def test_20_matrix_test_10_private_community_member_i_was_there_allowed(self):
+        # Test 10: Private Community Member (User 2) -> I Was There -> ALLOWED 200
+        status, res = self._request("/api/moment/post_priv_event_1/i-was-there", token=USER2_TOKEN, method="POST", body={"moment_id": "post_priv_event_1"})
+        self.assertEqual(status, 200)
+        self.assertTrue(res.get("success"))
+        self.assertTrue(res.get("is_attended"))
+
+    def test_21_matrix_test_12_private_community_member_perspective_allowed(self):
+        # Test 12: Private Community Member (User 2) -> Perspective -> ALLOWED 201
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT cluster_id FROM posts WHERE id = 'post_priv_event_1'", ())
+        cluster_id = cursor.fetchone()[0]
+        conn.close()
+
+        body = {
+            "caption": "Authorized private perspective from member User 2",
+            "cluster_id": cluster_id,
+            "community_id": self.priv_comm_id
+        }
+        status, res = self._request("/api/moments/capture", token=USER2_TOKEN, method="POST", body=body)
+        self.assertEqual(status, 201)
+        self.assertTrue(res.get("success"))
+
+    def test_22_matrix_test_14_invalid_cluster_or_moment_id_i_was_there_404(self):
+        # Test 14: Invalid cluster/moment id -> I Was There -> 404
+        status, res = self._request("/api/moment/post_nonexistent_9999/i-was-there", token=USER2_TOKEN, method="POST", body={"moment_id": "post_nonexistent_9999"})
+        self.assertEqual(status, 404)
+        status2, res2 = self._request("/api/cluster/cls_nonexistent_9999/i-was-there", token=USER2_TOKEN, method="POST", body={"cluster_id": "cls_nonexistent_9999"})
+        self.assertEqual(status2, 404)
+
+    def test_23_matrix_test_15_attendance_count_counts_participants_only(self):
+        # Test 15: Attendance count MUST count participation_type='participant' ONLY
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT cluster_id FROM posts WHERE id = 'post_priv_event_1'", ())
+        cluster_id = cursor.fetchone()[0]
+        # In priv cluster:
+        # Creator exists (User 1)
+        # Participant exists (User 2)
+        # Perspective exists (User 2)
+        cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'creator'", (cluster_id,))
+        creator_cnt = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'perspective'", (cluster_id,))
+        persp_cnt = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'participant'", (cluster_id,))
+        part_cnt = cursor.fetchone()[0]
+        self.assertGreaterEqual(creator_cnt, 1)
+        self.assertGreaterEqual(persp_cnt, 1)
+        self.assertEqual(part_cnt, 1)
+        conn.close()
+
+        status, res = self._request(f"/api/cluster/{cluster_id}", token=USER2_TOKEN, method="GET")
+        self.assertEqual(status, 200)
+        # attendance_count MUST be exactly part_cnt (1), not 1 + creator_cnt + persp_cnt
+        self.assertEqual(res.get("cluster", {}).get("attendance_count"), 1)
 
 if __name__ == "__main__":
     unittest.main()
