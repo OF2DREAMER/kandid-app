@@ -807,8 +807,8 @@ function renderCommunityCards(moments, container) {
     }
 
     var iWasThereHtml = '';
-    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id || m.campus);
-    if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
+    var hasEventOrLiveMoment = !!(m.cluster_id || m.event_id || m.drop_id);
+    if (!m.is_private && hasEventOrLiveMoment && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
       if (isAttended) {
         iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
@@ -1999,8 +1999,8 @@ function renderFeedCards(moments, container) {
     }
 
     var iWasThereHtml = '';
-    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id || m.campus);
-    if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
+    var hasEventOrLiveMoment = !!(m.cluster_id || m.event_id || m.drop_id);
+    if (!m.is_private && hasEventOrLiveMoment && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
       if (isAttended) {
         iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
@@ -2028,6 +2028,10 @@ function renderFeedCards(moments, container) {
           '<div class="absolute bottom-1 left-1 px-1 py-0.5 bg-black/60 backdrop-blur text-[7px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
         '</div>' +
         clusterBadgeHtml +
+        (reactionPillsHtml ?
+          '<div class="reaction-badge-group absolute bottom-2.5 right-2.5 z-10 flex items-center gap-1 bg-black/60 backdrop-blur-md px-1.5 py-1 rounded-xl border border-white/10 shadow-lg pointer-events-auto select-none" onclick="event.stopPropagation();">' +
+            reactionPillsHtml +
+          '</div>' : '') +
         '<div class="double-tap-burst">🔥</div>' +
       '</div>' +
 
@@ -2061,9 +2065,6 @@ function renderFeedCards(moments, container) {
             '</button>' +
             iWasThereHtml +
             '<div class="relative flex items-center gap-1 reaction-control-container">' +
-              '<div class="reaction-badge-group flex items-center gap-1">' +
-                reactionPillsHtml +
-              '</div>' +
               '<button class="p-1 px-1.5 bg-zinc-900 hover:bg-zinc-800 transition text-[9px] font-semibold text-zinc-400 hover:text-zinc-200 rounded-lg border border-zinc-800/80 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center" title="React">' +
                 '<span>✦</span>' +
               '</button>' +
