@@ -2256,9 +2256,12 @@ state.recordedAudioDataUrl = '';
 state.reviewCameraContext = null;
 
 function setupCameraStudio() {
-  var shutter = document.getElementById('mainShutterTrigger');
+  // PHASE 1.2: #mainShutterTrigger opens the Feed camera through its inline
+  // onclick="openCameraStudio()" (index.html) ONLY. The duplicate addEventListener
+  // registered here made a single dock tap run KandidCameraEngine.initialize()
+  // twice concurrently, racing two getUserMedia flows and orphaning the losing
+  // live stream (cumulative camera-session leak on the NORMAL/Feed path only).
   var momentCapture = document.getElementById('momentCaptureTriggerBtn');
-  if (shutter) shutter.addEventListener('click', openCameraStudio);
   if (momentCapture) momentCapture.addEventListener('click', openCameraStudio);
 }
 
@@ -2668,6 +2671,7 @@ const KandidCameraEngine = {
   isMultiCamSupported: false,
   pendingAudioPromise: null,
   _captureStartedAt: 0,
+  _gen: 0, // PHASE 1.2: acquisition generation; stop() invalidates in-flight getUserMedia
 
   setState(newState, detail) {
     this.state = newState;
@@ -2767,6 +2771,16 @@ const KandidCameraEngine = {
   },
 
   async initialize() {
+    // PHASE 1.2 single-flight guard: only IDLE may start a camera flow. A second
+    // call while permission/init is pending (REQUESTING_PERMISSION / INITIALIZING),
+    // while the studio is already open (READY), or during any capture state must
+    // not start a competing getUserMedia flow. Every legitimate (re)open path
+    // passes through stop()/closeCameraStudio() -> IDLE first (fresh open,
+    // close -> reopen, retake after review), so those remain allowed.
+    if (this.state !== 'IDLE') {
+      console.log('[KandidCameraEngine] initialize() skipped - already ' + this.state);
+      return;
+    }
     this.setState('REQUESTING_PERMISSION');
     this.step = 1;
     this.rearFrame = null;
@@ -2777,6 +2791,12 @@ const KandidCameraEngine = {
 
     var modal = document.getElementById('cameraStudioModal');
     if (modal) {
+      // PHASE 1.2: cancel a pending close-hide so close -> quick reopen cannot hide
+      // the modal over a live preview (which would strand state READY while closed).
+      if (cameraModalHideTimer) {
+        clearTimeout(cameraModalHideTimer);
+        cameraModalHideTimer = null;
+      }
       modal.style.display = 'flex';
       setTimeout(function() {
         modal.classList.remove('translate-y-full', 'opacity-0');
@@ -2787,6 +2807,11 @@ const KandidCameraEngine = {
 
     this.setState('INITIALIZING');
     await this.startMainPreview('environment');
+    if (this.state === 'IDLE') {
+      // PHASE 1.2: stop() ran while opening (camera closed mid-init) - do not
+      // resurrect READY over a closed modal.
+      return;
+    }
     await this.discoverHardwareDevices();
     this.setState('READY');
   },
@@ -2797,6 +2822,7 @@ const KandidCameraEngine = {
 
     var mainVideo = document.getElementById('cameraMainVideo');
     var mainImg = document.getElementById('cameraMainPreviewImg');
+    var gen = this._gen; // PHASE 1.2: ownership token for this acquisition
 
     // 1. Fully stop and release previous camera hardware streams
     if (this.mainStream) {
@@ -2852,7 +2878,14 @@ const KandidCameraEngine = {
 
     if (!stream) {
       console.warn('[CameraEngine] Could not get stream for ' + this.activeFacing);
-      return;
+      return false;
+    }
+
+    // PHASE 1.2: stop() ran while this stream was being acquired (camera closed
+    // mid-open) - release it immediately instead of adopting a stale stream.
+    if (gen !== this._gen) {
+      try { stream.getTracks().forEach(function(t) { t.stop(); }); } catch(e) {}
+      return false;
     }
 
     this.mainStream = stream;
@@ -2877,15 +2910,37 @@ const KandidCameraEngine = {
 
       // Poll until video is actively producing live frames
       var pollStart = Date.now();
+      var ready = false;
       while ((Date.now() - pollStart) < 2500) {
         if (mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0 && mainVideo.readyState >= 2) {
+          ready = true;
           break;
         }
         await new Promise(function(r) { setTimeout(r, 40); });
       }
 
+      // PHASE 1.2 readiness safety: only reveal the live video once the stream has
+      // actually produced valid frames. On timeout, release the stalled stream and
+      // report failure so the frozen rear frame stays visible and the caller can
+      // recover the UI instead of exposing a blank video.
+      if (!ready) {
+        console.warn('[CameraEngine] Stream never became ready for ' + this.activeFacing);
+        try { stream.getTracks().forEach(function(t) { t.stop(); }); } catch(e) {}
+        if (this.mainStream === stream) this.mainStream = null;
+        if (state.mainMediaStream === stream) state.mainMediaStream = null;
+        try { mainVideo.srcObject = null; } catch(e) {}
+        return false;
+      }
+
+      // PHASE 1.2: stop() ran during the readiness wait - stream already stopped.
+      if (gen !== this._gen) {
+        return false;
+      }
+
       if (mainImg) mainImg.classList.add('hidden');
+      return true;
     }
+    return false;
   },
 
   async capture() {
@@ -2958,15 +3013,34 @@ const KandidCameraEngine = {
     // video element is only revealed once the new stream is actually decoding.
     // ==========================================
     this.setState('SWITCHING_TO_FRONT');
-    await this.startMainPreview(nextFacing);
+    var switchOk = await this.startMainPreview(nextFacing);
 
     // Poll until second video stream is actively delivering decoded frames
     var pollStart = Date.now();
-    while ((Date.now() - pollStart) < 3500) {
+    var frontReady = false;
+    while (switchOk && (Date.now() - pollStart) < 3500) {
       if (mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0 && mainVideo.readyState >= 2) {
+        frontReady = true;
         break;
       }
       await new Promise(function(r) { setTimeout(r, 50); });
+    }
+
+    // PHASE 1.2: a failed front switch must never silently continue into the
+    // selfie step or expose a blank video. Keep the frozen rear frame (mainImg
+    // was not hidden), restore the lens that worked, re-enable the shutter,
+    // surface a short error, and abort this capture without opening Review
+    // with a fabricated selfie.
+    if (!switchOk || !frontReady) {
+      console.warn('[CameraEngine] Front switch failed - recovering (switchOk=' + switchOk + ', frontReady=' + frontReady + ')');
+      if (hud) { hud.style.display = 'none'; hud.style.background = ''; }
+      await this.startMainPreview(startFacing); // best-effort: reopen the working lens
+      if (this.state !== 'IDLE') {              // camera was not closed mid-recovery
+        this.setState('READY');
+        this._setShutterEnabled(true);
+      }
+      showToast('Front camera unavailable. Tap the shutter to try again.');
+      return;
     }
 
     // Delay for sensor auto-focus and exposure settling (hardware stability).
@@ -3147,14 +3221,25 @@ const KandidCameraEngine = {
   },
 
   async toggleLens() {
+    // PHASE 1.2: never let a lens switch race an in-flight capture switch -
+    // two concurrent startMainPreview flows can orphan a stream.
+    if (this._isBusy()) return;
     playTactileFeedback('shutter');
-    var nextFacing = (this.activeFacing === 'environment') ? 'user' : 'environment';
+    var prevFacing = this.activeFacing;
+    var nextFacing = (prevFacing === 'environment') ? 'user' : 'environment';
     showToast('Switching to ' + (nextFacing === 'user' ? 'Front Selfie' : 'Rear Lens') + ' ⇄');
-    await this.startMainPreview(nextFacing);
+    var ok = await this.startMainPreview(nextFacing);
+    if (!ok) {
+      // PHASE 1.2: flip failed - restore the previous lens instead of leaving
+      // a dead preview (the "flip gets stuck" symptom).
+      await this.startMainPreview(prevFacing);
+      showToast('Camera switch failed. Please try again.');
+    }
   },
 
 
   stop() {
+    this._gen++; // PHASE 1.2: invalidate any in-flight stream acquisition
     if (this.mainStream) {
       try {
         this.mainStream.getTracks().forEach(function(t) { t.stop(); });
@@ -3201,6 +3286,7 @@ async function openCameraStudio(source, communityId) {
 }
 window.openCameraStudio = openCameraStudio;
 
+var cameraModalHideTimer = null;
 function closeCameraStudio() {
   KandidCameraEngine.stop();
   var hud = document.getElementById('cameraDualCaptureHUD');
@@ -3209,8 +3295,13 @@ function closeCameraStudio() {
   if (modal) {
     modal.classList.remove('translate-y-0', 'opacity-100');
     modal.classList.add('translate-y-full', 'opacity-0');
-    setTimeout(function() {
+    // PHASE 1.2: track the hide timer so a fast reopen (close -> tap shutter
+    // again within 300ms) can cancel it instead of hiding the modal over a
+    // live preview while the single-flight guard holds state READY.
+    if (cameraModalHideTimer) clearTimeout(cameraModalHideTimer);
+    cameraModalHideTimer = setTimeout(function() {
       modal.style.display = 'none';
+      cameraModalHideTimer = null;
     }, 300);
   }
   state.cameraContext = {
