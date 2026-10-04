@@ -6285,9 +6285,15 @@ document.addEventListener('DOMContentLoaded', async function() {
           apiRequest('/api/heartbeat', { method: 'POST' }).then(function(hb) {
               if (hb && hb.success) {
                   // Update unread notification dot
-                  var notifDot = document.getElementById('notifDot');
-                  if (notifDot) {
-                      notifDot.style.display = (hb.unreadCount > 0) ? 'block' : 'none';
+                  var notifBtn = document.getElementById('notifBtn');
+                  if (notifBtn) {
+                      if (hb.unreadCount > 0) {
+                          notifBtn.classList.remove('no-notifications');
+                          notifBtn.classList.add('has-notifications');
+                      } else {
+                          notifBtn.classList.remove('has-notifications');
+                          notifBtn.classList.add('no-notifications');
+                      }
                   }
 
                   // Update YOU page Requests Badge & People Section
@@ -8728,8 +8734,15 @@ async function loadNotifications() {
     var notifs = data.notifications;
     var unreadCount = data.unreadCount || notifs.filter(function(n) { return n.is_read === 0; }).length;
 
-    if (notifDot) {
-      notifDot.style.display = (unreadCount > 0) ? 'block' : 'none';
+    var notifBtn = document.getElementById('notifBtn');
+    if (notifBtn) {
+      if (unreadCount > 0) {
+        notifBtn.classList.remove('no-notifications');
+        notifBtn.classList.add('has-notifications');
+      } else {
+        notifBtn.classList.remove('has-notifications');
+        notifBtn.classList.add('no-notifications');
+      }
     }
 
     if (!container) return;
@@ -8853,8 +8866,11 @@ window.loadNotifications = loadNotifications;
 
 async function markAllNotificationsRead() {
   await apiRequest('/api/notifications/mark-read', { method: 'POST' });
-  var notifDot = document.getElementById('notifDot');
-  if (notifDot) notifDot.style.display = 'none';
+  var notifBtn = document.getElementById('notifBtn');
+  if (notifBtn) {
+    notifBtn.classList.remove('has-notifications');
+    notifBtn.classList.add('no-notifications');
+  }
   showToast('All notifications marked as read ✓');
   await loadNotifications();
 }
