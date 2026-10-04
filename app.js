@@ -1886,7 +1886,6 @@ async function loadFeedMoments(circle) {
     }
   }
 }
-}
 
 function formatPostTime(createdStr) {
     if (!createdStr) {
