@@ -8461,8 +8461,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "services": {
                     "email_provider": "brevo",
                     "email_configured": bool(BREVO_API_KEY),
-                    "razorpay_configured": bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET),
-                    "cloudinary_configured": bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)
+                    "cloudinary_configured": bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET),
+                    "cloudinary_cloud_name": bool(CLOUDINARY_CLOUD_NAME),
+                    "cloudinary_api_key": bool(CLOUDINARY_API_KEY),
+                    "cloudinary_api_secret": bool(CLOUDINARY_API_SECRET),
+                    "cloudinary_url": bool(CLOUDINARY_URL)
                 }
             })
 
