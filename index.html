@@ -4525,6 +4525,48 @@
             </div>
             <button onclick="closeReactions()" class="w-full py-3 mt-5 rounded-2xl bg-zinc-900 text-xs font-bold text-zinc-400 cursor-pointer hover:bg-zinc-800">Cancel</button>
         </div>
+    <!-- ANTI-FILTER FLEX STORY MODAL -->
+    <div id="storyShareModal" class="absolute inset-0 z-[9999] bg-black/90 backdrop-blur-lg flex items-center justify-center p-4 overflow-y-auto no-scroll" style="display:none;">
+        <div class="w-full max-w-xs rounded-3xl bg-[#0b0b0d] border border-zinc-800 p-4 space-y-4 shadow-2xl animate-in zoom-in-95 duration-200">
+            <!-- Modal Header -->
+            <div class="flex justify-between items-center pb-2 border-b border-zinc-800/80">
+                <span class="text-[10px] font-mono-tag text-amber-500 font-extrabold uppercase tracking-widest">ANTI-FILTER FLEX CARD</span>
+                <button onclick="closeStoryShareModal()" class="text-zinc-400 hover:text-white text-base cursor-pointer p-1">✕</button>
+            </div>
+
+            <!-- Preview Card -->
+            <div class="rounded-2xl bg-zinc-950 border border-zinc-800 p-3 space-y-2.5 shadow-inner">
+                <div class="flex items-center justify-between text-[9px] font-mono-tag font-bold tracking-wider">
+                    <span class="text-amber-400">KANDID · NO FILTERS</span>
+                    <span id="storyModalLoc" class="text-zinc-500 uppercase">SUPAUL</span>
+                </div>
+                
+                <div class="w-full aspect-[4/5] bg-black rounded-xl overflow-hidden border border-zinc-800 relative">
+                    <img id="storyModalImg" src="" class="w-full h-full object-cover" alt="Flex Moment">
+                </div>
+
+                <!-- Quote Box -->
+                <div class="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800/80 space-y-2">
+                    <p id="storyModalVibe" class="text-[11px] text-zinc-300 font-medium italic leading-relaxed">
+                        "Duniya filters ke peeche chhupi hai, main Kandid par asli history likh raha hoon."
+                    </p>
+                    <div class="flex items-center justify-between pt-1 border-t border-zinc-800/50">
+                        <span id="storyModalHandle" class="text-[10px] text-zinc-400 font-mono-tag font-semibold">@user</span>
+                        <span class="text-[8px] font-mono-tag font-extrabold bg-amber-500 text-black px-2 py-0.5 rounded-full uppercase tracking-wider">Join unscripted →</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="space-y-2">
+                <button onclick="triggerStoryShare('instagram')" class="w-full py-3 bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 hover:opacity-90 text-white font-extrabold text-[10px] rounded-xl flex items-center justify-center gap-2 font-mono-tag tracking-wider uppercase shadow-lg active:scale-[0.98] transition cursor-pointer">
+                    <span>📸</span> <span>FLEX TO INSTAGRAM STORY</span>
+                </button>
+                <button onclick="triggerStoryShare('whatsapp')" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] rounded-xl flex items-center justify-center gap-2 font-mono-tag tracking-wider uppercase shadow-lg active:scale-[0.98] transition cursor-pointer">
+                    <span>💬</span> <span>SHARE VIA WHATSAPP</span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- RESET PASSWORD MODAL -->
