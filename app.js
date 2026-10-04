@@ -499,7 +499,7 @@ function switchScreenView(screenName) {
   var target = document.getElementById('screen-' + screenName);
   if (target) {
     target.classList.add('active');
-    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'offline' || screenName === 'block' || screenName === 'block-list' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile' || screenName === 'search') {
+    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'block' || screenName === 'block-list' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile' || screenName === 'search') {
         target.style.display = 'flex';
     } else {
         target.style.display = 'block';
@@ -570,7 +570,6 @@ function switchScreenView(screenName) {
   var settingsHeader = document.getElementById("settingsHeader");
   var headerEmptySearch = document.getElementById("headerEmptySearch");
   var headerError = document.getElementById("headerError");
-  var headerOffline = document.getElementById("headerOffline");
   var headerReport = document.getElementById("headerReport");
   var headerBlock = document.getElementById("headerBlock");
   var headerReportConfirm = document.getElementById("headerReportConfirm");
@@ -591,7 +590,6 @@ function switchScreenView(screenName) {
     if (settingsHeader) settingsHeader.style.display = "none";
     if (headerEmptySearch) headerEmptySearch.style.display = "none";
     if (headerError) headerError.style.display = "none";
-    if (headerOffline) headerOffline.style.display = "none";
     if (headerReport) headerReport.style.display = "none";
     if (headerBlock) headerBlock.style.display = "none";
     if (headerReportConfirm) headerReportConfirm.style.display = "none";
@@ -620,11 +618,6 @@ function switchScreenView(screenName) {
     } else if (screenName === "error") {
       if (headerError) headerError.style.display = "flex";
       statusText = "ERROR STATE";
-    } else if (screenName === "offline") {
-      if (headerOffline) headerOffline.style.display = "flex";
-      statusText = "OFFLINE";
-      statusColorClass = "text-zinc-400";
-      dotClass = "w-1.5 h-1.5 rounded-full bg-zinc-500";
     } else if (screenName === "report") {
       if (headerReport) headerReport.style.display = "flex";
       statusText = "REPORT";
@@ -1860,9 +1853,6 @@ async function loadFeedMoments(circle) {
       }
     } else if (hasCache && data && !data.success) {
        // Silently fail if we have cache, just show a subtle toast
-       if (data._network || data._timeout) {
-         showToast('Offline Mode: Showing saved moments');
-       }
     } else if (!hasCache) {
       if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
         // ── STATE C: AUTH FAILURE ─────────────────────────────────────
@@ -6326,7 +6316,11 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // 6. Register Service Worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(function() {});
+    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+      for(let registration of registrations) {
+        registration.unregister();
+      }
+    }).catch(function() {});
   }
 
   // 7. New User Daily Mission Trigger (Only for genuine new users on Feed)
@@ -9817,10 +9811,15 @@ async function loadChatMessages(userId, isSilent = false) {
       var senderId = String(m.sender_id || '').toLowerCase();
       var isMe = (senderId === myId) || (senderId !== activePartnerId);
       
+      var createdAtStr = m.created_at || '';
+      if (createdAtStr && !createdAtStr.endsWith('Z') && createdAtStr.indexOf('+') === -1 && createdAtStr.lastIndexOf('-') <= 10) {
+        createdAtStr += 'Z';
+      }
+
       // Date divider
       var dateStr = 'TODAY';
-      if (m.created_at) {
-        var d = new Date(m.created_at);
+      if (createdAtStr) {
+        var d = new Date(createdAtStr);
         if (!isNaN(d.getTime())) {
           var now = new Date();
           if (d.toDateString() === now.toDateString()) {
@@ -9848,8 +9847,8 @@ async function loadChatMessages(userId, isSilent = false) {
         : 'bg-zinc-900 text-zinc-100 border border-zinc-800';
 
       var timeOnly = '';
-      if (m.created_at) {
-        var t = new Date(m.created_at);
+      if (createdAtStr) {
+        var t = new Date(createdAtStr);
         if (!isNaN(t.getTime())) {
           timeOnly = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
@@ -10941,6 +10940,15 @@ async function handleClusterModalIWasThere() {
 window.handleClusterModalIWasThere = handleClusterModalIWasThere;
 
 async function handleIWasThereClick(momentId, openCaptureAfter) {
+  var originalStates = [];
+  document.querySelectorAll('.i-was-there-btn[data-moment-id="' + momentId + '"]').forEach(function(btn) {
+    originalStates.push({ el: btn, html: btn.innerHTML, className: btn.className, onclick: btn.onclick });
+    btn.innerHTML = '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>';
+    btn.className = 'i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap';
+    btn.setAttribute('disabled', 'true');
+    btn.onclick = null;
+  });
+
   try {
     var res = await apiRequest('/api/moment/' + encodeURIComponent(momentId) + '/i-was-there', {
       method: 'POST',
@@ -10950,35 +10958,45 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
       showToast(res.message || 'Participation recorded! ✦');
       if (!state.attendedMoments) state.attendedMoments = new Set();
       state.attendedMoments.add(momentId);
-      document.querySelectorAll('.i-was-there-btn[data-moment-id="' + momentId + '"]').forEach(function(btn) {
-        btn.innerHTML = '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>';
-        btn.className = 'i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap';
-        btn.setAttribute('disabled', 'true');
-        btn.onclick = null;
-      });
+      
       if (openCaptureAfter) {
         closeMomentClusterModal();
         openCameraStudio();
       } else {
         openMomentClusterModal(res.cluster_id, momentId);
       }
-    } else if (res && (res.code === 'COMMUNITY_MEMBERSHIP_REQUIRED' || res.code === 'COMMUNITY_RESTRICTED')) {
-      showToast('This private event is only accessible to community members.');
     } else {
-      var err = 'Participation not authorized.';
-      if (res && res.code === 'OWN_MOMENT') {
-        err = 'You cannot assert participation in your own moment.';
-      } else if (res && res.code === 'BLOCKED_USER') {
-        err = 'Unable to participate in this moment.';
-      } else if (res && res.code === 'CLUSTER_COOLDOWN') {
-        err = 'Please wait a moment before participating again.';
-      } else if (res && (res.error || res.message)) {
-        err = res.error || res.message;
+      originalStates.forEach(function(s) {
+        s.el.innerHTML = s.html;
+        s.el.className = s.className;
+        s.el.removeAttribute('disabled');
+        s.el.onclick = s.onclick;
+      });
+
+      if (res && (res.code === 'COMMUNITY_MEMBERSHIP_REQUIRED' || res.code === 'COMMUNITY_RESTRICTED')) {
+        showToast('This private event is only accessible to community members.');
+      } else {
+        var err = 'Participation not authorized.';
+        if (res && res.code === 'OWN_MOMENT') {
+          err = 'You cannot assert participation in your own moment.';
+        } else if (res && res.code === 'BLOCKED_USER') {
+          err = 'Unable to participate in this moment.';
+        } else if (res && res.code === 'CLUSTER_COOLDOWN') {
+          err = 'Please wait a moment before participating again.';
+        } else if (res && (res.error || res.message)) {
+          err = res.error || res.message;
+        }
+        showToast(err);
       }
-      showToast(err);
     }
   } catch(e) {
     console.error('Error in handleIWasThereClick:', e);
+    originalStates.forEach(function(s) {
+      s.el.innerHTML = s.html;
+      s.el.className = s.className;
+      s.el.removeAttribute('disabled');
+      s.el.onclick = s.onclick;
+    });
     showToast('Failed to record participation.');
   }
 }

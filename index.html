@@ -253,13 +253,6 @@
           <span class="text-[9px] text-amber-400 font-mono-tag tracking-widest uppercase">CONNECTION INTERRUPTED</span>
       </header>
 
-      <header id="headerOffline" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
-          <div class="flex items-center gap-2.5">
-              <div class="w-7 h-7 bg-white text-black font-extrabold rounded-lg flex items-center justify-center text-sm shadow-md font-mono-tag">K</div>
-              <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KANDID</h1>
-          </div>
-          <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase">LAST SYNC 18 MIN AGO</span>
-      </header>
       <header id="headerReport" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2.5 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <button class="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer" onclick="switchScreenView('feed')"><span>←</span> BACK</button>
           <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KANDID</h1></div>
@@ -2030,40 +2023,6 @@
           </div>
       </section>
 
-      <!-- =================================================================
-           SECTION 13: OFFLINE STATE
-           ================================================================= -->
-      <section class="app-screen bg-[#09090b] flex flex-col h-full" id="screen-offline" style="display:none;">
-          <div class="flex-1 flex flex-col items-center justify-center px-6 text-center space-y-5 py-20 pb-32">
-              <div class="w-16 h-16 rounded-2xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-zinc-400 shadow-xl">
-                  <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m9.9-11.314a12 12 0 010 16.97m0 0l-2.829-2.829M6.343 6.343l11.314 11.314"></path></svg>
-              </div>
-
-              <div class="space-y-1.5">
-                  <h2 class="text-base font-extrabold text-white tracking-widest uppercase font-mono-tag">YOU'RE OFFLINE.</h2>
-                  <p class="text-xs text-zinc-400 font-normal leading-relaxed">Your private Moments are still safe. We'll reconnect when you're back online.</p>
-              </div>
-
-              <div class="w-full bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 text-left space-y-1 shadow-md font-mono-tag">
-                  <div class="flex justify-between items-center text-[9px]">
-                      <span class="text-amber-400 font-bold uppercase">SAVED LOCALLY</span>
-                      <span class="text-zinc-500">PENDING SYNC</span>
-                  </div>
-                  <p class="text-[10px] text-zinc-400 font-sans">Your Moment will stay on this device until connection returns.</p>
-              </div>
-
-              <div class="w-full space-y-2.5 pt-1">
-                  <button class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag shadow-[0_4px_20px_rgba(245,158,11,0.4)]" onclick="switchScreenView('feed')">
-                      RETRY CONNECTION
-                  </button>
-                  <button class="w-full py-3 bg-zinc-950 hover:bg-zinc-900 text-zinc-300 font-bold text-xs rounded-2xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag border border-zinc-800" onclick="switchScreenView('memories')">
-                      VIEW SAVED MEMORIES
-                  </button>
-              </div>
-          </div>
-      </section>
-
-    
       <!-- =================================================================
            SECTION 14: REPORT SCREEN
            ================================================================= -->
