@@ -1782,33 +1782,49 @@ async function loadFeedMoments(circle) {
 
   circle = circle || state.activeCircle || 'foryou';
   var endpoint = (circle === 'foryou') ? '/api/feed?circle=all' : ('/api/feed?circle=' + circle);
+  
+  var cacheKey = 'kandid_feed_cache_' + circle;
+  var cachedDataStr = localStorage.getItem(cacheKey);
+  var hasCache = false;
 
-  // Show Skeleton Loaders
-  var skeletonHtml = `
-    <div class="w-full bg-zinc-950 border border-zinc-900/50 rounded-3xl overflow-hidden mb-5 animate-pulse">
-      <div class="p-3 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 bg-zinc-800/80 rounded-full"></div>
-          <div class="space-y-2">
-            <div class="h-2 w-24 bg-zinc-800/80 rounded"></div>
-            <div class="h-1.5 w-16 bg-zinc-900 rounded"></div>
+  if (cachedDataStr) {
+    try {
+      var parsedCache = JSON.parse(cachedDataStr);
+      if (parsedCache && Array.isArray(parsedCache.feed) && parsedCache.feed.length > 0) {
+        renderFeedCards(parsedCache.feed, container);
+        hasCache = true;
+      }
+    } catch(e) {}
+  }
+
+  if (!hasCache) {
+    // Show Skeleton Loaders ONLY if no cache is available
+    var skeletonHtml = `
+      <div class="w-full bg-zinc-950 border border-zinc-900/50 rounded-3xl overflow-hidden mb-5 animate-pulse">
+        <div class="p-3 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-zinc-800/80 rounded-full"></div>
+            <div class="space-y-2">
+              <div class="h-2 w-24 bg-zinc-800/80 rounded"></div>
+              <div class="h-1.5 w-16 bg-zinc-900 rounded"></div>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="w-full aspect-[4/5] bg-zinc-900/60 relative">
-        <div class="absolute top-3 left-3 w-20 h-28 bg-zinc-800/80 rounded-xl border-2 border-zinc-900/50"></div>
-      </div>
-      <div class="p-4 space-y-3">
-        <div class="flex gap-2 mb-2">
-          <div class="w-6 h-6 rounded-full bg-zinc-800/80"></div>
-          <div class="w-6 h-6 rounded-full bg-zinc-800/80"></div>
+        <div class="w-full aspect-[4/5] bg-zinc-900/60 relative">
+          <div class="absolute top-3 left-3 w-20 h-28 bg-zinc-800/80 rounded-xl border-2 border-zinc-900/50"></div>
         </div>
-        <div class="h-2 w-48 bg-zinc-800/80 rounded"></div>
-        <div class="h-2 w-full bg-zinc-900/80 rounded"></div>
+        <div class="p-4 space-y-3">
+          <div class="flex gap-2 mb-2">
+            <div class="w-6 h-6 rounded-full bg-zinc-800/80"></div>
+            <div class="w-6 h-6 rounded-full bg-zinc-800/80"></div>
+          </div>
+          <div class="h-2 w-48 bg-zinc-800/80 rounded"></div>
+          <div class="h-2 w-full bg-zinc-900/80 rounded"></div>
+        </div>
       </div>
-    </div>
-  `;
-  container.innerHTML = skeletonHtml + skeletonHtml;
+    `;
+    container.innerHTML = skeletonHtml + skeletonHtml;
+  }
 
   var data = null;
   try {
@@ -1816,50 +1832,60 @@ async function loadFeedMoments(circle) {
   } catch(e) {
     data = { success: false, error: e && e.message ? e.message : 'Network error', _network: true };
   } finally {
-    // Always run — guarantees spinner is never the final state
     if (data && data.success && Array.isArray(data.feed)) {
       // ── STATE A: SUCCESS WITH POSTS ──────────────────────────────────
-      if (data.feed.length === 0) {
-        // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
-        container.innerHTML = `
-          <div class="flex flex-col items-center justify-center py-20 space-y-5 text-center px-6 mt-8">
-            <div class="relative">
-              <div class="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-inner mb-2 animate-[pulse_3s_ease-in-out_infinite]">📸</div>
-              <div class="absolute -top-2 -right-2 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-[10px] shadow-lg animate-bounce text-black font-bold">✨</div>
+      var newDataStr = JSON.stringify(data);
+      if (newDataStr !== cachedDataStr) {
+        localStorage.setItem(cacheKey, newDataStr);
+        if (data.feed.length === 0) {
+          // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
+          container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-20 space-y-5 text-center px-6 mt-8">
+              <div class="relative">
+                <div class="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-inner mb-2 animate-[pulse_3s_ease-in-out_infinite]">📸</div>
+                <div class="absolute -top-2 -right-2 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-[10px] shadow-lg animate-bounce text-black font-bold">✨</div>
+              </div>
+              <div class="space-y-2">
+                <h3 class="text-lg font-black text-white tracking-tight">Your Canvas is Empty</h3>
+                <p class="text-xs text-zinc-400 max-w-[240px] mx-auto leading-relaxed">No moments in this circle yet. Be the first to drop an authentic dual-camera perspective.</p>
+              </div>
+              <button class="mt-4 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] rounded-[14px] font-mono-tag tracking-widest uppercase cursor-pointer shadow-[0_4px_20px_rgba(245,158,11,0.3)] active:scale-95 transition-all w-full max-w-[240px]" onclick="openCameraStudio()">
+                CAPTURE MOMENT
+              </button>
             </div>
-            <div class="space-y-2">
-              <h3 class="text-lg font-black text-white tracking-tight">Your Canvas is Empty</h3>
-              <p class="text-xs text-zinc-400 max-w-[240px] mx-auto leading-relaxed">No moments in this circle yet. Be the first to drop an authentic dual-camera perspective.</p>
-            </div>
-            <button class="mt-4 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] rounded-[14px] font-mono-tag tracking-widest uppercase cursor-pointer shadow-[0_4px_20px_rgba(245,158,11,0.3)] active:scale-95 transition-all w-full max-w-[240px]" onclick="openCameraStudio()">
-              CAPTURE MOMENT
-            </button>
-          </div>
-        `;
-      } else {
-        renderFeedCards(data.feed, container);
+          `;
+        } else {
+          renderFeedCards(data.feed, container);
+        }
       }
-    } else if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
-      // ── STATE C: AUTH FAILURE ─────────────────────────────────────
-      container.innerHTML =
-        '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-          '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">🔒</div>' +
-          '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">SESSION EXPIRED</h3>' +
-          '<p class="text-[11px] text-zinc-400">Please log in again to see your feed.</p>' +
-          '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="switchScreenView(\'login\')">LOG IN</button>' +
-        '</div>';
-    } else {
-      // ── STATE D: SERVER / NETWORK / TIMEOUT ERROR ─────────────────
-      var errLabel = (data && data._timeout) ? "Couldn't reach server." : "Couldn't load Moments.";
-      container.innerHTML =
-        '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-          '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto text-lg">⚠</div>' +
-          '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">' + errLabel + '</h3>' +
-          '<p class="text-[11px] text-zinc-400">Check your connection and try again.</p>' +
-          '<button class="mt-2 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer active:scale-95 transition border border-zinc-700" onclick="loadFeedMoments(\'' + circle + '\')">TRY AGAIN</button>' +
-        '</div>';
+    } else if (hasCache && data && !data.success) {
+       // Silently fail if we have cache, just show a subtle toast
+       if (data._network || data._timeout) {
+         showToast('Offline Mode: Showing saved moments');
+       }
+    } else if (!hasCache) {
+      if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
+        // ── STATE C: AUTH FAILURE ─────────────────────────────────────
+        container.innerHTML =
+          '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+            '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">🔒</div>' +
+            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">SESSION EXPIRED</h3>' +
+            '<p class="text-[11px] text-zinc-400">Please log in again to see your feed.</p>' +
+            '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="switchScreenView(\'login\')">LOG IN</button>' +
+          '</div>';
+      } else {
+        // ── STATE D: SERVER / NETWORK / TIMEOUT ERROR ─────────────────
+        var errLabel = (data && data._timeout) ? "Couldn't reach server." : "Couldn't load Moments.";
+        container.innerHTML =
+          '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+            '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto text-lg">⚠</div>' +
+            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">' + errLabel + '</h3>' +
+            '<p class="text-[11px] text-zinc-400">Check your connection and try again.</p>' +
+          '</div>';
+      }
     }
   }
+}
 }
 
 function formatPostTime(createdStr) {
