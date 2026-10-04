@@ -434,7 +434,7 @@ function renderGlobalCards(moments, container) {
         '<img src="' + escapeHtml(mainImgSrc) + '" class="w-full h-full object-cover main-stage-img" alt="Global Moment">' +
         '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
           '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
-          '<div class="absolute bottom-1 left-1.5 px-1 py-0.5 bg-black/60 backdrop-blur text-[8px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
+          '<div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/70 backdrop-blur-md text-[9px] text-zinc-200 font-bold font-mono-tag rounded-md tracking-wider border border-white/10">ME • 50mm</div>' +
         '</div>' +
         '<div class="double-tap-burst">🔥</div>' +
       '</div>' +
@@ -2023,9 +2023,9 @@ function renderFeedCards(moments, container) {
         liveBadgeHtml +
         motionVideoHtml +
         '<img src="' + escapeHtml(mainImgSrc) + '" class="w-full h-full object-cover main-stage-img" alt="Moment Photo">' +
-        '<div class="sub-camera-pip absolute top-3 left-3 w-16 h-22 rounded-xl overflow-hidden border border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
+        '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
           '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
-          '<div class="absolute bottom-1 left-1 px-1 py-0.5 bg-black/60 backdrop-blur text-[7px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
+          '<div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/70 backdrop-blur-md text-[9px] text-zinc-200 font-bold font-mono-tag rounded-md tracking-wider border border-white/10">ME • 50mm</div>' +
         '</div>' +
         clusterBadgeHtml +
         (reactionPillsHtml ?
@@ -4998,12 +4998,17 @@ async function loadYouScreen() {
     } catch(e) {}
     applyUserToYouScreen(state.currentUser);
 
-    // Update Pending Requests Badge
-    var reqBadge = document.getElementById('youRequestsBadge');
-    if (reqBadge) {
-      var reqCount = u.pending_requests_count || 0;
-      reqBadge.textContent = reqCount > 0 ? reqCount : '';
-      reqBadge.style.display = 'none';
+    // Update Pending Requests Badge & People Section
+    var reqCount = u.pending_requests_count || 0;
+    if (typeof updatePendingRequestsUI === 'function') {
+      updatePendingRequestsUI(reqCount);
+      if (reqCount > 0) {
+        apiRequest('/api/friend/requests').then(function(res) {
+          if (res && res.success && Array.isArray(res.requests)) {
+            updatePendingRequestsUI(res.requests.length, res.requests);
+          }
+        }).catch(function(){});
+      }
     }
 
     // Render Dynamic TODAY card (Captured vs Capture Prompt)
@@ -5931,11 +5936,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                       notifDot.style.display = (hb.unreadCount > 0) ? 'block' : 'none';
                   }
 
-                  // Update YOU page Requests Badge
-                  var youReqBadge = document.getElementById('youRequestsBadge');
-                  if (youReqBadge) {
-                      youReqBadge.textContent = hb.pendingRequestsCount > 0 ? hb.pendingRequestsCount : '';
-                      youReqBadge.style.display = 'none';
+                  // Update YOU page Requests Badge & People Section
+                  var pendingReqCount = hb.pendingRequestsCount || 0;
+                  if (typeof updatePendingRequestsUI === 'function') {
+                      updatePendingRequestsUI(pendingReqCount);
                   }
 
                   // Trigger In-App Live Notification Toast Banner
@@ -8168,10 +8172,9 @@ async function loadConnectionRequests() {
   if (res && res.success && Array.isArray(res.requests)) {
     var reqs = res.requests;
     
-    // Update YOU page Requests Badge
-    if (youBadge) {
-      youBadge.textContent = reqs.length > 0 ? reqs.length : '';
-      youBadge.style.display = 'none';
+    // Update YOU page Requests Badge & People Section
+    if (typeof updatePendingRequestsUI === 'function') {
+      updatePendingRequestsUI(reqs.length, reqs);
     }
 
     if (!sec || !container) return;
@@ -8239,6 +8242,124 @@ async function loadConnectionRequests() {
   }
 }
 window.loadConnectionRequests = loadConnectionRequests;
+
+function updatePendingRequestsUI(count, reqs) {
+  var c = typeof count === 'number' ? count : (Array.isArray(reqs) ? reqs.length : 0);
+  state.pendingRequestsCount = c;
+
+  // 1. Bottom Dock "YOU" Tab Badge
+  var dockBadge = document.getElementById('youUnreadBadge');
+  if (dockBadge) {
+    if (c > 0) {
+      dockBadge.textContent = c > 99 ? '99+' : c;
+      dockBadge.classList.remove('hidden');
+      dockBadge.style.display = 'flex';
+    } else {
+      dockBadge.classList.add('hidden');
+      dockBadge.style.display = 'none';
+    }
+  }
+
+  // 2. "YOUR WORLD" -> PEOPLE Card Badges
+  var peopleBadge = document.getElementById('youPeopleBadge');
+  if (peopleBadge) {
+    if (c > 0) {
+      peopleBadge.textContent = c === 1 ? '1 NEW' : c + ' REQUESTS';
+      peopleBadge.style.display = 'inline-flex';
+    } else {
+      peopleBadge.style.display = 'none';
+    }
+  }
+
+  var peopleDot = document.getElementById('youPeopleDot');
+  if (peopleDot) {
+    peopleDot.style.display = c > 0 ? 'block' : 'none';
+  }
+
+  var peopleDesc = document.getElementById('youWorldPeopleDesc');
+  if (peopleDesc) {
+    if (c > 0) {
+      peopleDesc.textContent = c === 1 ? '1 pending connection request' : c + ' pending connection requests';
+      peopleDesc.classList.add('text-amber-400');
+      peopleDesc.classList.remove('text-gray-400');
+    } else {
+      peopleDesc.textContent = 'People who matter.';
+      peopleDesc.classList.remove('text-amber-400');
+      peopleDesc.classList.add('text-gray-400');
+    }
+  }
+
+  // 3. Inline requests list on YOU screen (if reqs provided)
+  var inlineBox = document.getElementById('youInlinePendingRequests');
+  var inlineList = document.getElementById('youInlinePendingRequestsList');
+  if (inlineBox && inlineList) {
+    if (Array.isArray(reqs) && reqs.length > 0) {
+      inlineBox.style.display = 'block';
+      inlineList.innerHTML = '';
+      reqs.slice(0, 3).forEach(function(r) {
+        var row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-2.5 p-2 rounded-xl bg-black/40 border border-zinc-800/80';
+        var avSrc = (r.avatar_url && !r.avatar_url.includes('api.dicebear.com')) ? r.avatar_url : '';
+        var name = escapeHtml((r.name || 'Student').toUpperCase());
+        var handle = escapeHtml((r.handle || 'user').toUpperCase());
+        row.innerHTML =
+          '<div class="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer" onclick="openUserProfile(\'' + r.id + '\')">' +
+            '<div class="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 overflow-hidden flex-shrink-0 flex items-center justify-center text-xs text-amber-500 font-bold">' +
+              (avSrc ? '<img src="' + escapeHtml(avSrc) + '" class="w-full h-full object-cover">' : escapeHtml((r.name || 'U').charAt(0).toUpperCase())) +
+            '</div>' +
+            '<div class="min-w-0 leading-tight">' +
+              '<div class="text-[11px] font-bold text-white uppercase truncate font-mono-tag">' + name + '</div>' +
+              '<div class="text-[9px] text-amber-400 truncate font-mono-tag">@' + handle + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="flex items-center gap-1 shrink-0">' +
+            '<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black text-[9px] font-black font-mono-tag rounded-lg cursor-pointer uppercase inline-accept">ACCEPT</button>' +
+            '<button class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[9px] font-black font-mono-tag rounded-lg cursor-pointer inline-decline">✕</button>' +
+          '</div>';
+
+        row.querySelector('.inline-accept').addEventListener('click', async function(e) {
+          e.stopPropagation();
+          row.style.opacity = '0.5';
+          if (typeof playTactileFeedback === 'function') playTactileFeedback('xp');
+          showToast('Accepting request...');
+          var res = await apiRequest('/api/friend/accept', { method: 'POST', body: { target_user_id: r.id } });
+          if (res && res.success) {
+            showToast('Connected with ' + name + '! ✦ +25 XP');
+            row.remove();
+            if (typeof loadYouScreen === 'function') loadYouScreen();
+          }
+        });
+
+        row.querySelector('.inline-decline').addEventListener('click', async function(e) {
+          e.stopPropagation();
+          row.style.opacity = '0.5';
+          await apiRequest('/api/friend/reject', { method: 'POST', body: { target_user_id: r.id } });
+          showToast('Request declined.');
+          row.remove();
+          if (typeof loadYouScreen === 'function') loadYouScreen();
+        });
+
+        inlineList.appendChild(row);
+      });
+    } else {
+      inlineBox.style.display = 'none';
+      inlineList.innerHTML = '';
+    }
+  }
+}
+window.updatePendingRequestsUI = updatePendingRequestsUI;
+
+function handleYouPeopleCardClick() {
+  if (state.pendingRequestsCount && state.pendingRequestsCount > 0) {
+    switchScreenView('notifications');
+  } else {
+    switchScreenView('chat-home');
+    if (typeof startNewChatFromConnections === 'function') {
+      startNewChatFromConnections();
+    }
+  }
+}
+window.handleYouPeopleCardClick = handleYouPeopleCardClick;
 
 async function loadNotifications() {
   await loadConnectionRequests();
@@ -8467,10 +8588,13 @@ async function checkChatUnreadBadge() {
     var chatNotifDot = document.getElementById('chatNotifDot');
     if (chatNotifDot) {
       var notifData = await apiRequest('/api/notifications?unread=1');
-      if (notifData && notifData.unread_count > 0) {
+      if (notifData && (notifData.unread_count > 0 || notifData.unreadCount > 0)) {
         chatNotifDot.classList.remove('hidden');
       } else {
         chatNotifDot.classList.add('hidden');
+      }
+      if (notifData && typeof notifData.pendingRequestsCount === 'number' && typeof updatePendingRequestsUI === 'function') {
+        updatePendingRequestsUI(notifData.pendingRequestsCount);
       }
     }
   } catch(e){}
