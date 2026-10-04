@@ -1939,7 +1939,7 @@ function renderFeedCards(moments, container) {
   container.innerHTML = '';
   moments.forEach(function(m) {
     var card = document.createElement('article');
-    card.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3.5 shadow-2xl relative kandid-card';
+    card.className = 'bg-[#0b0b0d] border border-zinc-800/80 rounded-3xl p-3.5 flex flex-col gap-3 shadow-2xl relative kandid-card';
     card.dataset.postId = m.id;
 
     var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'kandid.creator');
@@ -1948,10 +1948,7 @@ function renderFeedCards(moments, container) {
     var campusName = escapeHtml(cleanCommName.toUpperCase());
     var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || cleanCommName;
     var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || m.time_ago || 'JUST NOW').toUpperCase());
-    var captionText = escapeHtml(m.caption || 'Raw unfiltered moment on campus.');
-    var iso = escapeHtml(m.exif_iso || 'ISO 400');
-    var aperture = escapeHtml(m.exif_aperture || 'F/2.8');
-    var shutter = escapeHtml(m.exif_shutter || '1/250S');
+    var captionText = escapeHtml(m.caption || 'Raw unfiltered moment.');
 
     var avatarSrc = m.avatar_url;
     var avatarHtml = avatarSrc
@@ -1974,13 +1971,13 @@ function renderFeedCards(moments, container) {
 
     var audioUrl = m.audio_url || m.audioData || '';
     var audioPlayerBarHtml = audioUrl ?
-      '<div class="bg-zinc-900/90 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center justify-between shadow-inner">' +
-        '<div class="flex items-center gap-2">' +
-          '<span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>' +
-          '<span class="text-[9px] text-zinc-300 font-mono-tag font-bold tracking-wider uppercase">3.0s Ambient Sound</span>' +
+      '<div class="bg-zinc-900/80 border border-white/[.06] rounded-xl px-3 py-1.5 flex items-center justify-between shadow-inner">' +
+        '<div class="flex items-center gap-1.5">' +
+          '<span class="text-zinc-400 text-[10px]">♬</span>' +
+          '<span class="text-[9px] text-zinc-400 font-mono-tag font-medium tracking-wide">3.0s · Ambient Sound</span>' +
         '</div>' +
-        '<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[8px] font-mono-tag rounded-lg flex items-center gap-1 transition shadow-sm cursor-pointer" onclick="event.stopPropagation(); playFeedAudio(\'' + jsAttr(audioUrl) + '\')">' +
-          '<span>▶ PLAY SOUND</span>' +
+        '<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[8px] font-mono-tag rounded-md flex items-center gap-1 transition shadow-sm cursor-pointer" onclick="event.stopPropagation(); playFeedAudio(\'' + jsAttr(audioUrl) + '\')">' +
+          '<span>▶ Play</span>' +
         '</button>' +
       '</div>' : '';
 
@@ -1996,8 +1993,8 @@ function renderFeedCards(moments, container) {
     var clusterBadgeHtml = '';
     if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
       var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
-        '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
+      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="absolute top-3 right-3 z-10 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 hover:bg-black/80 transition cursor-pointer active:scale-95 shadow-sm">' +
+        '<span>+' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
       '</button>';
     }
 
@@ -2006,12 +2003,12 @@ function renderFeedCards(moments, container) {
     if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
       if (isAttended) {
-        iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
-          '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>' +
+        iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
+          '<span class="text-amber-400 font-bold">✓</span> <span>I Was There</span>' +
         '</button>';
       } else {
-        iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-3 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
-          'I WAS THERE' +
+        iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
+          'I Was There' +
         '</button>';
       }
     }
@@ -2022,60 +2019,54 @@ function renderFeedCards(moments, container) {
     }
 
     card.innerHTML =
-      '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
+      '<div class="w-full aspect-[4/5] bg-black rounded-2xl relative overflow-hidden border border-zinc-800/80 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
         liveBadgeHtml +
         motionVideoHtml +
         '<img src="' + escapeHtml(mainImgSrc) + '" class="w-full h-full object-cover main-stage-img" alt="Moment Photo">' +
-        '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
+        '<div class="sub-camera-pip absolute top-3 left-3 w-16 h-22 rounded-xl overflow-hidden border border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
           '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
-          '<div class="absolute bottom-1 left-1.5 px-1 py-0.5 bg-black/60 backdrop-blur text-[8px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
+          '<div class="absolute bottom-1 left-1 px-1 py-0.5 bg-black/60 backdrop-blur text-[7px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
         '</div>' +
+        clusterBadgeHtml +
         '<div class="double-tap-burst">🔥</div>' +
       '</div>' +
 
       '<div class="space-y-2 px-0.5">' +
-        '<div class="flex items-center justify-between gap-1 flex-wrap">' +
-          '<div class="flex items-center gap-1.5">' +
+        '<div class="flex items-center justify-between text-[10px] font-mono-tag select-none">' +
+          '<div class="flex items-center gap-1.5 font-bold tracking-wider uppercase text-amber-400">' +
+            '<span>●</span>' +
             (commTarget
-              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="text-[10px] text-amber-400 hover:text-amber-300 font-mono-tag font-bold tracking-wider uppercase inline-flex items-center gap-1 cursor-pointer transition hover:underline active:scale-95" title="Open Community Page"><span>◉</span> <span>' + campusName + '</span></button>'
-              : '<span class="text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider uppercase">' + campusName + '</span>') +
-            '<span class="text-[10px] text-zinc-600 font-mono-tag">·</span>' +
-            '<span class="text-[10px] text-zinc-400 font-mono-tag uppercase moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' + timeAgo + '</span>' +
+              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="hover:text-amber-300 transition cursor-pointer" title="Open Community Page"><span>' + campusName + '</span></button>'
+              : '<span>' + campusName + '</span>') +
           '</div>' +
-          clusterBadgeHtml +
+          '<span class="text-zinc-500 font-mono-tag uppercase moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' + timeAgo + '</span>' +
         '</div>' +
 
-        '<p class="text-xs text-zinc-200 font-normal leading-relaxed">' +
+        '<p class="text-[12px] text-zinc-200 font-normal leading-relaxed">' +
           '"' + captionText + '"' +
         '</p>' +
 
         audioPlayerBarHtml +
 
-        '<div class="pt-1.5 border-t border-zinc-900 space-y-1.5">' +
-          '<!-- Author row -->' +
-          '<div class="flex items-center justify-between">' +
-            '<div class="flex items-center gap-2">' +
-              '<div class="w-5 h-5 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700 flex items-center justify-center">' +
-                avatarHtml +
-              '</div>' +
-              '<span class="text-[11px] text-zinc-400 font-medium">@' + authorHandle + '</span>' +
+        '<div class="flex items-center justify-between pt-2 border-t border-zinc-900">' +
+          '<div class="flex items-center gap-2 cursor-pointer" onclick="event.stopPropagation(); openUserProfile(\'' + jsAttr(m.user_id || '') + '\')">' +
+            '<div class="w-6 h-6 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700 flex items-center justify-center text-[9px]">' +
+              avatarHtml +
             '</div>' +
-            '<button type="button" onclick="event.stopPropagation(); shareMomentToWhatsAppStatus(\'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-amber-400 text-[9px] font-mono-tag font-semibold transition cursor-pointer active:scale-95 shadow-sm" title="Share to WhatsApp Status">' +
-              '<span>↗</span> <span>Status</span>' +
-            '</button>' +
+            '<span class="text-[11px] text-zinc-300 font-medium">@' + authorHandle + '</span>' +
           '</div>' +
 
-          '<!-- Action row: [ I WAS THERE ] on left, [React] on right -->' +
-          '<div class="flex items-center justify-between gap-2 min-h-[28px]">' +
-            '<div class="flex items-center">' +
-              iWasThereHtml +
-            '</div>' +
-            '<div class="relative flex items-center gap-1.5 reaction-control-container">' +
+          '<div class="flex items-center gap-1.5">' +
+            '<button type="button" onclick="event.stopPropagation(); openStoryShareModal(\'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[9px] font-mono-tag font-bold tracking-wider transition cursor-pointer active:scale-95 shadow-sm" title="Flex to Story">' +
+              '<span>↗</span> <span>Flex</span>' +
+            '</button>' +
+            iWasThereHtml +
+            '<div class="relative flex items-center gap-1 reaction-control-container">' +
               '<div class="reaction-badge-group flex items-center gap-1">' +
                 reactionPillsHtml +
               '</div>' +
-              '<button class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 transition-all text-[9px] font-semibold text-zinc-300 rounded-lg border border-zinc-800 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center gap-1">' +
-                '<span>✦ React</span>' +
+              '<button class="p-1 px-1.5 bg-zinc-900 hover:bg-zinc-800 transition text-[9px] font-semibold text-zinc-400 hover:text-zinc-200 rounded-lg border border-zinc-800/80 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center" title="React">' +
+                '<span>✦</span>' +
               '</button>' +
             '</div>' +
           '</div>' +
@@ -5568,6 +5559,68 @@ function shareCurrentModalToWhatsAppStatus() {
   }
 }
 window.shareCurrentModalToWhatsAppStatus = shareCurrentModalToWhatsAppStatus;
+
+// Dynamic Anti-Filter Vibe Quotes Array
+var antiFilterVibes = [
+  "Instagram par highlight reel, Kandid par asli zindagi. ✨",
+  "Filters se face badalna aasan hai, par real life flex karna alag level hai.™",
+  "Perfection is fake. Kandid is real. Choose your side.",
+  "Duniya filters ke peeche chhupi hai, main Kandid par asli history likh raha hoon.",
+  "No likes, no follower counts, bas main, meri memories aur mera world."
+];
+
+var activeStoryMoment = null;
+
+function openStoryShareModal(momentId) {
+  var m = (state.momentCache && state.momentCache[momentId]) || (state.activeDetailMoment && state.activeDetailMoment.id === momentId ? state.activeDetailMoment : null);
+  if (!m) {
+    var card = document.querySelector('article[data-post-id="' + momentId + '"]');
+    if (card) {
+      var img = card.querySelector('.main-stage-img');
+      m = { id: momentId, main_img: img ? img.src : '', location_city: 'Supaul', author_handle: 'user' };
+    }
+  }
+  if (!m) return;
+  activeStoryMoment = m;
+
+  var modal = document.getElementById('storyShareModal');
+  if (!modal) return;
+
+  var imgEl = document.getElementById('storyModalImg');
+  var locEl = document.getElementById('storyModalLoc');
+  var vibeEl = document.getElementById('storyModalVibe');
+  var handleEl = document.getElementById('storyModalHandle');
+
+  if (imgEl) imgEl.src = m.main_img || m.mediaUrl || m.media_url || m.mainImg || '';
+  if (locEl) {
+    var rawLoc = m.location_city || m.campus || m.community_name || 'SUPAUL';
+    locEl.textContent = rawLoc.replace(/^Near\s+/i, '').toUpperCase();
+  }
+  if (vibeEl) {
+    var randomVibe = antiFilterVibes[Math.floor(Math.random() * antiFilterVibes.length)];
+    vibeEl.textContent = '"' + randomVibe + '"';
+  }
+  if (handleEl) {
+    handleEl.textContent = '@' + (m.author_handle || m.user_handle || 'user');
+  }
+
+  modal.style.setProperty('display', 'flex', 'important');
+}
+window.openStoryShareModal = openStoryShareModal;
+
+function closeStoryShareModal() {
+  var modal = document.getElementById('storyShareModal');
+  if (modal) modal.style.setProperty('display', 'none', 'important');
+}
+window.closeStoryShareModal = closeStoryShareModal;
+
+function triggerStoryShare(platform) {
+  if (!activeStoryMoment) return;
+  closeStoryShareModal();
+  shareMomentToWhatsAppStatus(activeStoryMoment.id);
+}
+window.triggerStoryShare = triggerStoryShare;
+
 
 function playCurrentModalAudio() {
   if (!state.activeDetailMoment) return;
