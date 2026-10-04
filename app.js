@@ -4234,13 +4234,13 @@ async function openUserProfile(userId, preloadedData) {
       if (moments.length > 0) {
         moments.forEach(function(m) {
           var article = document.createElement('article');
-          article.className = 'relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
+          article.className = 'relative h-[170px] w-[165px] flex-shrink-0 rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
           var imgUrl = escapeHtml(m.main_img || m.mediaUrl || m.media_url || m.mainImg || '');
           var locStr = escapeHtml(m.campus || m.location_city || u.campus || 'Campus');
           var timeStr = escapeHtml(m.timeAgo || m.time_ago || (m.created_at ? formatTimeAgoClean(m.created_at) : 'RECENT')).toUpperCase();
 
           var imgHtml = imgUrl
-            ? '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">'
+            ? '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '" onerror="this.onerror=null; this.parentElement.classList.add(\'bg-neutral-900\'); this.style.display=\'none\';">'
             : '<div class="w-full h-full bg-neutral-900 flex items-center justify-center text-zinc-700 font-mono-meta text-xs">MOMENT</div>';
 
           article.innerHTML =
@@ -4263,7 +4263,7 @@ async function openUserProfile(userId, preloadedData) {
         });
       } else {
         var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'col-span-2 py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider';
+        emptyDiv.className = 'py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider w-full flex-shrink-0';
         emptyDiv.textContent = 'NO PUBLIC MOMENTS YET';
         momentsGrid.appendChild(emptyDiv);
       }
