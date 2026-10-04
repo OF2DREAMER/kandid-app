@@ -2109,8 +2109,13 @@ function renderFeedCards(moments, container) {
             '</button>' +
             iWasThereHtml +
             '<div class="relative flex items-center gap-1 reaction-control-container">' +
-              '<button class="p-1 px-1.5 bg-zinc-900 hover:bg-zinc-800 transition text-[9px] font-semibold text-zinc-400 hover:text-zinc-200 rounded-lg border border-zinc-800/80 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center" title="React">' +
-                '<span>✦</span>' +
+              '<button class="mood-react-btn react-trigger-btn" title="React to Post">' +
+                '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="mood-glyph">' +
+                  '<circle cx="12" cy="12" r="9.5" fill="rgba(245, 158, 11, 0.08)" stroke="currentColor" stroke-width="1.6"></circle>' +
+                  '<circle cx="9" cy="10" r="1.2" fill="currentColor"></circle>' +
+                  '<circle cx="15" cy="10" r="1.2" fill="currentColor"></circle>' +
+                  '<path d="M8.5 14.5C10 16.5 14 16.5 15.5 14.5" stroke-linecap="round" stroke-width="1.6"></path>' +
+                '</svg>' +
               '</button>' +
             '</div>' +
           '</div>' +
