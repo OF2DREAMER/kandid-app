@@ -1783,12 +1783,32 @@ async function loadFeedMoments(circle) {
   circle = circle || state.activeCircle || 'foryou';
   var endpoint = (circle === 'foryou') ? '/api/feed?circle=all' : ('/api/feed?circle=' + circle);
 
-  // Show loading spinner — always cleared by finally{}
-  container.innerHTML =
-    '<div class="py-12 text-center text-zinc-500 font-mono-tag text-xs flex flex-col items-center gap-2">' +
-      '<span class="w-4 h-4 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></span>' +
-      '<span>Loading Authentic Moments...</span>' +
-    '</div>';
+  // Show Skeleton Loaders
+  var skeletonHtml = `
+    <div class="w-full bg-zinc-950 border border-zinc-900/50 rounded-3xl overflow-hidden mb-5 animate-pulse">
+      <div class="p-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 bg-zinc-800/80 rounded-full"></div>
+          <div class="space-y-2">
+            <div class="h-2 w-24 bg-zinc-800/80 rounded"></div>
+            <div class="h-1.5 w-16 bg-zinc-900 rounded"></div>
+          </div>
+        </div>
+      </div>
+      <div class="w-full aspect-[4/5] bg-zinc-900/60 relative">
+        <div class="absolute top-3 left-3 w-20 h-28 bg-zinc-800/80 rounded-xl border-2 border-zinc-900/50"></div>
+      </div>
+      <div class="p-4 space-y-3">
+        <div class="flex gap-2 mb-2">
+          <div class="w-6 h-6 rounded-full bg-zinc-800/80"></div>
+          <div class="w-6 h-6 rounded-full bg-zinc-800/80"></div>
+        </div>
+        <div class="h-2 w-48 bg-zinc-800/80 rounded"></div>
+        <div class="h-2 w-full bg-zinc-900/80 rounded"></div>
+      </div>
+    </div>
+  `;
+  container.innerHTML = skeletonHtml + skeletonHtml;
 
   var data = null;
   try {
@@ -1801,13 +1821,21 @@ async function loadFeedMoments(circle) {
       // ── STATE A: SUCCESS WITH POSTS ──────────────────────────────────
       if (data.feed.length === 0) {
         // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
-        container.innerHTML =
-          '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-            '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">📷</div>' +
-            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">NO MOMENTS YET</h3>' +
-            '<p class="text-[11px] text-zinc-400">Be the first to capture today\'s unfiltered perspective.</p>' +
-            '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="openCameraStudio()">CAPTURE TODAY\'S MOMENT</button>' +
-          '</div>';
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center py-20 space-y-5 text-center px-6 mt-8">
+            <div class="relative">
+              <div class="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-inner mb-2 animate-[pulse_3s_ease-in-out_infinite]">📸</div>
+              <div class="absolute -top-2 -right-2 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-[10px] shadow-lg animate-bounce text-black font-bold">✨</div>
+            </div>
+            <div class="space-y-2">
+              <h3 class="text-lg font-black text-white tracking-tight">Your Canvas is Empty</h3>
+              <p class="text-xs text-zinc-400 max-w-[240px] mx-auto leading-relaxed">No moments in this circle yet. Be the first to drop an authentic dual-camera perspective.</p>
+            </div>
+            <button class="mt-4 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] rounded-[14px] font-mono-tag tracking-widest uppercase cursor-pointer shadow-[0_4px_20px_rgba(245,158,11,0.3)] active:scale-95 transition-all w-full max-w-[240px]" onclick="openCameraStudio()">
+              CAPTURE MOMENT
+            </button>
+          </div>
+        `;
       } else {
         renderFeedCards(data.feed, container);
       }
@@ -2177,7 +2205,7 @@ function attachCardInteractions(card, momentData) {
 }
 
 async function triggerReaction(postId, emoji, btnEl) {
-  playTactileFeedback('pop');
+  playTactileFeedback('xp');
   showToast('Reacted ' + emoji + ' ✦');
   await apiRequest('/api/react', {
     method: 'POST',
@@ -2324,7 +2352,13 @@ function closeCameraStudio() {
   var hud = document.getElementById('cameraDualCaptureHUD');
   if (hud) hud.style.display = 'none';
   var modal = document.getElementById('cameraStudioModal');
-  if (modal) modal.style.display = 'none';
+  if (modal) {
+    modal.classList.remove('translate-y-0', 'opacity-100');
+    modal.classList.add('translate-y-full', 'opacity-0');
+    setTimeout(function() {
+      modal.style.display = 'none';
+    }, 300);
+  }
 }
 window.closeCameraStudio = closeCameraStudio;
 
@@ -2621,7 +2655,13 @@ const KandidCameraEngine = {
     this.updateShutterUI(1);
 
     var modal = document.getElementById('cameraStudioModal');
-    if (modal) modal.style.display = 'flex';
+    if (modal) {
+      modal.style.display = 'flex';
+      setTimeout(function() {
+        modal.classList.remove('translate-y-full', 'opacity-0');
+        modal.classList.add('translate-y-0', 'opacity-100');
+      }, 10);
+    }
     captureCurrentGeoLocation();
 
     this.setState('INITIALIZING');
@@ -2973,10 +3013,12 @@ const KandidCameraEngine = {
   },
 
   async toggleLens() {
+    playTactileFeedback('shutter');
     var nextFacing = (this.activeFacing === 'environment') ? 'user' : 'environment';
     showToast('Switching to ' + (nextFacing === 'user' ? 'Front Selfie' : 'Rear Lens') + ' ⇄');
     await this.startMainPreview(nextFacing);
   },
+
 
   stop() {
     if (this.mainStream) {
@@ -3021,7 +3063,13 @@ function closeCameraStudio() {
   var hud = document.getElementById('cameraDualCaptureHUD');
   if (hud) hud.style.display = 'none';
   var modal = document.getElementById('cameraStudioModal');
-  if (modal) modal.style.display = 'none';
+  if (modal) {
+    modal.classList.remove('translate-y-0', 'opacity-100');
+    modal.classList.add('translate-y-full', 'opacity-0');
+    setTimeout(function() {
+      modal.style.display = 'none';
+    }, 300);
+  }
   state.cameraContext = {
     mode: 'NORMAL',
     clusterId: null,
@@ -3358,10 +3406,24 @@ async function publishCapturedMoment() {
     };
   }
 
+  var pubBtn = document.querySelector('button[onclick="publishCapturedMoment()"]');
+  var origText = pubBtn ? pubBtn.innerHTML : '';
+  if (pubBtn) {
+    pubBtn.disabled = true;
+    pubBtn.innerHTML = '<span class="inline-block animate-pulse">🚀</span> PUBLISHING...';
+    pubBtn.classList.add('opacity-70', 'cursor-not-allowed');
+  }
+
   var data = await apiRequest('/api/moments/capture', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
+
+  if (pubBtn) {
+    pubBtn.disabled = false;
+    pubBtn.innerHTML = origText;
+    pubBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+  }
 
   if (data && data.success) {
     if (captionInput) captionInput.value = '';
@@ -9681,7 +9743,7 @@ async function sendChatMessageV2() {
     }
 
     tempBubble = document.createElement('div');
-    tempBubble.className = 'flex flex-col items-end space-y-1';
+    tempBubble.className = 'flex flex-col items-end space-y-1 transform translate-y-4 opacity-0 transition-all duration-300 ease-out';
     var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     tempBubble.innerHTML = 
       '<div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
@@ -9692,7 +9754,19 @@ async function sendChatMessageV2() {
         '</div>' +
       '</div>';
     container.appendChild(tempBubble);
-    container.scrollTop = container.scrollHeight;
+    
+    // Trigger animation
+    setTimeout(function() {
+      if (tempBubble) {
+        tempBubble.classList.remove('translate-y-4', 'opacity-0');
+        tempBubble.classList.add('translate-y-0', 'opacity-100');
+        container.scrollTop = container.scrollHeight;
+      }
+    }, 10);
+    
+    if (typeof playTactileFeedback === 'function') {
+      playTactileFeedback('shutter');
+    }
   }
 
   try {
@@ -10742,3 +10816,39 @@ async function handleDeletePerspectiveMoment(postId) {
 }
 window.handleDeletePerspectiveMoment = handleDeletePerspectiveMoment;
 
+
+// =====================================================================
+// FEED PULL-TO-REFRESH IMPLEMENTATION
+// =====================================================================
+(function initPullToRefresh() {
+  var pStartY = 0;
+  var isPulling = false;
+  var viewport = document.getElementById('mainViewport');
+  if (!viewport) return;
+  
+  viewport.addEventListener('touchstart', function(e) {
+    if (viewport.scrollTop <= 0) {
+      pStartY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  }, { passive: true });
+
+  viewport.addEventListener('touchmove', function(e) {
+    if (!isPulling) return;
+  }, { passive: true });
+
+  viewport.addEventListener('touchend', function(e) {
+    if (!isPulling) return;
+    isPulling = false;
+    var pullDist = e.changedTouches[0].clientY - pStartY;
+    // Trigger refresh if pulled down by > 130px
+    if (pullDist > 130 && state.activeScreen === 'feed') {
+      if (typeof playTactileFeedback === 'function') {
+        playTactileFeedback('shutter');
+      }
+      if (typeof loadFeedMoments === 'function') {
+        loadFeedMoments();
+      }
+    }
+  });
+})();
