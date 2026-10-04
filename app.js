@@ -1881,6 +1881,7 @@ async function loadFeedMoments(circle) {
             '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto text-lg">⚠</div>' +
             '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">' + errLabel + '</h3>' +
             '<p class="text-[11px] text-zinc-400">Check your connection and try again.</p>' +
+            '<button class="mt-2 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer active:scale-95 transition border border-zinc-700" onclick="loadFeedMoments(\'' + circle + '\')">TRY AGAIN</button>' +
           '</div>';
       }
     }
