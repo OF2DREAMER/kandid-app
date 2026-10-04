@@ -434,7 +434,7 @@ function renderGlobalCards(moments, container) {
         '<img src="' + escapeHtml(mainImgSrc) + '" class="w-full h-full object-cover main-stage-img" alt="Global Moment">' +
         '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
           '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
-          '<div class="absolute bottom-1 left-1.5 px-1 py-0.5 bg-black/60 backdrop-blur text-[8px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
+          '<div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/70 backdrop-blur-md text-[9px] text-zinc-200 font-bold font-mono-tag rounded-md tracking-wider border border-white/10">ME • 50mm</div>' +
         '</div>' +
         '<div class="double-tap-burst">🔥</div>' +
       '</div>' +
@@ -807,8 +807,8 @@ function renderCommunityCards(moments, container) {
     }
 
     var iWasThereHtml = '';
-    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id || m.campus);
-    if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
+    var hasEventOrLiveMoment = !!(m.cluster_id || m.event_id || m.drop_id);
+    if (!m.is_private && hasEventOrLiveMoment && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
       if (isAttended) {
         iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
@@ -1782,13 +1782,49 @@ async function loadFeedMoments(circle) {
 
   circle = circle || state.activeCircle || 'foryou';
   var endpoint = (circle === 'foryou') ? '/api/feed?circle=all' : ('/api/feed?circle=' + circle);
+  
+  var cacheKey = 'kandid_feed_cache_' + circle;
+  var cachedDataStr = localStorage.getItem(cacheKey);
+  var hasCache = false;
 
-  // Show loading spinner — always cleared by finally{}
-  container.innerHTML =
-    '<div class="py-12 text-center text-zinc-500 font-mono-tag text-xs flex flex-col items-center gap-2">' +
-      '<span class="w-4 h-4 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></span>' +
-      '<span>Loading Authentic Moments...</span>' +
-    '</div>';
+  if (cachedDataStr) {
+    try {
+      var parsedCache = JSON.parse(cachedDataStr);
+      if (parsedCache && Array.isArray(parsedCache.feed) && parsedCache.feed.length > 0) {
+        renderFeedCards(parsedCache.feed, container);
+        hasCache = true;
+      }
+    } catch(e) {}
+  }
+
+  if (!hasCache) {
+    // Show Skeleton Loaders ONLY if no cache is available
+    var skeletonHtml = `
+      <div class="w-full bg-zinc-950 border border-zinc-900/50 rounded-3xl overflow-hidden mb-5 animate-pulse">
+        <div class="p-3 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-zinc-800/80 rounded-full"></div>
+            <div class="space-y-2">
+              <div class="h-2 w-24 bg-zinc-800/80 rounded"></div>
+              <div class="h-1.5 w-16 bg-zinc-900 rounded"></div>
+            </div>
+          </div>
+        </div>
+        <div class="w-full aspect-[4/5] bg-zinc-900/60 relative">
+          <div class="absolute top-3 left-3 w-20 h-28 bg-zinc-800/80 rounded-xl border-2 border-zinc-900/50"></div>
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="flex gap-2 mb-2">
+            <div class="w-6 h-6 rounded-full bg-zinc-800/80"></div>
+            <div class="w-6 h-6 rounded-full bg-zinc-800/80"></div>
+          </div>
+          <div class="h-2 w-48 bg-zinc-800/80 rounded"></div>
+          <div class="h-2 w-full bg-zinc-900/80 rounded"></div>
+        </div>
+      </div>
+    `;
+    container.innerHTML = skeletonHtml + skeletonHtml;
+  }
 
   var data = null;
   try {
@@ -1796,40 +1832,58 @@ async function loadFeedMoments(circle) {
   } catch(e) {
     data = { success: false, error: e && e.message ? e.message : 'Network error', _network: true };
   } finally {
-    // Always run — guarantees spinner is never the final state
     if (data && data.success && Array.isArray(data.feed)) {
       // ── STATE A: SUCCESS WITH POSTS ──────────────────────────────────
-      if (data.feed.length === 0) {
-        // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
+      var newDataStr = JSON.stringify(data);
+      if (newDataStr !== cachedDataStr) {
+        localStorage.setItem(cacheKey, newDataStr);
+        if (data.feed.length === 0) {
+          // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
+          container.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-20 space-y-5 text-center px-6 mt-8">
+              <div class="relative">
+                <div class="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-inner mb-2 animate-[pulse_3s_ease-in-out_infinite]">📸</div>
+                <div class="absolute -top-2 -right-2 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-[10px] shadow-lg animate-bounce text-black font-bold">✨</div>
+              </div>
+              <div class="space-y-2">
+                <h3 class="text-lg font-black text-white tracking-tight">Your Canvas is Empty</h3>
+                <p class="text-xs text-zinc-400 max-w-[240px] mx-auto leading-relaxed">No moments in this circle yet. Be the first to drop an authentic dual-camera perspective.</p>
+              </div>
+              <button class="mt-4 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] rounded-[14px] font-mono-tag tracking-widest uppercase cursor-pointer shadow-[0_4px_20px_rgba(245,158,11,0.3)] active:scale-95 transition-all w-full max-w-[240px]" onclick="openCameraStudio()">
+                CAPTURE MOMENT
+              </button>
+            </div>
+          `;
+        } else {
+          renderFeedCards(data.feed, container);
+        }
+      }
+    } else if (hasCache && data && !data.success) {
+       // Silently fail if we have cache, just show a subtle toast
+       if (data._network || data._timeout) {
+         showToast('Offline Mode: Showing saved moments');
+       }
+    } else if (!hasCache) {
+      if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
+        // ── STATE C: AUTH FAILURE ─────────────────────────────────────
         container.innerHTML =
           '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-            '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">📷</div>' +
-            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">NO MOMENTS YET</h3>' +
-            '<p class="text-[11px] text-zinc-400">Be the first to capture today\'s unfiltered perspective.</p>' +
-            '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="openCameraStudio()">CAPTURE TODAY\'S MOMENT</button>' +
+            '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">🔒</div>' +
+            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">SESSION EXPIRED</h3>' +
+            '<p class="text-[11px] text-zinc-400">Please log in again to see your feed.</p>' +
+            '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="switchScreenView(\'login\')">LOG IN</button>' +
           '</div>';
       } else {
-        renderFeedCards(data.feed, container);
+        // ── STATE D: SERVER / NETWORK / TIMEOUT ERROR ─────────────────
+        var errLabel = (data && data._timeout) ? "Couldn't reach server." : "Couldn't load Moments.";
+        container.innerHTML =
+          '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+            '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto text-lg">⚠</div>' +
+            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">' + errLabel + '</h3>' +
+            '<p class="text-[11px] text-zinc-400">Check your connection and try again.</p>' +
+            '<button class="mt-2 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer active:scale-95 transition border border-zinc-700" onclick="loadFeedMoments(\'' + circle + '\')">TRY AGAIN</button>' +
+          '</div>';
       }
-    } else if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
-      // ── STATE C: AUTH FAILURE ─────────────────────────────────────
-      container.innerHTML =
-        '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-          '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">🔒</div>' +
-          '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">SESSION EXPIRED</h3>' +
-          '<p class="text-[11px] text-zinc-400">Please log in again to see your feed.</p>' +
-          '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="switchScreenView(\'login\')">LOG IN</button>' +
-        '</div>';
-    } else {
-      // ── STATE D: SERVER / NETWORK / TIMEOUT ERROR ─────────────────
-      var errLabel = (data && data._timeout) ? "Couldn't reach server." : "Couldn't load Moments.";
-      container.innerHTML =
-        '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-          '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto text-lg">⚠</div>' +
-          '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">' + errLabel + '</h3>' +
-          '<p class="text-[11px] text-zinc-400">Check your connection and try again.</p>' +
-          '<button class="mt-2 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer active:scale-95 transition border border-zinc-700" onclick="loadFeedMoments(\'' + circle + '\')">TRY AGAIN</button>' +
-        '</div>';
     }
   }
 }
@@ -1939,7 +1993,7 @@ function renderFeedCards(moments, container) {
   container.innerHTML = '';
   moments.forEach(function(m) {
     var card = document.createElement('article');
-    card.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3.5 shadow-2xl relative kandid-card';
+    card.className = 'bg-[#0b0b0d] border border-zinc-800/80 rounded-3xl p-3.5 flex flex-col gap-3 shadow-2xl relative kandid-card';
     card.dataset.postId = m.id;
 
     var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'kandid.creator');
@@ -1948,10 +2002,7 @@ function renderFeedCards(moments, container) {
     var campusName = escapeHtml(cleanCommName.toUpperCase());
     var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || cleanCommName;
     var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || m.time_ago || 'JUST NOW').toUpperCase());
-    var captionText = escapeHtml(m.caption || 'Raw unfiltered moment on campus.');
-    var iso = escapeHtml(m.exif_iso || 'ISO 400');
-    var aperture = escapeHtml(m.exif_aperture || 'F/2.8');
-    var shutter = escapeHtml(m.exif_shutter || '1/250S');
+    var captionText = escapeHtml(m.caption || 'Raw unfiltered moment.');
 
     var avatarSrc = m.avatar_url;
     var avatarHtml = avatarSrc
@@ -1974,13 +2025,13 @@ function renderFeedCards(moments, container) {
 
     var audioUrl = m.audio_url || m.audioData || '';
     var audioPlayerBarHtml = audioUrl ?
-      '<div class="bg-zinc-900/90 border border-amber-500/30 rounded-xl px-3 py-2 flex items-center justify-between shadow-inner">' +
-        '<div class="flex items-center gap-2">' +
-          '<span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>' +
-          '<span class="text-[9px] text-zinc-300 font-mono-tag font-bold tracking-wider uppercase">3.0s Ambient Sound</span>' +
+      '<div class="bg-zinc-900/80 border border-white/[.06] rounded-xl px-3 py-1.5 flex items-center justify-between shadow-inner">' +
+        '<div class="flex items-center gap-1.5">' +
+          '<span class="text-zinc-400 text-[10px]">♬</span>' +
+          '<span class="text-[9px] text-zinc-400 font-mono-tag font-medium tracking-wide">3.0s · Ambient Sound</span>' +
         '</div>' +
-        '<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[8px] font-mono-tag rounded-lg flex items-center gap-1 transition shadow-sm cursor-pointer" onclick="event.stopPropagation(); playFeedAudio(\'' + jsAttr(audioUrl) + '\')">' +
-          '<span>▶ PLAY SOUND</span>' +
+        '<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 active:scale-95 text-black font-extrabold text-[8px] font-mono-tag rounded-md flex items-center gap-1 transition shadow-sm cursor-pointer" onclick="event.stopPropagation(); playFeedAudio(\'' + jsAttr(audioUrl) + '\')">' +
+          '<span>▶ Play</span>' +
         '</button>' +
       '</div>' : '';
 
@@ -1996,22 +2047,22 @@ function renderFeedCards(moments, container) {
     var clusterBadgeHtml = '';
     if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
       var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
-        '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
+      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="absolute top-3 right-3 z-10 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 hover:bg-black/80 transition cursor-pointer active:scale-95 shadow-sm">' +
+        '<span>+' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
       '</button>';
     }
 
     var iWasThereHtml = '';
-    var hasSharedContext = !!(m.primary_community_id || m.context_community_id || m.cluster_id || m.campus);
-    if (!m.is_private && hasSharedContext && (!state.currentUser || state.currentUser.id !== m.user_id)) {
+    var hasEventOrLiveMoment = !!(m.cluster_id || m.event_id || m.drop_id);
+    if (!m.is_private && hasEventOrLiveMoment && (!state.currentUser || state.currentUser.id !== m.user_id)) {
       var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
       if (isAttended) {
-        iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
-          '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>' +
+        iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
+          '<span class="text-amber-400 font-bold">✓</span> <span>I Was There</span>' +
         '</button>';
       } else {
-        iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-3 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
-          'I WAS THERE' +
+        iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
+          'I Was There' +
         '</button>';
       }
     }
@@ -2022,60 +2073,54 @@ function renderFeedCards(moments, container) {
     }
 
     card.innerHTML =
-      '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
+      '<div class="w-full aspect-[4/5] bg-black rounded-2xl relative overflow-hidden border border-zinc-800/80 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
         liveBadgeHtml +
         motionVideoHtml +
         '<img src="' + escapeHtml(mainImgSrc) + '" class="w-full h-full object-cover main-stage-img" alt="Moment Photo">' +
-        '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
+        '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
           '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
-          '<div class="absolute bottom-1 left-1.5 px-1 py-0.5 bg-black/60 backdrop-blur text-[8px] text-zinc-300 font-mono-tag rounded">ME • 50mm</div>' +
+          '<div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/70 backdrop-blur-md text-[9px] text-zinc-200 font-bold font-mono-tag rounded-md tracking-wider border border-white/10">ME • 50mm</div>' +
         '</div>' +
+        clusterBadgeHtml +
+        (reactionPillsHtml ?
+          '<div class="reaction-badge-group absolute bottom-2.5 right-2.5 z-10 flex items-center gap-1 bg-black/60 backdrop-blur-md px-1.5 py-1 rounded-xl border border-white/10 shadow-lg pointer-events-auto select-none" onclick="event.stopPropagation();">' +
+            reactionPillsHtml +
+          '</div>' : '') +
         '<div class="double-tap-burst">🔥</div>' +
       '</div>' +
 
       '<div class="space-y-2 px-0.5">' +
-        '<div class="flex items-center justify-between gap-1 flex-wrap">' +
-          '<div class="flex items-center gap-1.5">' +
+        '<div class="flex items-center justify-between text-[10px] font-mono-tag select-none">' +
+          '<div class="font-bold tracking-wider uppercase text-amber-400">' +
             (commTarget
-              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="text-[10px] text-amber-400 hover:text-amber-300 font-mono-tag font-bold tracking-wider uppercase inline-flex items-center gap-1 cursor-pointer transition hover:underline active:scale-95" title="Open Community Page"><span>◉</span> <span>' + campusName + '</span></button>'
-              : '<span class="text-[10px] text-zinc-400 font-mono-tag font-bold tracking-wider uppercase">' + campusName + '</span>') +
-            '<span class="text-[10px] text-zinc-600 font-mono-tag">·</span>' +
-            '<span class="text-[10px] text-zinc-400 font-mono-tag uppercase moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' + timeAgo + '</span>' +
+              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="hover:text-amber-300 transition cursor-pointer" title="Open Community Page"><span>' + campusName + '</span></button>'
+              : '<span>' + campusName + '</span>') +
           '</div>' +
-          clusterBadgeHtml +
+          '<span class="text-zinc-500 font-mono-tag uppercase moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' + timeAgo + '</span>' +
         '</div>' +
 
-        '<p class="text-xs text-zinc-200 font-normal leading-relaxed">' +
+        '<p class="text-[12px] text-zinc-200 font-normal leading-relaxed">' +
           '"' + captionText + '"' +
         '</p>' +
 
         audioPlayerBarHtml +
 
-        '<div class="pt-1.5 border-t border-zinc-900 space-y-1.5">' +
-          '<!-- Author row -->' +
-          '<div class="flex items-center justify-between">' +
-            '<div class="flex items-center gap-2">' +
-              '<div class="w-5 h-5 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700 flex items-center justify-center">' +
-                avatarHtml +
-              '</div>' +
-              '<span class="text-[11px] text-zinc-400 font-medium">@' + authorHandle + '</span>' +
+        '<div class="flex items-center justify-between pt-2 border-t border-zinc-900">' +
+          '<div class="flex items-center gap-2 cursor-pointer" onclick="event.stopPropagation(); openUserProfile(\'' + jsAttr(m.user_id || '') + '\')">' +
+            '<div class="w-6 h-6 rounded-full bg-zinc-800 overflow-hidden border border-zinc-700 flex items-center justify-center text-[9px]">' +
+              avatarHtml +
             '</div>' +
-            '<button type="button" onclick="event.stopPropagation(); shareMomentToWhatsAppStatus(\'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-amber-400 text-[9px] font-mono-tag font-semibold transition cursor-pointer active:scale-95 shadow-sm" title="Share to WhatsApp Status">' +
-              '<span>↗</span> <span>Status</span>' +
-            '</button>' +
+            '<span class="text-[11px] text-zinc-300 font-medium">@' + authorHandle + '</span>' +
           '</div>' +
 
-          '<!-- Action row: [ I WAS THERE ] on left, [React] on right -->' +
-          '<div class="flex items-center justify-between gap-2 min-h-[28px]">' +
-            '<div class="flex items-center">' +
-              iWasThereHtml +
-            '</div>' +
-            '<div class="relative flex items-center gap-1.5 reaction-control-container">' +
-              '<div class="reaction-badge-group flex items-center gap-1">' +
-                reactionPillsHtml +
-              '</div>' +
-              '<button class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 transition-all text-[9px] font-semibold text-zinc-300 rounded-lg border border-zinc-800 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center gap-1">' +
-                '<span>✦ React</span>' +
+          '<div class="flex items-center gap-1.5">' +
+            '<button type="button" onclick="event.stopPropagation(); openStoryShareModal(\'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[9px] font-mono-tag font-bold tracking-wider transition cursor-pointer active:scale-95 shadow-sm" title="Flex to Story">' +
+              '<span>↗</span> <span>Flex</span>' +
+            '</button>' +
+            iWasThereHtml +
+            '<div class="relative flex items-center gap-1 reaction-control-container">' +
+              '<button class="p-1 px-1.5 bg-zinc-900 hover:bg-zinc-800 transition text-[9px] font-semibold text-zinc-400 hover:text-zinc-200 rounded-lg border border-zinc-800/80 cursor-pointer font-mono-tag react-trigger-btn active:scale-95 flex items-center" title="React">' +
+                '<span>✦</span>' +
               '</button>' +
             '</div>' +
           '</div>' +
@@ -2186,7 +2231,7 @@ function attachCardInteractions(card, momentData) {
 }
 
 async function triggerReaction(postId, emoji, btnEl) {
-  playTactileFeedback('pop');
+  playTactileFeedback('xp');
   showToast('Reacted ' + emoji + ' ✦');
   await apiRequest('/api/react', {
     method: 'POST',
@@ -2333,7 +2378,13 @@ function closeCameraStudio() {
   var hud = document.getElementById('cameraDualCaptureHUD');
   if (hud) hud.style.display = 'none';
   var modal = document.getElementById('cameraStudioModal');
-  if (modal) modal.style.display = 'none';
+  if (modal) {
+    modal.classList.remove('translate-y-0', 'opacity-100');
+    modal.classList.add('translate-y-full', 'opacity-0');
+    setTimeout(function() {
+      modal.style.display = 'none';
+    }, 300);
+  }
 }
 window.closeCameraStudio = closeCameraStudio;
 
@@ -2724,7 +2775,13 @@ const KandidCameraEngine = {
     this.updateShutterUI(1);
 
     var modal = document.getElementById('cameraStudioModal');
-    if (modal) modal.style.display = 'flex';
+    if (modal) {
+      modal.style.display = 'flex';
+      setTimeout(function() {
+        modal.classList.remove('translate-y-full', 'opacity-0');
+        modal.classList.add('translate-y-0', 'opacity-100');
+      }, 10);
+    }
     captureCurrentGeoLocation();
 
     this.setState('INITIALIZING');
@@ -2768,36 +2825,27 @@ const KandidCameraEngine = {
     var targetMode = (this.activeFacing === 'user') ? 'user' : 'environment';
     var preferredDeviceId = (targetMode === 'user') ? this.frontDeviceId : this.rearDeviceId;
 
-    // 3. WebRTC Standard: Request facingMode with ideal constraints
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: targetMode },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      });
-    } catch(e1) {
+    var constraintsList = [];
+    
+    // 1. Force exact device if known
+    if (preferredDeviceId) {
+      constraintsList.push({ video: { deviceId: { exact: preferredDeviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    }
+    // 2. Force exact facingMode
+    constraintsList.push({ video: { facingMode: { exact: targetMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    // 3. Ideal facingMode (fallback for some laptops)
+    constraintsList.push({ video: { facingMode: { ideal: targetMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    // 4. Loose fallback
+    constraintsList.push({ video: { facingMode: targetMode }, audio: false });
+    // 5. Ultimate fallback
+    constraintsList.push({ video: true, audio: false });
+
+    for (var i = 0; i < constraintsList.length; i++) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: targetMode },
-          audio: false
-        });
-      } catch(e2) {
-        if (preferredDeviceId) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: { deviceId: { exact: preferredDeviceId } },
-              audio: false
-            });
-          } catch(e3){}
-        }
-        if (!stream) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          } catch(e4){}
-        }
+        stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
+        if (stream) break;
+      } catch (e) {
+        // Try next constraint
       }
     }
 
@@ -2955,13 +3003,34 @@ const KandidCameraEngine = {
 
     if (hud) { hud.style.display = 'none'; hud.style.background = ''; }
 
-    // Safe fallback if one sensor failed
-    if (!this.frontFrame && this.rearFrame) this.frontFrame = this.rearFrame;
-    if (!this.rearFrame && this.frontFrame) this.rearFrame = this.frontFrame;
+    // Desktop/Laptop & Single-Sensor Fallback:
+    // If one camera failed to capture (e.g. videoWidth was 0), we fallback to the successful frame.
+    // If selfie failed, we mirror the rear frame so it looks like a PIP selfie.
+    var createMirroredFrame = async function(srcDataUrl) {
+      return new Promise(function(resolve) {
+        var img = new Image();
+        img.onload = function() {
+          var c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          var ctx = c.getContext('2d');
+          ctx.translate(c.width, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, 0, 0);
+          resolve(c.toDataURL('image/jpeg', 0.88));
+        };
+        img.onerror = function() { resolve(srcDataUrl); };
+        img.src = srcDataUrl;
+      });
+    };
 
-    // Ensure neither image is black or empty
-    if (!this.rearFrame && this.frontFrame) this.rearFrame = this.frontFrame;
-    if (!this.frontFrame && this.rearFrame) this.frontFrame = this.rearFrame;
+    // Ensure neither image is black or empty. If the selfie sensor failed,
+    // mirror the rear frame so the PiP selfie still looks correct.
+    if (!this.frontFrame && this.rearFrame) {
+      this.frontFrame = await createMirroredFrame(this.rearFrame);
+    }
+    if (!this.rearFrame && this.frontFrame) {
+      this.rearFrame = this.frontFrame; // No need to mirror the main scene
+    }
 
     // ==========================================
     // STEP 4: REVIEW OPENS IMMEDIATELY (NO AUDIO WAIT)
@@ -3071,10 +3140,12 @@ const KandidCameraEngine = {
   },
 
   async toggleLens() {
+    playTactileFeedback('shutter');
     var nextFacing = (this.activeFacing === 'environment') ? 'user' : 'environment';
     showToast('Switching to ' + (nextFacing === 'user' ? 'Front Selfie' : 'Rear Lens') + ' ⇄');
     await this.startMainPreview(nextFacing);
   },
+
 
   stop() {
     if (this.mainStream) {
@@ -3128,7 +3199,13 @@ function closeCameraStudio() {
   var hud = document.getElementById('cameraDualCaptureHUD');
   if (hud) hud.style.display = 'none';
   var modal = document.getElementById('cameraStudioModal');
-  if (modal) modal.style.display = 'none';
+  if (modal) {
+    modal.classList.remove('translate-y-0', 'opacity-100');
+    modal.classList.add('translate-y-full', 'opacity-0');
+    setTimeout(function() {
+      modal.style.display = 'none';
+    }, 300);
+  }
   state.cameraContext = {
     mode: 'NORMAL',
     clusterId: null,
@@ -3477,10 +3554,24 @@ async function publishCapturedMoment() {
     };
   }
 
+  var pubBtn = document.querySelector('button[onclick="publishCapturedMoment()"]');
+  var origText = pubBtn ? pubBtn.innerHTML : '';
+  if (pubBtn) {
+    pubBtn.disabled = true;
+    pubBtn.innerHTML = '<span class="inline-block animate-pulse">🚀</span> PUBLISHING...';
+    pubBtn.classList.add('opacity-70', 'cursor-not-allowed');
+  }
+
   var data = await apiRequest('/api/moments/capture', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
+
+  if (pubBtn) {
+    pubBtn.disabled = false;
+    pubBtn.innerHTML = origText;
+    pubBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+  }
 
   if (data && data.success) {
     if (captionInput) captionInput.value = '';
@@ -4042,9 +4133,19 @@ function renderPeopleSearchResults(people) {
       buttonHtml = '<button class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
     }
 
+    var initialLetter = escapeHtml((name || handle || 'U').charAt(0).toUpperCase());
+    var avatarHtml = avatarSrc
+      ? '<div class="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0 border border-neutral-800 bg-neutral-900 flex items-center justify-center font-bold text-amber-500 text-sm font-mono-tag">' +
+          '<span class="text-amber-500 font-mono-tag font-bold">' + initialLetter + '</span>' +
+          '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\';">' +
+        '</div>'
+      : '<div class="w-11 h-11 rounded-full overflow-hidden flex-shrink-0 border border-neutral-800 bg-neutral-900 flex items-center justify-center font-bold text-amber-500 text-sm font-mono-tag">' +
+          initialLetter +
+        '</div>';
+
     item.innerHTML =
       '<div class="flex items-center space-x-3.5 min-w-0 cursor-pointer user-profile-target">' +
-        '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="w-11 h-11 rounded-full object-cover flex-shrink-0 border border-neutral-800">' +
+        avatarHtml +
         '<div class="min-w-0">' +
           '<h4 class="text-xs font-bold text-white truncate">' + name + '</h4>' +
           '<p class="text-[10px] text-gray-400 font-mono-meta truncate">@' + handle + ' · ' + campus + '</p>' +
@@ -4294,6 +4395,10 @@ async function openUserProfile(userId, preloadedData) {
 
     if (pubName) pubName.textContent = finalName;
     if (pubUsername) pubUsername.textContent = cleanHandle;
+    var pubInit = document.getElementById('peerPublicInitial');
+    if (pubInit) {
+      pubInit.textContent = (finalName || finalHandle || 'U').charAt(0).toUpperCase();
+    }
 
     if (pubCampus && pubCampusRow) {
       if (u.campus) {
@@ -4353,13 +4458,13 @@ async function openUserProfile(userId, preloadedData) {
       if (moments.length > 0) {
         moments.forEach(function(m) {
           var article = document.createElement('article');
-          article.className = 'relative h-[170px] rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
+          article.className = 'relative h-[170px] w-[165px] flex-shrink-0 rounded-[14px] overflow-hidden border border-neutral-800/80 group cursor-pointer active:scale-95 transition';
           var imgUrl = escapeHtml(m.main_img || m.mediaUrl || m.media_url || m.mainImg || '');
           var locStr = escapeHtml(m.campus || m.location_city || u.campus || 'Campus');
           var timeStr = escapeHtml(m.timeAgo || m.time_ago || (m.created_at ? formatTimeAgoClean(m.created_at) : 'RECENT')).toUpperCase();
 
           var imgHtml = imgUrl
-            ? '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '">'
+            ? '<img src="' + imgUrl + '" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" alt="' + locStr + '" onerror="this.onerror=null; this.parentElement.classList.add(\'bg-neutral-900\'); this.style.display=\'none\';">'
             : '<div class="w-full h-full bg-neutral-900 flex items-center justify-center text-zinc-700 font-mono-meta text-xs">MOMENT</div>';
 
           article.innerHTML =
@@ -4382,7 +4487,7 @@ async function openUserProfile(userId, preloadedData) {
         });
       } else {
         var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'col-span-2 py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider';
+        emptyDiv.className = 'py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider w-full flex-shrink-0';
         emptyDiv.textContent = 'NO PUBLIC MOMENTS YET';
         momentsGrid.appendChild(emptyDiv);
       }
@@ -4736,6 +4841,48 @@ window.confirmDeleteAccount = confirmDeleteAccount;
 state.activeDetailMoment = null;
 state.detailMomentFlipped = false;
 
+function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) {
+    showToast('Please select a valid image file (JPG, PNG, WebP).');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var rawData = e.target.result;
+    var img = new Image();
+    img.onload = function() {
+      try {
+        var w = img.width;
+        var h = img.height;
+        if (w > maxWidth || h > maxHeight) {
+          var ratio = Math.min(maxWidth / w, maxHeight / h);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+        }
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        var compressed = canvas.toDataURL('image/jpeg', quality || 0.85);
+        callback(compressed);
+      } catch (err) {
+        callback(rawData);
+      }
+    };
+    img.onerror = function() {
+      callback(rawData);
+    };
+    img.src = rawData;
+  };
+  reader.onerror = function() {
+    showToast('Could not read image file.');
+  };
+  reader.readAsDataURL(file);
+}
+window.compressImageFile = compressImageFile;
+
 function triggerDirectAvatarUpload() {
   var input = document.getElementById('youDirectAvatarInput');
   if (input) {
@@ -4752,10 +4899,8 @@ async function handleDirectAvatarUpload(event) {
     showToast('Please select a valid image file.');
     return;
   }
-  showToast('Updating profile photo...');
-  var reader = new FileReader();
-  reader.onload = async function(e) {
-    var base64Data = e.target.result;
+  showToast('Optimizing and updating profile photo...');
+  compressImageFile(file, 800, 800, 0.88, async function(base64Data) {
     // Optimistic preview
     var avatarEl = document.getElementById('youProfileAvatar');
     var initsEl = document.getElementById('youProfileInitials');
@@ -4800,11 +4945,10 @@ async function handleDirectAvatarUpload(event) {
       }
     } catch(err) {
       console.warn('[Avatar] upload error:', err);
-      showToast('Photo upload failed.');
+      showToast('Error updating photo. Please try again.');
       if (state.currentUser) applyUserToYouScreen(state.currentUser);
     }
-  };
-  reader.readAsDataURL(file);
+  });
 }
 window.handleDirectAvatarUpload = handleDirectAvatarUpload;
 
@@ -5117,12 +5261,17 @@ async function loadYouScreen() {
     } catch(e) {}
     applyUserToYouScreen(state.currentUser);
 
-    // Update Pending Requests Badge
-    var reqBadge = document.getElementById('youRequestsBadge');
-    if (reqBadge) {
-      var reqCount = u.pending_requests_count || 0;
-      reqBadge.textContent = reqCount > 0 ? reqCount : '';
-      reqBadge.style.display = 'none';
+    // Update Pending Requests Badge & People Section
+    var reqCount = u.pending_requests_count || 0;
+    if (typeof updatePendingRequestsUI === 'function') {
+      updatePendingRequestsUI(reqCount);
+      if (reqCount > 0) {
+        apiRequest('/api/friend/requests').then(function(res) {
+          if (res && res.success && Array.isArray(res.requests)) {
+            updatePendingRequestsUI(res.requests.length, res.requests);
+          }
+        }).catch(function(){});
+      }
     }
 
     // Render Dynamic TODAY card (Captured vs Capture Prompt)
@@ -5679,6 +5828,96 @@ function shareCurrentModalToWhatsAppStatus() {
 }
 window.shareCurrentModalToWhatsAppStatus = shareCurrentModalToWhatsAppStatus;
 
+// Dynamic Anti-Filter Vibe Quotes Array
+var antiFilterVibes = [
+  "Instagram par highlight reel, Kandid par asli zindagi. ✨",
+  "Filters se face badalna aasan hai, par real life flex karna alag level hai.™",
+  "Perfection is fake. Kandid is real. Choose your side.",
+  "Duniya filters ke peeche chhupi hai, main Kandid par asli history likh raha hoon.",
+  "No likes, no follower counts, bas main, meri memories aur mera world."
+];
+
+var activeStoryMoment = null;
+
+function openStoryShareModal(momentId) {
+  var m = (state.momentCache && state.momentCache[momentId]) || (state.activeDetailMoment && state.activeDetailMoment.id === momentId ? state.activeDetailMoment : null);
+  if (!m && state.feedMoments) {
+    m = state.feedMoments.find(function(x) { return x && x.id === momentId; });
+  }
+  if (!m && state.communityMoments) {
+    m = state.communityMoments.find(function(x) { return x && x.id === momentId; });
+  }
+  if (!m) {
+    var card = document.querySelector('article[data-post-id="' + momentId + '"]');
+    if (card) {
+      var img = card.querySelector('.main-stage-img');
+      m = { 
+        id: momentId, 
+        main_img: img ? img.src : '', 
+        location_city: 'Supaul', 
+        author_handle: (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : 'user' 
+      };
+    }
+  }
+  if (!m) return;
+  activeStoryMoment = m;
+
+  var modal = document.getElementById('storyShareModal');
+  if (!modal) return;
+
+  var imgEl = document.getElementById('storyModalImg');
+  var locEl = document.getElementById('storyModalLoc');
+  var vibeEl = document.getElementById('storyModalVibe');
+  var handleEl = document.getElementById('storyModalHandle');
+
+  if (imgEl) imgEl.src = m.main_img || m.mediaUrl || m.media_url || m.mainImg || '';
+  if (locEl) {
+    var rawLoc = m.location_city || m.campus || m.community_name || 'SUPAUL';
+    locEl.textContent = rawLoc.replace(/^Near\s+/i, '').toUpperCase();
+  }
+  if (vibeEl) {
+    var randomVibe = antiFilterVibes[Math.floor(Math.random() * antiFilterVibes.length)];
+    vibeEl.textContent = '"' + randomVibe + '"';
+  }
+  if (handleEl) {
+    handleEl.textContent = '@' + (m.author_handle || m.user_handle || (state.currentUser ? state.currentUser.handle : 'user'));
+  }
+
+  modal.style.setProperty('display', 'flex', 'important');
+}
+window.openStoryShareModal = openStoryShareModal;
+
+function closeStoryShareModal() {
+  var modal = document.getElementById('storyShareModal');
+  if (modal) modal.style.setProperty('display', 'none', 'important');
+}
+window.closeStoryShareModal = closeStoryShareModal;
+
+async function triggerStoryShare(platform) {
+  if (!activeStoryMoment) return;
+  var m = activeStoryMoment;
+  closeStoryShareModal();
+
+  var shareUrl = window.location.origin + (m.id ? ('/?moment=' + m.id) : '');
+  var vibeText = document.getElementById('storyModalVibe') ? document.getElementById('storyModalVibe').textContent.replace(/"/g, '') : 'No filters. Just real life.';
+  var viralCaption = 'No filter · Just real moments ✨\n"' + vibeText + '"\nCheck this on Kandid: ' + shareUrl + '\nJoin unscripted → ' + window.location.origin;
+
+  if (platform === 'whatsapp') {
+    var waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(viralCaption);
+    window.open(waUrl, '_blank');
+    shareMomentToWhatsAppStatus(m.id);
+  } else if (platform === 'instagram') {
+    showToast('Preparing Instagram Flex Card... 📸');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(viralCaption).catch(function() {});
+    }
+    shareMomentToWhatsAppStatus(m.id);
+    showToast('Flex Card ready! Add to Instagram Story 📸✨');
+  }
+}
+window.triggerStoryShare = triggerStoryShare;
+
+
 function playCurrentModalAudio() {
   if (!state.activeDetailMoment) return;
   var audioUrl = state.activeDetailMoment.audio_url || state.activeDetailMoment.audioData || '';
@@ -5960,11 +6199,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                       notifDot.style.display = (hb.unreadCount > 0) ? 'block' : 'none';
                   }
 
-                  // Update YOU page Requests Badge
-                  var youReqBadge = document.getElementById('youRequestsBadge');
-                  if (youReqBadge) {
-                      youReqBadge.textContent = hb.pendingRequestsCount > 0 ? hb.pendingRequestsCount : '';
-                      youReqBadge.style.display = 'none';
+                  // Update YOU page Requests Badge & People Section
+                  var pendingReqCount = hb.pendingRequestsCount || 0;
+                  if (typeof updatePendingRequestsUI === 'function') {
+                      updatePendingRequestsUI(pendingReqCount);
                   }
 
                   // Trigger In-App Live Notification Toast Banner
@@ -6560,18 +6798,16 @@ window.triggerPhotoUpload = function() {
 window.handlePhotoUpload = function(event) {
     var file = event.target.files && event.target.files[0];
     if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        state.onboardAvatarData = e.target.result;
+    compressImageFile(file, 800, 800, 0.88, function(compressedData) {
+        state.onboardAvatarData = compressedData;
         var box = document.getElementById('final-initials-box');
         if (box) {
-            box.innerHTML = '<img src="' + e.target.result + '" class="w-full h-full object-cover">';
+            box.innerHTML = '<img src="' + compressedData + '" class="w-full h-full object-cover">';
         }
         var lbl = document.getElementById('photo-upload-label');
         if (lbl) lbl.textContent = 'Photo Selected ✓';
         showToast('Profile photo added 📸');
-    };
-    reader.readAsDataURL(file);
+    });
 };
 
 window.validateAndGoToWorld = async function() {
@@ -8197,10 +8433,9 @@ async function loadConnectionRequests() {
   if (res && res.success && Array.isArray(res.requests)) {
     var reqs = res.requests;
     
-    // Update YOU page Requests Badge
-    if (youBadge) {
-      youBadge.textContent = reqs.length > 0 ? reqs.length : '';
-      youBadge.style.display = 'none';
+    // Update YOU page Requests Badge & People Section
+    if (typeof updatePendingRequestsUI === 'function') {
+      updatePendingRequestsUI(reqs.length, reqs);
     }
 
     if (!sec || !container) return;
@@ -8268,6 +8503,124 @@ async function loadConnectionRequests() {
   }
 }
 window.loadConnectionRequests = loadConnectionRequests;
+
+function updatePendingRequestsUI(count, reqs) {
+  var c = typeof count === 'number' ? count : (Array.isArray(reqs) ? reqs.length : 0);
+  state.pendingRequestsCount = c;
+
+  // 1. Bottom Dock "YOU" Tab Badge
+  var dockBadge = document.getElementById('youUnreadBadge');
+  if (dockBadge) {
+    if (c > 0) {
+      dockBadge.textContent = c > 99 ? '99+' : c;
+      dockBadge.classList.remove('hidden');
+      dockBadge.style.display = 'flex';
+    } else {
+      dockBadge.classList.add('hidden');
+      dockBadge.style.display = 'none';
+    }
+  }
+
+  // 2. "YOUR WORLD" -> PEOPLE Card Badges
+  var peopleBadge = document.getElementById('youPeopleBadge');
+  if (peopleBadge) {
+    if (c > 0) {
+      peopleBadge.textContent = c === 1 ? '1 NEW' : c + ' REQUESTS';
+      peopleBadge.style.display = 'inline-flex';
+    } else {
+      peopleBadge.style.display = 'none';
+    }
+  }
+
+  var peopleDot = document.getElementById('youPeopleDot');
+  if (peopleDot) {
+    peopleDot.style.display = c > 0 ? 'block' : 'none';
+  }
+
+  var peopleDesc = document.getElementById('youWorldPeopleDesc');
+  if (peopleDesc) {
+    if (c > 0) {
+      peopleDesc.textContent = c === 1 ? '1 pending connection request' : c + ' pending connection requests';
+      peopleDesc.classList.add('text-amber-400');
+      peopleDesc.classList.remove('text-gray-400');
+    } else {
+      peopleDesc.textContent = 'People who matter.';
+      peopleDesc.classList.remove('text-amber-400');
+      peopleDesc.classList.add('text-gray-400');
+    }
+  }
+
+  // 3. Inline requests list on YOU screen (if reqs provided)
+  var inlineBox = document.getElementById('youInlinePendingRequests');
+  var inlineList = document.getElementById('youInlinePendingRequestsList');
+  if (inlineBox && inlineList) {
+    if (Array.isArray(reqs) && reqs.length > 0) {
+      inlineBox.style.display = 'block';
+      inlineList.innerHTML = '';
+      reqs.slice(0, 3).forEach(function(r) {
+        var row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-2.5 p-2 rounded-xl bg-black/40 border border-zinc-800/80';
+        var avSrc = (r.avatar_url && !r.avatar_url.includes('api.dicebear.com')) ? r.avatar_url : '';
+        var name = escapeHtml((r.name || 'Student').toUpperCase());
+        var handle = escapeHtml((r.handle || 'user').toUpperCase());
+        row.innerHTML =
+          '<div class="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer" onclick="openUserProfile(\'' + r.id + '\')">' +
+            '<div class="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 overflow-hidden flex-shrink-0 flex items-center justify-center text-xs text-amber-500 font-bold">' +
+              (avSrc ? '<img src="' + escapeHtml(avSrc) + '" class="w-full h-full object-cover">' : escapeHtml((r.name || 'U').charAt(0).toUpperCase())) +
+            '</div>' +
+            '<div class="min-w-0 leading-tight">' +
+              '<div class="text-[11px] font-bold text-white uppercase truncate font-mono-tag">' + name + '</div>' +
+              '<div class="text-[9px] text-amber-400 truncate font-mono-tag">@' + handle + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="flex items-center gap-1 shrink-0">' +
+            '<button class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black text-[9px] font-black font-mono-tag rounded-lg cursor-pointer uppercase inline-accept">ACCEPT</button>' +
+            '<button class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 text-[9px] font-black font-mono-tag rounded-lg cursor-pointer inline-decline">✕</button>' +
+          '</div>';
+
+        row.querySelector('.inline-accept').addEventListener('click', async function(e) {
+          e.stopPropagation();
+          row.style.opacity = '0.5';
+          if (typeof playTactileFeedback === 'function') playTactileFeedback('xp');
+          showToast('Accepting request...');
+          var res = await apiRequest('/api/friend/accept', { method: 'POST', body: { target_user_id: r.id } });
+          if (res && res.success) {
+            showToast('Connected with ' + name + '! ✦ +25 XP');
+            row.remove();
+            if (typeof loadYouScreen === 'function') loadYouScreen();
+          }
+        });
+
+        row.querySelector('.inline-decline').addEventListener('click', async function(e) {
+          e.stopPropagation();
+          row.style.opacity = '0.5';
+          await apiRequest('/api/friend/reject', { method: 'POST', body: { target_user_id: r.id } });
+          showToast('Request declined.');
+          row.remove();
+          if (typeof loadYouScreen === 'function') loadYouScreen();
+        });
+
+        inlineList.appendChild(row);
+      });
+    } else {
+      inlineBox.style.display = 'none';
+      inlineList.innerHTML = '';
+    }
+  }
+}
+window.updatePendingRequestsUI = updatePendingRequestsUI;
+
+function handleYouPeopleCardClick() {
+  if (state.pendingRequestsCount && state.pendingRequestsCount > 0) {
+    switchScreenView('notifications');
+  } else {
+    switchScreenView('chat-home');
+    if (typeof startNewChatFromConnections === 'function') {
+      startNewChatFromConnections();
+    }
+  }
+}
+window.handleYouPeopleCardClick = handleYouPeopleCardClick;
 
 async function loadNotifications() {
   await loadConnectionRequests();
@@ -8496,10 +8849,13 @@ async function checkChatUnreadBadge() {
     var chatNotifDot = document.getElementById('chatNotifDot');
     if (chatNotifDot) {
       var notifData = await apiRequest('/api/notifications?unread=1');
-      if (notifData && notifData.unread_count > 0) {
+      if (notifData && (notifData.unread_count > 0 || notifData.unreadCount > 0)) {
         chatNotifDot.classList.remove('hidden');
       } else {
         chatNotifDot.classList.add('hidden');
+      }
+      if (notifData && typeof notifData.pendingRequestsCount === 'number' && typeof updatePendingRequestsUI === 'function') {
+        updatePendingRequestsUI(notifData.pendingRequestsCount);
       }
     }
   } catch(e){}
@@ -9535,7 +9891,7 @@ async function sendChatMessageV2() {
     }
 
     tempBubble = document.createElement('div');
-    tempBubble.className = 'flex flex-col items-end space-y-1';
+    tempBubble.className = 'flex flex-col items-end space-y-1 transform translate-y-4 opacity-0 transition-all duration-300 ease-out';
     var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     tempBubble.innerHTML = 
       '<div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
@@ -9546,7 +9902,19 @@ async function sendChatMessageV2() {
         '</div>' +
       '</div>';
     container.appendChild(tempBubble);
-    container.scrollTop = container.scrollHeight;
+    
+    // Trigger animation
+    setTimeout(function() {
+      if (tempBubble) {
+        tempBubble.classList.remove('translate-y-4', 'opacity-0');
+        tempBubble.classList.add('translate-y-0', 'opacity-100');
+        container.scrollTop = container.scrollHeight;
+      }
+    }, 10);
+    
+    if (typeof playTactileFeedback === 'function') {
+      playTactileFeedback('shutter');
+    }
   }
 
   try {
@@ -9680,46 +10048,34 @@ window.openEditProfileModal = openEditProfileModal;
 function handleModalAvatarUpload(event) {
   var file = event.target.files && event.target.files[0];
   if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    pendingEditAvatarData = e.target.result;
+  compressImageFile(file, 800, 800, 0.88, function(compressedData) {
+    pendingEditAvatarData = compressedData;
     var previewImg = document.getElementById('modalEditAvatarPreview');
     var initsEl = document.getElementById('modalEditAvatarInitials');
     if (previewImg) {
-      previewImg.src = e.target.result;
+      previewImg.src = compressedData;
       previewImg.style.display = 'block';
     }
     if (initsEl) initsEl.style.display = 'none';
     showToast('Photo selected! Click Save Changes 📸');
-  };
-  reader.readAsDataURL(file);
+  });
 }
 window.handleModalAvatarUpload = handleModalAvatarUpload;
 
 function handleModalCoverUpload(event) {
   var file = event.target.files && event.target.files[0];
   if (!file) return;
-  if (!file.type || !file.type.startsWith('image/')) {
-    showToast('Please select a valid image file (JPG, PNG, WebP).');
-    return;
-  }
-  if (file.size > 15 * 1024 * 1024) {
-    showToast('Cover photo exceeds maximum size limit (15MB).');
-    return;
-  }
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    pendingEditCoverData = e.target.result;
+  compressImageFile(file, 1400, 800, 0.85, function(compressedData) {
+    pendingEditCoverData = compressedData;
     var coverPreview = document.getElementById('modalEditCoverPreview');
     var coverPlaceholder = document.getElementById('modalEditCoverPlaceholder');
     if (coverPreview) {
-      coverPreview.src = e.target.result;
+      coverPreview.src = compressedData;
       coverPreview.style.display = 'block';
     }
     if (coverPlaceholder) coverPlaceholder.style.display = 'none';
     showToast('Cover photo selected! Click Save Changes 📸');
-  };
-  reader.readAsDataURL(file);
+  });
 }
 window.handleModalCoverUpload = handleModalCoverUpload;
 
@@ -9786,6 +10142,8 @@ async function saveUserProfileChanges() {
       state.currentUser.vibe = newVibe;
       if (res.user && res.user.avatar_url) {
         state.currentUser.avatar_url = res.user.avatar_url;
+      } else if (pendingEditAvatarData) {
+        state.currentUser.avatar_url = pendingEditAvatarData;
       }
       if (res.user && res.user.cover_url) {
         state.currentUser.cover_url = res.user.cover_url;
@@ -10606,3 +10964,63 @@ async function handleDeletePerspectiveMoment(postId) {
 }
 window.handleDeletePerspectiveMoment = handleDeletePerspectiveMoment;
 
+
+// =====================================================================
+// FEED PULL-TO-REFRESH IMPLEMENTATION
+// =====================================================================
+(function initPullToRefresh() {
+  var pStartY = 0;
+  var isPulling = false;
+  var viewport = document.getElementById('mainViewport');
+  if (!viewport) return;
+  
+  viewport.addEventListener('touchstart', function(e) {
+    if (viewport.scrollTop <= 0) {
+      pStartY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  }, { passive: true });
+
+  viewport.addEventListener('touchmove', function(e) {
+    if (!isPulling) return;
+  }, { passive: true });
+
+  viewport.addEventListener('touchend', function(e) {
+    if (!isPulling) return;
+    isPulling = false;
+    var pullDist = e.changedTouches[0].clientY - pStartY;
+    // Trigger refresh if pulled down by > 130px
+    if (pullDist > 130 && state.activeScreen === 'feed') {
+      if (typeof playTactileFeedback === 'function') {
+        playTactileFeedback('shutter');
+      }
+      if (typeof loadFeedMoments === 'function') {
+        loadFeedMoments();
+      }
+    }
+  });
+})();
+
+window.filterNotificationsView = function(type, button) {
+  var buttons = document.querySelectorAll('.filter-btn');
+  buttons.forEach(function(btn) {
+    btn.className = "flex-none bg-zinc-950 text-zinc-400 border border-zinc-800 rounded-full px-4 py-1.5 text-[10.5px] font-bold hover:border-zinc-600 transition-all active:scale-95 filter-btn";
+  });
+  
+  if (button) {
+    button.className = "flex-none bg-white text-black border border-white rounded-full px-4 py-1.5 text-[10.5px] font-bold shadow-md transition-all active:scale-95 filter-btn";
+  }
+
+  var sections = document.querySelectorAll('.notif-section');
+  sections.forEach(function(section) {
+    if (type === 'all' || section.getAttribute('data-section') === type) {
+      section.style.display = 'block';
+    } else {
+      section.style.display = 'none';
+    }
+  });
+};
+
+window.requestContactsSync = function() {
+  showToast("Contact syncing is currently in early access preview.");
+};
