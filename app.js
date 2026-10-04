@@ -2557,6 +2557,49 @@ function record3SecAmbientAudio() {
   });
 }
 
+// ---------------------------------------------------------------------
+// KANDID CAMERA - ASYNC FRAME SERIALIZATION (PERF PHASE 1)
+// ---------------------------------------------------------------------
+// Converts a canvas to a JPEG Blob asynchronously via HTMLCanvasElement.toBlob
+// instead of blocking the main thread with the synchronous canvas.toDataURL().
+function kandidCanvasToJpegBlob(canvas, quality) {
+  return new Promise(function(resolve) {
+    if (canvas && typeof canvas.toBlob === 'function') {
+      try {
+        canvas.toBlob(function(blob) { resolve(blob || null); }, 'image/jpeg', quality);
+        return;
+      } catch(e) { /* fall through to synchronous fallback below */ }
+    }
+    resolve(null);
+  });
+}
+
+function kandidBlobToDataUrl(blob) {
+  return new Promise(function(resolve) {
+    if (!blob) { resolve(''); return; }
+    try {
+      var reader = new FileReader();
+      reader.onloadend = function() { resolve(reader.result || ''); };
+      reader.onerror = function() { resolve(''); };
+      reader.readAsDataURL(blob);
+    } catch(e) { resolve(''); }
+  });
+}
+
+// Serialize a captured canvas frame to a JPEG data URL WITHOUT a synchronous
+// toDataURL() on the capture critical path. The data URL is only produced at the
+// final compatibility boundary because /api/moments/capture still expects base64
+// data URLs for mainImg / pipImg / audioData (no multipart migration in this phase).
+async function kandidSerializeCanvasJpeg(canvas, quality) {
+  if (!canvas) return '';
+  var blob = await kandidCanvasToJpegBlob(canvas, quality);
+  if (blob) {
+    var url = await kandidBlobToDataUrl(blob);
+    if (url) return url;
+  }
+  try { return canvas.toDataURL('image/jpeg', quality); } catch(e) { return ''; }
+}
+
 // =====================================================================
 // KANDID DUAL-CAMERA ARCHITECTURE ENGINE (SPECIFICATION V1.0)
 // =====================================================================
@@ -2571,6 +2614,8 @@ const KandidCameraEngine = {
   compositeImage: null,
   audioClip: null,
   isMultiCamSupported: false,
+  pendingAudioPromise: null,
+  _captureStartedAt: 0,
 
   setState(newState, detail) {
     this.state = newState;
@@ -2618,6 +2663,55 @@ const KandidCameraEngine = {
     } catch(e) {
       console.warn('[CameraEngine] Device discovery error', e);
     }
+  },
+
+  _isBusy() {
+    var s = this.state;
+    return s === 'CAPTURING' || s === 'CAPTURING_REAR' || s === 'SWITCHING_TO_FRONT' ||
+           s === 'CAPTURING_FRONT' || s === 'PROCESSING' || s === 'COMPOSING' ||
+           s === 'READY_FOR_REVIEW' || s === 'READY_TO_POST';
+  },
+
+  _setShutterEnabled(enabled) {
+    var controls = document.getElementById('cameraShutterControls');
+    if (controls) controls.style.pointerEvents = enabled ? '' : 'none';
+  },
+
+  // Starts the EXISTING 3.0s ambient recorder as a background promise.
+  // The visual capture pipeline never awaits this - only publish does.
+  // Recordings are chained so at most one microphone stream is ever active.
+  startAmbientAudioCapture() {
+    var self = this;
+    var previous = this.pendingAudioPromise || Promise.resolve('');
+    var next = previous.catch(function() {}).then(function() {
+      return record3SecAmbientAudio();
+    }).then(function(url) {
+      self.audioClip = url || '';
+      state.recordedAudioDataUrl = self.audioClip;
+      return self.audioClip;
+    }).catch(function(err) {
+      console.warn('[CameraEngine] Ambient audio capture failed:', err);
+      self.audioClip = '';
+      return '';
+    });
+    this.pendingAudioPromise = next;
+    return next;
+  },
+
+  // Awaited only by publish / review playback - never by the visual path.
+  async awaitPendingAudio() {
+    if (this.pendingAudioPromise) {
+      try {
+        var url = await this.pendingAudioPromise;
+        this.audioClip = url || this.audioClip || '';
+      } catch(e) {
+        this.audioClip = this.audioClip || '';
+      }
+    }
+    if (state.capturedMomentData) {
+      state.capturedMomentData.audioData = this.audioClip || state.capturedMomentData.audioData || '';
+    }
+    return this.audioClip || '';
   },
 
   async initialize() {
@@ -2746,8 +2840,12 @@ const KandidCameraEngine = {
   },
 
   async capture() {
-    if (this.state === 'CAPTURING' || this.state === 'PROCESSING' || this.state === 'COMPOSING') return;
-    this.setState('CAPTURING');
+    if (this._isBusy()) return;
+    this.setState('CAPTURING_REAR');
+    this._captureStartedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    this._setShutterEnabled(false);
+    // Start the existing 3.0s ambient recording immediately, but do NOT await it.
+    this.startAmbientAudioCapture();
 
     var flash = document.getElementById('cameraFlashOverlay');
     var mainVideo = document.getElementById('cameraMainVideo');
@@ -2779,7 +2877,7 @@ const KandidCameraEngine = {
         fctx1.scale(-1, 1);
       }
       fctx1.drawImage(mainVideo, 0, 0, firstCanvas.width, firstCanvas.height);
-      firstFrameData = firstCanvas.toDataURL('image/jpeg', 0.92);
+      firstFrameData = await kandidSerializeCanvasJpeg(firstCanvas, 0.92);
     }
 
     if (startFacing === 'user') {
@@ -2794,8 +2892,12 @@ const KandidCameraEngine = {
       mainImg.classList.remove('hidden');
     }
 
-    // Show Transition HUD
-    if (hud) hud.style.display = 'flex';
+    // Show Transition HUD. The overlay is intentionally translucent so the frozen
+    // rear frame stays fully visible while the front camera warms up - no black gap.
+    if (hud) {
+      hud.style.display = 'flex';
+      hud.style.background = 'rgba(0,0,0,0.15)';
+    }
     var nextFacing = (startFacing === 'environment') ? 'user' : 'environment';
     if (countdownEl) countdownEl.textContent = (nextFacing === 'user') ? '🤳' : '📸';
     if (statusTitle) statusTitle.textContent = (nextFacing === 'user') ? '1/2 REAR CAPTURED! 📸' : '1/2 SELFIE CAPTURED! 🤳';
@@ -2803,7 +2905,10 @@ const KandidCameraEngine = {
 
     // ==========================================
     // STEP 2: SWITCH TO OPPOSITE CAMERA
+    // The frozen rear frame above stays visible for the whole switch, and the live
+    // video element is only revealed once the new stream is actually decoding.
     // ==========================================
+    this.setState('SWITCHING_TO_FRONT');
     await this.startMainPreview(nextFacing);
 
     // Poll until second video stream is actively delivering decoded frames
@@ -2815,12 +2920,13 @@ const KandidCameraEngine = {
       await new Promise(function(r) { setTimeout(r, 50); });
     }
 
-    // Delay for sensor auto-focus and exposure settling
+    // Delay for sensor auto-focus and exposure settling (hardware stability).
     await new Promise(function(r) { setTimeout(r, 400); });
 
     // ==========================================
     // STEP 3: SNAP SECOND FRAME
     // ==========================================
+    this.setState('CAPTURING_FRONT');
     if (flash) {
       flash.style.opacity = '1';
       setTimeout(function() { flash.style.opacity = '0'; }, 120);
@@ -2838,7 +2944,7 @@ const KandidCameraEngine = {
         fctx2.scale(-1, 1);
       }
       fctx2.drawImage(mainVideo, 0, 0, secondCanvas.width, secondCanvas.height);
-      secondFrameData = secondCanvas.toDataURL('image/jpeg', 0.92);
+      secondFrameData = await kandidSerializeCanvasJpeg(secondCanvas, 0.92);
     }
 
     if (nextFacing === 'user') {
@@ -2847,52 +2953,35 @@ const KandidCameraEngine = {
       this.rearFrame = secondFrameData;
     }
 
-    if (hud) hud.style.display = 'none';
+    if (hud) { hud.style.display = 'none'; hud.style.background = ''; }
 
     // Safe fallback if one sensor failed
     if (!this.frontFrame && this.rearFrame) this.frontFrame = this.rearFrame;
     if (!this.rearFrame && this.frontFrame) this.rearFrame = this.frontFrame;
 
-    if (hud) hud.style.display = 'none';
-
-    // Safe fallback if selfie sensor failed
-    if (!this.frontFrame && this.rearFrame) {
-      var mirrorCanvas = document.createElement('canvas');
-      mirrorCanvas.width = rearCanvas ? rearCanvas.width : 640;
-      mirrorCanvas.height = rearCanvas ? rearCanvas.height : 480;
-      var mctx = mirrorCanvas.getContext('2d');
-      mctx.translate(mirrorCanvas.width, 0);
-      mctx.scale(-1, 1);
-      mctx.drawImage(rearCanvas, 0, 0, mirrorCanvas.width, mirrorCanvas.height);
-      this.frontFrame = mirrorCanvas.toDataURL('image/jpeg', 0.88);
-    }
-
     // Ensure neither image is black or empty
     if (!this.rearFrame && this.frontFrame) this.rearFrame = this.frontFrame;
     if (!this.frontFrame && this.rearFrame) this.frontFrame = this.rearFrame;
 
-    // Record 3s ambient audio
-    var audioPromise = record3SecAmbientAudio();
-    var audioDataUrl = await audioPromise;
-    this.audioClip = audioDataUrl || '';
-    state.recordedAudioDataUrl = this.audioClip;
-
-    // 4. IMAGE PROCESSOR & COMPOSITOR (Spec Section 5 & 6)
-    this.setState('PROCESSING');
-    this.setState('COMPOSING');
-
-    var compositeResult = await this.composeMoment(this.rearFrame, this.frontFrame);
-    this.compositeImage = compositeResult;
-
+    // ==========================================
+    // STEP 4: REVIEW OPENS IMMEDIATELY (NO AUDIO WAIT)
+    // ==========================================
+    // The existing 3.0s ambient recording is already running in the background
+    // (started at shutter via startAmbientAudioCapture). It is NOT awaited here,
+    // so the visual pipeline never blocks on it. Publish awaits it when needed.
+    // composeMoment() is intentionally NOT invoked: the publish payload sends
+    // mainImg + pipImg separately and never uses compositeImg, so building the
+    // 1080x1350 composite here was dead work on the critical capture path.
+    this.compositeImage = this.rearFrame || this.frontFrame || null;
+    this.setState('READY_FOR_REVIEW');
     this.stop();
-    this.setState('READY_TO_POST');
 
     // Bind to Review state
     state.capturedMomentData = {
       mainImg: this.rearFrame,
       pipImg: this.frontFrame,
       compositeImg: this.compositeImage,
-      audioData: this.audioClip,
+      audioData: this.audioClip || '',
       iso: 'ISO 400',
       aperture: 'f/2.8',
       shutter: '1/250s'
@@ -3000,8 +3089,17 @@ const KandidCameraEngine = {
       } catch(e){}
       this.pipStream = null;
     }
+    var mainVideo = document.getElementById('cameraMainVideo');
+    if (mainVideo && mainVideo.srcObject) {
+      try {
+        var liveTracks = mainVideo.srcObject.getTracks ? mainVideo.srcObject.getTracks() : [];
+        liveTracks.forEach(function(t) { t.stop(); });
+      } catch(e){}
+      mainVideo.srcObject = null;
+    }
     state.mainMediaStream = null;
     state.pipMediaStream = null;
+    this._setShutterEnabled(true);
     this.setState('IDLE');
   }
 };
@@ -3268,7 +3366,12 @@ window.retakeMomentFromReview = retakeMomentFromReview;
 
 var activeAudioInstance = null;
 
-function playReviewAudio() {
+async function playReviewAudio() {
+  if ((!state.capturedMomentData || !state.capturedMomentData.audioData) &&
+      window.KandidCameraEngine && typeof KandidCameraEngine.awaitPendingAudio === 'function') {
+    // Ambient audio may still be finishing in the background; wait for it.
+    await KandidCameraEngine.awaitPendingAudio();
+  }
   if (state.capturedMomentData && state.capturedMomentData.audioData) {
     if (activeAudioInstance) {
       activeAudioInstance.pause();
@@ -3306,6 +3409,13 @@ async function publishCapturedMoment() {
   var approxLocName = state.currentGeoApprox ? 
     (state.currentGeoApprox.startsWith('Near ') ? state.currentGeoApprox : ('Near ' + state.currentGeoApprox)) : 
     (state.currentUser ? ('Near Quad · ' + (state.currentUser.campus || 'Supaul')) : 'Near Quad · Supaul');
+
+  // Ensure the existing 3.0s ambient recording (started at shutter, running in the
+  // background) is attached before building the payload. Publish is the ONLY place
+  // the visual capture path waits for audio, and only when Publish is tapped.
+  if (window.KandidCameraEngine && typeof KandidCameraEngine.awaitPendingAudio === 'function') {
+    await KandidCameraEngine.awaitPendingAudio();
+  }
 
   var isPerspective = Boolean(state.cameraContext && state.cameraContext.mode === 'PERSPECTIVE' && state.cameraContext.clusterId);
   var payload;
