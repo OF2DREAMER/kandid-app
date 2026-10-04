@@ -2033,8 +2033,7 @@ function renderFeedCards(moments, container) {
 
       '<div class="space-y-2 px-0.5">' +
         '<div class="flex items-center justify-between text-[10px] font-mono-tag select-none">' +
-          '<div class="flex items-center gap-1.5 font-bold tracking-wider uppercase text-amber-400">' +
-            '<span>●</span>' +
+          '<div class="font-bold tracking-wider uppercase text-amber-400">' +
             (commTarget
               ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="hover:text-amber-300 transition cursor-pointer" title="Open Community Page"><span>' + campusName + '</span></button>'
               : '<span>' + campusName + '</span>') +
