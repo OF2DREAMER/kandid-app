@@ -10874,3 +10874,27 @@ window.handleDeletePerspectiveMoment = handleDeletePerspectiveMoment;
     }
   });
 })();
+
+window.filterNotificationsView = function(type, button) {
+  var buttons = document.querySelectorAll('.filter-btn');
+  buttons.forEach(function(btn) {
+    btn.className = "flex-none bg-zinc-950 text-zinc-400 border border-zinc-800 rounded-full px-4 py-1.5 text-[10.5px] font-bold hover:border-zinc-600 transition-all active:scale-95 filter-btn";
+  });
+  
+  if (button) {
+    button.className = "flex-none bg-white text-black border border-white rounded-full px-4 py-1.5 text-[10.5px] font-bold shadow-md transition-all active:scale-95 filter-btn";
+  }
+
+  var sections = document.querySelectorAll('.notif-section');
+  sections.forEach(function(section) {
+    if (type === 'all' || section.getAttribute('data-section') === type) {
+      section.style.display = 'block';
+    } else {
+      section.style.display = 'none';
+    }
+  });
+};
+
+window.requestContactsSync = function() {
+  showToast("Contact syncing is currently in early access preview.");
+};

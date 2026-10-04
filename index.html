@@ -1259,35 +1259,112 @@
       <!-- =================================================================
            SECTION 6: NOTIFICATIONS & CONNECTION REQUESTS
            ================================================================= -->
-      <section class="app-screen px-4 py-4 space-y-4 pb-32" id="screen-notifications" style="display:none;">
-          <div class="px-1 flex justify-between items-center pb-1 border-b border-zinc-900">
+            <section class="app-screen px-4 py-4 pb-32" id="screen-notifications" style="display:none;">
+          <div class="px-1 flex justify-between items-center pb-3 mb-4 border-b border-zinc-900">
               <div class="flex items-center gap-2.5">
-                  <button class="text-zinc-400 hover:text-white text-base cursor-pointer" onclick="switchScreenView('feed')">←</button>
-                  <h2 class="text-sm font-extrabold text-white tracking-wider uppercase font-mono-tag">NOTIFICATIONS</h2>
+                  <button class="text-zinc-400 hover:text-white text-base cursor-pointer transition-colors active:scale-95" onclick="switchScreenView('feed')">←</button>
+                  <h2 class="text-[22px] font-extrabold text-white tracking-tight">Notifications</h2>
               </div>
-              <button class="text-[10px] text-amber-500 hover:text-amber-400 font-mono-tag font-bold cursor-pointer" onclick="markAllNotificationsRead()">MARK ALL READ</button>
+              <button class="text-[11px] text-zinc-500 hover:text-white font-bold cursor-pointer transition-colors" onclick="markAllNotificationsRead()">Mark all read</button>
+          </div>
+
+          <!-- Summary Hero Card -->
+          <div class="bg-zinc-950 border border-zinc-800 rounded-3xl p-5 mb-5 relative overflow-hidden shadow-2xl">
+              <div class="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+              <div class="flex justify-between items-center relative z-10">
+                  <div>
+                      <div class="text-[10px] tracking-widest uppercase text-amber-500 font-extrabold font-mono-tag mb-1.5">Your Kandid Circle</div>
+                      <h2 class="text-xl font-bold text-white leading-tight tracking-tight mb-1">People & moments that matter.</h2>
+                      <p class="text-[11.5px] text-zinc-400 leading-relaxed max-w-[85%]">Connection discovery without follower counts or engagement noise.</p>
+                  </div>
+                  <div class="w-11 h-11 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-white flex-shrink-0 shadow-lg relative">
+                      <span>♧</span>
+                      <span id="notifDot" class="absolute top-[3px] right-[3px] w-2 h-2 rounded-full bg-amber-500 border-2 border-zinc-900 animate-pulse" style="display:none;"></span>
+                  </div>
+              </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="flex gap-2 overflow-x-auto pb-1 mb-6 scrollbar-hide" style="scrollbar-width: none;">
+              <button class="flex-none bg-white text-black border border-white rounded-full px-4 py-1.5 text-[10.5px] font-bold shadow-md transition-all active:scale-95 filter-btn" data-filter="all" onclick="filterNotificationsView('all', this)">All</button>
+              <button class="flex-none bg-zinc-950 text-zinc-400 border border-zinc-800 rounded-full px-4 py-1.5 text-[10.5px] font-bold hover:border-zinc-600 transition-all active:scale-95 filter-btn" data-filter="requests" onclick="filterNotificationsView('requests', this)">Requests</button>
+              <button class="flex-none bg-zinc-950 text-zinc-400 border border-zinc-800 rounded-full px-4 py-1.5 text-[10.5px] font-bold hover:border-zinc-600 transition-all active:scale-95 filter-btn" data-filter="people" onclick="filterNotificationsView('people', this)">People You Know</button>
+              <button class="flex-none bg-zinc-950 text-zinc-400 border border-zinc-800 rounded-full px-4 py-1.5 text-[10.5px] font-bold hover:border-zinc-600 transition-all active:scale-95 filter-btn" data-filter="paths" onclick="filterNotificationsView('paths', this)">Crossed Paths</button>
+              <button class="flex-none bg-zinc-950 text-zinc-400 border border-zinc-800 rounded-full px-4 py-1.5 text-[10.5px] font-bold hover:border-zinc-600 transition-all active:scale-95 filter-btn" data-filter="activity" onclick="filterNotificationsView('activity', this)">Activity</button>
           </div>
 
           <!-- 1. Real Pending Connection Requests Container -->
-          <div id="notificationsRequestsSection" class="space-y-2.5" style="display:none;">
-              <div class="flex justify-between items-center px-1">
-                  <span class="text-[10px] text-amber-500 font-mono-tag tracking-widest uppercase font-bold" id="notificationsRequestsHeader">CONNECTION REQUESTS (0)</span>
-                  <span class="text-[9px] text-zinc-500 font-mono-tag">ACTION REQUIRED</span>
+          <section class="mb-7 transition-all duration-300 notif-section" data-section="requests" id="notificationsRequestsSection" style="display:none;">
+              <div class="flex justify-between items-end mb-2.5 px-0.5">
+                  <div class="text-[11px] uppercase tracking-wider font-extrabold text-zinc-400">Connection Requests</div>
+                  <div class="text-[10px] text-amber-500 font-semibold" id="notificationsRequestsHeader">0 waiting</div>
               </div>
-              <div id="notificationsRequestsContainer" class="space-y-2.5">
+              <div id="notificationsRequestsContainer" class="space-y-2">
                   <!-- Populated via loadConnectionRequests() -->
               </div>
-          </div>
+          </section>
+
+          <!-- People You Know -->
+          <section class="mb-7 transition-all duration-300 notif-section" data-section="people" id="secPeople">
+              <div class="flex justify-between items-end mb-2.5 px-0.5">
+                  <div class="text-[11px] uppercase tracking-wider font-extrabold text-zinc-400">People You Know Are Here</div>
+                  <div class="text-[10px] text-zinc-500 font-semibold">From your contacts</div>
+              </div>
+              
+              <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-center shadow-lg relative overflow-hidden" id="contactsPromptBox">
+                  <div class="w-12 h-12 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center text-white mx-auto mb-3 text-lg">📱</div>
+                  <h3 class="text-[13px] font-bold text-white mb-1">Find your friends</h3>
+                  <p class="text-[10.5px] text-zinc-400 leading-relaxed mb-4 px-2">Sync your contacts to securely discover people you already know on Kandid. We never store your raw contact data.</p>
+                  <button class="w-full bg-white text-black font-bold text-[11px] py-2.5 rounded-xl active:scale-[0.98] transition-transform" onclick="showToast('Contact syncing will be available soon.')">Allow Contacts Access</button>
+              </div>
+              
+              <div class="flex gap-2.5 overflow-x-auto pb-2 scrollbar-hide hidden" id="peopleScroll" style="scrollbar-width: none;">
+                  <!-- We'll unhide this and hide prompt if contacts are synced later -->
+              </div>
+          </section>
+
+          <!-- Crossed Paths (Mockup for now) -->
+          <section class="mb-7 transition-all duration-300 notif-section" data-section="paths">
+              <div class="flex justify-between items-end mb-2.5 px-0.5">
+                  <div class="text-[11px] uppercase tracking-wider font-extrabold text-zinc-400">You Crossed Paths</div>
+                  <div class="text-[10px] text-zinc-500 font-semibold">Shared real context</div>
+              </div>
+
+              <!-- Dummy items to show the new design, can be generated dynamically later -->
+              <div class="bg-zinc-950 border border-zinc-800 rounded-2xl p-3 mb-2 shadow-sm transition-colors hover:border-zinc-700 notif-item-enter">
+                  <div class="flex items-center gap-2.5">
+                      <div class="w-11 h-11 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center font-bold text-white flex-shrink-0">N</div>
+                      <div class="flex-1 min-w-0">
+                          <div class="text-[13px] font-bold text-white truncate tracking-tight">Neha</div>
+                          <div class="text-[10.5px] text-zinc-500 mt-0.5">@neha_23</div>
+                          <div class="text-[9.5px] text-zinc-600 mt-1">Yesterday</div>
+                      </div>
+                      <button class="bg-white text-black font-bold text-[10px] px-3.5 py-2 rounded-full active:scale-95 transition-transform flex-shrink-0" onclick="showToast('Request sent to Neha')">Connect</button>
+                  </div>
+                  <div class="mt-3 p-2.5 rounded-xl bg-zinc-900 border border-zinc-800/50 text-[10px] text-zinc-400 leading-relaxed">
+                      <strong class="text-white">You were both part of the same Live Moment.</strong><br>Patna Students Gathering
+                  </div>
+              </div>
+          </section>
 
           <!-- 2. Activity & Alerts Container -->
-          <div id="notificationsActivitySection" class="space-y-2.5">
-              <div class="flex justify-between items-center px-1">
-                  <span class="text-[10px] text-zinc-400 font-mono-tag tracking-widest uppercase font-bold">ACTIVITY & ALERTS</span>
+          <section class="mb-7 transition-all duration-300 notif-section" data-section="activity" id="notificationsActivitySection">
+              <div class="flex justify-between items-end mb-2.5 px-0.5">
+                  <div class="text-[11px] uppercase tracking-wider font-extrabold text-zinc-400">Activity</div>
+                  <div class="text-[10px] text-zinc-500 font-semibold">Meaningful updates</div>
               </div>
-              <div id="notificationsListContainer" class="space-y-2.5">
+              <div id="notificationsListContainer" class="space-y-2">
                   <!-- Rendered via JS -->
               </div>
-          </div>
+          </section>
+          
+          <style>
+              .notif-item-enter { animation: fadeScale 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
+              @keyframes fadeScale {
+                  from { opacity: 0; transform: scale(0.96); }
+                  to { opacity: 1; transform: scale(1); }
+              }
+          </style>
       </section>
 
       <!-- =================================================================
