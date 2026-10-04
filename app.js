@@ -3923,9 +3923,19 @@ function renderPeopleSearchResults(people) {
       buttonHtml = '<button class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
     }
 
+    var initialLetter = escapeHtml((name || handle || 'U').charAt(0).toUpperCase());
+    var avatarHtml = avatarSrc
+      ? '<div class="relative w-11 h-11 rounded-full overflow-hidden flex-shrink-0 border border-neutral-800 bg-neutral-900 flex items-center justify-center font-bold text-amber-500 text-sm font-mono-tag">' +
+          '<span class="text-amber-500 font-mono-tag font-bold">' + initialLetter + '</span>' +
+          '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="absolute inset-0 w-full h-full object-cover" onerror="this.style.display=\'none\';">' +
+        '</div>'
+      : '<div class="w-11 h-11 rounded-full overflow-hidden flex-shrink-0 border border-neutral-800 bg-neutral-900 flex items-center justify-center font-bold text-amber-500 text-sm font-mono-tag">' +
+          initialLetter +
+        '</div>';
+
     item.innerHTML =
       '<div class="flex items-center space-x-3.5 min-w-0 cursor-pointer user-profile-target">' +
-        '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="w-11 h-11 rounded-full object-cover flex-shrink-0 border border-neutral-800">' +
+        avatarHtml +
         '<div class="min-w-0">' +
           '<h4 class="text-xs font-bold text-white truncate">' + name + '</h4>' +
           '<p class="text-[10px] text-gray-400 font-mono-meta truncate">@' + handle + ' · ' + campus + '</p>' +
@@ -4175,6 +4185,10 @@ async function openUserProfile(userId, preloadedData) {
 
     if (pubName) pubName.textContent = finalName;
     if (pubUsername) pubUsername.textContent = cleanHandle;
+    var pubInit = document.getElementById('peerPublicInitial');
+    if (pubInit) {
+      pubInit.textContent = (finalName || finalHandle || 'U').charAt(0).toUpperCase();
+    }
 
     if (pubCampus && pubCampusRow) {
       if (u.campus) {
