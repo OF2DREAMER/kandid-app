@@ -1081,9 +1081,9 @@
                 </a>
             </section>
 
-            <!-- Recent Moments Grid -->
-            <section class="px-5 mt-3 grid grid-cols-2 gap-2.5" id="peerPublicMomentsGrid" aria-label="Recent public moments">
-                <div class="col-span-2 py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider" id="peerPublicEmptyMoments">
+            <!-- Recent Moments Grid (horizontal sequence) -->
+            <section class="px-5 mt-3 flex gap-2.5 overflow-x-auto no-scrollbar" id="peerPublicMomentsGrid" aria-label="Recent public moments">
+                <div class="py-8 text-center text-[10px] text-zinc-500 font-mono-meta tracking-wider w-full flex-shrink-0" id="peerPublicEmptyMoments">
                     NO PUBLIC MOMENTS YET
                 </div>
             </section>
@@ -2876,6 +2876,37 @@
     </section>
 
     </main>
+
+    <!-- PROFILE ACTIONS BOTTOM SHEET (⋮ MENU / DISCONNECT / BLOCK) -->
+    <div id="profileActionsOverlay" class="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-end justify-center" style="display:none;" onclick="if(event.target===this)closeProfileActionsMenu();">
+        <div class="w-full max-w-sm rounded-t-[32px] bg-[#0d0d0f] border-t border-white/[.1] p-5 pb-8 space-y-2.5 animate-in slide-in-from-bottom duration-200 shadow-2xl">
+            <div class="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-3"></div>
+            <h3 class="text-xs font-bold text-zinc-400 font-mono-tag tracking-wider uppercase mb-2 text-center">Profile Options</h3>
+            
+            <!-- Remove Connection Button -->
+            <button id="profileActionRemoveConnection" onclick="removePeerConnection()" class="w-full py-3 px-4 rounded-2xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-xs font-bold text-amber-400 flex items-center justify-between transition cursor-pointer active:scale-95">
+                <span class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-user-minus text-amber-500"></i>
+                    <span>Remove Connection</span>
+                </span>
+                <span class="text-[10px] font-mono-tag text-zinc-500">DISCONNECT</span>
+            </button>
+
+            <!-- Block User Button -->
+            <button onclick="blockPeerUser()" class="w-full py-3 px-4 rounded-2xl bg-zinc-900/90 hover:bg-red-950/40 border border-zinc-800 hover:border-red-900/50 text-xs font-bold text-red-400 flex items-center justify-between transition cursor-pointer active:scale-95">
+                <span class="flex items-center gap-2.5">
+                    <i class="fa-solid fa-ban text-red-500"></i>
+                    <span>Block User</span>
+                </span>
+                <span class="text-[10px] font-mono-tag text-zinc-500">SAFETY</span>
+            </button>
+
+            <!-- Cancel Button -->
+            <button onclick="closeProfileActionsMenu()" class="w-full py-3 mt-1 rounded-2xl bg-zinc-950 hover:bg-zinc-900 border border-zinc-800 text-xs font-bold text-white transition cursor-pointer active:scale-95">
+                Cancel
+            </button>
+        </div>
+    </div>
 
     <!-- 10. CAMPUS OPTIONS MENU MODAL -->
     <div id="campusOptionsMenuModal" class="fixed inset-0 z-[150] bg-black/75 backdrop-blur-md flex items-end" style="display:none;">
@@ -4729,6 +4760,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.8.4"></script>
+  <script src="app.js?v=5.8.5"></script>
 </body>
 </html>
