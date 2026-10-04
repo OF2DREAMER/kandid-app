@@ -4631,6 +4631,48 @@ window.confirmDeleteAccount = confirmDeleteAccount;
 state.activeDetailMoment = null;
 state.detailMomentFlipped = false;
 
+function compressImageFile(file, maxWidth, maxHeight, quality, callback) {
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) {
+    showToast('Please select a valid image file (JPG, PNG, WebP).');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var rawData = e.target.result;
+    var img = new Image();
+    img.onload = function() {
+      try {
+        var w = img.width;
+        var h = img.height;
+        if (w > maxWidth || h > maxHeight) {
+          var ratio = Math.min(maxWidth / w, maxHeight / h);
+          w = Math.max(1, Math.round(w * ratio));
+          h = Math.max(1, Math.round(h * ratio));
+        }
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        var compressed = canvas.toDataURL('image/jpeg', quality || 0.85);
+        callback(compressed);
+      } catch (err) {
+        callback(rawData);
+      }
+    };
+    img.onerror = function() {
+      callback(rawData);
+    };
+    img.src = rawData;
+  };
+  reader.onerror = function() {
+    showToast('Could not read image file.');
+  };
+  reader.readAsDataURL(file);
+}
+window.compressImageFile = compressImageFile;
+
 function triggerDirectAvatarUpload() {
   var input = document.getElementById('youDirectAvatarInput');
   if (input) {
@@ -4647,10 +4689,8 @@ async function handleDirectAvatarUpload(event) {
     showToast('Please select a valid image file.');
     return;
   }
-  showToast('Updating profile photo...');
-  var reader = new FileReader();
-  reader.onload = async function(e) {
-    var base64Data = e.target.result;
+  showToast('Optimizing and updating profile photo...');
+  compressImageFile(file, 800, 800, 0.88, async function(base64Data) {
     // Optimistic preview
     var avatarEl = document.getElementById('youProfileAvatar');
     var initsEl = document.getElementById('youProfileInitials');
@@ -4695,11 +4735,10 @@ async function handleDirectAvatarUpload(event) {
       }
     } catch(err) {
       console.warn('[Avatar] upload error:', err);
-      showToast('Photo upload failed.');
+      showToast('Error updating photo. Please try again.');
       if (state.currentUser) applyUserToYouScreen(state.currentUser);
     }
-  };
-  reader.readAsDataURL(file);
+  });
 }
 window.handleDirectAvatarUpload = handleDirectAvatarUpload;
 
@@ -6549,18 +6588,16 @@ window.triggerPhotoUpload = function() {
 window.handlePhotoUpload = function(event) {
     var file = event.target.files && event.target.files[0];
     if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function(e) {
-        state.onboardAvatarData = e.target.result;
+    compressImageFile(file, 800, 800, 0.88, function(compressedData) {
+        state.onboardAvatarData = compressedData;
         var box = document.getElementById('final-initials-box');
         if (box) {
-            box.innerHTML = '<img src="' + e.target.result + '" class="w-full h-full object-cover">';
+            box.innerHTML = '<img src="' + compressedData + '" class="w-full h-full object-cover">';
         }
         var lbl = document.getElementById('photo-upload-label');
         if (lbl) lbl.textContent = 'Photo Selected ✓';
         showToast('Profile photo added 📸');
-    };
-    reader.readAsDataURL(file);
+    });
 };
 
 window.validateAndGoToWorld = async function() {
@@ -9789,46 +9826,34 @@ window.openEditProfileModal = openEditProfileModal;
 function handleModalAvatarUpload(event) {
   var file = event.target.files && event.target.files[0];
   if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    pendingEditAvatarData = e.target.result;
+  compressImageFile(file, 800, 800, 0.88, function(compressedData) {
+    pendingEditAvatarData = compressedData;
     var previewImg = document.getElementById('modalEditAvatarPreview');
     var initsEl = document.getElementById('modalEditAvatarInitials');
     if (previewImg) {
-      previewImg.src = e.target.result;
+      previewImg.src = compressedData;
       previewImg.style.display = 'block';
     }
     if (initsEl) initsEl.style.display = 'none';
     showToast('Photo selected! Click Save Changes 📸');
-  };
-  reader.readAsDataURL(file);
+  });
 }
 window.handleModalAvatarUpload = handleModalAvatarUpload;
 
 function handleModalCoverUpload(event) {
   var file = event.target.files && event.target.files[0];
   if (!file) return;
-  if (!file.type || !file.type.startsWith('image/')) {
-    showToast('Please select a valid image file (JPG, PNG, WebP).');
-    return;
-  }
-  if (file.size > 15 * 1024 * 1024) {
-    showToast('Cover photo exceeds maximum size limit (15MB).');
-    return;
-  }
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    pendingEditCoverData = e.target.result;
+  compressImageFile(file, 1400, 800, 0.85, function(compressedData) {
+    pendingEditCoverData = compressedData;
     var coverPreview = document.getElementById('modalEditCoverPreview');
     var coverPlaceholder = document.getElementById('modalEditCoverPlaceholder');
     if (coverPreview) {
-      coverPreview.src = e.target.result;
+      coverPreview.src = compressedData;
       coverPreview.style.display = 'block';
     }
     if (coverPlaceholder) coverPlaceholder.style.display = 'none';
     showToast('Cover photo selected! Click Save Changes 📸');
-  };
-  reader.readAsDataURL(file);
+  });
 }
 window.handleModalCoverUpload = handleModalCoverUpload;
 
@@ -9895,6 +9920,8 @@ async function saveUserProfileChanges() {
       state.currentUser.vibe = newVibe;
       if (res.user && res.user.avatar_url) {
         state.currentUser.avatar_url = res.user.avatar_url;
+      } else if (pendingEditAvatarData) {
+        state.currentUser.avatar_url = pendingEditAvatarData;
       }
       if (res.user && res.user.cover_url) {
         state.currentUser.cover_url = res.user.cover_url;
