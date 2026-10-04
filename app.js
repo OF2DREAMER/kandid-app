@@ -5572,11 +5572,22 @@ var activeStoryMoment = null;
 
 function openStoryShareModal(momentId) {
   var m = (state.momentCache && state.momentCache[momentId]) || (state.activeDetailMoment && state.activeDetailMoment.id === momentId ? state.activeDetailMoment : null);
+  if (!m && state.feedMoments) {
+    m = state.feedMoments.find(function(x) { return x && x.id === momentId; });
+  }
+  if (!m && state.communityMoments) {
+    m = state.communityMoments.find(function(x) { return x && x.id === momentId; });
+  }
   if (!m) {
     var card = document.querySelector('article[data-post-id="' + momentId + '"]');
     if (card) {
       var img = card.querySelector('.main-stage-img');
-      m = { id: momentId, main_img: img ? img.src : '', location_city: 'Supaul', author_handle: 'user' };
+      m = { 
+        id: momentId, 
+        main_img: img ? img.src : '', 
+        location_city: 'Supaul', 
+        author_handle: (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : 'user' 
+      };
     }
   }
   if (!m) return;
@@ -5600,7 +5611,7 @@ function openStoryShareModal(momentId) {
     vibeEl.textContent = '"' + randomVibe + '"';
   }
   if (handleEl) {
-    handleEl.textContent = '@' + (m.author_handle || m.user_handle || 'user');
+    handleEl.textContent = '@' + (m.author_handle || m.user_handle || (state.currentUser ? state.currentUser.handle : 'user'));
   }
 
   modal.style.setProperty('display', 'flex', 'important');
@@ -5613,10 +5624,27 @@ function closeStoryShareModal() {
 }
 window.closeStoryShareModal = closeStoryShareModal;
 
-function triggerStoryShare(platform) {
+async function triggerStoryShare(platform) {
   if (!activeStoryMoment) return;
+  var m = activeStoryMoment;
   closeStoryShareModal();
-  shareMomentToWhatsAppStatus(activeStoryMoment.id);
+
+  var shareUrl = window.location.origin + (m.id ? ('/?moment=' + m.id) : '');
+  var vibeText = document.getElementById('storyModalVibe') ? document.getElementById('storyModalVibe').textContent.replace(/"/g, '') : 'No filters. Just real life.';
+  var viralCaption = 'No filter · Just real moments ✨\n"' + vibeText + '"\nCheck this on Kandid: ' + shareUrl + '\nJoin unscripted → ' + window.location.origin;
+
+  if (platform === 'whatsapp') {
+    var waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(viralCaption);
+    window.open(waUrl, '_blank');
+    shareMomentToWhatsAppStatus(m.id);
+  } else if (platform === 'instagram') {
+    showToast('Preparing Instagram Flex Card... 📸');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(viralCaption).catch(function() {});
+    }
+    shareMomentToWhatsAppStatus(m.id);
+    showToast('Flex Card ready! Add to Instagram Story 📸✨');
+  }
 }
 window.triggerStoryShare = triggerStoryShare;
 
