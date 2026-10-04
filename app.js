@@ -2731,36 +2731,27 @@ const KandidCameraEngine = {
     var targetMode = (this.activeFacing === 'user') ? 'user' : 'environment';
     var preferredDeviceId = (targetMode === 'user') ? this.frontDeviceId : this.rearDeviceId;
 
-    // 3. WebRTC Standard: Request facingMode with ideal constraints
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: targetMode },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      });
-    } catch(e1) {
+    var constraintsList = [];
+    
+    // 1. Force exact device if known
+    if (preferredDeviceId) {
+      constraintsList.push({ video: { deviceId: { exact: preferredDeviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    }
+    // 2. Force exact facingMode
+    constraintsList.push({ video: { facingMode: { exact: targetMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    // 3. Ideal facingMode (fallback for some laptops)
+    constraintsList.push({ video: { facingMode: { ideal: targetMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    // 4. Loose fallback
+    constraintsList.push({ video: { facingMode: targetMode }, audio: false });
+    // 5. Ultimate fallback
+    constraintsList.push({ video: true, audio: false });
+
+    for (var i = 0; i < constraintsList.length; i++) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: targetMode },
-          audio: false
-        });
-      } catch(e2) {
-        if (preferredDeviceId) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: { deviceId: { exact: preferredDeviceId } },
-              audio: false
-            });
-          } catch(e3){}
-        }
-        if (!stream) {
-          try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          } catch(e4){}
-        }
+        stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
+        if (stream) break;
+      } catch (e) {
+        // Try next constraint
       }
     }
 
@@ -2906,27 +2897,32 @@ const KandidCameraEngine = {
 
     if (hud) hud.style.display = 'none';
 
-    // Safe fallback if one sensor failed
-    if (!this.frontFrame && this.rearFrame) this.frontFrame = this.rearFrame;
-    if (!this.rearFrame && this.frontFrame) this.rearFrame = this.frontFrame;
+    // Desktop/Laptop & Single-Sensor Fallback:
+    // If one camera failed to capture (e.g. videoWidth was 0), we fallback to the successful frame.
+    // If selfie failed, we mirror the rear frame so it looks like a PIP selfie.
+    var createMirroredFrame = async function(srcDataUrl) {
+      return new Promise(function(resolve) {
+        var img = new Image();
+        img.onload = function() {
+          var c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          var ctx = c.getContext('2d');
+          ctx.translate(c.width, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(img, 0, 0);
+          resolve(c.toDataURL('image/jpeg', 0.88));
+        };
+        img.onerror = function() { resolve(srcDataUrl); };
+        img.src = srcDataUrl;
+      });
+    };
 
-    if (hud) hud.style.display = 'none';
-
-    // Safe fallback if selfie sensor failed
     if (!this.frontFrame && this.rearFrame) {
-      var mirrorCanvas = document.createElement('canvas');
-      mirrorCanvas.width = rearCanvas ? rearCanvas.width : 640;
-      mirrorCanvas.height = rearCanvas ? rearCanvas.height : 480;
-      var mctx = mirrorCanvas.getContext('2d');
-      mctx.translate(mirrorCanvas.width, 0);
-      mctx.scale(-1, 1);
-      mctx.drawImage(rearCanvas, 0, 0, mirrorCanvas.width, mirrorCanvas.height);
-      this.frontFrame = mirrorCanvas.toDataURL('image/jpeg', 0.88);
+      this.frontFrame = await createMirroredFrame(this.rearFrame);
     }
-
-    // Ensure neither image is black or empty
-    if (!this.rearFrame && this.frontFrame) this.rearFrame = this.frontFrame;
-    if (!this.frontFrame && this.rearFrame) this.frontFrame = this.rearFrame;
+    if (!this.rearFrame && this.frontFrame) {
+      this.rearFrame = this.frontFrame; // No need to mirror the main scene
+    }
 
     // Record 3s ambient audio
     var audioPromise = record3SecAmbientAudio();
