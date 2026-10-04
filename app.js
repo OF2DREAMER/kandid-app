@@ -2263,7 +2263,31 @@ async function openCameraStudio() {
   captureCurrentGeoLocation();
 
   state.cameraFacingMode = 'environment';
+  // Await hardware acquisition so #cameraMainVideo reliably gets srcObject =
+  // the live video stream before the modal/studio becomes interactive. The inline
+  // onclick="openCameraStudio()" resolves openCameraStudio() at click time (the
+  // long async source/comm variant), and the outer open (no args) is the shared
+  // entry used by the dock shutter. Awaiting here makes the video path initialize
+  // once and synchronously before the modal is interactive, so there is no window
+  // where the feed shows a black #cameraMainVideo.
   await startHardwareCameraStreams('environment');
+}
+window.openCameraStudio = openCameraStudio;
+
+async function openCameraStudio(source, communityId) {
+  if (!state.cameraContext || state.cameraContext.mode !== 'PERSPECTIVE') {
+    state.cameraContext = {
+      mode: 'NORMAL',
+      clusterId: null,
+      clusterName: null,
+      communityId: communityId || state.activeCommunityId || null,
+      source: source || 'feed'
+    };
+    state.activeClusterContext = null;
+    state.activeClusterCommunityId = null;
+    state.activeClusterContextName = null;
+  }
+  await KandidCameraEngine.initialize();
 }
 window.openCameraStudio = openCameraStudio;
 
