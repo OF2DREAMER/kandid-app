@@ -2253,6 +2253,7 @@ state.mainMediaStream = null;
 state.pipMediaStream = null;
 state.audioStream = null;
 state.recordedAudioDataUrl = '';
+state.reviewCameraContext = null;
 
 function setupCameraStudio() {
   var shutter = document.getElementById('mainShutterTrigger');
@@ -3057,6 +3058,12 @@ const KandidCameraEngine = {
     };
 
     showToast('Kandid Dual Moment Captured! 📸🤳');
+    // PHASE 1.1: preserve the active camera context for the Review/Publish flow.
+    // closeCameraStudio() resets the live camera state, so snapshot the context
+    // (e.g. PERSPECTIVE + exact clusterId) BEFORE that reset happens. Review and
+    // Publish read this snapshot, falling back to the live context when no capture
+    // snapshot exists (e.g. native file capture).
+    state.reviewCameraContext = state.cameraContext ? Object.assign({}, state.cameraContext) : null;
     closeCameraStudio();
     openMomentReview();
   },
@@ -3349,10 +3356,11 @@ async function setupReviewContextUI() {
 
   if (!listEl) return;
 
-  var isPerspective = Boolean(state.cameraContext && state.cameraContext.mode === 'PERSPECTIVE' && state.cameraContext.clusterId);
+  var reviewCtx = state.reviewCameraContext || state.cameraContext;
+  var isPerspective = Boolean(reviewCtx && reviewCtx.mode === 'PERSPECTIVE' && reviewCtx.clusterId);
 
   if (isPerspective) {
-    var clusterName = (state.cameraContext && state.cameraContext.clusterName) || state.activeClusterContextName || 'Shared Event';
+    var clusterName = (reviewCtx && reviewCtx.clusterName) || state.activeClusterContextName || 'Shared Event';
     listEl.innerHTML = 
       '<div class="p-3 rounded-2xl bg-zinc-900 border border-amber-500/30 flex items-center justify-between">' +
         '<div class="flex items-center gap-2.5">' +
@@ -3421,6 +3429,7 @@ function closeMomentReview() {
   if (reviewStream) reviewStream.style.display = 'none';
   state.activeCommunityId = null;
   state.selectedReviewCommunity = null;
+  state.reviewCameraContext = null;
   state.cameraContext = {
     mode: 'NORMAL',
     clusterId: null,
@@ -3494,13 +3503,14 @@ async function publishCapturedMoment() {
     await KandidCameraEngine.awaitPendingAudio();
   }
 
-  var isPerspective = Boolean(state.cameraContext && state.cameraContext.mode === 'PERSPECTIVE' && state.cameraContext.clusterId);
+  var reviewCtx = state.reviewCameraContext || state.cameraContext;
+  var isPerspective = Boolean(reviewCtx && reviewCtx.mode === 'PERSPECTIVE' && reviewCtx.clusterId);
   var payload;
 
   if (isPerspective) {
-    var perspClusterId = state.cameraContext.clusterId;
-    var perspCommId = state.cameraContext.communityId || state.activeClusterCommunityId || '';
-    var perspLoc = state.cameraContext.clusterName || state.activeClusterContextName || approxLocName;
+    var perspClusterId = reviewCtx.clusterId;
+    var perspCommId = reviewCtx.communityId || state.activeClusterCommunityId || '';
+    var perspLoc = reviewCtx.clusterName || state.activeClusterContextName || approxLocName;
     payload = {
       caption: caption,
       circle: 'campus',
@@ -3580,7 +3590,7 @@ async function publishCapturedMoment() {
     }
     if (isPerspective) {
       showToast('Perspective added to shared moment cluster! ✦');
-      var publishedClusterId = state.cameraContext ? state.cameraContext.clusterId : state.activeClusterContext;
+      var publishedClusterId = reviewCtx ? reviewCtx.clusterId : state.activeClusterContext;
       closeMomentReview();
       if (publishedClusterId) {
         openMomentClusterModal(publishedClusterId);
