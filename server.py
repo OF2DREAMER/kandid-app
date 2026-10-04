@@ -90,10 +90,38 @@ else:
     ENVIRONMENT = RAW_ENV
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
-CLOUDINARY_URL = os.environ.get("CLOUDINARY_URL", "").strip()
-CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip()
-CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "").strip()
-CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "").strip()
+
+def parse_cloudinary_url(url_str):
+    if not url_str or not isinstance(url_str, str):
+        return None, None, None
+    url_str = url_str.strip().strip("'\"")
+    if url_str.startswith("CLOUDINARY_URL="):
+        url_str = url_str[len("CLOUDINARY_URL="):].strip().strip("'\"")
+    m = re.match(r"^cloudinary://([^:]+):([^@]+)@([^/?]+)", url_str)
+    if m:
+        return m.group(1), m.group(2), m.group(3)
+    try:
+        p = urlparse(url_str)
+        if p.username and p.password and p.hostname:
+            return p.username, p.password, p.hostname
+    except Exception:
+        pass
+    return None, None, None
+
+_raw_c_url = os.environ.get("CLOUDINARY_URL", "").strip().strip("'\"")
+if _raw_c_url.startswith("CLOUDINARY_URL="):
+    _raw_c_url = _raw_c_url[len("CLOUDINARY_URL="):].strip().strip("'\"")
+CLOUDINARY_URL = _raw_c_url
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "").strip().strip("'\"")
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "").strip().strip("'\"")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "").strip().strip("'\"")
+
+if CLOUDINARY_URL and (not CLOUDINARY_CLOUD_NAME or not CLOUDINARY_API_KEY or not CLOUDINARY_API_SECRET):
+    _c_k, _c_s, _c_n = parse_cloudinary_url(CLOUDINARY_URL)
+    if _c_k and _c_s and _c_n:
+        CLOUDINARY_API_KEY = CLOUDINARY_API_KEY or _c_k
+        CLOUDINARY_API_SECRET = CLOUDINARY_API_SECRET or _c_s
+        CLOUDINARY_CLOUD_NAME = CLOUDINARY_CLOUD_NAME or _c_n
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", os.environ.get("RESEND_API_KEY", "")).strip().strip("'\"")
 BREVO_FROM_EMAIL = os.environ.get("BREVO_FROM_EMAIL", os.environ.get("RESEND_FROM_EMAIL", os.environ.get("FROM_EMAIL", "onboarding@kandid.app"))).strip().strip("'\"")
 RESEND_API_KEY = BREVO_API_KEY
@@ -478,7 +506,7 @@ def validate_production_config():
     db_configured = bool(DATABASE_URL) if is_production_env() else True
     brevo_configured = bool(BREVO_API_KEY)
     razorpay_configured = bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
-    cloudinary_configured = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
+    cloudinary_configured = bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)
     webhook_configured = bool(RAZORPAY_WEBHOOK_SECRET)
     
     services = {
@@ -1182,16 +1210,15 @@ def upload_to_cloudinary(data_str, resource_type="image", folder="kandid/moments
     api_key = CLOUDINARY_API_KEY
     api_secret = CLOUDINARY_API_SECRET
     
-    if CLOUDINARY_URL and (not cloud_name or not api_key or not api_secret):
-        try:
-            parsed = urlparse(CLOUDINARY_URL)
-            api_key = parsed.username
-            api_secret = parsed.password
-            cloud_name = parsed.hostname
-        except Exception:
-            pass
+    if (not cloud_name or not api_key or not api_secret) and CLOUDINARY_URL:
+        _k, _s, _c = parse_cloudinary_url(CLOUDINARY_URL)
+        if _k and _s and _c:
+            api_key = api_key or _k
+            api_secret = api_secret or _s
+            cloud_name = cloud_name or _c
             
     if not (cloud_name and api_key and api_secret):
+        print(f"❌ [CLOUDINARY ERROR] Missing credentials (cloud: {bool(cloud_name)}, key: {bool(api_key)}, secret: {bool(api_secret)})")
         return None
         
     try:
@@ -1715,7 +1742,7 @@ def generate_secure_otp(email, ip_address="", async_dispatch=False):
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b; color: #f4f4f5; padding: 32px 20px; text-align: center; border-radius: 16px; max-width: 480px; margin: 0 auto; border: 1px solid #27272a;">
         <div style="margin-bottom: 24px;">
             <span style="font-size: 24px; font-weight: 900; letter-spacing: 0.25em; color: #f59e0b; text-transform: uppercase;">KANDID</span>
-            <p style="font-size: 11px; letter-spacing: 0.15em; color: #71717a; text-transform: uppercase; margin-top: 4px;">Authentic Campus Social</p>
+            <p style="font-size: 11px; letter-spacing: 0.15em; color: #71717a; text-transform: uppercase; margin-top: 4px;">No Filter · Just Real Moments</p>
         </div>
         <div style="background-color: #18181b; border-radius: 12px; padding: 24px; border: 1px solid #27272a; margin-bottom: 24px;">
             <p style="font-size: 13px; color: #a1a1aa; margin-bottom: 12px;">Your one-time verification passcode:</p>
@@ -2119,9 +2146,8 @@ def save_base64_audio(data_str, prefix="audio"):
         return cloud_url
         
     cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
-    if is_production_env() and cloudinary_is_setup:
-        print(f"❌ [MEDIA ERROR] Failed to upload audio to Cloudinary in production.")
-        return ""
+    if cloudinary_is_setup:
+        print(f"⚠️ [MEDIA WARNING] Cloudinary audio upload failed or unavailable, falling back to local storage.")
         
     try:
         header, encoded = data_str.split(",", 1)
@@ -2164,9 +2190,8 @@ def save_base64_video(data_str, prefix="motion", max_bytes=None):
         return cloud_url
         
     cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
-    if is_production_env() and cloudinary_is_setup:
-        print(f"❌ [MEDIA ERROR] Failed to upload motion video to Cloudinary in production.")
-        return ""
+    if cloudinary_is_setup:
+        print(f"⚠️ [MEDIA WARNING] Cloudinary video upload failed or unavailable, falling back to local storage.")
         
     try:
         header, encoded = data_str.split(",", 1)
@@ -2397,9 +2422,8 @@ def save_base64_image(data_str, prefix="img"):
         return cloud_url
         
     cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
-    if is_production_env() and cloudinary_is_setup:
-        print(f"❌ [MEDIA ERROR] Failed to upload image to Cloudinary in production.")
-        return ""
+    if cloudinary_is_setup:
+        print(f"⚠️ [MEDIA WARNING] Cloudinary image upload failed or unavailable, falling back to local storage.")
         
     try:
         header, encoded = data_str.split(",", 1)
@@ -8437,8 +8461,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "services": {
                     "email_provider": "brevo",
                     "email_configured": bool(BREVO_API_KEY),
-                    "razorpay_configured": bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET),
-                    "cloudinary_configured": bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
+                    "cloudinary_configured": bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET),
+                    "cloudinary_cloud_name": bool(CLOUDINARY_CLOUD_NAME),
+                    "cloudinary_api_key": bool(CLOUDINARY_API_KEY),
+                    "cloudinary_api_secret": bool(CLOUDINARY_API_SECRET),
+                    "cloudinary_url": bool(CLOUDINARY_URL)
                 }
             })
 
@@ -11920,12 +11947,25 @@ class KandidHandler(SimpleHTTPRequestHandler):
             campus = body.get("campus") or body.get("community")
             location_city = body.get("location_city") or body.get("city")
             vibe = body.get("vibe") or body.get("role_tag")
-            avatar_url = body.get("avatar_url") or body.get("avatar") or ""
-            if avatar_url and avatar_url.startswith("data:image"):
-                avatar_url = save_base64_image(avatar_url, "avatar")
-            cover_url = body.get("cover_url") or body.get("cover") or ""
-            if cover_url and cover_url.startswith("data:image"):
-                cover_url = save_base64_image(cover_url, "cover")
+            raw_avatar = body.get("avatar_url") or body.get("avatar") or ""
+            avatar_url = ""
+            if raw_avatar:
+                if raw_avatar.startswith("data:image"):
+                    avatar_url = save_base64_image(raw_avatar, "avatar")
+                    if not avatar_url:
+                        return self.send_json(400, {"error": "Failed to process profile photo. Please try a different image.", "success": False})
+                else:
+                    avatar_url = raw_avatar
+
+            raw_cover = body.get("cover_url") or body.get("cover") or ""
+            cover_url = ""
+            if raw_cover:
+                if raw_cover.startswith("data:image"):
+                    cover_url = save_base64_image(raw_cover, "cover")
+                    if not cover_url:
+                        return self.send_json(400, {"error": "Failed to process cover photo. Please try a different image.", "success": False})
+                else:
+                    cover_url = raw_cover
 
             # B2-SEC-14: validate user-supplied image URLs BEFORE any write.
             try:
@@ -11973,6 +12013,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(400, {"error": "photo required", "success": False})
             if avatar_url.startswith("data:image"):
                 avatar_url = save_base64_image(avatar_url, "avatar")
+                if not avatar_url:
+                    return self.send_json(400, {"error": "Failed to process photo. Please try a different image.", "success": False})
             # B2-SEC-14: validate the resolved avatar URL before any write.
             try:
                 avatar_url = validate_media_url(avatar_url, "avatar_url")
