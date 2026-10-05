@@ -4119,7 +4119,7 @@ async function loadSearchDiscovery() {
         return user.connection_status === 'connect' || (!user.is_connected && !user.is_requested);
       });
       if (suggested.length === 0) {
-        aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">NO NEW PEOPLE NEARBY</div>';
+        aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT'S TOO QUIET AROUND HERE</div>';
         return;
       }
       suggested.slice(0, 5).forEach(function(p) {
