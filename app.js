@@ -10781,7 +10781,7 @@ var dailyPrompts = [
   'Who or what is next to you right now'
 ];
 
-var dailyAlertSeconds = 884;
+var dailyAlertSeconds = 420;
 var dailyAlertInterval = null;
 
 function isTodayMomentCaptured() {
@@ -10833,7 +10833,7 @@ function initDailyKandidAlert() {
 
   banner.style.display = 'flex';
   if (!dailyAlertSeconds || dailyAlertSeconds <= 0) {
-    dailyAlertSeconds = 884;
+    dailyAlertSeconds = 420;
   }
 
   if (dailyAlertInterval) clearInterval(dailyAlertInterval);
