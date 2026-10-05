@@ -12540,6 +12540,55 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(403, {"error": "Forbidden: Founder access required"})
             return self.send_json(200, {"success": True})
 
+        if path == "/api/cron/trigger-kandid-time":
+            # Dual-Persona 'Time to Kandid' Trigger Engine (Core Gen Z vs Older Gen Z)
+            conn = get_db()
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT id, campus FROM users WHERE role != 'banned' OR role IS NULL")
+            users = cursor.fetchall()
+            
+            campus_count = 0
+            city_count = 0
+            
+            for u in users:
+                uid = u["id"]
+                campus_val = u["campus"] or ""
+                
+                import uuid
+                from datetime import datetime
+                notif_id = f"notif_{uuid.uuid4().hex[:12]}"
+                now_iso = datetime.now().isoformat()
+                
+                # The Persona-Split Logic we discussed
+                if campus_val and campus_val.lower() != "independent creator / city":
+                    # Persona A: Campus Gen Z
+                    title = "Time to Kandid! 🎓"
+                    body = f"Class, canteen, or quad at {campus_val}? Show your campus view!"
+                    campus_count += 1
+                else:
+                    # Persona B: City/Work Gen Z
+                    title = "Time to Kandid! 🏢"
+                    body = "Desk setup, commute, or cafe? Show your workspace view!"
+                    city_count += 1
+                    
+                cursor.execute("""
+                    INSERT INTO notifications (id, user_id, title, body, type, is_read, created_at)
+                    VALUES (?, ?, ?, ?, 'kandid_time', 0, ?)
+                """, (notif_id, uid, title, body, now_iso))
+                
+            conn.commit()
+            conn.close()
+            
+            return self.send_json(200, {
+                "success": True, 
+                "message": "Persona-based Kandid Time triggered",
+                "stats": {
+                    "campus_users_notified": campus_count,
+                    "city_users_notified": city_count
+                }
+            })
+
         return self.send_json(404, {"error": "Not Found"})
 
     def do_DELETE(self):
