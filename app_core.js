@@ -4107,7 +4107,7 @@ async function loadSearchDiscovery() {
 
   var data = await apiRequest('/api/search?type=all');
   if (!data || !data.success) {
-    aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">NO ACTIVITY RECORDED NEARBY YET</div>';
+    aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT\'S TOO QUIET AROUND HERE</div>';
     return;
   }
 
@@ -4174,7 +4174,7 @@ async function loadSearchDiscovery() {
   }
 
   if (items.length === 0) {
-    aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">NO ACTIVITY RECORDED NEARBY YET</div>';
+    aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT\'S TOO QUIET AROUND HERE</div>';
     return;
   }
 
