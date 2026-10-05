@@ -9322,13 +9322,32 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
   var headerCampus = document.getElementById('headerChatCampus');
   
   if (headerAvatar) {
+    var parentDiv = headerAvatar.parentNode;
+    var rawN = state.activeChatPartner.name || state.activeChatPartner.handle || 'U';
+    var initialLetter = escapeHtml(rawN.charAt(0).toUpperCase());
+    
+    var existingFb = parentDiv.querySelector('.avatar-fb-text');
+    if (existingFb) parentDiv.removeChild(existingFb);
+
     if (avatarUrl && avatarUrl.trim() && !avatarUrl.includes('api.dicebear.com')) {
-      headerAvatar.onerror = function() { this.style.display = 'none'; this.removeAttribute('src'); };
+      headerAvatar.onerror = function() { 
+        this.style.display = 'none'; this.removeAttribute('src'); 
+        if (!parentDiv.querySelector('.avatar-fb-text')) {
+          var fb = document.createElement('div');
+          fb.className = 'avatar-fb-text absolute inset-0 w-full h-full flex items-center justify-center bg-neutral-900 text-amber-500 font-bold text-[13px] font-mono-tag';
+          fb.textContent = initialLetter;
+          parentDiv.appendChild(fb);
+        }
+      };
       headerAvatar.onload = function() { this.style.display = 'block'; };
       headerAvatar.src = avatarUrl;
     } else {
       headerAvatar.style.display = 'none';
       headerAvatar.removeAttribute('src');
+      var fb = document.createElement('div');
+      fb.className = 'avatar-fb-text absolute inset-0 w-full h-full flex items-center justify-center bg-neutral-900 text-amber-500 font-bold text-[13px] font-mono-tag';
+      fb.textContent = initialLetter;
+      parentDiv.appendChild(fb);
     }
   }
   if (headerName) {
