@@ -2868,12 +2868,12 @@ const KandidCameraEngine = {
     
     // 1. Force exact device if known
     if (preferredDeviceId) {
-      constraintsList.push({ video: { deviceId: { exact: preferredDeviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+      constraintsList.push({ video: { deviceId: { exact: preferredDeviceId }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false });
     }
     // 2. Force exact facingMode
-    constraintsList.push({ video: { facingMode: { exact: targetMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    constraintsList.push({ video: { facingMode: { exact: targetMode }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false });
     // 3. Ideal facingMode (fallback for some laptops)
-    constraintsList.push({ video: { facingMode: { ideal: targetMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    constraintsList.push({ video: { facingMode: { ideal: targetMode }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false });
     // 4. Loose fallback
     constraintsList.push({ video: { facingMode: targetMode }, audio: false });
     // 5. Ultimate fallback
@@ -2993,7 +2993,7 @@ const KandidCameraEngine = {
         fctx1.scale(-1, 1);
       }
       fctx1.drawImage(mainVideo, 0, 0, firstCanvas.width, firstCanvas.height);
-      firstFrameData = await kandidSerializeCanvasJpeg(firstCanvas, 0.92);
+      firstFrameData = await kandidSerializeCanvasJpeg(firstCanvas, 0.98);
     }
 
     if (startFacing === 'user') {
@@ -3079,7 +3079,7 @@ const KandidCameraEngine = {
         fctx2.scale(-1, 1);
       }
       fctx2.drawImage(mainVideo, 0, 0, secondCanvas.width, secondCanvas.height);
-      secondFrameData = await kandidSerializeCanvasJpeg(secondCanvas, 0.92);
+      secondFrameData = await kandidSerializeCanvasJpeg(secondCanvas, 0.98);
     }
 
     if (nextFacing === 'user') {
