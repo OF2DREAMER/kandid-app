@@ -7176,12 +7176,30 @@ window.setCity = function(cityName) {
 
 window.handleCampusSearch = function(query) {
     var results = document.getElementById('campusResults');
+    var addBox = document.getElementById('customCampusAddBox');
     if (!results) return;
-    query = (query || '').trim().toLowerCase();
-    if (!query) {
+    
+    var rawQuery = (query || '').trim();
+    var lowerQuery = rawQuery.toLowerCase();
+    
+    if (!rawQuery) {
         results.classList.add('hidden');
+        if (addBox) addBox.innerHTML = '';
         return;
     }
+    
+    if (addBox) {
+        var isWork = state.onboardingSession && state.onboardingSession.vibe === 'work';
+        var entityType = isWork ? 'Workspace' : 'Campus';
+        var safeQ = escapeHtml(rawQuery);
+        addBox.innerHTML = `
+            <div onclick="selectCampus('custom_added', '${safeQ}', 'Custom Added')" class="p-3 hover:bg-zinc-900 border-t border-amber-500/20 cursor-pointer font-sans bg-amber-500/5">
+                <p class="text-xs font-bold text-amber-500">✨ + Add "${safeQ}"</p>
+                <p class="text-[9px] text-zinc-400 mono font-mono-tag">Set as your ${entityType}</p>
+            </div>
+        `;
+    }
+    
     results.classList.remove('hidden');
 };
 
@@ -7352,7 +7370,20 @@ function renderOnboardingReview() {
         }
     }
     if (rEmail) rEmail.textContent = emailVal;
-    if (rCampus) rCampus.textContent = campusVal || 'Not added';
+        var rCampusLabel = document.getElementById('summaryCampusLabel');
+    var isWork = state.onboardingSession && state.onboardingSession.vibe === 'work';
+    
+    if (rCampusLabel) {
+        rCampusLabel.textContent = isWork ? 'WORKSPACE' : 'CAMPUS';
+    }
+    
+    if (rCampus) {
+        if (campusVal && campusVal !== 'Independent Creator / City') {
+            rCampus.textContent = campusVal;
+        } else {
+            rCampus.textContent = isWork ? 'Remote / Freelancer' : 'Independent Explorer';
+        }
+    }
     if (rCity) rCity.textContent = cityVal || 'Not added';
 
     if (rInterests) {
