@@ -4109,6 +4109,43 @@ async function loadSearchDiscovery() {
     return;
   }
 
+  if (state.searchCategory === 'people') {
+    if (Array.isArray(data.people) && data.people.length > 0) {
+      aroundContainer.innerHTML = '';
+      data.people.slice(0, 6).forEach(function(p) {
+        var card = document.createElement('div');
+        card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:border-neutral-700 transition mb-2.5';
+        var avatarUrl = escapeHtml(p.avatar_url || '');
+        var avatarHtml = avatarUrl 
+            ? '<img src="'+avatarUrl+'" class="w-full h-full object-cover">'
+            : '<span class="font-bold text-amber-500 text-xs">' + escapeHtml(p.avatar_letter || (p.handle ? p.handle.charAt(0).toUpperCase() : 'U')) + '</span>';
+            
+        card.innerHTML = 
+          '<div class="flex items-center space-x-3">' +
+            '<div class="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center overflow-hidden flex-shrink-0">' +
+              avatarHtml +
+            '</div>' +
+            '<div class="min-w-0 flex flex-col">' +
+              '<span class="text-xs font-bold text-white truncate">' + escapeHtml(p.name) + '</span>' +
+              '<span class="text-[10px] text-gray-500 font-mono-meta truncate">@' + escapeHtml(p.handle) + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<button class="px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-500 text-[9px] font-bold tracking-wider uppercase hover:bg-amber-500/20 transition active:scale-95 flex-shrink-0">Connect</button>';
+          
+        card.addEventListener('click', function(e) {
+          if (e.target.tagName === 'BUTTON') {
+            e.stopPropagation();
+            if (typeof connectWithUser === 'function') connectWithUser(p.id, e.target);
+          } else {
+            if (typeof openPeerProfile === 'function') openPeerProfile(p.id);
+          }
+        });
+        aroundContainer.appendChild(card);
+      });
+      return; // Stop here if we rendered people
+    }
+  }
+
   var items = [];
   if (Array.isArray(data.sectors) && data.sectors.length > 0) {
     data.sectors.forEach(function(s) {
