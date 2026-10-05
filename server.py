@@ -12555,9 +12555,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 uid = u["id"]
                 campus_val = u["campus"] or ""
                 
-                import uuid
-                from datetime import datetime
-                notif_id = f"notif_{uuid.uuid4().hex[:12]}"
+                import uuid as _uuid
+                notif_id = f"notif_{_uuid.uuid4().hex[:12]}"
                 now_iso = datetime.now().isoformat()
                 
                 # The Persona-Split Logic we discussed
