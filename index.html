@@ -171,6 +171,18 @@
 .singularity-btn.has-notifications .core-spark {
   animation: pulseCore 2s infinite ease-in-out;
 }
+
+/* STATE 1.5: PASSIVE AWARENESS (Unread but ignored/older) */
+.singularity-btn.passive-notifications {
+  background: rgba(245, 158, 11, 0.04);
+  border: 1.5px solid rgba(245, 158, 11, 0.25);
+  box-shadow: none;
+}
+.singularity-btn.passive-notifications .singularity-icon {
+  color: rgba(245, 158, 11, 0.6); /* Muted Amber */
+}
+/* No animation for passive state */
+
 .singularity-btn.no-notifications {
   background: rgba(255, 255, 255, 0.03);
   border: 1.5px solid rgba(255, 255, 255, 0.08);
@@ -1444,6 +1456,18 @@
 .singularity-btn.has-notifications .core-spark {
   animation: pulseCore 2s infinite ease-in-out;
 }
+
+/* STATE 1.5: PASSIVE AWARENESS (Unread but ignored/older) */
+.singularity-btn.passive-notifications {
+  background: rgba(245, 158, 11, 0.04);
+  border: 1.5px solid rgba(245, 158, 11, 0.25);
+  box-shadow: none;
+}
+.singularity-btn.passive-notifications .singularity-icon {
+  color: rgba(245, 158, 11, 0.6); /* Muted Amber */
+}
+/* No animation for passive state */
+
 .singularity-btn.no-notifications {
   background: rgba(255, 255, 255, 0.03);
   border: 1.5px solid rgba(255, 255, 255, 0.08);
@@ -4935,6 +4959,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.8.20"></script>
+  <script src="app.js?v=5.8.21"></script>
 </body>
 </html>

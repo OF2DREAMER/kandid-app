@@ -6308,23 +6308,43 @@ document.addEventListener('DOMContentLoaded', async function() {
               if (hb && hb.success) {
                   // Update unread notification dot
                   var notifBtn = document.getElementById('notifBtn');
-                  if (notifBtn) {
-                      if (hb.unreadCount > 0) {
-                          notifBtn.classList.remove('no-notifications');
-                          notifBtn.classList.add('has-notifications');
+                  var chatNotifBtn = document.getElementById('chatNotifBtn');
+                  
+                  if (hb.unreadCount > 0) {
+                      var sessionKey = 'kandid_notif_seen_' + hb.unreadCount;
+                      var isAlreadySeen = sessionStorage.getItem(sessionKey);
+                      var btnState = 'has-notifications';
+                      
+                      if (isAlreadySeen) {
+                          btnState = 'passive-notifications';
                       } else {
-                          notifBtn.classList.remove('has-notifications');
+                          if (!window._notifPulseTimer) {
+                              window._notifPulseTimer = setTimeout(function() {
+                                  sessionStorage.setItem(sessionKey, 'true');
+                                  var n1 = document.getElementById('notifBtn');
+                                  if (n1) { n1.classList.remove('has-notifications'); n1.classList.add('passive-notifications'); }
+                                  var n2 = document.getElementById('chatNotifBtn');
+                                  if (n2) { n2.classList.remove('has-notifications'); n2.classList.add('passive-notifications'); }
+                              }, 15000);
+                          }
+                      }
+                      
+                      if (notifBtn) {
+                          notifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
+                          notifBtn.classList.add(btnState);
+                      }
+                      if (chatNotifBtn) {
+                          chatNotifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
+                          chatNotifBtn.classList.add(btnState);
+                      }
+                  } else {
+                      if (window._notifPulseTimer) { clearTimeout(window._notifPulseTimer); window._notifPulseTimer = null; }
+                      if (notifBtn) {
+                          notifBtn.classList.remove('has-notifications', 'passive-notifications');
                           notifBtn.classList.add('no-notifications');
                       }
-                  }
-                  
-                  var chatNotifBtn = document.getElementById('chatNotifBtn');
-                  if (chatNotifBtn) {
-                      if (hb.unreadCount > 0) {
-                          chatNotifBtn.classList.remove('no-notifications');
-                          chatNotifBtn.classList.add('has-notifications');
-                      } else {
-                          chatNotifBtn.classList.remove('has-notifications');
+                      if (chatNotifBtn) {
+                          chatNotifBtn.classList.remove('has-notifications', 'passive-notifications');
                           chatNotifBtn.classList.add('no-notifications');
                       }
                   }
@@ -8767,26 +8787,47 @@ async function loadNotifications() {
     var notifs = data.notifications;
     var unreadCount = data.unreadCount || notifs.filter(function(n) { return n.is_read === 0; }).length;
 
-    var notifBtn = document.getElementById('notifBtn');
-    if (notifBtn) {
-      if (unreadCount > 0) {
-        notifBtn.classList.remove('no-notifications');
-        notifBtn.classList.add('has-notifications');
-      } else {
-        notifBtn.classList.remove('has-notifications');
-        notifBtn.classList.add('no-notifications');
-      }
-    }
-    var chatNotifBtn = document.getElementById('chatNotifBtn');
-    if (chatNotifBtn) {
-      if (unreadCount > 0) {
-        chatNotifBtn.classList.remove('no-notifications');
-        chatNotifBtn.classList.add('has-notifications');
-      } else {
-        chatNotifBtn.classList.remove('has-notifications');
-        chatNotifBtn.classList.add('no-notifications');
-      }
-    }
+                  var notifBtn = document.getElementById('notifBtn');
+                  var chatNotifBtn = document.getElementById('chatNotifBtn');
+                  
+                  if (unreadCount > 0) {
+                      var sessionKey = 'kandid_notif_seen_' + unreadCount;
+                      var isAlreadySeen = sessionStorage.getItem(sessionKey);
+                      var btnState = 'has-notifications';
+                      
+                      if (isAlreadySeen) {
+                          btnState = 'passive-notifications';
+                      } else {
+                          if (!window._notifPulseTimer) {
+                              window._notifPulseTimer = setTimeout(function() {
+                                  sessionStorage.setItem(sessionKey, 'true');
+                                  var n1 = document.getElementById('notifBtn');
+                                  if (n1) { n1.classList.remove('has-notifications'); n1.classList.add('passive-notifications'); }
+                                  var n2 = document.getElementById('chatNotifBtn');
+                                  if (n2) { n2.classList.remove('has-notifications'); n2.classList.add('passive-notifications'); }
+                              }, 15000);
+                          }
+                      }
+                      
+                      if (notifBtn) {
+                          notifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
+                          notifBtn.classList.add(btnState);
+                      }
+                      if (chatNotifBtn) {
+                          chatNotifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
+                          chatNotifBtn.classList.add(btnState);
+                      }
+                  } else {
+                      if (window._notifPulseTimer) { clearTimeout(window._notifPulseTimer); window._notifPulseTimer = null; }
+                      if (notifBtn) {
+                          notifBtn.classList.remove('has-notifications', 'passive-notifications');
+                          notifBtn.classList.add('no-notifications');
+                      }
+                      if (chatNotifBtn) {
+                          chatNotifBtn.classList.remove('has-notifications', 'passive-notifications');
+                          chatNotifBtn.classList.add('no-notifications');
+                      }
+                  }
 
     if (!container) return;
     container.innerHTML = '';
@@ -8909,14 +8950,15 @@ window.loadNotifications = loadNotifications;
 
 async function markAllNotificationsRead() {
   await apiRequest('/api/notifications/mark-read', { method: 'POST' });
+  if (window._notifPulseTimer) { clearTimeout(window._notifPulseTimer); window._notifPulseTimer = null; }
   var notifBtn = document.getElementById('notifBtn');
   if (notifBtn) {
-    notifBtn.classList.remove('has-notifications');
+    notifBtn.classList.remove('has-notifications', 'passive-notifications');
     notifBtn.classList.add('no-notifications');
   }
   var chatNotifBtn = document.getElementById('chatNotifBtn');
   if (chatNotifBtn) {
-    chatNotifBtn.classList.remove('has-notifications');
+    chatNotifBtn.classList.remove('has-notifications', 'passive-notifications');
     chatNotifBtn.classList.add('no-notifications');
   }
   showToast('All notifications marked as read ✓');
@@ -9005,20 +9047,55 @@ async function checkChatUnreadBadge() {
       }
     }
     // Also update chat header notification dot if unread notifications exist
-    var chatNotifBtn = document.getElementById('chatNotifBtn');
-    if (chatNotifBtn) {
-      var notifData = await apiRequest('/api/notifications?unread=1');
-      if (notifData && (notifData.unread_count > 0 || notifData.unreadCount > 0)) {
-        chatNotifBtn.classList.remove('no-notifications');
-        chatNotifBtn.classList.add('has-notifications');
-      } else {
-        chatNotifBtn.classList.remove('has-notifications');
-        chatNotifBtn.classList.add('no-notifications');
-      }
-      if (notifData && typeof notifData.pendingRequestsCount === 'number' && typeof updatePendingRequestsUI === 'function') {
+    var notifData = await apiRequest('/api/notifications?unread=1');
+    var unreadCnt = 0;
+    if (notifData) {
+      unreadCnt = notifData.unread_count || notifData.unreadCount || 0;
+      if (typeof notifData.pendingRequestsCount === 'number' && typeof updatePendingRequestsUI === 'function') {
         updatePendingRequestsUI(notifData.pendingRequestsCount);
       }
     }
+                  var notifBtn = document.getElementById('notifBtn');
+                  var chatNotifBtn = document.getElementById('chatNotifBtn');
+                  
+                  if (unreadCnt > 0) {
+                      var sessionKey = 'kandid_notif_seen_' + unreadCnt;
+                      var isAlreadySeen = sessionStorage.getItem(sessionKey);
+                      var btnState = 'has-notifications';
+                      
+                      if (isAlreadySeen) {
+                          btnState = 'passive-notifications';
+                      } else {
+                          if (!window._notifPulseTimer) {
+                              window._notifPulseTimer = setTimeout(function() {
+                                  sessionStorage.setItem(sessionKey, 'true');
+                                  var n1 = document.getElementById('notifBtn');
+                                  if (n1) { n1.classList.remove('has-notifications'); n1.classList.add('passive-notifications'); }
+                                  var n2 = document.getElementById('chatNotifBtn');
+                                  if (n2) { n2.classList.remove('has-notifications'); n2.classList.add('passive-notifications'); }
+                              }, 15000);
+                          }
+                      }
+                      
+                      if (notifBtn) {
+                          notifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
+                          notifBtn.classList.add(btnState);
+                      }
+                      if (chatNotifBtn) {
+                          chatNotifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
+                          chatNotifBtn.classList.add(btnState);
+                      }
+                  } else {
+                      if (window._notifPulseTimer) { clearTimeout(window._notifPulseTimer); window._notifPulseTimer = null; }
+                      if (notifBtn) {
+                          notifBtn.classList.remove('has-notifications', 'passive-notifications');
+                          notifBtn.classList.add('no-notifications');
+                      }
+                      if (chatNotifBtn) {
+                          chatNotifBtn.classList.remove('has-notifications', 'passive-notifications');
+                          chatNotifBtn.classList.add('no-notifications');
+                      }
+                  }
   } catch(e){}
 }
 window.checkChatUnreadBadge = checkChatUnreadBadge;
