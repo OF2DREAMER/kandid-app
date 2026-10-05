@@ -7425,13 +7425,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if target_user_id:
                     cursor.execute("SELECT * FROM users WHERE id = ?", (target_user_id,))
                     target_row = cursor.fetchone()
-                    if not target_row:
-                        clean_h = target_user_id.replace("@", "").strip()
-                        cursor.execute("SELECT * FROM users WHERE LOWER(handle) = LOWER(?) OR LOWER(email) = LOWER(?)", (clean_h, clean_h))
-                        target_row = cursor.fetchone()
                 elif target_handle:
                     clean_h = target_handle.replace("@", "").strip()
-                    cursor.execute("SELECT * FROM users WHERE LOWER(handle) = LOWER(?) OR LOWER(email) = LOWER(?)", (clean_h, clean_h))
+                    cursor.execute("SELECT * FROM users WHERE LOWER(handle) = LOWER(?)", (clean_h,))
                     target_row = cursor.fetchone()
                 elif user:
                     cursor.execute("SELECT * FROM users WHERE id = ?", (user["id"],))
@@ -9855,11 +9851,48 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     """, (user["id"], now_iso, report_id))
             elif action == "hide":
                 if target_type == "moment" and target_id:
+                    # P2 fix: moderation actions on moments must only affect posts
+                    # that genuinely belong to the moderated community, not any
+                    # moment whose id is supplied by the client.
+                    cursor.execute("""
+                        SELECT 1 FROM posts
+                        WHERE id = ?
+                          AND (
+                            primary_community_id = ?
+                            OR context_community_id = ?
+                            OR LOWER(campus) = LOWER(?)
+                          )
+                        LIMIT 1
+                    """, (target_id, comm_id, comm_id, comm_id))
+                    if not cursor.fetchone():
+                        conn.close()
+                        return self.send_json(403, {
+                            "success": False,
+                            "error": "Forbidden: The targeted moment does not belong to this community.",
+                            "code": "MODERATION_TARGET_NOT_IN_COMMUNITY"
+                        })
                     cursor.execute("UPDATE posts SET moderation_status = 'hidden' WHERE id = ?", (target_id,))
                 if report_id:
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'hidden', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
             elif action == "remove":
                 if target_type == "moment" and target_id:
+                    cursor.execute("""
+                        SELECT 1 FROM posts
+                        WHERE id = ?
+                          AND (
+                            primary_community_id = ?
+                            OR context_community_id = ?
+                            OR LOWER(campus) = LOWER(?)
+                          )
+                        LIMIT 1
+                    """, (target_id, comm_id, comm_id, comm_id))
+                    if not cursor.fetchone():
+                        conn.close()
+                        return self.send_json(403, {
+                            "success": False,
+                            "error": "Forbidden: The targeted moment does not belong to this community.",
+                            "code": "MODERATION_TARGET_NOT_IN_COMMUNITY"
+                        })
                     cursor.execute("UPDATE posts SET moderation_status = 'removed', is_private = 1 WHERE id = ?", (target_id,))
                 if report_id:
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'removed', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
@@ -9868,6 +9901,23 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'suspended', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
             elif action == "restore":
                 if target_type == "moment" and target_id:
+                    cursor.execute("""
+                        SELECT 1 FROM posts
+                        WHERE id = ?
+                          AND (
+                            primary_community_id = ?
+                            OR context_community_id = ?
+                            OR LOWER(campus) = LOWER(?)
+                          )
+                        LIMIT 1
+                    """, (target_id, comm_id, comm_id, comm_id))
+                    if not cursor.fetchone():
+                        conn.close()
+                        return self.send_json(403, {
+                            "success": False,
+                            "error": "Forbidden: The targeted moment does not belong to this community.",
+                            "code": "MODERATION_TARGET_NOT_IN_COMMUNITY"
+                        })
                     cursor.execute("UPDATE posts SET moderation_status = 'active', is_private = 0 WHERE id = ?", (target_id,))
                 if report_id:
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'restored', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
