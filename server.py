@@ -8253,7 +8253,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     q_clean = q.strip().lower()
                     q_alt = q_clean.replace("anum", "anam") if "anum" in q_clean else (q_clean.replace("anam", "anum") if "anam" in q_clean else q_clean)
                     cursor.execute("""
-                        SELECT id, name, handle, avatar_url, avatar_letter, campus, bio, profile_visibility FROM users
+                        SELECT id, name, handle, avatar_url, avatar_letter, campus, bio FROM users
                         WHERE (LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?
                             OR LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(campus) LIKE ?)
                           AND (role IS NULL OR role != 'banned')
@@ -8261,7 +8261,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     """, (f"%{q_clean}%", f"%{q_clean}%", f"%{q_clean}%", f"%{q_alt}%", f"%{q_alt}%", f"%{q_alt}%"))
                 else:
                     cursor.execute("""
-                        SELECT id, name, handle, avatar_url, avatar_letter, campus, bio, profile_visibility FROM users
+                        SELECT id, name, handle, avatar_url, avatar_letter, campus, bio FROM users
                         WHERE (role IS NULL OR role != 'banned')
                         ORDER BY streak_count DESC LIMIT 20
                     """)
