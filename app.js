@@ -775,7 +775,11 @@ function renderCommunityCards(moments, container) {
     var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'student');
     var timeAgo = escapeHtml(m.created_at ? formatTimeAgoClean(m.created_at) : (m.timeAgo || m.time_ago || 'JUST NOW').toUpperCase());
     var captionText = escapeHtml(m.caption || 'Unfiltered moment.');
-    var locName = escapeHtml(m.location_city || m.campus || 'Near Quad');
+    var rawLoc = m.location_city || m.campus || 'Near Quad';
+    if (rawLoc.toUpperCase() === 'INDEPENDENT CREATOR / CITY') {
+      rawLoc = m.location_city || 'Around You';
+    }
+    var locName = escapeHtml(rawLoc);
     if (!locName.toLowerCase().startsWith('near ')) locName = 'Near ' + locName;
     var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || (m.campus ? m.campus.replace(/^Near\s+/i, '') : '');
 
@@ -1903,6 +1907,7 @@ function formatTimeAgoClean(createdStr) {
         if (isNaN(dt.getTime())) return 'JUST NOW';
         var now = new Date();
         var diffSec = Math.floor((now.getTime() - dt.getTime()) / 1000);
+        if (diffSec < 0) diffSec = Math.abs(diffSec); // Handle slight timezone/clock skew by treating future as past for relative math
         if (diffSec < 60) return 'JUST NOW';
         var mins = Math.floor(diffSec / 60);
         if (mins < 60) return mins + ' MIN AGO';
@@ -1981,6 +1986,9 @@ function renderFeedCards(moments, container) {
 
     var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'kandid.creator');
     var rawComm = m.community_name || m.primary_community_name || m.campus || 'CENTRAL CAMPUS';
+    if (rawComm.toUpperCase() === 'INDEPENDENT CREATOR / CITY') {
+      rawComm = m.location_city || 'AROUND YOU';
+    }
     var cleanCommName = rawComm.replace(/^Near\s+/i, '');
     var campusName = escapeHtml(cleanCommName.toUpperCase());
     var commTarget = m.community_name || m.primary_community_name || m.primary_community_id || cleanCommName;
