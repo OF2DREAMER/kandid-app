@@ -7788,54 +7788,69 @@ class KandidHandler(SimpleHTTPRequestHandler):
             msgs = [dict(r) for r in cursor.fetchall()]
             msgs.reverse()
 
-            for m in msgs:
-                # 1. Resolve quoted reply from authorized conversation data
-                m["reply_to"] = None
-                if m.get("reply_to_id"):
-                    cursor.execute("""
-                        SELECT m.id, m.sender_id, m.content, m.message_type, u.name, u.handle
-                        FROM messages m
-                        LEFT JOIN users u ON m.sender_id = u.id
-                        WHERE m.id = ? AND ((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))
-                    """, (m["reply_to_id"], user_id, resolved_partner_id, resolved_partner_id, user_id))
-                    r_row = cursor.fetchone()
-                    if r_row:
-                        r_dict = dict(r_row)
-                        c_text = r_dict.get("content") or ""
-                        preview_text = (c_text[:80] + "...") if len(c_text) > 80 else c_text
-                        if not preview_text:
-                            preview_text = "Photo" if r_dict.get("message_type") == "photo" else ("Moment" if r_dict.get("message_type") == "moment" else "Attachment")
-                        m["reply_to"] = {
-                            "id": r_dict["id"],
-                            "sender_id": r_dict["sender_id"],
-                            "sender_name": r_dict.get("name") or "Student",
-                            "sender_handle": r_dict.get("handle") or "user",
-                            "content": preview_text,
-                            "message_type": r_dict.get("message_type") or "text"
-                        }
+            msg_ids = [m["id"] for m in msgs]
+            reactions_map = {m_id: [] for m_id in msg_ids}
+            moment_ids = list(set([m["moment_id"] for m in msgs if m.get("moment_id")]))
+            moments_map = {}
+            reply_ids = list(set([m["reply_to_id"] for m in msgs if m.get("reply_to_id")]))
+            reply_map = {}
 
-                # 2. Resolve Moment details if moment_id is present
-                m["moment"] = None
-                if m.get("moment_id"):
-                    cursor.execute("""
-                        SELECT p.id, p.main_img as image_url, p.pip_img, p.caption, p.campus, p.user_id, p.created_at, u.name as author_name, u.handle as author_handle
-                        FROM posts p
-                        LEFT JOIN users u ON p.user_id = u.id
-                        WHERE p.id = ? AND (p.moderation_status IS NULL OR p.moderation_status != 'removed')
-                    """, (m["moment_id"],))
-                    m_row = cursor.fetchone()
-                    if m_row:
-                        m["moment"] = dict(m_row)
-
-                # 3. Resolve RealMoji reactions
-                cursor.execute("""
-                    SELECT r.id, r.user_id, r.emoji, r.media_url, r.created_at, u.name, u.handle
+            if msg_ids:
+                placeholders = ",".join(["?"] * len(msg_ids))
+                cursor.execute(f"""
+                    SELECT r.id, r.message_id, r.user_id, r.emoji, r.media_url, r.created_at, u.name, u.handle
                     FROM chat_reactions r
                     LEFT JOIN users u ON r.user_id = u.id
-                    WHERE r.message_id = ?
+                    WHERE r.message_id IN ({placeholders})
                     ORDER BY r.created_at ASC
-                """, (m["id"],))
-                m["reactions"] = [dict(r) for r in cursor.fetchall()]
+                """, msg_ids)
+                for r in cursor.fetchall():
+                    r_dict = dict(r)
+                    m_id = r_dict.pop("message_id")
+                    reactions_map[m_id].append(r_dict)
+
+            if moment_ids:
+                placeholders = ",".join(["?"] * len(moment_ids))
+                cursor.execute(f"""
+                    SELECT p.id, p.main_img as image_url, p.pip_img, p.caption, p.campus, p.user_id, p.created_at, u.name as author_name, u.handle as author_handle
+                    FROM posts p
+                    LEFT JOIN users u ON p.user_id = u.id
+                    WHERE p.id IN ({placeholders}) AND (p.moderation_status IS NULL OR p.moderation_status != 'removed')
+                """, moment_ids)
+                for r in cursor.fetchall():
+                    moments_map[r["id"]] = dict(r)
+
+            if reply_ids:
+                placeholders = ",".join(["?"] * len(reply_ids))
+                # Security: we still enforce that the reply must belong to the current conversation
+                # by passing user_id and resolved_partner_id multiple times for the IN clause?
+                # No, that's complex for IN. Instead, fetch all requested IDs that match the conversation:
+                cursor.execute(f"""
+                    SELECT m.id, m.sender_id, m.content, m.message_type, u.name, u.handle
+                    FROM messages m
+                    LEFT JOIN users u ON m.sender_id = u.id
+                    WHERE m.id IN ({placeholders}) 
+                      AND ((m.sender_id = ? AND m.receiver_id = ?) OR (m.sender_id = ? AND m.receiver_id = ?))
+                """, reply_ids + [user_id, resolved_partner_id, resolved_partner_id, user_id])
+                for r_row in cursor.fetchall():
+                    r_dict = dict(r_row)
+                    c_text = r_dict.get("content") or ""
+                    preview_text = (c_text[:80] + "...") if len(c_text) > 80 else c_text
+                    if not preview_text:
+                        preview_text = "Photo" if r_dict.get("message_type") == "photo" else ("Moment" if r_dict.get("message_type") == "moment" else "Attachment")
+                    reply_map[r_dict["id"]] = {
+                        "id": r_dict["id"],
+                        "sender_id": r_dict["sender_id"],
+                        "sender_name": r_dict.get("name") or "Student",
+                        "sender_handle": r_dict.get("handle") or "user",
+                        "content": preview_text,
+                        "message_type": r_dict.get("message_type") or "text"
+                    }
+
+            for m in msgs:
+                m["reply_to"] = reply_map.get(m.get("reply_to_id")) if m.get("reply_to_id") else None
+                m["moment"] = moments_map.get(m.get("moment_id")) if m.get("moment_id") else None
+                m["reactions"] = reactions_map.get(m["id"], [])
 
             conn.close()
             return self.send_json(200, {
