@@ -5248,8 +5248,8 @@ function applyUserToYouScreen(u) {
         this.style.display = 'none';
         this.removeAttribute('src');
         if (initialsEl) {
-          initialsEl.style.display = 'none';
-          initialsEl.textContent = '';
+          initialsEl.style.display = 'flex';
+          initialsEl.textContent = finalName.charAt(0).toUpperCase();
         }
       };
       avatarEl.onload = function() {
@@ -5261,6 +5261,10 @@ function applyUserToYouScreen(u) {
     if (avatarEl) {
       avatarEl.style.display = 'none';
       avatarEl.removeAttribute('src');
+    }
+    if (initialsEl) {
+      initialsEl.style.display = 'flex';
+      initialsEl.textContent = finalName.charAt(0).toUpperCase();
     }
   }
 
