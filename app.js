@@ -7223,6 +7223,52 @@ window.resetCampusSelection = function() {
     }
 };
 
+
+window.setWorldVibe = function(vibe) {
+    if (!state.onboardingSession) state.onboardingSession = {};
+    state.onboardingSession.vibe = vibe;
+    
+    var btnCampus = document.getElementById('vibeToggleCampus');
+    var btnWork = document.getElementById('vibeToggleWork');
+    var label = document.getElementById('lblCampusOrWork');
+    var input = document.getElementById('campusSearchInput');
+    var skipBtn = document.getElementById('skipCampusBtn');
+    
+    if (vibe === 'campus') {
+        btnCampus.classList.add('selected');
+        btnCampus.style.background = 'rgba(245, 158, 11, 0.12)';
+        btnCampus.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+        btnCampus.style.color = '#f59e0b';
+        btnCampus.style.fontWeight = '700';
+        
+        btnWork.classList.remove('selected');
+        btnWork.style.background = '';
+        btnWork.style.borderColor = '';
+        btnWork.style.color = '#d4d4d8';
+        btnWork.style.fontWeight = '500';
+        
+        if (label) label.textContent = 'CAMPUS / UNIVERSITY';
+        if (input) input.placeholder = 'Search university or college (optional)...';
+        if (skipBtn) skipBtn.textContent = 'Skip campus';
+    } else {
+        btnWork.classList.add('selected');
+        btnWork.style.background = 'rgba(245, 158, 11, 0.12)';
+        btnWork.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+        btnWork.style.color = '#f59e0b';
+        btnWork.style.fontWeight = '700';
+        
+        btnCampus.classList.remove('selected');
+        btnCampus.style.background = '';
+        btnCampus.style.borderColor = '';
+        btnCampus.style.color = '#d4d4d8';
+        btnCampus.style.fontWeight = '500';
+        
+        if (label) label.textContent = 'WORKSPACE / TECH PARK';
+        if (input) input.placeholder = 'Enter office, coworking or tech park...';
+        if (skipBtn) skipBtn.textContent = 'Skip workspace';
+    }
+};
+
 window.skipCampus = function() {
     if (!state.onboardingSession) state.onboardingSession = {};
     state.onboardingSession.campusId = 'none';

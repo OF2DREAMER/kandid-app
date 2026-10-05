@@ -3788,10 +3788,16 @@
                     <p class="text-[12px] text-zinc-400 font-normal leading-relaxed">Choose the places and interests that matter to you.</p>
                 </div>
 
+                <!-- Vibe Toggle (Campus vs Work) using Native Pill Styling -->
+                <div class="flex gap-2.5 pt-2 pb-1">
+                    <button type="button" id="vibeToggleCampus" onclick="setWorldVibe('campus')" class="flex-1 selectable-chip selected p-3 rounded-xl text-[11.5px] font-bold text-amber-500 text-center cursor-pointer focus-visible:outline-2 focus-visible:outline-[#f59e0b] transition-all" style="background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.4);">🎓 Campus Life</button>
+                    <button type="button" id="vibeToggleWork" onclick="setWorldVibe('work')" class="flex-1 selectable-chip p-3 rounded-xl text-[11.5px] text-zinc-300 font-medium text-center cursor-pointer focus-visible:outline-2 focus-visible:outline-[#f59e0b] transition-all">🏢 City & Hustle</button>
+                </div>
+
                 <!-- SECTION 01: CAMPUS / UNIVERSITY (Optional with refined skipped state) -->
                 <div class="space-y-2">
                     <div class="flex justify-between items-center select-none">
-                        <label class="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mono">Campus / University</label>
+                        <label id="lblCampusOrWork" class="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mono">Campus / University</label>
                         <span class="text-[9px] text-zinc-600 mono">Optional</span>
                     </div>
                     <div class="space-y-1.5 relative font-mono-tag">
@@ -4959,6 +4965,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.8.21"></script>
+  <script src="app.js?v=5.8.22"></script>
 </body>
 </html>
