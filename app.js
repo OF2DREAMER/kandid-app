@@ -9072,6 +9072,11 @@ function renderChatConversations(convos, filterQuery = '') {
     if (avatarSrc.includes('unsplash.com') || avatarSrc.includes('api.dicebear.com')) {
       avatarSrc = '';
     }
+    
+    var initialLetter = escapeHtml((rawName || rawHandle || 'U').charAt(0).toUpperCase());
+    var avatarHtml = avatarSrc
+      ? '<img src="' + escapeHtml(avatarSrc) + '" alt="' + escapeHtml(name) + '" class="w-full h-full object-cover" onerror="this.style.display=\'none\';">'
+      : '<div class="w-full h-full flex items-center justify-center bg-neutral-900 text-amber-500 font-bold text-sm font-mono-tag">' + initialLetter + '</div>';
 
     var lastMsgObj = c.last_message || {};
     var lastMsgText = escapeHtml(lastMsgObj.preview || c.lastMessage || 'Tap to chat');
@@ -9099,9 +9104,11 @@ function renderChatConversations(convos, filterQuery = '') {
 
     article.innerHTML = 
       '<div class="flex items-center space-x-3.5 min-w-0 flex-1">' +
-        '<div class="relative w-11 h-11 rounded-full overflow-hidden bg-neutral-800 flex-shrink-0 border border-neutral-800">' +
-          '<img src="' + escapeHtml(avatarSrc) + '" alt="' + escapeHtml(name) + '" class="w-full h-full object-cover">' +
-          (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full"></div>' : '') +
+        '<div class="relative w-11 h-11 rounded-full flex-shrink-0">' +
+          '<div class="w-full h-full rounded-full overflow-hidden border border-neutral-800 bg-neutral-800">' +
+            avatarHtml +
+          '</div>' +
+          (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full z-10"></div>' : '') +
         '</div>' +
         '<div class="min-w-0 flex-1 pr-2">' +
         '<h4 class="text-xs font-bold text-white truncate">' + name + '</h4>' +
@@ -9203,6 +9210,11 @@ function renderChatConnections(connections, filterQuery = '') {
     if (avatarSrc.includes('unsplash.com') || avatarSrc.includes('api.dicebear.com')) {
       avatarSrc = '';
     }
+    
+    var initialLetter = escapeHtml((rawName || rawHandle || 'U').charAt(0).toUpperCase());
+    var avatarHtml = avatarSrc
+      ? '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="w-full h-full object-cover" onerror="this.style.display=\'none\';">'
+      : '<div class="w-full h-full flex items-center justify-center bg-neutral-900 text-amber-500 font-bold text-sm font-mono-tag">' + initialLetter + '</div>';
 
     var row = document.createElement('div');
     row.className = 'flex items-center justify-between p-2 -mx-2 rounded-xl hover:bg-neutral-900/60 cursor-pointer transition';
@@ -9210,9 +9222,11 @@ function renderChatConnections(connections, filterQuery = '') {
 
     row.innerHTML = 
       '<div class="flex items-center space-x-3 min-w-0 flex-1">' +
-        '<div class="relative w-10 h-10 rounded-full overflow-hidden bg-neutral-800 flex-shrink-0 border border-neutral-800">' +
-          '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="w-full h-full object-cover">' +
-          (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full"></div>' : '') +
+        '<div class="relative w-10 h-10 rounded-full flex-shrink-0">' +
+          '<div class="w-full h-full rounded-full overflow-hidden border border-neutral-800 bg-neutral-800">' +
+            avatarHtml +
+          '</div>' +
+          (isOnline ? '<div class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-amber-500 border-2 border-[#0b0b0c] rounded-full z-10"></div>' : '') +
         '</div>' +
         '<div class="min-w-0 flex-1 pr-2">' +
           '<h5 class="text-xs font-bold text-white truncate">' + name + '</h5>' +
