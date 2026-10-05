@@ -4243,7 +4243,7 @@ function renderPeopleSearchResults(people) {
     } else if (isRequested) {
       buttonHtml = '<span class="px-3 py-1.5 bg-neutral-900 border border-neutral-800 text-amber-400 rounded-full text-[10px] font-bold flex-shrink-0">REQUESTED</span>';
     } else {
-      buttonHtml = '<button class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
+      buttonHtml = '<button onclick="event.stopPropagation(); connectWithUser(\'' + escapeHtml(p.id) + '\', this)" class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
     }
 
     var initialLetter = escapeHtml((name || handle || 'U').charAt(0).toUpperCase());
@@ -10821,11 +10821,11 @@ window.snapAndSendRealmoji = snapAndSendRealmoji;
 // FEATURE 3: SPONTANEOUS DAILY ALERT ENGINE ("⚠️ TIME TO KANDID")
 // =====================================================================
 var dailyPrompts = [
-  'Show your current view & surroundings',
-  "Capture what's on your desk right now",
-  'The coffee or drink keeping you alive today',
-  'The book or screen in front of you',
-  'Who or what is next to you right now'
+  'POV: Your current view',
+  "Vibe check: What's the scene right now?",
+  'The fuel keeping you alive today',
+  'Show us your world right now',
+  'Who are you with right now?'
 ];
 
 var dailyAlertSeconds = 420;
