@@ -1937,6 +1937,22 @@
                           </div>
                           <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
                       </div>
+                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('chat_retention')">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">KEEP DELETED MESSAGES</h3>
+                              <p class="text-[10px] text-zinc-500" id="settingsChatRetentionSubtext">30-day recovery window for deleted messages</p>
+                          </div>
+                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors" id="toggleTrack_chat_retention">
+                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_chat_retention"></div>
+                          </div>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.98]" onclick="switchScreenView('recently-deleted')">
+                          <div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">RECENTLY DELETED</h3>
+                              <p class="text-[10px] text-amber-400 font-mono-tag">View &amp; restore recoverable messages</p>
+                          </div>
+                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                      </div>
                   </div>
                   <p class="text-[9px] text-zinc-600 font-mono-tag px-1 leading-relaxed">Your exact live location is never stored, shared, or made public. Kandid uses coarse approximate positioning only for Nearby/Radar discovery.</p>
               </div>
@@ -2325,6 +2341,20 @@
           </div>
           <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3 pb-32" id="blockListContainer">
               <div class="text-center py-12 text-xs text-zinc-500 font-mono-tag">Loading blocked people...</div>
+          </div>
+      </section>
+
+      <!-- SCREEN 11: RECENTLY DELETED -->
+      <section class="app-screen bg-[#09090b] flex flex-col h-full" id="screen-recently-deleted" style="display:none;">
+          <div class="px-5 pt-6 pb-3 border-b border-zinc-800/80 flex items-center justify-between bg-[#09090b]/95 sticky top-0 z-10">
+              <div>
+                  <h2 class="text-sm font-extrabold text-white tracking-widest uppercase font-mono-tag">RECENTLY DELETED</h2>
+                  <p class="text-[10px] text-zinc-500 font-mono-tag">Messages deleted for me (30-day recovery window)</p>
+              </div>
+              <button class="text-zinc-400 hover:text-white font-bold text-xs uppercase tracking-wider cursor-pointer" onclick="switchScreenView('settings')">BACK</button>
+          </div>
+          <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3 pb-32" id="recentlyDeletedContainer">
+              <div class="text-center py-12 text-xs text-zinc-500 font-mono-tag">Loading deleted messages...</div>
           </div>
       </section>
 
@@ -4396,6 +4426,30 @@
                     Cancel
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- MESSAGE ACTION MENU MODAL SHEET -->
+    <div id="chatMessageActionSheetModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-end justify-center hidden" onclick="if(event.target === this) closeChatMessageActionMenu()">
+        <div class="w-full max-w-md bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-5 space-y-3 pb-8">
+            <div class="w-10 h-1 bg-zinc-700 rounded-full mx-auto mb-1"></div>
+            <div class="px-2 pb-2 border-b border-zinc-900">
+                <h4 class="text-xs font-bold text-white font-mono-tag uppercase tracking-wider">Message Options</h4>
+                <p id="chatMessageSnippetPreview" class="text-[11px] text-zinc-400 truncate mt-0.5">Preview text</p>
+            </div>
+            <div class="space-y-1.5 text-xs">
+                <button id="btnDeleteForMe" onclick="executeDeleteMessageForMe()" class="w-full py-3 px-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-left text-amber-400 flex items-center justify-between font-medium cursor-pointer">
+                    <span>Delete for me</span>
+                    <span class="text-zinc-500 font-mono-tag">🗑️</span>
+                </button>
+                <button id="btnDeleteForEveryone" onclick="executeDeleteMessageForEveryone()" class="w-full py-3 px-4 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-left text-red-400 flex items-center justify-between font-medium cursor-pointer">
+                    <span>Delete for everyone</span>
+                    <span class="text-zinc-500 font-mono-tag">💥</span>
+                </button>
+            </div>
+            <button onclick="closeChatMessageActionMenu()" class="w-full py-3 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white text-xs font-bold uppercase tracking-wider font-mono-tag cursor-pointer">
+                Cancel
+            </button>
         </div>
     </div>
 

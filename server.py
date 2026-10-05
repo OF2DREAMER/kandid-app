@@ -3373,7 +3373,8 @@ def init_db():
     users_cols = [row[1] for row in cursor.fetchall()]
     for col, col_def in [
         ("is_creator", "INTEGER DEFAULT 0"),
-        ("creator_activated_at", "TEXT DEFAULT ''")
+        ("creator_activated_at", "TEXT DEFAULT ''"),
+        ("chat_retention_days", "INTEGER DEFAULT 30")
     ]:
         if col not in users_cols:
             try:
@@ -3451,7 +3452,12 @@ def init_db():
         ("ciphertext", "TEXT DEFAULT NULL"),
         ("iv", "TEXT DEFAULT NULL"),
         ("reply_to_id", "TEXT DEFAULT NULL"),
-        ("is_encrypted", "INTEGER DEFAULT 1")
+        ("is_encrypted", "INTEGER DEFAULT 1"),
+        ("sender_state", "TEXT DEFAULT 'active'"),
+        ("receiver_state", "TEXT DEFAULT 'active'"),
+        ("trash_expires_at_sender", "TEXT DEFAULT NULL"),
+        ("trash_expires_at_receiver", "TEXT DEFAULT NULL"),
+        ("is_deleted_for_everyone", "INTEGER DEFAULT 0")
     ]:
         if col not in msg_cols:
             try:
@@ -5231,6 +5237,59 @@ def is_blocked_static_path(norm_path):
 class KandidThreadingServer(socketserver.ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
     daemon_threads = True
+
+
+import time
+import os
+
+def _chat_expiration_worker():
+    while True:
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE messages 
+                SET sender_state = 'deleted', trash_expires_at_sender = NULL
+                WHERE sender_state = 'in_trash' AND trash_expires_at_sender <= CURRENT_TIMESTAMP
+            """)
+            
+            cursor.execute("""
+                UPDATE messages 
+                SET receiver_state = 'deleted', trash_expires_at_receiver = NULL
+                WHERE receiver_state = 'in_trash' AND trash_expires_at_receiver <= CURRENT_TIMESTAMP
+            """)
+            
+            cursor.execute("""
+                SELECT media_url FROM messages
+                WHERE is_deleted_for_everyone = 1 
+                   OR (sender_state = 'deleted' AND receiver_state = 'deleted')
+            """)
+            files_to_delete = cursor.fetchall()
+            
+            cursor.execute("""
+                DELETE FROM messages
+                WHERE sender_state = 'deleted' AND receiver_state = 'deleted'
+            """)
+            conn.commit()
+            conn.close()
+
+            # Safely unlink
+            for row in files_to_delete:
+                url = row["media_url"]
+                if url and url.startswith("/uploads/"):
+                    from __main__ import STATIC_DIR
+                    try:
+                        filepath = os.path.join(STATIC_DIR, url.lstrip("/"))
+                        if os.path.exists(filepath):
+                            os.remove(filepath)
+                    except:
+                        pass
+        except Exception as e:
+            print("Chat Expiration Worker error:", e)
+
+        time.sleep(3600)
+
 
 class KandidHandler(SimpleHTTPRequestHandler):
     # Static assets that may be cached by browsers/CDNs (API responses never are).
@@ -7788,6 +7847,37 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True, "connections": connections})
 
+
+        if path == "/api/chat/trash":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT m.id, m.sender_id, m.receiver_id, m.content, m.created_at, m.message_type, m.media_url, m.is_deleted_for_everyone,
+                       CASE WHEN m.sender_id = ? THEN m.trash_expires_at_sender ELSE m.trash_expires_at_receiver END as expires_at,
+                       u.name as other_name, u.handle as other_handle, u.avatar_url as other_avatar
+                FROM messages m
+                LEFT JOIN users u ON u.id = CASE WHEN m.sender_id = ? THEN m.receiver_id ELSE m.sender_id END
+                WHERE (m.sender_id = ? AND m.sender_state = 'in_trash') 
+                   OR (m.receiver_id = ? AND m.receiver_state = 'in_trash')
+                ORDER BY m.created_at DESC
+                LIMIT 100
+            """, (user["id"], user["id"], user["id"], user["id"]))
+            
+            trash_msgs = []
+            for r in cursor.fetchall():
+                d = dict(r)
+                if d["is_deleted_for_everyone"] == 1:
+                    continue
+                trash_msgs.append(d)
+
+            conn.close()
+            return self.send_json(200, {"success": True, "trash": trash_msgs})
+
         if path == "/api/chat/messages":
             user = get_current_user(self.headers, query=query, require_session=True)
             if not user:
@@ -7818,15 +7908,32 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.commit()
 
             cursor.execute("""
-                SELECT id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id
+                SELECT id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id, is_deleted_for_everyone, sender_state, receiver_state
                 FROM messages
-                WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)
+                WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+                  AND (
+                      (sender_id = ? AND sender_state = 'active') OR
+                      (receiver_id = ? AND receiver_state = 'active')
+                  )
                 ORDER BY created_at DESC, id DESC
                 LIMIT 50
-            """, (user_id, resolved_partner_id, resolved_partner_id, user_id))
+            """, (user_id, resolved_partner_id, resolved_partner_id, user_id, user_id, user_id))
             # Newest 50 persisted messages only (bandwidth bound); reversed to chronological order.
-            msgs = [dict(r) for r in cursor.fetchall()]
-            msgs.reverse()
+            raw_msgs = [dict(r) for r in cursor.fetchall()]
+            raw_msgs.reverse()
+            
+            msgs = []
+            for m in raw_msgs:
+                if m.get("is_deleted_for_everyone") == 1:
+                    m["content"] = "Message deleted"
+                    m["media_url"] = None
+                    m["moment_id"] = None
+                    m["reply_to_id"] = None
+                    m["message_type"] = "deleted"
+                m.pop("is_deleted_for_everyone", None)
+                m.pop("sender_state", None)
+                m.pop("receiver_state", None)
+                msgs.append(m)
 
             msg_ids = [m["id"] for m in msgs]
             reactions_map = {m_id: [] for m_id in msg_ids}
@@ -11782,6 +11889,118 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "reactions": all_reactions
             })
 
+        # ── DELETED MESSAGES & TRASH ─────────────────────────────────────
+        if path == "/api/chat/messages/delete":
+            user = get_current_user(self.headers, body, require_session=True)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            message_ids = body.get("message_ids", [])
+            del_type = body.get("type", "for_me")
+            if not isinstance(message_ids, list):
+                return self.send_json(400, {"error": "message_ids must be a list", "success": False})
+            if not message_ids:
+                return self.send_json(400, {"error": "Missing message_ids", "success": False})
+            if len(message_ids) > 100:
+                return self.send_json(400, {"error": "Maximum 100 message IDs per request", "success": False})
+            
+            if del_type not in ("for_me", "for_everyone"):
+                return self.send_json(400, {"error": "Invalid deletion type", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT chat_retention_days FROM users WHERE id = ?", (user["id"],))
+            user_row = cursor.fetchone()
+            retention_days = int(user_row["chat_retention_days"]) if user_row and user_row["chat_retention_days"] is not None else 30
+
+            current_time_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            expires_at_str = None
+            if retention_days > 0:
+                expires_at_str = (datetime.utcnow() + timedelta(days=retention_days)).strftime("%Y-%m-%d %H:%M:%S")
+
+            for msg_id in message_ids:
+                cursor.execute("SELECT * FROM messages WHERE id = ?", (msg_id,))
+                msg = cursor.fetchone()
+                if not msg:
+                    continue
+                
+                is_sender = (msg["sender_id"] == user["id"])
+                is_receiver = (msg["receiver_id"] == user["id"])
+                if not is_sender and not is_receiver:
+                    continue
+
+                if del_type == "for_everyone":
+                    if not is_sender:
+                        continue
+                    cursor.execute("UPDATE messages SET is_deleted_for_everyone = 1 WHERE id = ?", (msg_id,))
+                else:
+                    state_val = 'in_trash' if retention_days > 0 else 'deleted'
+                    if is_sender:
+                        cursor.execute("UPDATE messages SET sender_state = ?, trash_expires_at_sender = ? WHERE id = ?", (state_val, expires_at_str, msg_id))
+                    if is_receiver:
+                        cursor.execute("UPDATE messages SET receiver_state = ?, trash_expires_at_receiver = ? WHERE id = ?", (state_val, expires_at_str, msg_id))
+            
+            conn.commit()
+            conn.close()
+            return self.send_json(200, {"success": True})
+
+        if path == "/api/chat/messages/restore":
+            user = get_current_user(self.headers, body, require_session=True)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            message_ids = body.get("message_ids", [])
+            if not message_ids:
+                return self.send_json(400, {"error": "Missing message_ids", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            for msg_id in message_ids:
+                cursor.execute("SELECT * FROM messages WHERE id = ?", (msg_id,))
+                msg = cursor.fetchone()
+                if not msg:
+                    continue
+                if msg["is_deleted_for_everyone"] == 1:
+                    continue
+                
+                if msg["sender_id"] == user["id"] and msg["sender_state"] == 'in_trash':
+                    cursor.execute("UPDATE messages SET sender_state = 'active', trash_expires_at_sender = NULL WHERE id = ?", (msg_id,))
+                if msg["receiver_id"] == user["id"] and msg["receiver_state"] == 'in_trash':
+                    cursor.execute("UPDATE messages SET receiver_state = 'active', trash_expires_at_receiver = NULL WHERE id = ?", (msg_id,))
+
+            conn.commit()
+            conn.close()
+            return self.send_json(200, {"success": True})
+
+        if path == "/api/chat/messages/permanent-delete":
+            user = get_current_user(self.headers, body, require_session=True)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            message_ids = body.get("message_ids", [])
+            if not message_ids:
+                return self.send_json(400, {"error": "Missing message_ids", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            for msg_id in message_ids:
+                cursor.execute("SELECT * FROM messages WHERE id = ?", (msg_id,))
+                msg = cursor.fetchone()
+                if not msg:
+                    continue
+                
+                if msg["sender_id"] == user["id"] and msg["sender_state"] == 'in_trash':
+                    cursor.execute("UPDATE messages SET sender_state = 'deleted', trash_expires_at_sender = NULL WHERE id = ?", (msg_id,))
+                if msg["receiver_id"] == user["id"] and msg["receiver_state"] == 'in_trash':
+                    cursor.execute("UPDATE messages SET receiver_state = 'deleted', trash_expires_at_receiver = NULL WHERE id = ?", (msg_id,))
+
+            conn.commit()
+            conn.close()
+            return self.send_json(200, {"success": True})
+
         if path == "/api/chat/send":
             try:
                 user = get_current_user(self.headers, body, require_session=True)
@@ -12712,6 +12931,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     validate_environment()
     init_db()
+    t = threading.Thread(target=_chat_expiration_worker, name="chat-expiration-worker", daemon=True)
+    t.start()
+    
     server = KandidThreadingServer(("0.0.0.0", PORT), KandidHandler)
     print(f"🚀 Kandid production server running at http://localhost:{PORT}")
     try:

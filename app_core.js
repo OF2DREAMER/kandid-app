@@ -499,7 +499,7 @@ function switchScreenView(screenName) {
   var target = document.getElementById('screen-' + screenName);
   if (target) {
     target.classList.add('active');
-    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'block' || screenName === 'block-list' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile' || screenName === 'search') {
+    if (screenName.startsWith('chat-') || screenName === 'empty-search' || screenName === 'error' || screenName === 'block' || screenName === 'block-list' || screenName === 'recently-deleted' || screenName === 'report' || screenName.includes('confirm') || screenName === 'you' || screenName === 'peer-profile' || screenName === 'search') {
         target.style.display = 'flex';
     } else {
         target.style.display = 'block';
@@ -507,7 +507,7 @@ function switchScreenView(screenName) {
   }
 
   document.querySelectorAll('.dock-item').forEach(function(btn) {
-    if (btn.dataset.screen === screenName || ((screenName === 'memories' || screenName === 'progress' || screenName === 'settings' || screenName === 'report' || screenName === 'block') && btn.dataset.screen === 'you') || (screenName === 'empty-search' && btn.dataset.screen === 'search') || (screenName.startsWith('chat-') && btn.dataset.screen === 'chat-home')) {
+    if (btn.dataset.screen === screenName || ((screenName === 'memories' || screenName === 'progress' || screenName === 'settings' || screenName === 'report' || screenName === 'block' || screenName === 'recently-deleted') && btn.dataset.screen === 'you') || (screenName === 'empty-search' && btn.dataset.screen === 'search') || (screenName.startsWith('chat-') && btn.dataset.screen === 'chat-home')) {
       btn.className = 'dock-item text-amber-500 flex flex-col items-center cursor-pointer active';
     } else {
       btn.className = 'dock-item text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer';
@@ -537,8 +537,6 @@ function switchScreenView(screenName) {
     }
   }
 
-
-
   if (screenName === 'search') {
     loadSearchDiscovery();
   } else if (screenName === 'chat-home') {
@@ -555,6 +553,8 @@ function switchScreenView(screenName) {
     loadNotifications();
   } else if (screenName === 'block-list') {
     loadBlockList();
+  } else if (screenName === 'recently-deleted') {
+    loadRecentlyDeletedScreen();
   }
 
 
@@ -8326,7 +8326,8 @@ var defaultSettings = {
   camera_access: true,
   ambient_audio: true,
   high_quality_media: false,
-  reduced_motion: false
+  reduced_motion: false,
+  chat_retention: true
 };
 
 function getSettingValue(key) {
@@ -8355,6 +8356,14 @@ function toggleSetting(key) {
   var next = !cur;
   localStorage.setItem('kandid_setting_' + key, next.toString());
   updateSettingSwitchUI(key);
+  if (key === 'chat_retention') {
+    var subtextEl = document.getElementById('settingsChatRetentionSubtext');
+    if (subtextEl) {
+      subtextEl.textContent = next ? '30-day recovery window for deleted messages' : '0-day recovery (messages permanently deleted immediately)';
+    }
+    showToast(next ? 'Deleted messages retention: 30 DAYS (ON)' : 'Deleted messages retention: 0 DAYS (OFF)');
+    return;
+  }
   var label = key.replace(/_/g, ' ').toUpperCase();
   showToast(label + ': ' + (next ? 'ENABLED ✓' : 'DISABLED ✕'));
 }
@@ -8583,10 +8592,15 @@ async function loadSettingsScreen() {
   }
 
   // Sync all toggle switches
-  var settingKeys = ['moment_reminders', 'messages', 'community_activity', 'sound', 'haptics', 'camera_access', 'ambient_audio', 'high_quality_media', 'reduced_motion'];
+  var settingKeys = ['moment_reminders', 'messages', 'community_activity', 'sound', 'haptics', 'camera_access', 'ambient_audio', 'high_quality_media', 'reduced_motion', 'chat_retention'];
   settingKeys.forEach(function(k) {
     updateSettingSwitchUI(k);
   });
+  var retentionVal = getSettingValue('chat_retention');
+  var subtextEl = document.getElementById('settingsChatRetentionSubtext');
+  if (subtextEl) {
+    subtextEl.textContent = retentionVal ? '30-day recovery window for deleted messages' : '0-day recovery (messages permanently deleted immediately)';
+  }
 }
 window.loadSettingsScreen = loadSettingsScreen;
 
@@ -10175,6 +10189,27 @@ async function loadChatMessages(userId, isSilent = false) {
         }
       }
 
+      var isTombstone = (m.message_type === 'deleted' || m.content === 'Message deleted' || m.is_deleted_for_everyone === 1);
+
+      if (isTombstone) {
+        bubbleWrap.innerHTML = 
+          '<div class="flex items-end gap-1.5 ' + (isMe ? 'flex-row-reverse' : 'flex-row') + ' max-w-[85%]">' +
+            '<div class="rounded-2xl px-3.5 py-2 text-xs bg-zinc-900/60 text-zinc-500 border border-zinc-800/80 shadow-sm space-y-0.5 max-w-full">' +
+              '<p class="italic text-[11px] text-zinc-500 font-mono-tag">Message deleted</p>' +
+              '<div class="flex items-center justify-end gap-1 opacity-60 pt-0.5">' +
+                '<span class="text-[8px] font-mono-tag">' + timeOnly + '</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        container.appendChild(bubbleWrap);
+        return;
+      }
+
+      bubbleWrap.oncontextmenu = function(e) {
+        e.preventDefault();
+        openChatMessageActionMenu(m.id);
+      };
+
       // Quoted Reply Block
       var replyHtml = '';
       if (m.reply_to) {
@@ -10235,6 +10270,7 @@ async function loadChatMessages(userId, isSilent = false) {
           '<div class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 pb-1">' +
             '<button onclick="handleChatReplyClick(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="Reply">↩</button>' +
             '<button onclick="openChatReactionSheet(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="React">☺</button>' +
+            '<button onclick="openChatMessageActionMenu(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="Options">⋮</button>' +
           '</div>' +
         '</div>';
 
@@ -10270,6 +10306,242 @@ async function loadChatMessages(userId, isSilent = false) {
   }
 }
 window.loadChatMessages = loadChatMessages;
+
+// =====================================================================
+// CHAT MESSAGE DELETION & RECOVERY MODULE
+// =====================================================================
+var activeTargetMessageId = null;
+
+function openChatMessageActionMenu(msgId) {
+  var targetMsg = (state.chatLoadedMessages || []).find(function(m) { return m.id === msgId; });
+  if (!targetMsg) return;
+  var isDeleted = (targetMsg.message_type === 'deleted' || targetMsg.content === 'Message deleted' || targetMsg.is_deleted_for_everyone === 1);
+  if (isDeleted) return;
+
+  activeTargetMessageId = msgId;
+  var myUid = String(getActiveUserId() || '').toLowerCase();
+  var senderId = String(targetMsg.sender_id || '').toLowerCase();
+  var isMe = (senderId === myUid);
+
+  var modal = document.getElementById('chatMessageActionSheetModal');
+  var snippetEl = document.getElementById('chatMessageSnippetPreview');
+  var btnForEveryone = document.getElementById('btnDeleteForEveryone');
+
+  if (snippetEl) {
+    snippetEl.textContent = targetMsg.content || (targetMsg.message_type === 'photo' ? 'Photo' : (targetMsg.message_type === 'moment' ? 'Moment' : 'Message'));
+  }
+
+  if (btnForEveryone) {
+    if (isMe) {
+      btnForEveryone.style.display = 'flex';
+    } else {
+      btnForEveryone.style.display = 'none';
+    }
+  }
+
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+}
+window.openChatMessageActionMenu = openChatMessageActionMenu;
+
+function closeChatMessageActionMenu() {
+  activeTargetMessageId = null;
+  var modal = document.getElementById('chatMessageActionSheetModal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+}
+window.closeChatMessageActionMenu = closeChatMessageActionMenu;
+
+async function executeDeleteMessageForMe() {
+  if (!activeTargetMessageId) return;
+  var msgId = activeTargetMessageId;
+  closeChatMessageActionMenu();
+
+  try {
+    var res = await apiRequest('/api/chat/messages/delete', {
+      method: 'POST',
+      body: JSON.stringify({
+        message_ids: [msgId],
+        type: 'for_me'
+      })
+    });
+
+    if (res && res.success) {
+      state.chatLoadedMessages = (state.chatLoadedMessages || []).filter(function(m) { return m.id !== msgId; });
+      var el = document.querySelector('[data-msg-id="' + msgId + '"]');
+      if (el) el.remove();
+      showToast('Message deleted for me');
+      if (typeof loadChatConversations === 'function') loadChatConversations(true);
+    } else {
+      showToast(res && res.error ? res.error : 'Failed to delete message');
+    }
+  } catch (err) {
+    console.error('Delete for me error:', err);
+    showToast('Could not delete message');
+  }
+}
+window.executeDeleteMessageForMe = executeDeleteMessageForMe;
+
+async function executeDeleteMessageForEveryone() {
+  if (!activeTargetMessageId) return;
+  var msgId = activeTargetMessageId;
+  closeChatMessageActionMenu();
+
+  if (!confirm('Delete for everyone? This message will be replaced with a tombstone for all participants.')) {
+    return;
+  }
+
+  try {
+    var res = await apiRequest('/api/chat/messages/delete', {
+      method: 'POST',
+      body: JSON.stringify({
+        message_ids: [msgId],
+        type: 'for_everyone'
+      })
+    });
+
+    if (res && res.success) {
+      if (state.chatLoadedMessages) {
+        var target = state.chatLoadedMessages.find(function(m) { return m.id === msgId; });
+        if (target) {
+          target.message_type = 'deleted';
+          target.content = 'Message deleted';
+          target.media_url = null;
+          target.moment = null;
+          target.reply_to = null;
+          target.is_deleted_for_everyone = 1;
+        }
+      }
+      if (state.activeChatUser) {
+        await loadChatMessages(state.activeChatUser, true);
+      }
+      showToast('Message deleted for everyone');
+      if (typeof loadChatConversations === 'function') loadChatConversations(true);
+    } else {
+      showToast(res && res.error ? res.error : 'Failed to delete for everyone');
+    }
+  } catch (err) {
+    console.error('Delete for everyone error:', err);
+    showToast('Could not delete for everyone');
+  }
+}
+window.executeDeleteMessageForEveryone = executeDeleteMessageForEveryone;
+
+async function loadRecentlyDeletedScreen() {
+  var container = document.getElementById('recentlyDeletedContainer');
+  if (!container) return;
+  container.innerHTML = '<div class="text-center py-12 text-xs text-zinc-500 font-mono-tag animate-pulse">Loading deleted messages...</div>';
+
+  try {
+    var data = await apiRequest('/api/chat/trash');
+    if (data && data.success && Array.isArray(data.trash)) {
+      if (data.trash.length === 0) {
+        container.innerHTML = 
+          '<div class="text-center py-16 space-y-2">' +
+            '<span class="text-3xl block opacity-40">🗑️</span>' +
+            '<p class="text-xs font-bold text-white font-mono-tag uppercase">No Recently Deleted Messages</p>' +
+            '<p class="text-[10px] text-zinc-500 font-mono-tag max-w-[220px] mx-auto">Messages deleted for me will remain here for up to 30 days before permanent deletion.</p>' +
+          '</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      data.trash.forEach(function(item) {
+        var itemEl = document.createElement('div');
+        itemEl.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-4 space-y-2.5 shadow-sm';
+        itemEl.dataset.trashId = item.id;
+
+        var createdAtStr = item.created_at || '';
+        var timeAgo = (typeof format_time_ago === 'function') ? format_time_ago(createdAtStr) : createdAtStr;
+        var expiryInfo = item.expires_at ? ('Expires ' + item.expires_at.split(' ')[0]) : 'Retained for 30 days';
+        var previewText = item.content || (item.message_type === 'photo' ? 'Photo message' : (item.message_type === 'moment' ? 'Shared moment' : 'Message'));
+
+        itemEl.innerHTML = 
+          '<div class="flex items-start justify-between gap-2 border-b border-zinc-900 pb-2">' +
+            '<div>' +
+              '<span class="text-[9px] text-amber-400 font-mono-tag font-bold uppercase tracking-wider block">DELETED MESSAGE</span>' +
+              '<span class="text-[10px] text-zinc-500 font-mono-tag">' + escapeHtml(expiryInfo) + '</span>' +
+            '</div>' +
+            '<span class="text-[9px] text-zinc-600 font-mono-tag">' + escapeHtml(timeAgo) + '</span>' +
+          '</div>' +
+          '<p class="text-xs text-zinc-200 break-words font-sans line-clamp-2">' + escapeHtml(previewText) + '</p>' +
+          '<div class="flex items-center justify-end gap-2 pt-1">' +
+            '<button onclick="restoreTrashMessage(\'' + item.id + '\')" class="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold font-mono-tag cursor-pointer active:scale-95 transition">RESTORE</button>' +
+            '<button onclick="confirmPermanentDeleteMessage(\'' + item.id + '\')" class="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-[10px] font-bold font-mono-tag cursor-pointer active:scale-95 transition">DELETE PERMANENTLY</button>' +
+          '</div>';
+        container.appendChild(itemEl);
+      });
+    } else {
+      container.innerHTML = '<div class="text-center py-12 text-xs text-zinc-500 font-mono-tag">Failed to load deleted messages.</div>';
+    }
+  } catch (err) {
+    console.error('Load trash error:', err);
+    container.innerHTML = '<div class="text-center py-12 text-xs text-red-400 font-mono-tag">Error loading recently deleted messages.</div>';
+  }
+}
+window.loadRecentlyDeletedScreen = loadRecentlyDeletedScreen;
+
+async function restoreTrashMessage(msgId) {
+  try {
+    var res = await apiRequest('/api/chat/messages/restore', {
+      method: 'POST',
+      body: JSON.stringify({ message_ids: [msgId] })
+    });
+
+    if (res && res.success) {
+      showToast('Message restored ✓');
+      var el = document.querySelector('[data-trash-id="' + msgId + '"]');
+      if (el) el.remove();
+      var container = document.getElementById('recentlyDeletedContainer');
+      if (container && !container.children.length) {
+        loadRecentlyDeletedScreen();
+      }
+      if (state.activeChatUser) {
+        loadChatMessages(state.activeChatUser, true);
+      }
+      if (typeof loadChatConversations === 'function') loadChatConversations(true);
+    } else {
+      showToast(res && res.error ? res.error : 'Could not restore message');
+    }
+  } catch (err) {
+    console.error('Restore error:', err);
+    showToast('Failed to restore message');
+  }
+}
+window.restoreTrashMessage = restoreTrashMessage;
+
+async function confirmPermanentDeleteMessage(msgId) {
+  if (!confirm('⚠️ Permanently delete this message?\n\nThis action cannot be undone.')) {
+    return;
+  }
+
+  try {
+    var res = await apiRequest('/api/chat/messages/permanent-delete', {
+      method: 'POST',
+      body: JSON.stringify({ message_ids: [msgId] })
+    });
+
+    if (res && res.success) {
+      showToast('Message permanently deleted');
+      var el = document.querySelector('[data-trash-id="' + msgId + '"]');
+      if (el) el.remove();
+      var container = document.getElementById('recentlyDeletedContainer');
+      if (container && !container.children.length) {
+        loadRecentlyDeletedScreen();
+      }
+    } else {
+      showToast(res && res.error ? res.error : 'Could not delete message');
+    }
+  } catch (err) {
+    console.error('Permanent delete error:', err);
+    showToast('Failed to permanently delete message');
+  }
+}
+window.confirmPermanentDeleteMessage = confirmPermanentDeleteMessage;
 
 function openCameraForActiveChat() {
   if (state.activeChatUser) {
