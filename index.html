@@ -2371,10 +2371,12 @@
                   <h2 class="text-lg font-bold text-white tracking-tight">Chat</h2>
               </div>
               
-              <div class="relative bg-[#121215] border border-neutral-800/80 rounded-[12px] flex items-center overflow-hidden transition-all duration-300 focus-within:border-amber-500/50 focus-within:bg-neutral-900">
-                  <span class="pl-3.5 pr-2 text-zinc-500"><i class="fa-solid fa-terminal text-[10px]"></i></span>
-                  <input type="text" id="chatSearchInput" oninput="handleChatSearchInput(event)" placeholder="> search_signals..." class="w-full bg-transparent py-2.5 text-xs text-white font-mono-tag placeholder-zinc-600 focus:outline-none" aria-label="Search conversations">
-                  <button type="button" id="chatSearchClearBtn" onclick="clearChatSearch()" class="hidden pr-3 flex items-center text-gray-400 hover:text-white text-xs cursor-pointer bg-transparent">
+              <div class="relative">
+                  <span class="absolute inset-y-0 left-3.5 flex items-center pointer-events-none text-gray-500 text-xs">
+                      <i class="fa-solid fa-magnifying-glass"></i>
+                  </span>
+                  <input type="text" id="chatSearchInput" oninput="handleChatSearchInput(event)" placeholder="Find people..." class="w-full bg-[#121215] border border-neutral-800/80 rounded-xl pl-9 pr-8 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-neutral-600 transition shadow-inner font-sans" aria-label="Search conversations">
+                  <button type="button" id="chatSearchClearBtn" onclick="clearChatSearch()" class="hidden absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-white text-xs cursor-pointer">
                       <i class="fa-solid fa-xmark"></i>
                   </button>
               </div>
@@ -2395,35 +2397,24 @@
 
           <!-- ================= STATE B: EMPTY CHAT HOME ================= -->
           <div id="state-empty" class="hidden flex-col flex-grow items-center justify-center px-6 text-center py-16 pb-32">
-              <!-- Graphic -->
-              <div class="relative w-16 h-16 mb-8 flex items-center justify-center">
-                <!-- Outer dashed box -->
-                <div class="absolute inset-0 border border-dashed border-zinc-700/50 rounded-2xl rotate-3"></div>
-                <div class="absolute inset-0 border border-dashed border-zinc-700/50 rounded-2xl -rotate-3"></div>
-                <!-- Inner Solid Box -->
-                <div class="relative w-10 h-10 bg-neutral-900 border border-neutral-800 rounded-xl flex items-center justify-center z-10 shadow-2xl">
-                  <i class="fa-solid fa-satellite-dish text-zinc-500 text-sm"></i>
-                </div>
-                <!-- Blinking Amber Dot -->
-                <div class="absolute top-2 right-2 w-2 h-2 z-20">
-                  <span class="absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75 animate-ping"></span>
-                  <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                </div>
+              
+              <!-- Clean Minimal Graphic -->
+              <div class="w-16 h-16 rounded-full bg-neutral-900/50 border border-neutral-800 flex items-center justify-center text-zinc-500 mb-6 shadow-inner">
+                  <i class="fa-regular fa-comments text-2xl"></i>
               </div>
-
-              <!-- Typography -->
-              <h3 class="text-[11px] font-mono-tag font-bold text-white tracking-[0.2em] uppercase mb-3">No Active Signals</h3>
-              <p class="text-[12px] text-zinc-500 leading-relaxed max-w-[260px] font-medium">
-                The radar is quiet. Find your people and initialize a secure connection.
+              
+              <!-- Authentic Typography -->
+              <h3 class="text-sm font-black text-white tracking-tight uppercase mb-2">It's quiet in here.</h3>
+              <p class="text-[13px] text-zinc-400 leading-relaxed max-w-[240px]">
+                  No forced small talk.<br>Find your people and start a real conversation.
               </p>
-
-              <!-- Terminal Button -->
-              <div class="mt-10">
-                <button type="button" onclick="switchScreenView('search')" class="group px-5 py-3 bg-neutral-950 border border-neutral-800 hover:border-amber-500 text-amber-500 rounded-xl text-[10px] font-mono-tag font-bold uppercase tracking-widest transition-all duration-300 cursor-pointer shadow-[0_0_0_rgba(245,158,11,0)] hover:shadow-[0_0_15px_rgba(245,158,11,0.15)] active:scale-95">
-                  <span class="opacity-50 mr-2 group-hover:opacity-100 transition-opacity">]</span>
-                  Initialize Connection
-                  <span class="opacity-50 ml-2 group-hover:opacity-100 transition-opacity">[</span>
-                </button>
+              
+              <!-- Kandid Amber CTA Button -->
+              <div class="mt-8">
+                  <button type="button" onclick="switchScreenView('search')" class="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-xs font-bold tracking-widest uppercase transition-all shadow-[0_4px_20px_rgba(245,158,11,0.15)] cursor-pointer active:scale-95 flex items-center gap-2">
+                      <span>DISCOVER PEOPLE</span>
+                      <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                  </button>
               </div>
           </div>
 
