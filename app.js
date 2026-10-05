@@ -3790,6 +3790,8 @@ function selectSearchCategory(cat) {
 
   if (state.searchQuery && state.searchQuery.trim()) {
     _displayCategoryResults(cat);
+  } else {
+    loadSearchDiscovery();
   }
 }
 window.selectSearchCategory = selectSearchCategory;
@@ -4116,6 +4118,10 @@ async function loadSearchDiscovery() {
       var suggested = data.people.filter(function(user) {
         return user.connection_status === 'connect' || (!user.is_connected && !user.is_requested);
       });
+      if (suggested.length === 0) {
+        aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">NO NEW PEOPLE NEARBY</div>';
+        return;
+      }
       suggested.slice(0, 5).forEach(function(p) {
         var card = document.createElement('div');
         card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:border-neutral-700 transition mb-2.5';
