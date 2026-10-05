@@ -5413,6 +5413,50 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if is_blocked_static_path(norm_path):
             return self.send_json(403, {"error": "Access denied"})
 
+        # Viral Loop & Open Graph Engine: Dynamic link previews for WhatsApp/Twitter
+        if path == "/" or path == "/index.html":
+            moment_id = query.get("moment", [""])[0]
+            if moment_id:
+                try:
+                    with open("index.html", "r", encoding="utf-8") as f:
+                        html_content = f.read()
+                    conn = get_db()
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT p.image_url, p.caption, u.handle FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?", (moment_id,))
+                    post = cursor.fetchone()
+                    conn.close()
+                    
+                    if post:
+                        img_url = post["image_url"] or ""
+                        caption = post["caption"] or "A Kandid moment"
+                        handle = post["handle"] or "someone"
+                        
+                        if img_url and img_url.startswith("/"):
+                            img_url = f"https://kindid.in{img_url}"
+                            
+                        import html
+                        safe_caption = html.escape(caption)
+                        safe_handle = html.escape(handle)
+                        
+                        og_tags = f'''
+  <meta property="og:title" content="Moment by @{safe_handle} on Kandid" />
+  <meta property="og:description" content="{safe_caption}" />
+  <meta property="og:image" content="{img_url}" />
+  <meta property="og:type" content="website" />
+  <meta property="twitter:card" content="summary_large_image" />
+  <meta property="twitter:image" content="{img_url}" />
+'''
+                        html_content = html_content.replace("</title>", "</title>\n" + og_tags)
+                        
+                    self.send_response(200)
+                    self.send_header("Content-type", "text/html; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(html_content.encode("utf-8"))
+                    return
+                except Exception as e:
+                    print("OG Inject Error:", e)
+                    pass # Fallback to standard serving below
+
         if path in ["/health", "/healthz", "/api/health"]:
             db_engine = "postgresql" if DATABASE_URL else "sqlite"
             return self.send_json(200, {
