@@ -2330,10 +2330,13 @@
               <div class="flex items-center space-x-2">
                   <h1 class="text-sm font-bold tracking-[0.25em] text-white">KANDID</h1>
               </div>
-              <div class="flex items-center">
-                  <button type="button" onclick="switchScreenView('notifications')" aria-label="Notifications" class="relative w-8 h-8 rounded-full bg-neutral-900/80 border border-neutral-800/80 flex items-center justify-center text-gray-300 hover:text-amber-400 hover:border-neutral-700 transition cursor-pointer">
-                      <i class="fa-regular fa-bell text-xs" aria-hidden="true"></i>
-                      <span id="chatNotifDot" class="hidden absolute top-2 right-2 w-1.5 h-1.5 bg-amber-500 rounded-full" aria-hidden="true"></span>
+              <div class="flex items-center gap-2">
+                  <button type="button" class="singularity-btn no-notifications" id="chatNotifBtn" onclick="switchScreenView('notifications')" title="Notifications">
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="singularity-icon">
+                          <ellipse cx="12" cy="12" rx="9" ry="3.5" transform="rotate(-25 12 12)"></ellipse>
+                          <circle cx="12" cy="12" r="3.5" fill="#000" stroke="currentColor" stroke-width="1.5"></circle>
+                          <circle class="core-spark" cx="12" cy="12" r="1.5" fill="currentColor"></circle>
+                      </svg>
                   </button>
               </div>
           </header>
@@ -4932,6 +4935,6 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="app.js?v=5.8.19"></script>
+  <script src="app.js?v=5.8.20"></script>
 </body>
 </html>

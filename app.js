@@ -537,14 +537,7 @@ function switchScreenView(screenName) {
     }
   }
 
-  var notifBtn = document.getElementById('notifBtn');
-  if (notifBtn) {
-    if (screenName === 'notifications') {
-      notifBtn.className = 'w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center text-amber-400 relative shadow-sm cursor-pointer notif-btn';
-    } else {
-      notifBtn.className = 'w-8 h-8 bg-zinc-900 border border-zinc-800 rounded-full flex items-center justify-center text-zinc-400 hover:text-white transition-colors relative shadow-sm cursor-pointer notif-btn';
-    }
-  }
+
 
   if (screenName === 'search') {
     loadSearchDiscovery();
@@ -6324,6 +6317,17 @@ document.addEventListener('DOMContentLoaded', async function() {
                           notifBtn.classList.add('no-notifications');
                       }
                   }
+                  
+                  var chatNotifBtn = document.getElementById('chatNotifBtn');
+                  if (chatNotifBtn) {
+                      if (hb.unreadCount > 0) {
+                          chatNotifBtn.classList.remove('no-notifications');
+                          chatNotifBtn.classList.add('has-notifications');
+                      } else {
+                          chatNotifBtn.classList.remove('has-notifications');
+                          chatNotifBtn.classList.add('no-notifications');
+                      }
+                  }
 
                   // Update YOU page Requests Badge & People Section
                   var pendingReqCount = hb.pendingRequestsCount || 0;
@@ -8773,6 +8777,16 @@ async function loadNotifications() {
         notifBtn.classList.add('no-notifications');
       }
     }
+    var chatNotifBtn = document.getElementById('chatNotifBtn');
+    if (chatNotifBtn) {
+      if (unreadCount > 0) {
+        chatNotifBtn.classList.remove('no-notifications');
+        chatNotifBtn.classList.add('has-notifications');
+      } else {
+        chatNotifBtn.classList.remove('has-notifications');
+        chatNotifBtn.classList.add('no-notifications');
+      }
+    }
 
     if (!container) return;
     container.innerHTML = '';
@@ -8900,6 +8914,11 @@ async function markAllNotificationsRead() {
     notifBtn.classList.remove('has-notifications');
     notifBtn.classList.add('no-notifications');
   }
+  var chatNotifBtn = document.getElementById('chatNotifBtn');
+  if (chatNotifBtn) {
+    chatNotifBtn.classList.remove('has-notifications');
+    chatNotifBtn.classList.add('no-notifications');
+  }
   showToast('All notifications marked as read ✓');
   await loadNotifications();
 }
@@ -8986,13 +9005,15 @@ async function checkChatUnreadBadge() {
       }
     }
     // Also update chat header notification dot if unread notifications exist
-    var chatNotifDot = document.getElementById('chatNotifDot');
-    if (chatNotifDot) {
+    var chatNotifBtn = document.getElementById('chatNotifBtn');
+    if (chatNotifBtn) {
       var notifData = await apiRequest('/api/notifications?unread=1');
       if (notifData && (notifData.unread_count > 0 || notifData.unreadCount > 0)) {
-        chatNotifDot.classList.remove('hidden');
+        chatNotifBtn.classList.remove('no-notifications');
+        chatNotifBtn.classList.add('has-notifications');
       } else {
-        chatNotifDot.classList.add('hidden');
+        chatNotifBtn.classList.remove('has-notifications');
+        chatNotifBtn.classList.add('no-notifications');
       }
       if (notifData && typeof notifData.pendingRequestsCount === 'number' && typeof updatePendingRequestsUI === 'function') {
         updatePendingRequestsUI(notifData.pendingRequestsCount);
