@@ -4112,7 +4112,7 @@ async function loadSearchDiscovery() {
   }
 
   if (state.searchCategory === 'people') {
-    if (Array.isArray(data.people) && data.people.length > 0) {
+    if (Array.isArray(data.people)) {
       aroundContainer.innerHTML = '';
             // Filter out people we are already connected to or requested
       var suggested = data.people.filter(function(user) {
