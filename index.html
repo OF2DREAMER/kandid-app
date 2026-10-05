@@ -2382,26 +2382,26 @@
           </div>
 
           <!-- ================= STATE B: EMPTY CHAT HOME ================= -->
-          <div id="state-empty" class="hidden flex-col flex-grow items-center justify-center px-6 text-center py-16 pb-32">
+          <div id="state-empty" class="hidden flex-col flex-grow items-center justify-center px-6 text-center py-10 pb-20">
               
-              <!-- Clean Minimal Graphic -->
-              <div class="w-16 h-16 rounded-full bg-neutral-900/50 border border-neutral-800 flex items-center justify-center text-zinc-500 mb-6 shadow-inner">
-                  <i class="fa-regular fa-comments text-2xl"></i>
+              <!-- Glowing Animated Graphic -->
+              <div class="relative flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/5 border-[1.5px] border-amber-500/25 text-amber-500 mb-6 shadow-[0_0_35px_rgba(245,158,11,0.12)]">
+                  <div class="absolute -inset-1.5 rounded-full border border-dashed border-amber-500/20" style="animation: spin 12s linear infinite;"></div>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="relative z-10">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                  </svg>
               </div>
               
               <!-- Authentic Typography -->
-              <h3 class="text-sm font-black text-white tracking-tight uppercase mb-2">It's quiet in here.</h3>
-              <p class="text-[13px] text-zinc-400 leading-relaxed max-w-[240px]">
+              <h3 class="text-[10.5px] tracking-[1.5px] uppercase text-amber-500 font-extrabold font-mono-meta mb-2">It's quiet in here.</h3>
+              <p class="text-xs text-zinc-400 leading-relaxed max-w-[230px] mx-auto mb-7">
                   No forced small talk.<br>Find your people and start a real conversation.
               </p>
               
               <!-- Kandid Amber CTA Button -->
-              <div class="mt-8">
-                  <button type="button" onclick="switchScreenView('search')" class="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-xs font-bold tracking-widest uppercase transition-all shadow-[0_4px_20px_rgba(245,158,11,0.15)] cursor-pointer active:scale-95 flex items-center gap-2">
-                      <span>DISCOVER PEOPLE</span>
-                      <i class="fa-solid fa-arrow-right text-[10px]"></i>
-                  </button>
-              </div>
+              <button type="button" onclick="switchScreenView('search')" class="px-[22px] py-[13px] bg-amber-500 hover:bg-amber-400 text-black rounded-[14px] text-[11px] font-bold tracking-[1px] uppercase transition-transform shadow-[0_8px_25px_rgba(245,158,11,0.25)] cursor-pointer active:scale-95 font-mono-meta border-0">
+                  DISCOVER PEOPLE &rarr;
+              </button>
           </div>
 
           <!-- ================= STATE C: NEW MESSAGE ENTRY STATE ================= -->
