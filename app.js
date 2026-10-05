@@ -10353,7 +10353,16 @@ function openEditProfileModal() {
     if (nameInp) nameInp.value = state.currentUser.name || '';
     if (userInp) userInp.value = (state.currentUser.handle || state.currentUser.username || '').replace('@', '');
     if (bioInp) bioInp.value = state.currentUser.bio || 'Capturing ordinary days.';
-    if (campusInp) campusInp.value = state.currentUser.campus || state.currentUser.community || 'North City Community';
+    var campusNameStr = state.currentUser.campus || state.currentUser.community || 'North City Community';
+    if (campusInp) {
+      if (campusNameStr === 'Independent Creator / City') {
+        campusInp.value = '';
+        campusInp.placeholder = 'e.g. Freelancer or Google Tech Park';
+      } else {
+        campusInp.value = campusNameStr;
+        campusInp.placeholder = '';
+      }
+    }
     if (cityInp) cityInp.value = state.currentUser.location_city || state.currentUser.city || 'Supaul, Bihar';
     if (vibeInp) vibeInp.value = state.currentUser.vibe || 'Creator';
     
@@ -10460,6 +10469,9 @@ async function saveUserProfileChanges() {
   var newHandle = userInp ? userInp.value.trim().replace('@', '') : '';
   var newBio = bioInp ? bioInp.value.trim() : '';
   var newCampus = campusInp ? campusInp.value.trim() : '';
+  if (!newCampus && state.currentUser && (state.currentUser.campus === 'Independent Creator / City' || state.currentUser.community === 'Independent Creator / City')) {
+    newCampus = 'Independent Creator / City';
+  }
   var newCity = cityInp ? cityInp.value.trim() : '';
   var newVibe = vibeInp ? vibeInp.value.trim() : '';
 
