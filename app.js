@@ -4112,7 +4112,11 @@ async function loadSearchDiscovery() {
   if (state.searchCategory === 'people') {
     if (Array.isArray(data.people) && data.people.length > 0) {
       aroundContainer.innerHTML = '';
-      data.people.slice(0, 6).forEach(function(p) {
+            // Filter out people we are already connected to or requested
+      var suggested = data.people.filter(function(user) {
+        return user.connection_status === 'connect' || (!user.is_connected && !user.is_requested);
+      });
+      suggested.slice(0, 5).forEach(function(p) {
         var card = document.createElement('div');
         card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:border-neutral-700 transition mb-2.5';
         var avatarUrl = escapeHtml(p.avatar_url || '');
