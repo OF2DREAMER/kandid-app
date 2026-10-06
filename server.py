@@ -7907,6 +7907,39 @@ class KandidHandler(SimpleHTTPRequestHandler):
             """, (now_iso, resolved_partner_id, user_id))
             conn.commit()
 
+            # Cursor pagination: `limit` (default 50) and optional `before_id` (older cursor).
+            try:
+                limit_val = int(query.get("limit", ["50"])[0])
+            except (TypeError, ValueError):
+                limit_val = 50
+            limit_val = max(1, min(limit_val, 100))
+
+            before_id = query.get("before_id", [""])[0].strip()
+            cursor_created_at = None
+            if before_id:
+                # Resolve the cursor strictly inside this authorized conversation so a
+                # cursor from another conversation/user cannot be used to page across it.
+                cursor.execute("""
+                    SELECT created_at, id FROM messages
+                    WHERE id = ?
+                      AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+                """, (before_id, user_id, resolved_partner_id, resolved_partner_id, user_id))
+                cursor_row = cursor.fetchone()
+                if not cursor_row:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Invalid before_id cursor", "messages": []})
+                cursor_created_at = cursor_row["created_at"]
+
+            msg_params = [user_id, resolved_partner_id, resolved_partner_id, user_id, user_id, user_id]
+            cursor_clause = ""
+            if before_id:
+                # Strictly older than the cursor, tie-broken by id to match
+                # `ORDER BY created_at DESC, id DESC` without skips/duplicates.
+                cursor_clause = "\n                  AND (created_at < ? OR (created_at = ? AND id < ?))"
+                msg_params.extend([cursor_created_at, cursor_created_at, before_id])
+            # Fetch one extra row to detect whether an older page still exists.
+            msg_params.append(limit_val + 1)
+
             cursor.execute("""
                 SELECT id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id, is_deleted_for_everyone, sender_state, receiver_state
                 FROM messages
@@ -7914,12 +7947,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                   AND (
                       (sender_id = ? AND sender_state = 'active') OR
                       (receiver_id = ? AND receiver_state = 'active')
-                  )
+                  )""" + cursor_clause + """
                 ORDER BY created_at DESC, id DESC
-                LIMIT 50
-            """, (user_id, resolved_partner_id, resolved_partner_id, user_id, user_id, user_id))
-            # Newest 50 persisted messages only (bandwidth bound); reversed to chronological order.
-            raw_msgs = [dict(r) for r in cursor.fetchall()]
+                LIMIT ?
+            """, msg_params)
+            # Newest `limit` persisted messages (older than before_id when supplied); reversed to chronological order.
+            page_rows = [dict(r) for r in cursor.fetchall()]
+            has_more = len(page_rows) > limit_val
+            raw_msgs = page_rows[:limit_val]
             raw_msgs.reverse()
             
             msgs = []
@@ -8003,7 +8038,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {
                 "success": True,
                 "messages": msgs,
-                "resolved_chat_id": resolved_partner_id
+                "resolved_chat_id": resolved_partner_id,
+                "has_more": has_more
             })
 
         if path.startswith("/api/chat/attachments/"):
