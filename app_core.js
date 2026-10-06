@@ -10150,12 +10150,23 @@ async function loadChatMessages(userId, isSilent = false) {
   var container = document.getElementById('chatMessageHistoryV2');
   if (!container) return;
 
+  // Reset the older-history cache when opening a different conversation.
+  var isNewConversation = (state.chatOlderForUser !== userId);
+  if (isNewConversation) {
+    state.chatOlderForUser = userId;
+    state.chatOlderMessages = [];
+    state.chatHasMore = true;
+    state.chatOldestId = null;
+    state.chatOlderLoading = false;
+    delete container.dataset.msgSig;
+  }
+
   if (!isSilent && (!container.children.length || container.innerText.includes('LOADING'))) {
       container.innerHTML = '<div class="text-center py-4 text-[10px] text-zinc-500 font-mono-tag">PRIVATE CONVERSATION • LOADING...</div>';
   }
 
   var myUid = getActiveUserId();
-  var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid));
+  var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid) + '&limit=50');
   if (data && data.success && Array.isArray(data.messages)) {
     if (state.currentUser && state.currentUser.id) {
       localStorage.setItem('kandid_active_uid', state.currentUser.id);
@@ -10172,22 +10183,52 @@ async function loadChatMessages(userId, isSilent = false) {
     }
     container.dataset.msgSig = msgSignature;
 
-    if (data.messages.length === 0) {
+    if (data.messages.length === 0 && !state.chatOlderMessages.length) {
       container.innerHTML = 
         '<div class="text-center py-10 space-y-1 my-auto">' +
           '<span class="text-2xl block">👋</span>' +
           '<p class="text-xs text-white font-bold font-mono-tag uppercase">START OF THE CONVERSATION</p>' +
           '<p class="text-[10px] text-zinc-500 font-mono-tag">Messages are private & encrypted in transit.</p>' +
         '</div>';
+      state.chatHasMore = false;
       return;
     }
 
-    container.innerHTML = '';
-    var myId = String(data.resolved_user_id || myUid || '').toLowerCase();
-    var activePartnerId = String(data.resolved_chat_id || userId || '').toLowerCase();
+    state.chatMyId = String(data.resolved_user_id || myUid || '').toLowerCase();
+    state.chatPartnerId = String(data.resolved_chat_id || userId || '').toLowerCase();
 
+    // Once older pages are loaded they own the has_more flag; only the initial page sets it.
+    if (!state.chatOlderMessages.length) {
+      state.chatHasMore = (data.has_more === true);
+    }
+
+    var allMessages = state.chatOlderMessages.concat(data.messages);
+    state.chatOldestId = allMessages.length ? allMessages[0].id : null;
+
+    // Only jump to the bottom on open or when already near the bottom; never yank
+    // a user who is reading older messages back down.
+    var wasNearBottom = isNewConversation || ((container.scrollHeight - container.scrollTop - container.clientHeight) < 80);
+    var prevScrollTop = container.scrollTop;
+
+    renderChatMessages(container, allMessages);
+
+    if (wasNearBottom) {
+      container.scrollTop = container.scrollHeight;
+    } else {
+      container.scrollTop = prevScrollTop;
+    }
+  }
+}
+window.loadChatMessages = loadChatMessages;
+
+// Renders a chronological (oldest -> newest) list of chat messages into the container.
+function renderChatMessages(container, messages) {
+    var myId = state.chatMyId;
+    var activePartnerId = state.chatPartnerId;
+
+    container.innerHTML = '';
     var lastDateGroup = null;
-    data.messages.forEach(function(m) {
+    messages.forEach(function(m) {
       var senderId = String(m.sender_id || '').toLowerCase();
       var isMe = (senderId === myId) || (senderId !== activePartnerId);
       
@@ -10355,11 +10396,59 @@ async function loadChatMessages(userId, isSilent = false) {
 
       container.appendChild(bubbleWrap);
     });
+}
+window.renderChatMessages = renderChatMessages;
 
-    container.scrollTop = container.scrollHeight;
+// ---------------------------------------------------------------------
+// Chat history pagination: load older messages when the user reaches the top
+// ---------------------------------------------------------------------
+async function loadOlderChatMessages() {
+  if (state.chatOlderLoading || !state.chatHasMore) return;
+  if (state.activeScreen !== 'chat-conversation' || !state.activeChatUser) return;
+  var container = document.getElementById('chatMessageHistoryV2');
+  if (!container) return;
+  var oldestId = state.chatOldestId;
+  if (!oldestId) return;
+
+  state.chatOlderLoading = true;
+  try {
+    var myUid = getActiveUserId();
+    var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(state.activeChatUser) + '&user_id=' + encodeURIComponent(myUid) + '&limit=50&before_id=' + encodeURIComponent(oldestId));
+    if (data && data.success && Array.isArray(data.messages) && data.messages.length) {
+      var oldScrollHeight = container.scrollHeight;
+      var oldScrollTop = container.scrollTop;
+
+      state.chatOlderMessages = data.messages.concat(state.chatOlderMessages);
+      state.chatHasMore = (data.has_more === true);
+      var allMessages = state.chatOlderMessages.concat(state.chatLoadedMessages || []);
+      state.chatOldestId = allMessages.length ? allMessages[0].id : null;
+
+      renderChatMessages(container, allMessages);
+
+      // Keep the user's viewport anchored on the same message after the prepend.
+      container.scrollTop = oldScrollTop + (container.scrollHeight - oldScrollHeight);
+    } else {
+      state.chatHasMore = false;
+    }
+  } catch (err) {
+    console.error('Load older messages error:', err);
+  } finally {
+    state.chatOlderLoading = false;
   }
 }
-window.loadChatMessages = loadChatMessages;
+window.loadOlderChatMessages = loadOlderChatMessages;
+
+// Bind a single guarded scroll listener that loads older messages at the top.
+(function initChatHistoryScroll() {
+  var container = document.getElementById('chatMessageHistoryV2');
+  if (!container || container.dataset.olderBound === '1') return;
+  container.dataset.olderBound = '1';
+  container.addEventListener('scroll', function() {
+    if (container.scrollTop <= 40) {
+      loadOlderChatMessages();
+    }
+  }, { passive: true });
+})();
 
 // =====================================================================
 // CHAT MESSAGE DELETION & RECOVERY MODULE
