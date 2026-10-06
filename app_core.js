@@ -507,7 +507,7 @@ function switchScreenView(screenName) {
   }
 
   document.querySelectorAll('.dock-item').forEach(function(btn) {
-    if (btn.dataset.screen === screenName || ((screenName === 'memories' || screenName === 'progress' || screenName === 'settings' || screenName === 'report' || screenName === 'block' || screenName === 'recently-deleted') && btn.dataset.screen === 'you') || (screenName === 'empty-search' && btn.dataset.screen === 'search') || (screenName.startsWith('chat-') && btn.dataset.screen === 'chat-home')) {
+    if (btn.dataset.screen === screenName || ((screenName === 'memories' || screenName === 'progress' || screenName === 'settings' || screenName === 'privacy-settings' || screenName === 'report' || screenName === 'block' || screenName === 'recently-deleted') && btn.dataset.screen === 'you') || (screenName === 'empty-search' && btn.dataset.screen === 'search') || (screenName.startsWith('chat-') && btn.dataset.screen === 'chat-home')) {
       btn.className = 'dock-item text-amber-500 flex flex-col items-center cursor-pointer active';
     } else {
       btn.className = 'dock-item text-zinc-500 hover:text-white flex flex-col items-center transition-colors cursor-pointer';
@@ -547,7 +547,7 @@ function switchScreenView(screenName) {
     loadMemoriesScreen();
   } else if (screenName === 'progress') {
     loadProgressScreen();
-  } else if (screenName === 'settings') {
+  } else if (screenName === 'settings' || screenName === 'privacy-settings') {
     loadSettingsScreen();
   } else if (screenName === 'notifications') {
     loadNotifications();
