@@ -9612,6 +9612,13 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
     campus: campus || ''
   };
 
+  // Synchronously wipe chat container DOM to prevent old friend messages from lingering
+  var historyContainer = document.getElementById('chatMessageHistoryV2');
+  if (historyContainer) {
+    delete historyContainer.dataset.msgSig;
+    historyContainer.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+  }
+
   clearChatReplyTo();
   closeChatAttachmentMenu();
   closeChatActionMenu();
@@ -10168,6 +10175,12 @@ async function loadChatMessages(userId, isSilent = false) {
 
   var myUid = getActiveUserId();
   var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid) + '&limit=50');
+  
+  // Guard against race conditions when switching conversations quickly
+  if (state.activeChatUser !== userId) {
+    return;
+  }
+
   if (data && data.success && Array.isArray(data.messages)) {
     if (state.currentUser && state.currentUser.id) {
       localStorage.setItem('kandid_active_uid', state.currentUser.id);
