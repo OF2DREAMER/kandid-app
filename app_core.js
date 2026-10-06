@@ -10548,7 +10548,7 @@ async function executeDeleteMessageForEveryone() {
   var msgId = activeTargetMessageId;
   closeChatMessageActionMenu();
 
-  if (!confirm('Delete for everyone? This message will be replaced with a tombstone for all participants.')) {
+  if (!confirm('Delete this message for everyone? It will be removed for all participants.')) {
     return;
   }
 
@@ -10573,11 +10573,10 @@ async function executeDeleteMessageForEveryone() {
           target.is_deleted_for_everyone = 1;
         }
       }
-      if (state.activeChatUser) {
-        await loadChatMessages(state.activeChatUser, true);
-      }
       showToast('Message deleted for everyone');
-      if (typeof loadChatConversations === 'function') loadChatConversations(true);
+      if (state.activeChatUser && typeof loadChatMessages === 'function') {
+        await loadChatMessages(state.activeChatUser, false);
+      }
     } else {
       showToast(res && res.error ? res.error : 'Failed to delete for everyone');
     }
@@ -10657,8 +10656,8 @@ async function restoreTrashMessage(msgId) {
       if (container && !container.children.length) {
         loadRecentlyDeletedScreen();
       }
-      if (state.activeChatUser) {
-        loadChatMessages(state.activeChatUser, true);
+      if (state.activeChatUser && typeof loadChatMessages === 'function') {
+        await loadChatMessages(state.activeChatUser, true);
       }
       if (typeof loadChatConversations === 'function') loadChatConversations(true);
     } else {
