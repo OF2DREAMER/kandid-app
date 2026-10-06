@@ -29,6 +29,22 @@ body {
   scrollbar-width: none;
 }
 
+/* Chat message action row (Reply / React / ⋮)
+   Reachable on every touch / coarse-pointer device; hover-revealed only on
+   devices that genuinely support hover with a fine pointer (mouse/trackpad). */
+.chat-msg-actions {
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .chat-msg-actions {
+    opacity: 0;
+  }
+  .group:hover .chat-msg-actions,
+  .group:focus-within .chat-msg-actions {
+    opacity: 1;
+  }
+}
+
 .apple-blur {
   backdrop-filter: blur(25px);
   -webkit-backdrop-filter: blur(25px);
