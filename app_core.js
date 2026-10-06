@@ -10159,10 +10159,11 @@ async function loadChatMessages(userId, isSilent = false) {
     state.chatOldestId = null;
     state.chatOlderLoading = false;
     delete container.dataset.msgSig;
-  }
-
-  if (!isSilent && (!container.children.length || container.innerText.includes('LOADING'))) {
-      container.innerHTML = '<div class="text-center py-4 text-[10px] text-zinc-500 font-mono-tag">PRIVATE CONVERSATION • LOADING...</div>';
+    if (!isSilent) {
+      container.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+    }
+  } else if (!isSilent && (!container.children.length || container.innerText.includes('LOADING'))) {
+      container.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
   }
 
   var myUid = getActiveUserId();
