@@ -313,14 +313,13 @@
           <button onclick="dismissDailyAlert()" class="text-zinc-500 hover:text-white text-xs cursor-pointer p-1">✕</button>
         </div>
       </div>
-      <header id="settingsHeader" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 space-y-1">
-          <button class="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer" onclick="closeSettings()">
-              <span>←</span> BACK
+      <header id="settingsHeader" style="display:none;" class="bg-[#09090b]/90 apple-blur px-4 py-3 border-b border-zinc-800/80 z-30 flex items-center justify-between">
+          <button class="flex items-center gap-1 text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer active:scale-95 transition-transform" onclick="closeSettings()">
+              <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg>
+              <span>Back</span>
           </button>
-          <div class="pt-1">
-              <h1 class="text-xl font-extrabold text-white tracking-tight uppercase font-mono-tag">SETTINGS</h1>
-              <p class="text-[10px] text-zinc-400 font-mono-tag tracking-wider">KANDID ACCOUNT & PRIVACY</p>
-          </div>
+          <h1 class="text-xs font-bold text-white tracking-widest uppercase font-mono-tag">Settings</h1>
+          <button class="text-xs font-bold text-amber-500 hover:text-amber-400 cursor-pointer active:scale-95 transition-transform" onclick="switchScreenView('you')">Done</button>
       </header>
       <!-- State Headers -->
       <header id="headerEmptySearch" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
@@ -1844,162 +1843,187 @@
 
 
       <!-- =================================================================
-           SECTION 10: SETTINGS SCREEN
+           SECTION 10: SETTINGS SCREEN (APPLE iOS INSET GROUPED STYLE)
            ================================================================= -->
       <section class="app-screen bg-[#09090b]" id="screen-settings" style="display:none;">
-          <div class="px-4 py-4 space-y-5 pb-32">
+          <div class="px-4 py-4 space-y-6 pb-36 max-w-lg mx-auto">
 
-              <!-- § 1. ACCOUNT -->
-              <div class="space-y-2">
-                  <div class="flex justify-between items-center px-1">
-                      <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold">ACCOUNT</span>
-                      <button class="text-[10px] text-amber-500 font-mono-tag font-bold cursor-pointer hover:underline" onclick="switchScreenView('you')">DONE</button>
+              <!-- § 1. ACCOUNT & SECURITY -->
+              <div class="space-y-1.5">
+                  <div class="px-2">
+                      <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold">ACCOUNT &amp; SECURITY</span>
                   </div>
-                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-lg">
+                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-xl">
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openEditProfileModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Edit Profile</h3>
-                                  <p class="text-[10px] text-zinc-400">Name, Bio, Avatar, Community &amp; City</p>
+                                  <p class="text-[10px] text-zinc-500 truncate">Name, Bio, Avatar, Community &amp; City</p>
                               </div>
                           </div>
-                          <span class="text-amber-500 font-mono-tag font-bold text-[10px]">EDIT</span>
+                          <div class="flex items-center space-x-1.5 shrink-0 pl-2">
+                              <span class="text-[10px] text-amber-500 font-bold font-mono-tag">EDIT</span>
+                              <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
+                          </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Username</h3>
-                                  <p class="text-[10px] text-amber-400 font-mono-tag" id="settingsUsername">@user</p>
                               </div>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag text-[10px]">via Edit Profile</span>
+                          <span class="text-[11px] text-amber-400 font-mono-tag font-medium truncate max-w-[140px]" id="settingsUsername">@user</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Email Address</h3>
-                                  <p class="text-[10px] text-zinc-400 font-mono-tag" id="settingsEmail">&mdash;</p>
                               </div>
                           </div>
-                          <span class="text-[9px] text-amber-400 font-mono-tag font-bold" id="settingsEmailVerified">VERIFIED &#10003;</span>
+                          <div class="flex items-center space-x-2 shrink-0">
+                              <span class="text-[11px] text-zinc-400 font-mono-tag truncate max-w-[140px]" id="settingsEmail">&mdash;</span>
+                              <span class="text-[9px] text-amber-400 font-mono-tag font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20" id="settingsEmailVerified">VERIFIED &#10003;</span>
+                          </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openChangePasswordModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Change Password</h3>
-                                  <p class="text-[10px] text-zinc-500">Update your account password</p>
+                                  <p class="text-[10px] text-zinc-500">Update account password</p>
                               </div>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Account Security</h3>
-                                  <p class="text-[10px] text-zinc-500">Session-based auth &middot; PBKDF2 hashed</p>
+                                  <p class="text-[10px] text-zinc-500">Session auth &middot; PBKDF2 hashed</p>
                               </div>
                           </div>
-                          <span class="text-[9px] text-amber-400 font-mono-tag font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">&#9679; SECURE</span>
+                          <span class="text-[9px] text-amber-400 font-mono-tag font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 shrink-0">&#9679; SECURE</span>
                       </div>
                   </div>
               </div>
 
-              <!-- § 2. PRIVACY & SAFETY -->
-              <div class="space-y-2">
-                  <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">PRIVACY &amp; SAFETY</span>
-                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-lg">
+              <!-- § 2. PRIVACY & PERMISSIONS -->
+              <div class="space-y-1.5">
+                  <div class="px-2">
+                      <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold">PRIVACY &amp; PERMISSIONS</span>
+                  </div>
+                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-xl">
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openPrivacyModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Profile Privacy</h3>
-                                  <p class="text-[10px] text-amber-400 font-mono-tag" id="settingsProfilePrivacyLabel">PUBLIC · Visible across Kandid</p>
                               </div>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <div class="flex items-center space-x-1.5 shrink-0">
+                              <span class="text-[11px] text-amber-400 font-mono-tag" id="settingsProfilePrivacyLabel">PUBLIC</span>
+                              <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
+                          </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openPrivacyModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Location &amp; Discovery</h3>
-                                  <p class="text-[10px] text-amber-400 font-mono-tag">Approximate: ON &middot; Exact GPS: NEVER PUBLIC</p>
                               </div>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <div class="flex items-center space-x-1.5 shrink-0">
+                              <span class="text-[11px] text-amber-400 font-mono-tag">Approximate</span>
+                              <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
+                          </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openPrivacyModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                               </div>
-                              <div>
-                                  <h3 class="text-xs font-bold text-white tracking-wide">Connection Permissions</h3>
-                                  <p class="text-[10px] text-zinc-400">Messages &amp; connection request permissions</p>
-                              </div>
-                          </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="switchScreenView('block-list')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
-                              </div>
-                              <h3 class="text-xs font-bold text-white tracking-wide">Blocked People</h3>
-                          </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openPrivacyModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                              </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Moment Visibility</h3>
-                                  <p class="text-[10px] text-zinc-400">Control who can discover your Moments</p>
                               </div>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openPrivacyModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m3 0h1m-4 0a1 1 0 011-1v-1a1 1 0 011-1h2a1 1 0 011 1v1a1 1 0 011 1m-6 0h6"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m3 0h1m-4 0a1 1 0 011-1v-1a1 1 0 011-1h2a1 1 0 011 1v1a1 1 0 011 1m-6 0h6"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Community Privacy</h3>
-                                  <p class="text-[10px] text-zinc-400">Community membership &amp; activity visibility</p>
                               </div>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openPrivacyModal()">
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                              </div>
+                              <div class="min-w-0">
+                                  <h3 class="text-xs font-bold text-white tracking-wide">Connection Permissions</h3>
+                              </div>
+                          </div>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('camera_access')">
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                              </div>
+                              <div class="min-w-0">
+                                  <h3 class="text-xs font-bold text-white tracking-wide">Camera Access</h3>
+                                  <p class="text-[10px] text-zinc-500">Dual-camera capture permission</p>
+                              </div>
+                          </div>
+                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_camera_access">
+                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_camera_access"></div>
+                          </div>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('ambient_audio')">
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
+                              </div>
+                              <div class="min-w-0">
+                                  <h3 class="text-xs font-bold text-white tracking-wide">Ambient Audio</h3>
+                                  <p class="text-[10px] text-zinc-500">Microphone for audio context</p>
+                              </div>
+                          </div>
+                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_ambient_audio">
+                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_ambient_audio"></div>
+                          </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('chat_retention')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Keep Deleted Messages</h3>
-                                  <p class="text-[10px] text-zinc-500" id="settingsChatRetentionSubtext">30-day recovery window for deleted messages</p>
+                                  <p class="text-[10px] text-zinc-500" id="settingsChatRetentionSubtext">30-day recovery window</p>
                               </div>
                           </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_chat_retention">
@@ -2007,33 +2031,45 @@
                           </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="switchScreenView('recently-deleted')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Recently Deleted</h3>
-                                  <p class="text-[10px] text-amber-400 font-mono-tag">View &amp; restore recoverable messages</p>
                               </div>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <div class="flex items-center space-x-1.5 shrink-0">
+                              <span class="text-[10px] text-amber-400 font-mono-tag">Restore</span>
+                              <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
+                          </div>
+                      </div>
+                      <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="switchScreenView('block-list')">
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                              </div>
+                              <h3 class="text-xs font-bold text-white tracking-wide">Blocked People</h3>
+                          </div>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                   </div>
-                  <p class="text-[9px] text-zinc-600 font-mono-tag px-1 leading-relaxed">Your exact live location is never stored, shared, or made public. Kandid uses coarse approximate positioning only for Nearby/Radar discovery.</p>
               </div>
 
-              <!-- § 3. NOTIFICATIONS -->
-              <div class="space-y-2">
-                  <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">NOTIFICATIONS</span>
-                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-lg">
+              <!-- § 3. NOTIFICATIONS & ACTIVITY -->
+              <div class="space-y-1.5">
+                  <div class="px-2">
+                      <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold">NOTIFICATIONS &amp; ACTIVITY</span>
+                  </div>
+                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-xl">
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('moment_reminders')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Moments &amp; Activity</h3>
-                                  <p class="text-[10px] text-zinc-500">Daily capture reminder &amp; connection activity</p>
+                                  <p class="text-[10px] text-zinc-500">Daily capture reminders</p>
                               </div>
                           </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_moment_reminders">
@@ -2041,13 +2077,13 @@
                           </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('community_activity')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Community Updates</h3>
-                                  <p class="text-[10px] text-zinc-500">Drops, events &amp; community moments</p>
+                                  <p class="text-[10px] text-zinc-500">Drops &amp; community moments</p>
                               </div>
                           </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_community_activity">
@@ -2055,13 +2091,13 @@
                           </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('messages')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                               </div>
-                              <div>
-                                  <h3 class="text-xs font-bold text-white tracking-wide">Direct Chat</h3>
-                                  <p class="text-[10px] text-zinc-500">New messages &amp; chat requests</p>
+                              <div class="min-w-0">
+                                  <h3 class="text-xs font-bold text-white tracking-wide">Direct Chat Notifications</h3>
+                                  <p class="text-[10px] text-zinc-500">New messages &amp; requests</p>
                               </div>
                           </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_messages">
@@ -2071,79 +2107,43 @@
                   </div>
               </div>
 
-              <!-- § 4. CREATION & MEDIA -->
-              <div class="space-y-2">
-                  <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">CREATION &amp; MEDIA</span>
-                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-lg">
-                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('camera_access')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                              </div>
-                              <div>
-                                  <h3 class="text-xs font-bold text-white tracking-wide">Camera Access</h3>
-                                  <p class="text-[10px] text-zinc-500">Dual-camera capture for Moments</p>
-                              </div>
-                          </div>
-                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_camera_access">
-                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_camera_access"></div>
-                          </div>
-                      </div>
-                      <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('ambient_audio')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-                              </div>
-                              <div>
-                                  <h3 class="text-xs font-bold text-white tracking-wide">Ambient Audio</h3>
-                                  <p class="text-[10px] text-zinc-500">Microphone for audio context in Moments</p>
-                              </div>
-                          </div>
-                          <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_ambient_audio">
-                              <div class="w-5 h-5 bg-black rounded-full transition-transform transform translate-x-4" id="toggleThumb_ambient_audio"></div>
-                          </div>
-                      </div>
+              <!-- § 4. PREFERENCES & MEDIA -->
+              <div class="space-y-1.5">
+                  <div class="px-2">
+                      <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold">PREFERENCES &amp; MEDIA</span>
+                  </div>
+                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-xl">
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('high_quality_media')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">High Quality Media</h3>
-                                  <p class="text-[10px] text-zinc-500">Save Moments at full resolution (uses more data)</p>
                               </div>
                           </div>
                           <div class="w-10 h-6 bg-zinc-800 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_high_quality_media">
                               <div class="w-5 h-5 bg-zinc-500 rounded-full transition-transform transform translate-x-0" id="toggleThumb_high_quality_media"></div>
                           </div>
                       </div>
-                  </div>
-              </div>
-
-              <!-- § 5. APPEARANCE & APP -->
-              <div class="space-y-2">
-                  <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">APPEARANCE &amp; APP</span>
-                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-lg">
                       <div class="p-3.5 flex justify-between items-center">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
                               </div>
-                              <div>
-                                  <h3 class="text-xs font-bold text-white tracking-wide">Appearance Mode</h3>
-                                  <p class="text-[10px] text-zinc-500">Dark mode &middot; OLED optimized</p>
+                              <div class="min-w-0">
+                                  <h3 class="text-xs font-bold text-white tracking-wide">Appearance</h3>
                               </div>
                           </div>
-                          <span class="text-[9px] text-amber-400 font-mono-tag font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">DARK</span>
+                          <span class="text-[10px] text-amber-400 font-mono-tag font-bold bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 shrink-0">DARK</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('reduced_motion')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Reduced Motion</h3>
-                                  <p class="text-[10px] text-zinc-500">Minimize animations &amp; transitions</p>
                               </div>
                           </div>
                           <div class="w-10 h-6 bg-zinc-800 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_reduced_motion">
@@ -2151,13 +2151,12 @@
                           </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('sound')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Sound Effects</h3>
-                                  <p class="text-[10px] text-zinc-500">UI feedback sounds</p>
                               </div>
                           </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_sound">
@@ -2165,13 +2164,12 @@
                           </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center cursor-pointer" onclick="toggleSetting('haptics')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Haptics &amp; Vibration</h3>
-                                  <p class="text-[10px] text-zinc-500">Tactile vibration feedback</p>
                               </div>
                           </div>
                           <div class="w-10 h-6 bg-amber-500 rounded-full relative cursor-pointer p-0.5 transition-colors shrink-0" id="toggleTrack_haptics">
@@ -2179,82 +2177,84 @@
                           </div>
                       </div>
                       <div class="p-3.5 flex justify-between items-center">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
                               </div>
                               <h3 class="text-xs font-bold text-white tracking-wide">Language</h3>
                           </div>
-                          <span class="text-[10px] text-zinc-400 font-mono-tag">English</span>
+                          <span class="text-[11px] text-zinc-400 font-mono-tag">English</span>
                       </div>
                   </div>
               </div>
 
-              <!-- § 6. SUPPORT & LEGAL -->
-              <div class="space-y-2">
-                  <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">SUPPORT &amp; LEGAL</span>
-                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-lg">
+              <!-- § 5. SUPPORT & LEGAL -->
+              <div class="space-y-1.5">
+                  <div class="px-2">
+                      <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold">SUPPORT &amp; LEGAL</span>
+                  </div>
+                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-xl">
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openAboutKandidModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                               </div>
                               <h3 class="text-xs font-bold text-white tracking-wide">Help &amp; FAQ</h3>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="switchScreenView('report')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                               </div>
                               <h3 class="text-xs font-bold text-white tracking-wide">Report a Problem</h3>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openAboutKandidModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">About Kandid</h3>
                                   <p class="text-[10px] text-zinc-500">Authentic social without vanity</p>
                               </div>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openLegalModal('terms')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                               </div>
                               <h3 class="text-xs font-bold text-white tracking-wide">Terms of Service</h3>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openLegalModal('privacy')">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                               </div>
                               <h3 class="text-xs font-bold text-white tracking-wide">Privacy Policy</h3>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="openCommunityGuidelinesModal()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                               </div>
                               <h3 class="text-xs font-bold text-white tracking-wide">Community Guidelines</h3>
                           </div>
-                          <span class="text-zinc-600 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
                               </div>
                               <span class="text-xs text-zinc-400 tracking-wide font-bold">App Version</span>
                           </div>
@@ -2263,39 +2263,41 @@
                   </div>
               </div>
 
-              <!-- § 7. ACCOUNT ACTIONS -->
-              <div class="space-y-2">
-                  <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold">ACCOUNT ACTIONS</span>
-                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-lg">
+              <!-- § 6. ACCOUNT ACTIONS -->
+              <div class="space-y-1.5">
+                  <div class="px-2">
+                      <span class="text-[10px] text-zinc-500 font-mono-tag tracking-widest uppercase font-bold">ACCOUNT ACTIONS</span>
+                  </div>
+                  <div class="bg-zinc-950/90 border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-900 shadow-xl">
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="downloadUserData()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                               </div>
-                              <div>
+                              <div class="min-w-0">
                                   <h3 class="text-xs font-bold text-white tracking-wide">Download Your Data</h3>
-                                  <p class="text-[10px] text-zinc-500">Export a JSON archive of your account</p>
+                                  <p class="text-[10px] text-zinc-500">Export JSON archive</p>
                               </div>
                           </div>
-                          <span class="text-amber-500 font-mono-tag text-[10px] font-bold">EXPORT</span>
+                          <span class="text-amber-500 font-mono-tag text-[10px] font-bold shrink-0">EXPORT</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-zinc-900/50 transition-colors cursor-pointer active:scale-[0.99]" onclick="logoutUser()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
                               </div>
                               <h3 class="text-xs font-bold text-zinc-300 tracking-wide">Log Out</h3>
                           </div>
-                          <span class="text-zinc-500 font-mono-tag">&rsaquo;</span>
+                          <span class="text-zinc-600 font-mono-tag text-xs">&rsaquo;</span>
                       </div>
                       <div class="p-3.5 flex justify-between items-center hover:bg-red-500/10 transition-colors cursor-pointer active:scale-[0.99]" onclick="confirmDeleteAccount()">
-                          <div class="flex items-center space-x-3">
-                              <div class="w-7 h-7 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center shrink-0">
-                                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                          <div class="flex items-center space-x-3.5 min-w-0">
+                              <div class="w-8 h-8 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center shrink-0">
+                                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                               </div>
                               <h3 class="text-xs font-bold text-red-400 tracking-wide">Delete Account</h3>
                           </div>
-                          <span class="text-red-400/60 font-mono-tag text-[10px]">PERMANENT</span>
+                          <span class="text-red-400/60 font-mono-tag text-[10px] shrink-0">PERMANENT</span>
                       </div>
                   </div>
               </div>
