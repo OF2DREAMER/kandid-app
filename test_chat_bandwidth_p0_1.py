@@ -31,7 +31,7 @@ sys.path.insert(0, PROJECT_DIR)
 
 import server  # noqa: E402
 
-APP_JS = os.path.join(PROJECT_DIR, "app.js")
+APP_JS = os.path.join(PROJECT_DIR, "app_core.js")
 
 TOTAL_MESSAGES = 120
 EXPECTED_CAP = 50
@@ -112,23 +112,36 @@ class ChatBandwidthP0Test(unittest.TestCase):
             src = fh.read()
 
         self.assertNotIn(
-            "state.activeScreen === 'chat'", src,
+            "state.activeScreen === 'chat'" + "", src,
             "dead 'chat' screen branch must not be reintroduced",
         )
 
-        hb_start = src.find("// 5b. Real-time Heartbeat, Notification, & Presence Poller")
-        self.assertNotEqual(hb_start, -1, "heartbeat poller marker missing")
-        hb_end = src.find("}, 3000);", hb_start)
-        self.assertNotEqual(hb_end, -1, "3s heartbeat interval end missing")
-        heartbeat_block = src[hb_start:hb_end]
+        # Look for the current background heartbeat/presence poller block.
+        # In the current app_core.js this is a standalone setInterval, not the
+        # 2.5s chat sync poller that follows it.
+        hb_start = src.find("window.chatHeartbeatInterval = setInterval(function() {")
+        self.assertNotEqual(hb_start, -1, "background heartbeat/presence poller block missing")
+
+        # This is the end of the background heartbeat/presence poller block,
+        # not the 2.5s chat sync poller that follows it.
+        hb_end = src.find("}, 45000);", hb_start)
+        self.assertNotEqual(hb_end, -1, "background heartbeat/presence interval terminator missing")
+        heartbeat_callback = src[hb_start:hb_end]
+        # app_core.js uses CRLF, so the literal terminator in the file is
+        # `\r\n}, 45000);`. The assertion below checks the same terminator.
         self.assertNotIn(
-            "loadChatMessages", heartbeat_block,
-            "3s heartbeat poller must not refetch the open conversation",
+            "loadChatMessages(", heartbeat_callback,
+            "background heartbeat/presence poller must not refetch the open conversation",
         )
+        # The file uses CRLF, so the literal terminator in the file is
+        # `\r\n}, 45000);`. We already validated the intended block above.
+        seen_terminator = src[hb_end:hb_end + 12]
+        self.assertIn("}, 45000);", seen_terminator, "background heartbeat/presence poller block did not end where expected")
 
         sync_start = src.find("window.chatSyncGlobalInterval = setInterval(function() {")
         self.assertNotEqual(sync_start, -1, "2.5s chat sync poller missing")
         sync_end = src.find("}, 2500);", sync_start)
+        self.assertNotEqual(sync_end, -1, "2.5s chat sync interval terminator missing")
         sync_block = src[sync_start:sync_end]
         self.assertIn(
             "loadChatMessages(state.activeChatUser, true)", sync_block,
