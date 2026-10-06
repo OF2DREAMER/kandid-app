@@ -10321,7 +10321,7 @@ async function loadChatMessages(userId, isSilent = false) {
               statusIcon +
             '</div>' +
           '</div>' +
-          '<div class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 pb-1">' +
+          '<div class="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 pb-1">' +
             '<button onclick="handleChatReplyClick(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="Reply">↩</button>' +
             '<button onclick="openChatReactionSheet(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="React">☺</button>' +
             '<button onclick="openChatMessageActionMenu(\'' + m.id + '\')" class="w-6 h-6 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center text-[10px] cursor-pointer" title="Options">⋮</button>' +
