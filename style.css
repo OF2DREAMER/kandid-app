@@ -45,6 +45,15 @@ body {
   }
 }
 
+/* Chat history scroller.
+   `justify-content: flex-end` on an overflowing flex column can make the top of
+   the overflow hard to reach and prevents reliable scroll-to-top pagination, so
+   bottom-align short conversations with an auto top margin on the first child
+   instead. Overflowing content scrolls normally and the top stays reachable. */
+#chatMessageHistoryV2 > :first-child {
+  margin-top: auto;
+}
+
 .apple-blur {
   backdrop-filter: blur(25px);
   -webkit-backdrop-filter: blur(25px);
