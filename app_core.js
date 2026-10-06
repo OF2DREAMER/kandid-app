@@ -8629,6 +8629,7 @@ function logoutUser() {
   localStorage.removeItem('kandid_onboarded');
   localStorage.removeItem('kandid_user');
   localStorage.removeItem('kandid_active_uid');
+  localStorage.removeItem('kandid_cached_chat_conversations');
   state.token = null;
   state.currentUser = null;
   showToast('Logged out successfully. Redirecting...');
@@ -9138,9 +9139,51 @@ function isUserOnline(lastActive) {
 window.isUserOnline = isUserOnline;
 
 // Local cache of fetched conversations and connections
-var cachedChatConversations = [];
+var cachedChatConversations = (function() {
+  try {
+    var stored = localStorage.getItem('kandid_cached_chat_conversations');
+    return stored ? JSON.parse(stored) : [];
+  } catch(e) {
+    return [];
+  }
+})();
 var cachedChatConnections = [];
 var chatHomeCurrentState = 'populated'; // 'populated', 'empty', 'newmsg'
+
+function getChatSkeletonHTML() {
+  return '<div class="space-y-4 py-2 px-1 animate-pulse">' +
+    '<div class="flex items-center justify-between py-2 border-b border-neutral-800/40">' +
+      '<div class="flex items-center space-x-3.5 flex-1 min-w-0">' +
+        '<div class="w-11 h-11 rounded-full bg-neutral-800/80 shrink-0"></div>' +
+        '<div class="space-y-2 flex-1 pr-4 min-w-0">' +
+          '<div class="h-3 bg-neutral-800/80 rounded w-28"></div>' +
+          '<div class="h-2.5 bg-neutral-800/50 rounded w-40"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="h-2.5 bg-neutral-800/50 rounded w-8 shrink-0"></div>' +
+    '</div>' +
+    '<div class="flex items-center justify-between py-2 border-b border-neutral-800/40">' +
+      '<div class="flex items-center space-x-3.5 flex-1 min-w-0">' +
+        '<div class="w-11 h-11 rounded-full bg-neutral-800/80 shrink-0"></div>' +
+        '<div class="space-y-2 flex-1 pr-4 min-w-0">' +
+          '<div class="h-3 bg-neutral-800/80 rounded w-20"></div>' +
+          '<div class="h-2.5 bg-neutral-800/50 rounded w-36"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="h-2.5 bg-neutral-800/50 rounded w-10 shrink-0"></div>' +
+    '</div>' +
+    '<div class="flex items-center justify-between py-2">' +
+      '<div class="flex items-center space-x-3.5 flex-1 min-w-0">' +
+        '<div class="w-11 h-11 rounded-full bg-neutral-800/80 shrink-0"></div>' +
+        '<div class="space-y-2 flex-1 pr-4 min-w-0">' +
+          '<div class="h-3 bg-neutral-800/80 rounded w-32"></div>' +
+          '<div class="h-2.5 bg-neutral-800/50 rounded w-48"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="h-2.5 bg-neutral-800/50 rounded w-6 shrink-0"></div>' +
+    '</div>' +
+  '</div>';
+}
 
 function formatChatTime(isoString) {
   if (!isoString) return '';
@@ -9254,17 +9297,28 @@ async function loadChatConversations(isSilent = false) {
   var listContainer = document.getElementById('chatConversationsList');
   if (!listContainer) return;
 
-  if (!isSilent && cachedChatConversations.length === 0) {
-    listContainer.innerHTML = '<div class="text-center py-8 text-xs text-zinc-500 font-mono-meta animate-pulse">Syncing conversations...</div>';
+  var searchInput = document.getElementById('chatSearchInput');
+  var query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+  // 1. Cache-First: Render immediately from localStorage if available (0ms delay)
+  if (cachedChatConversations && cachedChatConversations.length > 0) {
+    if (chatHomeCurrentState !== 'newmsg') {
+      setChatHomeState('populated');
+      renderChatConversations(cachedChatConversations, query);
+    }
+  } else if (!isSilent) {
+    // 2. Skeleton Shimmer fallback if no cache available
+    listContainer.innerHTML = getChatSkeletonHTML();
   }
 
+  // 3. Sync fresh data from API
   var data = await apiRequest('/api/chat/conversations');
   if (data && data.success && Array.isArray(data.conversations)) {
     var convos = data.conversations;
     cachedChatConversations = convos;
-
-    var searchInput = document.getElementById('chatSearchInput');
-    var query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+    try {
+      localStorage.setItem('kandid_cached_chat_conversations', JSON.stringify(convos));
+    } catch(e) {}
 
     if (chatHomeCurrentState !== 'newmsg') {
       if (convos.length === 0 && !query) {
