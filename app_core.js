@@ -8567,7 +8567,7 @@ async function loadSettingsScreen() {
     var privLabel = document.getElementById('settingsProfilePrivacyLabel');
     if (privLabel) {
       var isPriv = (u.profile_visibility === 'private');
-      privLabel.textContent = isPriv ? 'PRIVATE · Only identity & bio visible' : 'PUBLIC · Visible across Kandid';
+      privLabel.textContent = isPriv ? 'PRIVATE' : 'PUBLIC';
     }
     var userEl = document.getElementById('settingsUsername');
     if (userEl) userEl.textContent = '@' + (u.handle || u.username || 'user');
@@ -11059,7 +11059,7 @@ async function savePrivacySettings() {
 
   var labelEl = document.getElementById('settingsProfilePrivacyLabel');
   if (labelEl) {
-    labelEl.textContent = (profileVisibility === 'private') ? 'PRIVATE · Only identity & bio visible' : 'PUBLIC · Visible across Kandid';
+    labelEl.textContent = (profileVisibility === 'private') ? 'PRIVATE' : 'PUBLIC';
   }
 
   if (res && res.success) {
