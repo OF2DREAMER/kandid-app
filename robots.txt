@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Allow: /privacy
+Allow: /terms
+Disallow: /api/
+Disallow: /data/
+Disallow: /scratch/
+Disallow: /backend/
+Disallow: /uploads/chat_attachments/
+
+Sitemap: https://kindid.in/sitemap.xml
