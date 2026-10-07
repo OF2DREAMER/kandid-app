@@ -5227,6 +5227,8 @@ def is_blocked_static_path(norm_path):
     basename = posixpath.basename(norm_path)
     if basename == ".env" or basename.startswith(".env."):
         return True
+    if norm_path == "/robots.txt":
+        return False
     if norm_path.endswith(BLOCKED_STATIC_EXTENSIONS):
         return True
     if norm_path in BLOCKED_STATIC_NAMES:
@@ -5433,6 +5435,32 @@ class KandidHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if norm_path == "/robots.txt":
+            try:
+                with open("robots.txt", "rb") as f:
+                    size = len(f.read())
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(size))
+                self.end_headers()
+                return
+            except FileNotFoundError:
+                self.send_response(404)
+                self.end_headers()
+                return
+        if norm_path == "/sitemap.xml":
+            try:
+                with open("sitemap.xml", "rb") as f:
+                    size = len(f.read())
+                self.send_response(200)
+                self.send_header("Content-Type", "application/xml; charset=utf-8")
+                self.send_header("Content-Length", str(size))
+                self.end_headers()
+                return
+            except FileNotFoundError:
+                self.send_response(404)
+                self.end_headers()
+                return
         return super().do_HEAD()
 
     def do_OPTIONS(self):
@@ -5471,6 +5499,32 @@ class KandidHandler(SimpleHTTPRequestHandler):
         norm_path = posixpath.normpath(unquote(path))
         if is_blocked_static_path(norm_path):
             return self.send_json(403, {"error": "Access denied"})
+
+        if norm_path == "/robots.txt":
+            try:
+                with open("robots.txt", "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+            except FileNotFoundError:
+                return self.send_json(404, {"error": "File not found"})
+
+        if norm_path == "/sitemap.xml":
+            try:
+                with open("sitemap.xml", "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/xml; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+            except FileNotFoundError:
+                return self.send_json(404, {"error": "File not found"})
 
         # Viral Loop & Open Graph Engine: Dynamic link previews for WhatsApp/Twitter
         if path == "/" or path == "/index.html":
