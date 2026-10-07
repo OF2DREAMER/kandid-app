@@ -6341,9 +6341,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     attachCardInteractions(card, { id: card.dataset.postId || 'post_sample' });
   });
 
-  // 4. Digital Status Clock (paused when tab is hidden)
+  // 4. Digital Status Clock
   setInterval(function() {
-    if (document.hidden) return;
     var now = new Date();
     var hours = String(now.getHours()).padStart(2, '0');
     var minutes = String(now.getMinutes()).padStart(2, '0');
@@ -6354,12 +6353,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 5. Initialize Sub-modules
   setupCameraStudio();
   await loadFeedMoments('foryou');
-  await Promise.allSettled([
-    loadNotifications(),
-    loadSearchDiscovery(),
-    loadChatConversations(),
-    loadYouScreen()
-  ]);
+  await loadNotifications();
+  await loadSearchDiscovery();
+  await loadChatConversations();
+  await loadYouScreen();
 
   // 5b. Real-time Heartbeat, Notification, & Presence Poller
   setInterval(function() {
@@ -6881,12 +6878,10 @@ window.handleGoogleCredentialResponse = async function(response) {
 
                 switchScreenView('feed');
                 await loadFeedMoments('foryou');
-                await Promise.allSettled([
-                    loadCampusScreen(),
-                    loadYouScreen(),
-                    loadNotifications(),
-                    loadChatConversations()
-                ]);
+                await loadCampusScreen();
+                await loadYouScreen();
+                await loadNotifications();
+                await loadChatConversations();
                 return;
             } 
 
@@ -7606,12 +7601,10 @@ window.submitFinalOnboarding = async function() {
 
             switchScreenView('feed');
             await loadFeedMoments('foryou');
-            await Promise.allSettled([
-                loadCampusScreen(),
-                loadYouScreen(),
-                loadNotifications(),
-                loadChatConversations()
-            ]);
+            await loadCampusScreen();
+            await loadYouScreen();
+            await loadNotifications();
+            await loadChatConversations();
         } else {
             showToast('Activation error: ' + (res ? (res.error || res.message) : 'Please try again'));
             if (btn) {
@@ -7733,12 +7726,10 @@ window.submitUserLogin = async function() {
             
             switchScreenView('feed');
             await loadFeedMoments('foryou');
-            await Promise.allSettled([
-                loadCampusScreen(),
-                loadYouScreen(),
-                loadNotifications(),
-                loadChatConversations()
-            ]);
+            await loadCampusScreen();
+            await loadYouScreen();
+            await loadNotifications();
+            await loadChatConversations();
         } else {
             var errMsg = (res && res.error) ? res.error : 'Invalid username or password.';
             if (errBox && errText) {
@@ -7896,12 +7887,10 @@ window.submitResetPassword = async function() {
 
         switchScreenView('feed');
         await loadFeedMoments('foryou');
-        await Promise.allSettled([
-            loadCampusScreen(),
-            loadYouScreen(),
-            loadNotifications(),
-            loadChatConversations()
-        ]);
+        await loadCampusScreen();
+        await loadYouScreen();
+        await loadNotifications();
+        await loadChatConversations();
     } else {
         showToast(res && res.error ? res.error : 'Could not reset password.');
     }

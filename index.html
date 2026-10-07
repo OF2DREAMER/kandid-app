@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Kandid — Authentic Moments & Communities</title>
   <meta name="description" content="Kandid — The authentic social platform for communities and campuses. Dual-camera moments, live telemetry, and real-time community pulse.">
   
@@ -22,8 +22,8 @@
 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <!-- Precompiled Tailwind CSS & Modern Typography -->
-  <link rel="stylesheet" href="tailwind.compiled.css?v=1.0.0">
+  <!-- Tailwind CSS & Modern Typography -->
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -31,6 +31,10 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css?v=3.1.6">
   <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
+    .font-mono-tag, .mono { font-family: 'JetBrains Mono', monospace; }
+    .font-mono-meta { font-family: 'JetBrains Mono', monospace; }
+    .no-scroll::-webkit-scrollbar { display: none; }
     .apple-blur { backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); }
     /* kandid-screen: auth/onboarding sub-screens */
     .kandid-screen { display: none; flex-direction: column; height: 100%; width: 100%; }
