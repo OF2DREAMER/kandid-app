@@ -113,9 +113,18 @@ class TestSEORoutes(unittest.TestCase):
         handler.path = "/sitemap.xml"
         handler.do_GET()
         self.assertEqual(sent_status, [200])
-        self.assertIn("application/xml", sent_headers.get("content-type", ""))
+        self.assertEqual(sent_headers.get("content-type"), "application/xml")
         xml_body = handler.wfile.getvalue().decode("utf-8")
         self.assertIn("<loc>https://kindid.in/</loc>", xml_body)
+
+        # 2b. GET /https://kindid.in/sitemap.xml (GSC paste trap fallback)
+        sent_status.clear()
+        sent_headers.clear()
+        handler.wfile = BytesIO()
+        handler.path = "/https://kindid.in/sitemap.xml"
+        handler.do_GET()
+        self.assertEqual(sent_status, [200])
+        self.assertEqual(sent_headers.get("content-type"), "application/xml")
 
         # 3. HEAD /robots.txt
         sent_status.clear()
@@ -132,7 +141,7 @@ class TestSEORoutes(unittest.TestCase):
         handler.path = "/sitemap.xml"
         handler.do_HEAD()
         self.assertEqual(sent_status, [200])
-        self.assertIn("application/xml", sent_headers.get("content-type", ""))
+        self.assertEqual(sent_headers.get("content-type"), "application/xml")
         self.assertTrue(int(sent_headers.get("content-length", 0)) > 0)
 
         # 5. HEAD /privacy
