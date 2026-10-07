@@ -24,6 +24,7 @@ class TestSEORoutes(unittest.TestCase):
 
         # Allowed routes
         self.assertTrue(parser.can_fetch("*", "https://kindid.in/"), "Root should be crawlable")
+        self.assertTrue(parser.can_fetch("*", "https://kindid.in/about"), "/about should be crawlable")
         self.assertTrue(parser.can_fetch("*", "https://kindid.in/privacy"), "/privacy should be crawlable")
         self.assertTrue(parser.can_fetch("*", "https://kindid.in/terms"), "/terms should be crawlable")
 
@@ -49,6 +50,7 @@ class TestSEORoutes(unittest.TestCase):
         locs = [elem.text for elem in root.findall(".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
         expected_canonical_urls = [
             "https://kindid.in/",
+            "https://kindid.in/about",
             "https://kindid.in/privacy",
             "https://kindid.in/terms"
         ]
@@ -144,7 +146,34 @@ class TestSEORoutes(unittest.TestCase):
         self.assertEqual(sent_headers.get("content-type"), "application/xml")
         self.assertTrue(int(sent_headers.get("content-length", 0)) > 0)
 
-        # 5. HEAD /privacy
+        # 5. HEAD /about
+        sent_status.clear()
+        sent_headers.clear()
+        handler.path = "/about"
+        with unittest.mock.patch.object(server.SimpleHTTPRequestHandler, "do_HEAD") as mock_head:
+            handler.do_HEAD()
+            self.assertEqual(handler.path, "/about.html")
+            mock_head.assert_called_once()
+
+        # 5b. GET /about
+        sent_status.clear()
+        sent_headers.clear()
+        handler.path = "/about"
+        with unittest.mock.patch.object(server.SimpleHTTPRequestHandler, "do_GET") as mock_get:
+            handler.do_GET()
+            self.assertEqual(handler.path, "/about.html")
+            mock_get.assert_called_once()
+
+        # 5c. GET /about/
+        sent_status.clear()
+        sent_headers.clear()
+        handler.path = "/about/"
+        with unittest.mock.patch.object(server.SimpleHTTPRequestHandler, "do_GET") as mock_get:
+            handler.do_GET()
+            self.assertEqual(handler.path, "/about.html")
+            mock_get.assert_called_once()
+
+        # 6. HEAD /privacy
         sent_status.clear()
         sent_headers.clear()
         handler.path = "/privacy"
@@ -153,7 +182,7 @@ class TestSEORoutes(unittest.TestCase):
             self.assertEqual(handler.path, "/privacy.html")
             mock_head.assert_called_once()
 
-        # 6. HEAD /terms
+        # 7. HEAD /terms
         sent_status.clear()
         sent_headers.clear()
         handler.path = "/terms"
@@ -162,7 +191,7 @@ class TestSEORoutes(unittest.TestCase):
             self.assertEqual(handler.path, "/terms.html")
             mock_head.assert_called_once()
 
-        # 7. GET /requirements.txt -> 403 Forbidden
+        # 8. GET /requirements.txt -> 403 Forbidden
         sent_status.clear()
         sent_headers.clear()
         handler.wfile = BytesIO()
