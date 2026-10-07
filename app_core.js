@@ -481,6 +481,30 @@ window.renderGlobalCards = renderGlobalCards;
 function switchScreenView(screenName) {
   state.activeScreen = screenName;
 
+  // Cleanup transient camera/review flows on navigation away
+  if (!state.isOpeningReview) {
+    var reviewStream = document.getElementById('reviewContentStream');
+    if (reviewStream && reviewStream.style.display !== 'none') {
+      reviewStream.style.display = 'none';
+      state.selectedReviewCommunity = null;
+      state.reviewCameraContext = null;
+      state.cameraContext = {
+        mode: 'NORMAL',
+        clusterId: null,
+        clusterName: null,
+        communityId: null,
+        source: 'feed'
+      };
+      state.activeClusterContext = null;
+      state.activeClusterCommunityId = null;
+      state.activeClusterContextName = null;
+    }
+    var cameraModal = document.getElementById('cameraStudioModal');
+    if (cameraModal && cameraModal.style.display !== 'none' && typeof closeCameraStudio === 'function') {
+      closeCameraStudio();
+    }
+  }
+
   if (screenName === 'feed') {
     if (typeof handleNewUserFeedEntry === 'function') {
       handleNewUserFeedEntry();
@@ -1296,7 +1320,7 @@ function openCommunityMomentCapture(commId, commName) {
   state.selectedReviewCommunity = cName;
   if (commId) state.activeCommunityId = commId;
   if (typeof playTactileFeedback === 'function') playTactileFeedback('tap');
-  openCameraStudio();
+  openCameraStudio('community', commId);
 }
 window.openCommunityMomentCapture = openCommunityMomentCapture;
 
@@ -2281,17 +2305,49 @@ async function openCameraStudio() {
 window.openCameraStudio = openCameraStudio;
 
 async function openCameraStudio(source, communityId) {
-  if (!state.cameraContext || state.cameraContext.mode !== 'PERSPECTIVE') {
+  var isExplicitPerspective = (source === 'event' || source === 'perspective') &&
+                              Boolean(state.cameraContext && state.cameraContext.mode === 'PERSPECTIVE' && state.cameraContext.clusterId);
+
+  if (isExplicitPerspective) {
+    state.cameraContext.source = source || 'event';
+    if (communityId) state.cameraContext.communityId = communityId;
+  } else if (source === 'community') {
     state.cameraContext = {
       mode: 'NORMAL',
       clusterId: null,
       clusterName: null,
       communityId: communityId || state.activeCommunityId || null,
-      source: source || 'feed'
+      source: 'community'
     };
     state.activeClusterContext = null;
     state.activeClusterCommunityId = null;
     state.activeClusterContextName = null;
+    state.reviewCameraContext = null;
+  } else if (source === 'place') {
+    state.cameraContext = {
+      mode: 'NORMAL',
+      clusterId: null,
+      clusterName: null,
+      communityId: communityId || state.activeCommunityId || null,
+      source: 'place'
+    };
+    state.activeClusterContext = null;
+    state.activeClusterCommunityId = null;
+    state.activeClusterContextName = null;
+    state.reviewCameraContext = null;
+  } else {
+    // Default: Feed / normal camera entry (no args, 'feed', or any non-perspective source)
+    state.cameraContext = {
+      mode: 'NORMAL',
+      clusterId: null,
+      clusterName: null,
+      communityId: null,
+      source: 'feed'
+    };
+    state.activeClusterContext = null;
+    state.activeClusterCommunityId = null;
+    state.activeClusterContextName = null;
+    state.reviewCameraContext = null;
   }
   await KandidCameraEngine.initialize();
 }
@@ -3290,17 +3346,49 @@ window.KandidCameraEngine = KandidCameraEngine;
 
 // Legacy Adapter Bindings
 async function openCameraStudio(source, communityId) {
-  if (!state.cameraContext || state.cameraContext.mode !== 'PERSPECTIVE') {
+  var isExplicitPerspective = (source === 'event' || source === 'perspective') &&
+                              Boolean(state.cameraContext && state.cameraContext.mode === 'PERSPECTIVE' && state.cameraContext.clusterId);
+
+  if (isExplicitPerspective) {
+    state.cameraContext.source = source || 'event';
+    if (communityId) state.cameraContext.communityId = communityId;
+  } else if (source === 'community') {
     state.cameraContext = {
       mode: 'NORMAL',
       clusterId: null,
       clusterName: null,
       communityId: communityId || state.activeCommunityId || null,
-      source: source || 'feed'
+      source: 'community'
     };
     state.activeClusterContext = null;
     state.activeClusterCommunityId = null;
     state.activeClusterContextName = null;
+    state.reviewCameraContext = null;
+  } else if (source === 'place') {
+    state.cameraContext = {
+      mode: 'NORMAL',
+      clusterId: null,
+      clusterName: null,
+      communityId: communityId || state.activeCommunityId || null,
+      source: 'place'
+    };
+    state.activeClusterContext = null;
+    state.activeClusterCommunityId = null;
+    state.activeClusterContextName = null;
+    state.reviewCameraContext = null;
+  } else {
+    // Default: Feed / normal camera entry (no args, 'feed', or any non-perspective source)
+    state.cameraContext = {
+      mode: 'NORMAL',
+      clusterId: null,
+      clusterName: null,
+      communityId: null,
+      source: 'feed'
+    };
+    state.activeClusterContext = null;
+    state.activeClusterCommunityId = null;
+    state.activeClusterContextName = null;
+    state.reviewCameraContext = null;
   }
   await KandidCameraEngine.initialize();
 }
@@ -3413,7 +3501,9 @@ function openMomentReview() {
   if (reviewPip && state.capturedMomentData) reviewPip.src = state.capturedMomentData.pipImg;
 
   if (state.activeScreen !== 'feed') {
+    state.isOpeningReview = true;
     switchScreenView('feed');
+    state.isOpeningReview = false;
   }
 
   var statusMode = document.getElementById('statusBarModeTag');
@@ -3471,7 +3561,7 @@ async function setupReviewContextUI() {
   var isPerspective = Boolean(reviewCtx && reviewCtx.mode === 'PERSPECTIVE' && reviewCtx.clusterId);
 
   if (isPerspective) {
-    var clusterName = (reviewCtx && reviewCtx.clusterName) || state.activeClusterContextName || 'Shared Event';
+    var clusterName = (reviewCtx && reviewCtx.clusterName) || 'Shared Event';
     listEl.innerHTML = 
       '<div class="p-3 rounded-2xl bg-zinc-900 border border-amber-500/30 flex items-center justify-between">' +
         '<div class="flex items-center gap-2.5">' +
@@ -3620,8 +3710,8 @@ async function publishCapturedMoment() {
 
   if (isPerspective) {
     var perspClusterId = reviewCtx.clusterId;
-    var perspCommId = reviewCtx.communityId || state.activeClusterCommunityId || '';
-    var perspLoc = reviewCtx.clusterName || state.activeClusterContextName || approxLocName;
+    var perspCommId = (reviewCtx && reviewCtx.communityId) || '';
+    var perspLoc = (reviewCtx && reviewCtx.clusterName) || approxLocName;
     payload = {
       caption: caption,
       circle: 'campus',
@@ -3701,7 +3791,7 @@ async function publishCapturedMoment() {
     }
     if (isPerspective) {
       showToast('Perspective added to shared moment cluster! ✦');
-      var publishedClusterId = reviewCtx ? reviewCtx.clusterId : state.activeClusterContext;
+      var publishedClusterId = (reviewCtx && reviewCtx.clusterId) ? reviewCtx.clusterId : null;
       closeMomentReview();
       if (publishedClusterId) {
         openMomentClusterModal(publishedClusterId);
@@ -11647,6 +11737,11 @@ window.openMomentClusterModal = openMomentClusterModal;
 function closeMomentClusterModal() {
   var modal = document.getElementById('momentClusterModal');
   if (modal) modal.style.display = 'none';
+  state.currentViewingCluster = null;
+  state.activeClusterMomentId = null;
+  state.activeClusterContext = null;
+  state.activeClusterCommunityId = null;
+  state.activeClusterContextName = null;
 }
 window.closeMomentClusterModal = closeMomentClusterModal;
 
@@ -11792,6 +11887,7 @@ function handleAddPerspectiveClick() {
 window.handleAddPerspectiveClick = handleAddPerspectiveClick;
 
 function openPerspectiveCapture(clusterId, communityId, location) {
+  closeMomentClusterModal();
   state.cameraContext = {
     mode: 'PERSPECTIVE',
     clusterId: clusterId,
@@ -11802,7 +11898,7 @@ function openPerspectiveCapture(clusterId, communityId, location) {
   state.activeClusterContext = clusterId;
   state.activeClusterCommunityId = communityId || '';
   state.activeClusterContextName = location || 'Shared Event';
-  closeMomentClusterModal();
+  state.reviewCameraContext = null;
   openCameraStudio('event', communityId);
   showToast('Optics ready. Capture your perspective for this cluster.');
 }
@@ -11844,7 +11940,7 @@ async function handleDeletePerspectiveMoment(postId) {
     if (res && res.success) {
       showToast('Perspective deleted successfully.');
       var c = state.currentViewingCluster;
-      var clusterId = c ? c.id : state.activeClusterContext;
+      var clusterId = (c && c.id) ? c.id : null;
       var momentId = (c && c.primary_moment) ? c.primary_moment.id : (state.activeClusterMomentId || '');
       if (clusterId) {
         openMomentClusterModal(clusterId, momentId);
