@@ -6341,8 +6341,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     attachCardInteractions(card, { id: card.dataset.postId || 'post_sample' });
   });
 
-  // 4. Digital Status Clock
+  // 4. Digital Status Clock (paused when tab is hidden)
   setInterval(function() {
+    if (document.hidden) return;
     var now = new Date();
     var hours = String(now.getHours()).padStart(2, '0');
     var minutes = String(now.getMinutes()).padStart(2, '0');
@@ -6353,10 +6354,12 @@ document.addEventListener('DOMContentLoaded', async function() {
   // 5. Initialize Sub-modules
   setupCameraStudio();
   await loadFeedMoments('foryou');
-  await loadNotifications();
-  await loadSearchDiscovery();
-  await loadChatConversations();
-  await loadYouScreen();
+  await Promise.allSettled([
+    loadNotifications(),
+    loadSearchDiscovery(),
+    loadChatConversations(),
+    loadYouScreen()
+  ]);
 
   // 5b. Real-time Heartbeat, Notification, & Presence Poller
   setInterval(function() {
@@ -6842,32 +6845,27 @@ window.closeGoogleAuthModal = function() {
     }
 };
 
-window.toggleCustomGoogleInput = function() {
-    var form = document.getElementById('customGoogleForm');
-    if (form) {
-        form.classList.toggle('hidden');
-        if (!form.classList.contains('hidden')) {
-            var em = document.getElementById('customGoogleEmail');
-            if (em) em.focus();
-        }
+window.handleGoogleCredentialResponse = async function(response) {
+    var credential = response ? (response.credential || response.id_token) : '';
+    if (!credential) {
+        showToast('Google authentication failed: Missing credential');
+        return;
     }
-};
 
-window.selectGoogleAccount = async function(email, name, avatarUrl) {
-    closeGoogleAuthModal();
-    showToast('Verifying with Google Identity (' + email + ')...');
+    showToast('Verifying Google Identity...');
 
     try {
         var res = await apiRequest('/api/auth/google', {
             method: 'POST',
             body: JSON.stringify({
-                name: name || 'Google User',
-                email: email,
-                picture: avatarUrl || ''
+                id_token: credential,
+                credential: credential
             })
         });
 
         if (res && res.success) {
+            closeGoogleAuthModal();
+
             // Case 1: Existing Active User -> Direct Instant Feed Login
             if (res.status === 'ACTIVE_USER' && res.token && res.user) {
                 localStorage.setItem('kandid_token', res.token);
@@ -6883,10 +6881,12 @@ window.selectGoogleAccount = async function(email, name, avatarUrl) {
 
                 switchScreenView('feed');
                 await loadFeedMoments('foryou');
-                await loadCampusScreen();
-                await loadYouScreen();
-                await loadNotifications();
-                await loadChatConversations();
+                await Promise.allSettled([
+                    loadCampusScreen(),
+                    loadYouScreen(),
+                    loadNotifications(),
+                    loadChatConversations()
+                ]);
                 return;
             } 
 
@@ -6905,7 +6905,7 @@ window.selectGoogleAccount = async function(email, name, avatarUrl) {
                     step: res.step || 1
                 };
 
-                populateOnboardingIdentityFields(gp.name || '', gp.email || email, state.onboardingSession.handle, gp.avatar_url || avatarUrl);
+                populateOnboardingIdentityFields(gp.name || '', gp.email || '', state.onboardingSession.handle, gp.avatar_url || '');
                 
                 if (state.onboardingSession.campusName) {
                     selectCampus(state.onboardingSession.campusId, state.onboardingSession.campusName, state.onboardingSession.city);
@@ -6925,7 +6925,7 @@ window.selectGoogleAccount = async function(email, name, avatarUrl) {
 
             // Case 3: New Google User -> Initialize Onboarding Session
             if (res.status === 'NEW_ONBOARDING' || res.is_new) {
-                var gp = res.google_profile || { email: email, name: name, avatar_url: avatarUrl, suggested_handle: email.split('@')[0] };
+                var gp = res.google_profile || {};
                 
                 state.onboardingSession = {
                     id: res.session_id,
@@ -6937,13 +6937,13 @@ window.selectGoogleAccount = async function(email, name, avatarUrl) {
                     step: 1
                 };
 
-                populateOnboardingIdentityFields(gp.name || '', gp.email || email, gp.suggested_handle || '', gp.avatar_url || avatarUrl);
+                populateOnboardingIdentityFields(gp.name || '', gp.email || '', gp.suggested_handle || '', gp.avatar_url || '');
 
                 showToast('Google Identity Verified ✓ Customize your handle & campus');
                 switchScreen('identity');
             }
         } else {
-            showToast('Google verification failed: ' + (res ? res.error : 'Network error'));
+            showToast('Google verification failed: ' + (res ? (res.error || 'Invalid token') : 'Network error'));
         }
     } catch(e) {
         console.error('Google Auth error:', e);
@@ -6977,28 +6977,58 @@ function populateOnboardingIdentityFields(name, email, handle, avatarUrl) {
     }
 }
 
-window.submitCustomGoogleAccount = function() {
-    var emailInput = document.getElementById('customGoogleEmail');
-    var nameInput = document.getElementById('customGoogleName');
+window.loginWithGoogle = async function() {
+    var clientId = window.GOOGLE_CLIENT_ID || '';
+    if (!clientId) {
+        try {
+            var cfg = await apiRequest('/api/auth/google/config');
+            if (cfg && cfg.client_id) {
+                clientId = cfg.client_id;
+                window.GOOGLE_CLIENT_ID = clientId;
+            }
+        } catch(e){}
+    }
 
-    var email = emailInput ? emailInput.value.trim() : '';
-    var name = nameInput ? nameInput.value.trim() : '';
-
-    if (!email || !email.includes('@')) {
-        showToast('Please enter a valid Google email address');
-        if (emailInput) emailInput.focus();
+    if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+        showToast('Google Sign-In is loading. Please try again in a moment.');
         return;
     }
 
-    if (!name) {
-        name = email.split('@')[0];
+    if (!clientId) {
+        var statusEl = document.getElementById('googleAuthStatusText');
+        if (statusEl) {
+            statusEl.innerHTML = '<span class="text-amber-400 font-bold">Google Sign-In is not configured on server (Missing GOOGLE_CLIENT_ID).</span>';
+        }
+        showToast('Google Sign-In is not configured on server (Missing GOOGLE_CLIENT_ID).');
+        openGoogleAuthModal();
+        return;
     }
 
-    selectGoogleAccount(email, name, '');
-};
+    try {
+        google.accounts.id.initialize({
+            client_id: clientId,
+            callback: window.handleGoogleCredentialResponse,
+            auto_select: false
+        });
 
-window.loginWithGoogle = function() {
-    openGoogleAuthModal();
+        openGoogleAuthModal();
+
+        var btnContainer = document.getElementById('googleSignInBtnContainer');
+        if (btnContainer && google.accounts.id.renderButton) {
+            btnContainer.innerHTML = '';
+            google.accounts.id.renderButton(btnContainer, {
+                theme: 'outline',
+                size: 'large',
+                width: 280,
+                text: 'continue_with'
+            });
+        }
+
+        google.accounts.id.prompt();
+    } catch (err) {
+        console.error('GIS initialization error:', err);
+        showToast('Failed to initialize Google Sign-In.');
+    }
 };
 
 window.formatHandleInput = window.handleUsernameInput;
@@ -7576,10 +7606,12 @@ window.submitFinalOnboarding = async function() {
 
             switchScreenView('feed');
             await loadFeedMoments('foryou');
-            await loadCampusScreen();
-            await loadYouScreen();
-            await loadNotifications();
-            await loadChatConversations();
+            await Promise.allSettled([
+                loadCampusScreen(),
+                loadYouScreen(),
+                loadNotifications(),
+                loadChatConversations()
+            ]);
         } else {
             showToast('Activation error: ' + (res ? (res.error || res.message) : 'Please try again'));
             if (btn) {
@@ -7701,10 +7733,12 @@ window.submitUserLogin = async function() {
             
             switchScreenView('feed');
             await loadFeedMoments('foryou');
-            await loadCampusScreen();
-            await loadYouScreen();
-            await loadNotifications();
-            await loadChatConversations();
+            await Promise.allSettled([
+                loadCampusScreen(),
+                loadYouScreen(),
+                loadNotifications(),
+                loadChatConversations()
+            ]);
         } else {
             var errMsg = (res && res.error) ? res.error : 'Invalid username or password.';
             if (errBox && errText) {
@@ -7862,10 +7896,12 @@ window.submitResetPassword = async function() {
 
         switchScreenView('feed');
         await loadFeedMoments('foryou');
-        await loadCampusScreen();
-        await loadYouScreen();
-        await loadNotifications();
-        await loadChatConversations();
+        await Promise.allSettled([
+            loadCampusScreen(),
+            loadYouScreen(),
+            loadNotifications(),
+            loadChatConversations()
+        ]);
     } else {
         showToast(res && res.error ? res.error : 'Could not reset password.');
     }
