@@ -5461,6 +5461,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
                 return
+        if norm_path in ["/privacy", "/privacy/"]:
+            self.path = "/privacy.html"
+            return super().do_HEAD()
+        if norm_path in ["/terms", "/terms/"]:
+            self.path = "/terms.html"
+            return super().do_HEAD()
         return super().do_HEAD()
 
     def do_OPTIONS(self):

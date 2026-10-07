@@ -135,7 +135,25 @@ class TestSEORoutes(unittest.TestCase):
         self.assertIn("application/xml", sent_headers.get("content-type", ""))
         self.assertTrue(int(sent_headers.get("content-length", 0)) > 0)
 
-        # 5. GET /requirements.txt -> 403 Forbidden
+        # 5. HEAD /privacy
+        sent_status.clear()
+        sent_headers.clear()
+        handler.path = "/privacy"
+        with unittest.mock.patch.object(server.SimpleHTTPRequestHandler, "do_HEAD") as mock_head:
+            handler.do_HEAD()
+            self.assertEqual(handler.path, "/privacy.html")
+            mock_head.assert_called_once()
+
+        # 6. HEAD /terms
+        sent_status.clear()
+        sent_headers.clear()
+        handler.path = "/terms"
+        with unittest.mock.patch.object(server.SimpleHTTPRequestHandler, "do_HEAD") as mock_head:
+            handler.do_HEAD()
+            self.assertEqual(handler.path, "/terms.html")
+            mock_head.assert_called_once()
+
+        # 7. GET /requirements.txt -> 403 Forbidden
         sent_status.clear()
         sent_headers.clear()
         handler.wfile = BytesIO()
