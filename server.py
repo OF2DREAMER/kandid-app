@@ -5462,6 +5462,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
                 return
+        if norm_path in ["/about", "/about/"]:
+            self.path = "/about.html"
+            return super().do_HEAD()
         if norm_path in ["/privacy", "/privacy/"]:
             self.path = "/privacy.html"
             return super().do_HEAD()
@@ -5592,6 +5595,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/landing":
             self.path = "/landing.html"
+            return super().do_GET()
+
+        if path in ["/about", "/about/"]:
+            self.path = "/about.html"
             return super().do_GET()
 
         if path in ["/privacy", "/privacy/"]:
