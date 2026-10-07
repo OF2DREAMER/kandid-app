@@ -5300,6 +5300,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
         ".avif", ".ico", ".bmp", ".woff", ".woff2", ".ttf", ".otf", ".eot",
         ".html", ".htm", ".json", ".webmanifest", ".map",
         ".mp4", ".webm", ".mp3", ".wav", ".ogg",
+        ".xml", ".txt",
     )
 
     def __init__(self, *args, **kwargs):
@@ -5435,7 +5436,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if norm_path == "/robots.txt":
+        if norm_path == "/robots.txt" or norm_path.endswith("/robots.txt"):
             try:
                 with open("robots.txt", "rb") as f:
                     size = len(f.read())
@@ -5448,12 +5449,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
                 return
-        if norm_path == "/sitemap.xml":
+        if norm_path == "/sitemap.xml" or norm_path.endswith("/sitemap.xml"):
             try:
                 with open("sitemap.xml", "rb") as f:
                     size = len(f.read())
                 self.send_response(200)
-                self.send_header("Content-Type", "application/xml; charset=utf-8")
+                self.send_header("Content-Type", "application/xml")
                 self.send_header("Content-Length", str(size))
                 self.end_headers()
                 return
@@ -5506,7 +5507,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if is_blocked_static_path(norm_path):
             return self.send_json(403, {"error": "Access denied"})
 
-        if norm_path == "/robots.txt":
+        if norm_path == "/robots.txt" or norm_path.endswith("/robots.txt"):
             try:
                 with open("robots.txt", "rb") as f:
                     content = f.read()
@@ -5519,12 +5520,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
             except FileNotFoundError:
                 return self.send_json(404, {"error": "File not found"})
 
-        if norm_path == "/sitemap.xml":
+        if norm_path == "/sitemap.xml" or norm_path.endswith("/sitemap.xml"):
             try:
                 with open("sitemap.xml", "rb") as f:
                     content = f.read()
                 self.send_response(200)
-                self.send_header("Content-Type", "application/xml; charset=utf-8")
+                self.send_header("Content-Type", "application/xml")
                 self.send_header("Content-Length", str(len(content)))
                 self.end_headers()
                 self.wfile.write(content)
