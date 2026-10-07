@@ -6469,37 +6469,38 @@ state.onboardAvatarData = '';
 state.currentPlaceModalType = '';
 
 const privacyText = `
-    <p class="italic text-zinc-400">Effective Date: September 1, 2026</p>
-    <p>Kandid is operated by SolvarionX (“SolvarionX”, “Kandid”, “we”, “us”, or “our”).</p>
-    <p>Kandid is a social network designed around real people, real places, real relationships, and real-world moments. We believe privacy should be built into the product rather than added later.</p>
-    <p>This Privacy Policy explains what information we collect, why we collect it, how we use it, when we share it, and the choices available to you when you use Kandid.</p>
-    <p>By using Kandid, you acknowledge the practices described in this Privacy Policy.</p>
+    <p class="italic text-zinc-400">Last Updated: October 7, 2026</p>
+    <p>Kandid (“Kandid”, “we”, “us”, or “our”) is operated at <a href="/privacy" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/privacy</a>.</p>
+    <p>Kandid is a social network designed around real people, real places, real relationships, and authentic moments without artificial vanity metrics.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">1. Information We Collect</h4>
-    <p>We collect information necessary to operate Kandid, protect the community, and provide features you choose to use (Name, Username, Email, Phone, Profile photo, Credentials, Date of birth).</p>
-    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">2. Content You Create</h4>
-    <p>Photos, Videos, Audio, Captions, Moments, Places, and Communities you choose to associate with. You control what you create and share.</p>
-    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">3. Camera, Microphone & Contacts</h4>
-    <p>Access required only when capturing Moments or using optional contact discovery. Your address book is never displayed publicly.</p>
-    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">4. Location & Technical Information</h4>
-    <p>Approximate location areas are used for nearby discovery without exposing exact live location. Device logs are collected to operate and secure Kandid.</p>
+    <p>We collect account credentials (username, email, password hash or Google OAuth ID token metadata), profile information (display name, bio, campus/city tag, avatar photo), user-created content (dual-camera photos, optional 3-second audio clips, captions, reactions, moments, community posts, direct messages), coarse location context (campus/city tag attached to posts; no continuous GPS tracking), and basic technical request logs.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">2. What We Do NOT Collect</h4>
+    <p>We do not collect phone numbers or dates of birth during registration, we do not sync or upload device address books/contacts, and we do not sell personal data to third parties.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">3. Third-Party Services</h4>
+    <p>We utilize Google Identity Services for Google Sign-In, Brevo/Resend for transactional email delivery, and Dicebear API for default avatar rendering.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">4. Full Standalone Policy</h4>
+    <p>For complete details on data retention, privacy controls, and security, visit our full public page: <a href="/privacy" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/privacy</a>.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">5. Contact & Privacy Requests</h4>
-    <p>Operated by SolvarionX. For privacy requests, contact privacy@solvarionx.com.</p>
+    <p>For privacy inquiries or data deletion requests, contact privacy@solvarionx.com or support@kindid.in.</p>
 `;
 
 const termsText = `
-    <p class="italic text-zinc-400">Effective Date: September 1, 2026</p>
-    <p>Welcome to Kandid, operated by SolvarionX (“SolvarionX”, “Kandid”, “we”, “us”, or “our”). These Terms of Service (“Terms”) govern your access to and use of Kandid.</p>
+    <p class="italic text-zinc-400">Last Updated: October 7, 2026</p>
+    <p>Welcome to Kandid (“Kandid”, “we”, “us”, or “our”). These Terms of Service govern your access to and use of <a href="/terms" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/terms</a>.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">1. What Kandid Is</h4>
-    <p>Kandid is a social network built around real people, real relationships, real places, and authentic Moments without relying primarily on popularity metrics.</p>
+    <p>Kandid is a social platform built around real communities, real relationships, real places, and authentic moments.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">2. Eligibility & Account Security</h4>
-    <p>You must be legally permitted to use the service under applicable law and provide accurate account information. You are responsible for keeping your credentials secure.</p>
-    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">3. Your Content & License</h4>
-    <p>You retain ownership of content you submit. You grant SolvarionX a non-exclusive license to host and distribute your content solely as necessary to operate Kandid.</p>
-    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">4. Prohibited Conduct & Authenticity</h4>
-    <p>You agree not to manipulate systems, create fake accounts, harass others, dox individuals, or violate our Community Guidelines.</p>
-    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">5. Contact</h4>
-    <p>Operator: SolvarionX. For legal inquiries, contact legal@solvarionx.com.</p>
+    <p>You must be at least 13 years of age (or legal digital consent age in your jurisdiction) to use Kindid. You are responsible for keeping your login credentials confidential.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">3. User Content & Ownership</h4>
+    <p>You retain full ownership of photos, audio, captions, comments, and messages you submit. You grant Kindid a non-exclusive license to host and display your content solely as necessary to operate the service.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">4. Prohibited Conduct</h4>
+    <p>Stolen media, deceptive content, harassment, doxxing, automated scraping, bot accounts, and security manipulation are strictly prohibited.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">5. Full Standalone Terms</h4>
+    <p>Read our full public agreement: <a href="/terms" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/terms</a>.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">6. Contact</h4>
+    <p>For legal inquiries, contact legal@solvarionx.com or support@kindid.in.</p>
 `;
+
 
 window.switchScreen = function(screenId) {
     var screens = document.querySelectorAll('.kandid-screen');

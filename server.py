@@ -2686,7 +2686,7 @@ class PostgresConnectionWrapper:
     def close(self):
         self.raw_conn.close()
 
-def _is_local_host(host: str | None) -> bool:
+def _is_local_host(host) -> bool:
     if not host:
         return True
     host = host.strip()
@@ -2706,7 +2706,7 @@ def _is_local_host(host: str | None) -> bool:
     return False
 
 
-def _is_effective_local(host: str | None, hostaddr: str | None) -> bool:
+def _is_effective_local(host, hostaddr) -> bool:
     if not host and not hostaddr:
         return True
     if host and not _is_local_host(host):
@@ -2727,7 +2727,7 @@ def _is_url(dsn: str) -> bool:
     return False
 
 
-def _resolve_sslmode(sslmode_values: list, is_local: bool) -> str | None:
+def _resolve_sslmode(sslmode_values: list, is_local: bool):
     if not is_local:
         if not sslmode_values:
             return "require"
@@ -5531,6 +5531,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/landing":
             self.path = "/landing.html"
+            return super().do_GET()
+
+        if path in ["/privacy", "/privacy/"]:
+            self.path = "/privacy.html"
+            return super().do_GET()
+
+        if path in ["/terms", "/terms/"]:
+            self.path = "/terms.html"
             return super().do_GET()
 
         if path == "/api/public/stats":
