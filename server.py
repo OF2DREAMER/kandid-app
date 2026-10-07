@@ -5561,6 +5561,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(401, {"error": "Unauthenticated"})
             return self.send_json(200, {"user": user})
 
+        if path in ["/api/auth/google/config", "/api/auth/google-config"]:
+            return self.send_json(200, {
+                "success": True,
+                "client_id": GOOGLE_CLIENT_ID,
+                "configured": bool(GOOGLE_CLIENT_ID)
+            })
+
         if path in ["/api/auth/ping", "/api/ping"]:
             user = get_current_user(self.headers)
             return self.send_json(200, {"success": True, "online": bool(user)})

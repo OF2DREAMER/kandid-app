@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Kandid — Authentic Moments & Communities</title>
   <meta name="description" content="Kandid — The authentic social platform for communities and campuses. Dual-camera moments, live telemetry, and real-time community pulse.">
   
@@ -21,8 +21,9 @@
   <link rel="manifest" href="/manifest.json">
 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- Tailwind CSS & Modern Typography -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Precompiled Tailwind CSS & Modern Typography -->
+  <link rel="stylesheet" href="tailwind.compiled.css?v=1.0.0">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -30,10 +31,6 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css?v=3.1.6">
   <style>
-    body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
-    .font-mono-tag, .mono { font-family: 'JetBrains Mono', monospace; }
-    .font-mono-meta { font-family: 'JetBrains Mono', monospace; }
-    .no-scroll::-webkit-scrollbar { display: none; }
     .apple-blur { backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px); }
     /* kandid-screen: auth/onboarding sub-screens */
     .kandid-screen { display: none; flex-direction: column; height: 100%; width: 100%; }
@@ -5073,20 +5070,12 @@
                 <p class="text-xs text-zinc-400">Secure authentication to continue to <span class="font-bold text-amber-400">Kandid</span></p>
             </div>
 
-            <!-- Real Google Account Input Form -->
-            <div class="space-y-3 font-mono-tag">
-                <div class="space-y-1">
-                    <label class="text-[9px] text-zinc-400 uppercase tracking-widest block font-bold">Google Email Address</label>
-                    <input id="customGoogleEmail" type="email" placeholder="yourname@gmail.com" class="w-full bg-zinc-950 border border-zinc-700 focus:border-amber-500/50 rounded-2xl px-4 py-3 text-xs text-white outline-none font-sans transition-colors">
-                </div>
-                <div class="space-y-1">
-                    <label class="text-[9px] text-zinc-400 uppercase tracking-widest block font-bold">Your Full Name</label>
-                    <input id="customGoogleName" type="text" placeholder="Your Name" class="w-full bg-zinc-950 border border-zinc-700 focus:border-amber-500/50 rounded-2xl px-4 py-3 text-xs text-white outline-none font-sans transition-colors">
-                </div>
-                <button type="button" onclick="submitCustomGoogleAccount()" class="w-full py-3.5 bg-white hover:bg-zinc-100 text-zinc-950 font-extrabold text-xs rounded-2xl tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-[0.98]">
-                    <span>Authenticate with Google</span>
-                    <span>→</span>
-                </button>
+            <!-- Real Google Identity Services (GIS) Button Container -->
+            <div class="py-4 flex flex-col items-center justify-center space-y-3 font-mono-tag">
+                <div id="googleSignInBtnContainer" class="flex justify-center w-full min-h-[44px]"></div>
+                <p id="googleAuthStatusText" class="text-[10px] text-zinc-400 text-center font-sans leading-relaxed">
+                    Google Identity securely verifies your email and profile to sign in to your Kandid account.
+                </p>
             </div>
 
             <!-- Google Security Notice -->
