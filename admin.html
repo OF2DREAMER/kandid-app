@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kandid — Founder & Admin Control Panel</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/tailwind.compiled.css?v=4.3.3">
+  <link rel="stylesheet" href="/style.css?v=3.1.6">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: #09090b; color: #f4f4f5; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .admin-nav-item.active { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: rgba(245, 158, 11, 0.4); }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-[#09090b] text-zinc-100">
+
+  <!-- Top Navigation Header -->
+  <header class="h-14 bg-zinc-950 border-b border-zinc-800/80 px-6 flex items-center justify-between sticky top-0 z-50">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center font-bold text-amber-500 font-mono-tag">K</div>
+      <span class="font-extrabold tracking-wider text-sm font-mono-tag text-white">KANDID ADMIN</span>
+      <span id="envBadge" class="text-[10px] font-mono-tag font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 uppercase">PRODUCTION</span>
+    </div>
+
+    <div class="flex items-center gap-4 text-xs font-mono-tag">
+      <div id="adminIdentityBadge" class="text-zinc-400">
+        Loading admin identity...
+      </div>
+      <button onclick="logoutAdmin()" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white rounded-lg transition cursor-pointer">
+        Sign Out
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Body Layout -->
+  <div class="flex-1 flex">
+
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 bg-zinc-950/70 border-r border-zinc-800/80 p-4 flex flex-col justify-between shrink-0">
+      <nav class="space-y-1 text-xs font-mono-tag">
+        <div class="px-3 py-2 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Control Surface</div>
+
+        <button onclick="switchAdminTab('overview')" id="tab-overview" class="admin-nav-item active w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
+          <span>📊 Overview</span>
+        </button>
+
+        <button onclick="switchAdminTab('users')" id="tab-users" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
+          <span>👥 Users</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase C</span>
+        </button>
+
+        <button onclick="switchAdminTab('content')" id="tab-content" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
+          <span>📸 Content & Moments</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase D</span>
+        </button>
+
+        <button onclick="switchAdminTab('communities')" id="tab-communities" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
+          <span>🏛️ Communities</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase E</span>
+        </button>
+
+        <button onclick="switchAdminTab('clusters')" id="tab-clusters" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
+          <span>🌐 Moment Clusters</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase D</span>
+        </button>
+
+        <button onclick="switchAdminTab('reports')" id="tab-reports" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
+          <span>🚨 Moderation Queue</span>
+          <span id="pendingReportsBadge" class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">0</span>
+        </button>
+
+        <div class="pt-4 px-3 py-2 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">System Integrity</div>
+
+        <button onclick="switchAdminTab('health')" id="tab-health" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
+          <span>🩺 System Health</span>
+        </button>
+
+        <button onclick="switchAdminTab('audit')" id="tab-audit" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
+          <span>📜 Audit Trail</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase G</span>
+        </button>
+      </nav>
+
+      <div class="p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-[10px] text-zinc-500 font-mono-tag space-y-1">
+        <p class="font-bold text-zinc-400">Platform Identity</p>
+        <p>Kindid Production Runtime</p>
+        <p>Server Engine: Python 3.14</p>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 p-6 space-y-6 overflow-y-auto">
+
+      <!-- View: Overview -->
+      <section id="view-overview" class="admin-view space-y-6">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">System Overview</h1>
+            <p class="text-xs text-zinc-400">Real-time platform activity and system metrics</p>
+          </div>
+          <button onclick="loadAdminOverview()" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
+            🔄 Refresh Metrics
+          </button>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-2 shadow-lg">
+            <p class="text-[10px] text-zinc-400 font-mono-tag uppercase tracking-wider">Total Registered Users</p>
+            <h2 id="metricTotalUsers" class="text-2xl font-extrabold text-white font-mono-tag">--</h2>
+            <p id="metricActiveUsers" class="text-[11px] text-amber-400 font-mono-tag">-- active nodes</p>
+          </div>
+
+          <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-2 shadow-lg">
+            <p class="text-[10px] text-zinc-400 font-mono-tag uppercase tracking-wider">Authentic Moments</p>
+            <h2 id="metricTotalMoments" class="text-2xl font-extrabold text-white font-mono-tag">--</h2>
+            <p id="metricActiveClusters" class="text-[11px] text-zinc-400 font-mono-tag">-- moment clusters</p>
+          </div>
+
+          <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-2 shadow-lg">
+            <p class="text-[10px] text-zinc-400 font-mono-tag uppercase tracking-wider">Active Communities</p>
+            <h2 id="metricActiveCommunities" class="text-2xl font-extrabold text-white font-mono-tag">--</h2>
+            <p class="text-[11px] text-zinc-400 font-mono-tag">Public & Place spaces</p>
+          </div>
+
+          <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-2 shadow-lg">
+            <p class="text-[10px] text-zinc-400 font-mono-tag uppercase tracking-wider">Moderation Queue</p>
+            <h2 id="metricPendingReports" class="text-2xl font-extrabold text-amber-400 font-mono-tag">--</h2>
+            <p class="text-[11px] text-zinc-400 font-mono-tag">Pending reports requiring review</p>
+          </div>
+        </div>
+
+        <!-- System Status Banner -->
+        <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold font-mono-tag text-white uppercase tracking-wider">Platform Health Status</h3>
+            <span id="healthStatusBadge" class="text-[10px] font-mono-tag font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">OPERATIONAL</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono-tag">
+            <div class="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800/80 space-y-1">
+              <span class="text-zinc-500 text-[10px]">Database Connection</span>
+              <p id="healthDbStatus" class="font-bold text-white">Checking...</p>
+            </div>
+            <div class="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800/80 space-y-1">
+              <span class="text-zinc-500 text-[10px]">Database Engine</span>
+              <p id="healthDbEngine" class="font-bold text-white">SQLite / PostgreSQL</p>
+            </div>
+            <div class="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800/80 space-y-1">
+              <span class="text-zinc-500 text-[10px]">Active User Sessions</span>
+              <p id="healthActiveSessions" class="font-bold text-white">-- sessions</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- View: Users (Placeholder for Phase C) -->
+      <section id="view-users" class="admin-view space-y-4 hidden">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">User Management</h1>
+            <p class="text-xs text-zinc-400">Phase C — User account status, roles, and session controls</p>
+          </div>
+        </div>
+        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
+          <p class="text-sm font-mono-tag text-zinc-400">User Management Module scheduled for Phase C implementation.</p>
+          <p class="text-xs text-zinc-600 font-mono-tag">Will provide handle search, role modifications (founder-only), account suspensions, and session revocations.</p>
+        </div>
+      </section>
+
+      <!-- View: Content (Placeholder for Phase D) -->
+      <section id="view-content" class="admin-view space-y-4 hidden">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Content & Moments</h1>
+            <p class="text-xs text-zinc-400">Phase D — Soft moderation, moment visibility, and cluster preservation</p>
+          </div>
+        </div>
+        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
+          <p class="text-sm font-mono-tag text-zinc-400">Content Moderation Module scheduled for Phase D implementation.</p>
+          <p class="text-xs text-zinc-600 font-mono-tag">Will enforce soft moderation (moderation_status='removed') preserving cluster integrity and foreign keys.</p>
+        </div>
+      </section>
+
+      <!-- View: Communities (Placeholder for Phase E) -->
+      <section id="view-communities" class="admin-view space-y-4 hidden">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Communities</h1>
+            <p class="text-xs text-zinc-400">Phase E — Community spaces and activation status</p>
+          </div>
+        </div>
+        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
+          <p class="text-sm font-mono-tag text-zinc-400">Community Operations Module scheduled for Phase E implementation.</p>
+        </div>
+      </section>
+
+      <!-- View: Clusters (Placeholder for Phase D) -->
+      <section id="view-clusters" class="admin-view space-y-4 hidden">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Moment Clusters</h1>
+            <p class="text-xs text-zinc-400">Phase D — Perspective clusters and I-Was-There shared graph</p>
+          </div>
+        </div>
+        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
+          <p class="text-sm font-mono-tag text-zinc-400">Moment Cluster Inspection scheduled for Phase D implementation.</p>
+        </div>
+      </section>
+
+      <!-- View: Reports Queue (Placeholder for Phase F) -->
+      <section id="view-reports" class="admin-view space-y-4 hidden">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Moderation Queue</h1>
+            <p class="text-xs text-zinc-400">Phase F — Unified user and community reports review queue</p>
+          </div>
+        </div>
+        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
+          <p class="text-sm font-mono-tag text-zinc-400">Unified Moderation Queue scheduled for Phase F implementation.</p>
+        </div>
+      </section>
+
+      <!-- View: System Health -->
+      <section id="view-health" class="admin-view space-y-6 hidden">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">System Health & Telemetry</h1>
+            <p class="text-xs text-zinc-400">Infrastructure operational metrics and service status</p>
+          </div>
+          <button onclick="loadAdminHealth()" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
+            🔄 Check Health
+          </button>
+        </div>
+
+        <div id="healthDetailsContainer" class="p-6 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-4 font-mono-tag text-xs">
+          <p class="text-zinc-400">Loading system health details...</p>
+        </div>
+      </section>
+
+      <!-- View: Audit Trail (Placeholder for Phase G) -->
+      <section id="view-audit" class="admin-view space-y-4 hidden">
+        <div class="flex justify-between items-center">
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Admin Audit Trail</h1>
+            <p class="text-xs text-zinc-400">Phase G — Application-level append-only administrative action log</p>
+          </div>
+        </div>
+        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
+          <p class="text-sm font-mono-tag text-zinc-400">Audit Trail Viewer scheduled for Phase G implementation.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="/admin.js"></script>
+</body>
+</html>

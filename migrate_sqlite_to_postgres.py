@@ -55,7 +55,8 @@ KANDID_TABLES = [
     "recent_searches",
     "user_public_keys",
     "chat_reactions",
-    "chat_attachments"
+    "chat_attachments",
+    "admin_audit_log"
 ]
 
 def _is_local_host(host: str | None) -> bool:

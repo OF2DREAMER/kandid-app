@@ -131,6 +131,41 @@ RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "").strip().strip("'\"")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "").strip().strip("'\"")
 RAZORPAY_WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", os.environ.get("WEBHOOK_SECRET", "")).strip().strip("'\"")
 APP_URL = os.environ.get("APP_URL", "https://kindid.in").strip()
+POSTHOG_API_KEY = os.environ.get("POSTHOG_API_KEY", os.environ.get("POSTHOG_PROJECT_KEY", "")).strip().strip("'\"")
+POSTHOG_HOST = os.environ.get("POSTHOG_HOST", "https://us.i.posthog.com").strip().strip("'\"")
+POSTHOG_ENABLED = os.environ.get("POSTHOG_ENABLED", "").strip().lower() in ("true", "1") and bool(POSTHOG_API_KEY)
+
+def log_operational_event(event_name: str, category: str = "general", properties: dict = None, level: str = "INFO"):
+    """
+    Privacy-first structured server operational logging.
+    Strictly removes credentials, tokens, PII, and request bodies.
+    """
+    try:
+        sanitized = {}
+        if properties:
+            for k, v in properties.items():
+                if any(bad in k.lower() for bad in [
+                    "password", "token", "secret", "auth", "otp", "key", "email",
+                    "body", "chat", "msg", "credential", "cookie", "id_token",
+                    "phone", "gps", "lat", "lon", "coord", "audio", "photo", "img", "image", "caption", "dob"
+                ]):
+                    continue
+                if isinstance(v, (int, float, bool)):
+                    sanitized[k] = v
+                elif isinstance(v, str):
+                    sanitized[k] = v[:128]
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": level,
+            "event": event_name,
+            "category": category,
+            "env": ENVIRONMENT,
+            "data": sanitized
+        }
+        print(f"[TELEMETRY] {json.dumps(entry)}")
+    except Exception:
+        pass
+
 DEV_SESSION_SECRET_FALLBACK = "kandid_dev_only_session_key_do_not_use_in_prod"
 MIN_SESSION_SECRET_LENGTH = 32
 MAX_SESSION_SECRET_LENGTH = 512
@@ -3845,7 +3880,37 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_vge_actor ON viral_graph_events(actor_user_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_vge_type ON viral_graph_events(event_type);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_vge_cluster ON viral_graph_events(cluster_id);")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_vge_moment ON viral_graph_events(moment_id);")
+    # Phase A: Admin Audit Log Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+        id TEXT PRIMARY KEY,
+        admin_id TEXT NOT NULL,
+        admin_handle TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        details TEXT DEFAULT '',
+        ip_address TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created ON admin_audit_log(created_at DESC);")
+
+    # Phase A: Auto-migrations for reports table (status, reviewed_by, reviewed_at, action_taken)
+    cursor.execute("PRAGMA table_info(reports)")
+    rep_cols = [row[1] for row in cursor.fetchall()]
+    for col, col_def in [
+        ("status", "TEXT DEFAULT 'pending'"),
+        ("reviewed_by", "TEXT DEFAULT ''"),
+        ("reviewed_at", "TEXT DEFAULT ''"),
+        ("action_taken", "TEXT DEFAULT ''")
+    ]:
+        if col not in rep_cols:
+            try:
+                cursor.execute(f"ALTER TABLE reports ADD COLUMN {col} {col_def}")
+            except sqlite3.OperationalError as err:
+                if "duplicate column name" not in str(err).lower():
+                    raise err
 
     conn.commit()
     conn.close()
@@ -5175,6 +5240,74 @@ def internal_ops_authorized(headers, user):
     )
 
 
+def require_admin(self_handler, headers=None, body=None, strict_bearer=False):
+    """
+    Server-side authorization for web admin endpoints.
+    Requires an authenticated database session with user.role in ('admin', 'founder').
+    If strict_bearer is True (required for all state-changing admin APIs),
+    the token MUST come from the Authorization: Bearer header.
+    """
+    headers = headers or getattr(self_handler, "headers", {})
+    if strict_bearer:
+        auth = headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return None, (401, {"error": "Bearer token required for admin mutations", "success": False})
+        token = auth[7:].strip()
+        if not token or token in ["null", "undefined"]:
+            return None, (401, {"error": "Invalid Bearer token", "success": False})
+
+    user = get_current_user(headers, body=body, require_session=True)
+    if not user:
+        return None, (401, {"error": "Authentication required", "success": False})
+
+    role = user.get("role", "")
+    if role not in ("admin", "founder"):
+        return None, (403, {"error": "Admin authorization required", "success": False})
+
+    if user.get("account_status") in ("suspended", "banned") or role == "banned":
+        return None, (403, {"error": "Account is suspended or banned", "success": False})
+
+    return user, None
+
+
+def require_founder(self_handler, headers=None, body=None, strict_bearer=False):
+    """
+    Server-side authorization for founder-only admin endpoints.
+    Requires authenticated user with role == 'founder'.
+    """
+    user, err = require_admin(self_handler, headers=headers, body=body, strict_bearer=strict_bearer)
+    if err:
+        return None, err
+    if user.get("role") != "founder":
+        return None, (403, {"error": "Founder authorization required", "success": False})
+    return user, None
+
+
+def record_admin_audit_event(admin_user, action: str, target_type: str, target_id: str, details: str = "", ip_address: str = ""):
+    """
+    Application-level append-only audit logger for administrative actions.
+    Strictly excludes passwords, OTPs, session tokens, and private secrets.
+    """
+    try:
+        if not admin_user:
+            return
+        admin_id = admin_user.get("id", "unknown")
+        admin_handle = admin_user.get("handle", "unknown")
+        log_id = f"aud_{secrets.token_hex(8)}"
+        clean_details = str(details or "")[:512]
+
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO admin_audit_log (id, admin_id, admin_handle, action, target_type, target_id, details, ip_address)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (log_id, admin_id, admin_handle, action, target_type, target_id, clean_details, ip_address))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        log_operational_event("admin_audit_log_failed", category="audit", properties={"error": str(e)[:100]}, level="ERROR")
+
+
 def resolve_user_id(raw_val, conn=None):
     if not raw_val:
         return None
@@ -5214,6 +5347,8 @@ def resolve_user_id(raw_val, conn=None):
 BLOCKED_STATIC_EXTENSIONS = (
     ".db", ".sqlite", ".tgz", ".gz", ".tar", ".exe", ".zip",
     ".py", ".pyc", ".md", ".txt", ".lock", ".gitignore", ".env",
+    ".patch", ".diff", ".log", ".bak", ".backup", ".orig", ".sh",
+    ".yml", ".yaml", ".conf", ".ini",
 )
 BLOCKED_STATIC_DIRS = ("/cloudflared", "/ngrok", "/backend", "/scratch")
 BLOCKED_STATIC_NAMES = ("/cf.tgz",)
@@ -5222,6 +5357,8 @@ BLOCKED_STATIC_NAMES = ("/cf.tgz",)
 def is_blocked_static_path(norm_path):
     """True when a normalized request path must never be served over HTTP."""
     import posixpath
+    if norm_path in ("/admin", "/admin/", "/admin.html", "/admin.js") or norm_path.startswith("/admin/"):
+        return True
     if norm_path == "/data" or norm_path.startswith("/data/") or "chat_attachments" in norm_path:
         return True
     basename = posixpath.basename(norm_path)
@@ -5327,8 +5464,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             super().handle_one_request()
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True
-        except Exception:
+        except Exception as e:
             self.close_connection = True
+            log_operational_event("unhandled_exception", category="server_error", properties={"exception_type": type(e).__name__}, level="ERROR")
             started = getattr(self, "_response_status", 0)
             if not started:
                 try:
@@ -5400,6 +5538,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("X-XSS-Protection", "1; mode=block")
         self.send_header("Permissions-Policy", "camera=(self), microphone=(self), geolocation=(self)")
+        csp_directives = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.tailwindcss.com https://checkout.razorpay.com https://us.i.posthog.com https://eu.i.posthog.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; "
+            "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; "
+            "img-src 'self' data: blob: https://res.cloudinary.com https://api.dicebear.com https://images.unsplash.com https://lh3.googleusercontent.com https://accounts.google.com; "
+            "connect-src 'self' https://accounts.google.com https://us.i.posthog.com https://eu.i.posthog.com https://api.razorpay.com https://api.dicebear.com https://res.cloudinary.com; "
+            "frame-src 'self' https://accounts.google.com https://api.razorpay.com; "
+            "object-src 'none'; "
+            "base-uri 'self';"
+        )
+        self.send_header("Content-Security-Policy", csp_directives)
         if is_production_env():
             self.send_header("Strict-Transport-Security", "max-age=31536000")
         super().end_headers()
@@ -5507,6 +5657,140 @@ class KandidHandler(SimpleHTTPRequestHandler):
         import posixpath
         from urllib.parse import unquote
         norm_path = posixpath.normpath(unquote(path))
+
+        # Admin Surface Server-Side Route Gating & APIs
+        if norm_path in ("/admin", "/admin/", "/admin.html"):
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            if user.get("role") not in ("admin", "founder") or user.get("account_status") in ("suspended", "banned"):
+                return self.send_json(403, {"error": "Access denied. Admin authorization required.", "success": False})
+            try:
+                with open("admin.html", "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+            except FileNotFoundError:
+                return self.send_json(404, {"error": "Admin portal file not found"})
+
+        if norm_path == "/admin.js":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+            if user.get("role") not in ("admin", "founder") or user.get("account_status") in ("suspended", "banned"):
+                return self.send_json(403, {"error": "Access denied. Admin authorization required.", "success": False})
+            try:
+                with open("admin.js", "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+            except FileNotFoundError:
+                return self.send_json(404, {"error": "Admin script file not found"})
+
+        if path == "/api/admin/me":
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+            return self.send_json(200, {
+                "success": True,
+                "user": {
+                    "id": user["id"],
+                    "handle": user["handle"],
+                    "name": user["name"],
+                    "role": user["role"],
+                    "avatar_url": user.get("avatar_url", "")
+                }
+            })
+
+        if path == "/api/admin/overview":
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT COUNT(*) FROM users")
+            total_users = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM users WHERE role != 'banned' AND (account_status IS NULL OR account_status = 'active')")
+            active_users = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM posts WHERE moderation_status != 'removed'")
+            total_moments = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM communities WHERE (visibility IS NULL OR visibility != 'private')")
+            active_communities = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM moment_clusters")
+            active_clusters = cursor.fetchone()[0]
+
+            cursor.execute("""
+                SELECT (
+                    SELECT COUNT(*) FROM reports WHERE status = 'pending' OR status IS NULL
+                ) + (
+                    SELECT COUNT(*) FROM community_reports WHERE status = 'pending'
+                )
+            """)
+            pending_reports = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM sessions WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP")
+            active_sessions = cursor.fetchone()[0]
+
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "total_users": total_users,
+                "active_users": active_users,
+                "total_moments": total_moments,
+                "active_communities": active_communities,
+                "active_clusters": active_clusters,
+                "pending_reports": pending_reports,
+                "system_health": {
+                    "database": "healthy",
+                    "engine": "postgresql" if DATABASE_URL else "sqlite",
+                    "environment": ENVIRONMENT,
+                    "active_sessions": active_sessions,
+                    "version": "v5.2.2"
+                }
+            })
+
+        if path == "/api/admin/health":
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+
+            t0 = time.time()
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            db_latency_ms = round((time.time() - t0) * 1000, 2)
+
+            cursor.execute("SELECT COUNT(*) FROM sessions WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP")
+            active_sessions = cursor.fetchone()[0]
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "status": "ok",
+                "db_status": "connected",
+                "db_engine": "postgresql" if DATABASE_URL else "sqlite",
+                "db_latency_ms": db_latency_ms,
+                "active_sessions": active_sessions,
+                "environment": ENVIRONMENT,
+                "version": "v5.2.2"
+            })
+
         if is_blocked_static_path(norm_path):
             return self.send_json(403, {"error": "Access denied"})
 
@@ -5608,6 +5892,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if path in ["/terms", "/terms/"]:
             self.path = "/terms.html"
             return super().do_GET()
+
+        if path == "/api/public/config":
+            return self.send_json(200, {
+                "success": True,
+                "environment": ENVIRONMENT,
+                "version": "v5.2.2",
+                "posthog_enabled": POSTHOG_ENABLED,
+                "posthog_host": POSTHOG_HOST if POSTHOG_ENABLED else "",
+                "posthog_api_key": POSTHOG_API_KEY if POSTHOG_ENABLED else ""
+            })
 
         if path == "/api/public/stats":
             conn = get_db()
@@ -9961,6 +10255,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user = get_current_user(self.headers)
             if not user:
                 return self.send_json(401, {"error": "Authentication required"})
+            if not rate_limiter.check_rate_limit(f"report_comm:{user['id']}", max_requests=10, window_seconds=60):
+                return self.send_json(429, {"error": "Too many reports submitted. Please wait before submitting another report."})
 
             comm_id = (body.get("community_id") or body.get("community") or "").strip()
             target_type = (body.get("target_type") or "").strip().lower()
@@ -10468,6 +10764,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             if not raw_identifier:
                 return self.send_json(400, {"error": "Username or email is required"})
+            if not password:
+                return self.send_json(400, {"error": "Password is required"})
             
             conn = get_db()
             cursor = conn.cursor()
@@ -10475,27 +10773,24 @@ class KandidHandler(SimpleHTTPRequestHandler):
             rows = cursor.fetchall()
             if not rows:
                 conn.close()
+                log_operational_event("auth_failure", category="authentication", properties={"reason": "account_not_found"}, level="WARNING")
                 return self.send_json(404, {"error": f"Account '{raw_identifier}' not found. Please sign up!"})
             
             matched_user = None
             for r in rows:
                 cand = dict(r)
                 if cand.get("password_hash") and cand.get("salt"):
-                    if password and verify_password(password, cand["salt"], cand["password_hash"]):
+                    if verify_password(password, cand["salt"], cand["password_hash"]):
                         matched_user = cand
                         break
-                elif not password:
-                    matched_user = cand
-                    break
 
             if not matched_user:
-                if not password:
-                    conn.close()
-                    return self.send_json(400, {"error": "Password is required"})
                 conn.close()
+                log_operational_event("auth_failure", category="authentication", properties={"reason": "incorrect_password"}, level="WARNING")
                 return self.send_json(401, {"error": "Incorrect password. Tap 'Forgot password?' below to reset it."})
 
             u = matched_user
+            log_operational_event("auth_success", category="authentication", properties={"method": "password"}, level="INFO")
             
             token = "token_" + u["handle"] + "_" + secrets.token_hex(24)
             expires = (datetime.now() + timedelta(days=90)).isoformat()
@@ -10597,8 +10892,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             reset_token = str(body.get("reset_token") or body.get("token") or "").strip()
             new_password = str(body.get("new_password") or body.get("password") or "").strip()
 
-            if not new_password or len(new_password) < 4:
-                return self.send_json(400, {"success": False, "error": "New password must be at least 4 characters long"})
+            if not new_password or len(new_password) < 8:
+                return self.send_json(400, {"success": False, "error": "New password must be at least 8 characters long"})
 
             conn = get_db()
             cursor = conn.cursor()
@@ -11632,9 +11927,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             handle = body.get("handle", "user_" + secrets.token_hex(2)).strip()
             handle = handle.replace("@", "").lower()
             campus = body.get("campus", "North City University").strip()
-            password = body.get("password", "pass123").strip()
+            password = body.get("password", "").strip()
             if not password:
-                password = "pass123"
+                password = secrets.token_urlsafe(16)
+            elif len(password) < 8:
+                return self.send_json(400, {"error": "Password must be at least 8 characters long"})
             
             user_id = "u_" + secrets.token_hex(4)
             email = (body.get("email") or "").strip().lower() or (handle.lower() + "@kandid.app")
@@ -11768,6 +12065,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not user:
                 return self.send_json(401, {"error": "Authentication required", "success": False})
             reporter_id = user["id"]
+            if not rate_limiter.check_rate_limit(f"report_user:{reporter_id}", max_requests=10, window_seconds=60):
+                return self.send_json(429, {"error": "Too many reports submitted. Please wait before submitting another report.", "success": False})
             reported_id = body.get("reportedUserId") or body.get("reported_id") or body.get("user_id") or body.get("target_id")
             reason = body.get("reason", "Inappropriate content")
             details = body.get("details", "")
@@ -12554,14 +12853,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user = get_current_user(self.headers)
             if not user:
                 return self.send_json(401, {"error": "Unauthenticated"})
-            try:
-                body = json.loads(self.rfile.read(int(self.headers.get('Content-Length', 0))))
-            except:
-                body = {}
             current_pw = body.get("current_password", "")
             new_pw = body.get("new_password", "")
-            if not current_pw or not new_pw or len(new_pw) < 6:
-                return self.send_json(400, {"error": "New password must be at least 6 characters."})
+            if not current_pw or not new_pw or len(new_pw) < 8:
+                return self.send_json(400, {"error": "New password must be at least 8 characters."})
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("SELECT password_hash, salt FROM users WHERE id = ?", (user["id"],))
@@ -12574,6 +12869,75 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.commit()
             conn.close()
             return self.send_json(200, {"success": True, "message": "Password changed successfully."})
+
+        if path == "/api/user/delete-account":
+            user = get_current_user(self.headers, body, require_session=True)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            confirm_code = str(body.get("confirmation", "")).strip().upper()
+            if confirm_code != "DELETE":
+                return self.send_json(400, {"error": "Confirmation code 'DELETE' is required to permanently delete your account.", "success": False})
+
+            user_id = user["id"]
+            user_email = user.get("email", "")
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            try:
+                # 1. Invalidate all active sessions
+                cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+                # 2. Delete posts and associated reactions / clusters
+                cursor.execute("SELECT id FROM posts WHERE user_id = ?", (user_id,))
+                post_ids = [r[0] for r in cursor.fetchall()]
+                for pid in post_ids:
+                    cursor.execute("DELETE FROM reactions WHERE post_id = ?", (pid,))
+                    cursor.execute("DELETE FROM moment_cluster_members WHERE perspective_post_id = ?", (pid,))
+                cursor.execute("DELETE FROM posts WHERE user_id = ?", (user_id,))
+                cursor.execute("DELETE FROM reactions WHERE user_id = ?", (user_id,))
+
+                # 3. Delete cluster memberships
+                cursor.execute("DELETE FROM moment_cluster_members WHERE user_id = ?", (user_id,))
+
+                # 4. Delete direct messages and notifications
+                cursor.execute("DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?", (user_id, user_id))
+                cursor.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
+
+                # 5. Friendships, blocks, mutes
+                cursor.execute("DELETE FROM friendships WHERE user_id = ? OR friend_id = ?", (user_id, user_id))
+                cursor.execute("DELETE FROM blocks WHERE blocker_id = ? OR blocked_id = ?", (user_id, user_id))
+                cursor.execute("DELETE FROM community_mutes WHERE user_id = ?", (user_id,))
+
+                # 6. Community memberships (decrement member counts)
+                cursor.execute("SELECT community_id FROM community_members WHERE user_id = ?", (user_id,))
+                comm_ids = [r[0] for r in cursor.fetchall()]
+                cursor.execute("DELETE FROM community_members WHERE user_id = ?", (user_id,))
+                for cid in comm_ids:
+                    cursor.execute("UPDATE communities SET members_count = MAX(0, members_count - 1) WHERE id = ?", (cid,))
+
+                # 7. Searches, keys, identities, otps
+                cursor.execute("DELETE FROM recent_searches WHERE user_id = ?", (user_id,))
+                cursor.execute("DELETE FROM user_public_keys WHERE user_id = ?", (user_id,))
+                cursor.execute("DELETE FROM auth_identities WHERE user_id = ?", (user_id,))
+                if user_email:
+                    cursor.execute("DELETE FROM email_otps WHERE email = ?", (user_email,))
+                    cursor.execute("DELETE FROM password_resets WHERE email = ?", (user_email,))
+
+                # 8. Delete user record
+                cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+                conn.commit()
+                conn.close()
+
+                log_operational_event("account_deleted", category="account", properties={"deleted": True}, level="INFO")
+                return self.send_json(200, {"success": True, "message": "Account permanently deleted."})
+            except Exception as e:
+                conn.rollback()
+                conn.close()
+                log_operational_event("account_deletion_failed", category="account", properties={"error": str(e)[:100]}, level="ERROR")
+                return self.send_json(500, {"error": "Failed to delete account. Please try again or contact support.", "success": False})
 
         if path == "/api/auth/switch":
             return self.send_json(403, {"error": "Account switching is disabled", "success": False})
@@ -13054,6 +13418,7 @@ if __name__ == "__main__":
     t.start()
     
     server = KandidThreadingServer(("0.0.0.0", PORT), KandidHandler)
+    log_operational_event("server_startup", category="lifecycle", properties={"port": PORT, "environment": ENVIRONMENT, "db_engine": "postgresql" if DATABASE_URL else "sqlite"})
     print(f"🚀 Kandid production server running at http://localhost:{PORT}")
     try:
         server.serve_forever()
