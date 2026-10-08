@@ -6,6 +6,7 @@ Scalable Campus Social Platform
 
 import os
 import sys
+import math
 import re
 import json
 import base64
@@ -5853,7 +5854,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             conn.close()
 
-            import math
             pages = math.ceil(total / limit) if limit > 0 else 1
 
             return self.send_json(200, {
@@ -5899,6 +5899,324 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "success": True,
                 "user": u_dict,
                 "active_sessions": sess_count
+            })
+
+        # Phase D: Content & Moments Admin APIs
+        if path == "/api/admin/posts":
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+
+            q = (query.get("q") or [""])[0].strip()
+            status_filter = (query.get("status") or ["all"])[0].strip().lower()
+            vis_filter = (query.get("visibility") or ["all"])[0].strip().lower()
+            cluster_id_filter = (query.get("cluster_id") or [""])[0].strip()
+            comm_id_filter = (query.get("community_id") or [""])[0].strip()
+
+            try:
+                page = int((query.get("page") or ["1"])[0])
+                page = max(1, page)
+            except (ValueError, TypeError):
+                page = 1
+
+            try:
+                limit = int((query.get("limit") or ["25"])[0])
+                limit = max(1, min(100, limit))
+            except (ValueError, TypeError):
+                limit = 25
+
+            offset = (page - 1) * limit
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            where_clauses = ["1=1"]
+            params = []
+
+            if q:
+                clean_q = q.lower().replace("@", "")
+                where_clauses.append("(LOWER(caption) LIKE ? OR LOWER(author_handle) LIKE ? OR LOWER(author_name) LIKE ? OR LOWER(campus) LIKE ?)")
+                params.extend([f"%{clean_q}%", f"%{clean_q}%", f"%{clean_q}%", f"%{clean_q}%"])
+
+            if status_filter in ("active", "hidden", "removed"):
+                if status_filter == "active":
+                    where_clauses.append("(moderation_status IS NULL OR moderation_status = 'active')")
+                else:
+                    where_clauses.append("moderation_status = ?")
+                    params.append(status_filter)
+
+            if vis_filter in ("public", "private"):
+                where_clauses.append("is_private = ?")
+                params.append(1 if vis_filter == "private" else 0)
+
+            if cluster_id_filter:
+                where_clauses.append("cluster_id = ?")
+                params.append(cluster_id_filter)
+
+            if comm_id_filter:
+                where_clauses.append("(primary_community_id = ? OR context_community_id = ?)")
+                params.extend([comm_id_filter, comm_id_filter])
+
+            where_sql = " AND ".join(where_clauses)
+
+            cursor.execute(f"SELECT COUNT(*) FROM posts WHERE {where_sql}", params)
+            total = cursor.fetchone()[0]
+
+            cursor.execute(f"""
+                SELECT id, user_id, author_handle, author_name, avatar_letter, avatar_url, campus,
+                       main_img, pip_img, caption, created_at, moderation_status, is_private,
+                       primary_community_id, cluster_id, location_city
+                FROM posts
+                WHERE {where_sql}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+            """, params + [limit, offset])
+
+            rows = cursor.fetchall()
+            posts_list = []
+            for r in rows:
+                p_dict = dict(r)
+                p_dict["moderation_status"] = p_dict.get("moderation_status") or "active"
+                p_dict["is_private"] = bool(p_dict.get("is_private"))
+                posts_list.append(p_dict)
+
+            pages = max(1, math.ceil(total / limit))
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "posts": posts_list,
+                "total": total,
+                "page": page,
+                "pages": pages,
+                "limit": limit
+            })
+
+        if path.startswith("/api/admin/posts/"):
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+
+            target_id = path[len("/api/admin/posts/"):].strip()
+            if not target_id:
+                return self.send_json(400, {"error": "Target post ID required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, user_id, author_handle, author_name, avatar_letter, avatar_url, campus,
+                       main_img, pip_img, caption, motion_url, audio_url, audio_vibe, audio_duration,
+                       circle, exif_iso, exif_aperture, exif_shutter, created_at, moderation_status,
+                       is_private, primary_community_id, context_community_id, context_location,
+                       cluster_id, location_city, location_country
+                FROM posts
+                WHERE id = ?
+            """, (target_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return self.send_json(404, {"error": "Moment not found", "success": False})
+
+            post_dict = dict(row)
+            post_dict["moderation_status"] = post_dict.get("moderation_status") or "active"
+            post_dict["is_private"] = bool(post_dict.get("is_private"))
+
+            # Reactions count
+            cursor.execute("SELECT COUNT(*) FROM reactions WHERE post_id = ?", (target_id,))
+            reactions_count = cursor.fetchone()[0]
+
+            # Reports count
+            cursor.execute("SELECT COUNT(*) FROM community_reports WHERE target_id = ? AND target_type = 'moment'", (target_id,))
+            reports_count = cursor.fetchone()[0]
+
+            # Linked cluster metadata (if attached or if it is seed)
+            cluster_info = None
+            cand_cluster_id = post_dict.get("cluster_id")
+            if cand_cluster_id:
+                cursor.execute("SELECT id, cluster_type, originating_context, status, visibility, created_at FROM moment_clusters WHERE id = ?", (cand_cluster_id,))
+                c_row = cursor.fetchone()
+                if c_row:
+                    cluster_info = dict(c_row)
+            if not cluster_info:
+                cursor.execute("SELECT id, cluster_type, originating_context, status, visibility, created_at FROM moment_clusters WHERE originator_moment_id = ?", (target_id,))
+                c_row = cursor.fetchone()
+                if c_row:
+                    cluster_info = dict(c_row)
+
+            # Safe author info
+            cursor.execute("SELECT id, handle, name, avatar_url, role, account_status FROM users WHERE id = ?", (post_dict["user_id"],))
+            u_row = cursor.fetchone()
+            author_info = dict(u_row) if u_row else None
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "post": post_dict,
+                "reactions_count": reactions_count,
+                "reports_count": reports_count,
+                "cluster": cluster_info,
+                "author": author_info
+            })
+
+        # Phase D: Moment Clusters Admin APIs
+        if path == "/api/admin/clusters":
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+
+            q = (query.get("q") or [""])[0].strip()
+            status_filter = (query.get("status") or ["all"])[0].strip().lower()
+            vis_filter = (query.get("visibility") or ["all"])[0].strip().lower()
+
+            try:
+                page = int((query.get("page") or ["1"])[0])
+                page = max(1, page)
+            except (ValueError, TypeError):
+                page = 1
+
+            try:
+                limit = int((query.get("limit") or ["25"])[0])
+                limit = max(1, min(100, limit))
+            except (ValueError, TypeError):
+                limit = 25
+
+            offset = (page - 1) * limit
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            where_clauses = ["1=1"]
+            params = []
+
+            if q:
+                clean_q = q.lower().replace("@", "")
+                where_clauses.append("(LOWER(c.originating_context) LIKE ? OR LOWER(c.community_id) LIKE ? OR LOWER(u.handle) LIKE ?)")
+                params.extend([f"%{clean_q}%", f"%{clean_q}%", f"%{clean_q}%"])
+
+            if status_filter in ("active", "closed", "archived", "hidden"):
+                where_clauses.append("c.status = ?")
+                params.append(status_filter)
+
+            if vis_filter in ("public", "private"):
+                where_clauses.append("c.visibility = ?")
+                params.append(vis_filter)
+
+            where_sql = " AND ".join(where_clauses)
+
+            cursor.execute(f"""
+                SELECT COUNT(*)
+                FROM moment_clusters c
+                LEFT JOIN users u ON c.originator_user_id = u.id
+                WHERE {where_sql}
+            """, params)
+            total = cursor.fetchone()[0]
+
+            cursor.execute(f"""
+                SELECT c.id, c.cluster_type, c.originating_context, c.originator_moment_id,
+                       c.originator_user_id, c.community_id, c.visibility, c.status,
+                       c.created_at, c.updated_at,
+                       u.handle as author_handle, u.name as author_name,
+                       (SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = c.id AND participation_type = 'perspective') as perspectives_count,
+                       (SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = c.id AND participation_type = 'participant') as participants_count
+                FROM moment_clusters c
+                LEFT JOIN users u ON c.originator_user_id = u.id
+                WHERE {where_sql}
+                ORDER BY c.created_at DESC
+                LIMIT ? OFFSET ?
+            """, params + [limit, offset])
+
+            rows = cursor.fetchall()
+            clusters_list = [dict(r) for r in rows]
+            pages = max(1, math.ceil(total / limit))
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "clusters": clusters_list,
+                "total": total,
+                "page": page,
+                "pages": pages,
+                "limit": limit
+            })
+
+        if path.startswith("/api/admin/clusters/"):
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+
+            target_id = path[len("/api/admin/clusters/"):].strip()
+            if not target_id:
+                return self.send_json(400, {"error": "Target cluster ID required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM moment_clusters WHERE id = ?", (target_id,))
+            c_row = cursor.fetchone()
+            if not c_row:
+                conn.close()
+                return self.send_json(404, {"error": "Moment cluster not found", "success": False})
+
+            cluster_dict = dict(c_row)
+
+            # Seed / originator moment summary
+            cursor.execute("""
+                SELECT id, user_id, author_handle, author_name, main_img, pip_img, caption, created_at, moderation_status, is_private, campus
+                FROM posts WHERE id = ?
+            """, (cluster_dict["originator_moment_id"],))
+            p_row = cursor.fetchone()
+            orig_post = dict(p_row) if p_row else None
+
+            # Originator user
+            cursor.execute("SELECT id, handle, name, avatar_url, role FROM users WHERE id = ?", (cluster_dict["originator_user_id"],))
+            u_row = cursor.fetchone()
+            orig_user = dict(u_row) if u_row else None
+
+            # Perspectives list
+            cursor.execute("""
+                SELECT p.id, p.user_id, p.author_handle, p.author_name, p.main_img, p.pip_img, p.caption, p.created_at, p.moderation_status, m.joined_at
+                FROM posts p
+                JOIN moment_cluster_members m ON p.id = m.moment_id
+                WHERE m.cluster_id = ? AND m.participation_type = 'perspective'
+                ORDER BY p.created_at ASC
+            """, (target_id,))
+            perspectives_list = [dict(r) for r in cursor.fetchall()]
+
+            # Attendees roster (I Was There)
+            cursor.execute("""
+                SELECT u.id, u.handle, u.name, u.avatar_url, m.joined_at
+                FROM moment_cluster_members m
+                JOIN users u ON m.user_id = u.id
+                WHERE m.cluster_id = ? AND m.participation_type = 'participant'
+                ORDER BY m.joined_at ASC
+                LIMIT 50
+            """, (target_id,))
+            participants_list = [dict(r) for r in cursor.fetchall()]
+
+            # Total counts
+            cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'perspective'", (target_id,))
+            perspectives_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'participant'", (target_id,))
+            participants_count = cursor.fetchone()[0]
+
+            # Community info if linked
+            comm_info = None
+            if cluster_dict.get("community_id"):
+                cursor.execute("SELECT id, name, type, city, visibility FROM communities WHERE id = ?", (cluster_dict["community_id"],))
+                cm_row = cursor.fetchone()
+                if cm_row:
+                    comm_info = dict(cm_row)
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "cluster": cluster_dict,
+                "originator_post": orig_post,
+                "originator_user": orig_user,
+                "perspectives": perspectives_list,
+                "participants": participants_list,
+                "perspectives_count": perspectives_count,
+                "participants_count": participants_count,
+                "community": comm_info
             })
 
         if is_blocked_static_path(norm_path):
@@ -10339,6 +10657,109 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {
                 "success": True,
                 "role": new_role
+            })
+
+        # Phase D: Moment Moderation POST API
+        if path.startswith("/api/admin/posts/") and path.endswith("/moderation"):
+            target_id = path[len("/api/admin/posts/"): -len("/moderation")].strip()
+            admin_user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
+            if err:
+                return self.send_json(*err)
+
+            status_val = (body.get("status") or "").strip().lower()
+            reason_val = (body.get("reason") or "").strip()[:512]
+
+            if status_val not in ("active", "hidden", "removed"):
+                return self.send_json(400, {"error": "Invalid status. Allowed values: active, hidden, removed", "success": False})
+
+            if not reason_val:
+                return self.send_json(400, {"error": "Reason is required for moderation action", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, user_id, author_handle, moderation_status, is_private FROM posts WHERE id = ?", (target_id,))
+            post_row = cursor.fetchone()
+            if not post_row:
+                conn.close()
+                return self.send_json(404, {"error": "Target moment not found", "success": False})
+
+            post_data = dict(post_row)
+            old_status = post_data.get("moderation_status") or "active"
+
+            if status_val == "removed":
+                cursor.execute("UPDATE posts SET moderation_status = 'removed', is_private = 1 WHERE id = ?", (target_id,))
+            elif status_val == "hidden":
+                cursor.execute("UPDATE posts SET moderation_status = 'hidden' WHERE id = ?", (target_id,))
+            elif status_val == "active":
+                cursor.execute("UPDATE posts SET moderation_status = 'active', is_private = 0 WHERE id = ?", (target_id,))
+
+            conn.commit()
+            conn.close()
+
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            record_admin_audit_event(
+                admin_user,
+                action=f"post_moderation_{status_val}",
+                target_type="post",
+                target_id=target_id,
+                details=f"Status changed from {old_status} to {status_val}. Reason: {reason_val}",
+                ip_address=client_ip
+            )
+
+            return self.send_json(200, {
+                "success": True,
+                "post_id": target_id,
+                "moderation_status": status_val,
+                "reason": reason_val
+            })
+
+        # Phase D: Moment Cluster Status POST API
+        if path.startswith("/api/admin/clusters/") and path.endswith("/status"):
+            target_id = path[len("/api/admin/clusters/"): -len("/status")].strip()
+            admin_user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
+            if err:
+                return self.send_json(*err)
+
+            status_val = (body.get("status") or "").strip().lower()
+            reason_val = (body.get("reason") or "").strip()[:512]
+
+            if status_val not in ("active", "closed", "archived", "hidden"):
+                return self.send_json(400, {"error": "Invalid status. Allowed values: active, closed, archived, hidden", "success": False})
+
+            if not reason_val:
+                return self.send_json(400, {"error": "Reason is required for cluster status change", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, status, originating_context FROM moment_clusters WHERE id = ?", (target_id,))
+            cluster_row = cursor.fetchone()
+            if not cluster_row:
+                conn.close()
+                return self.send_json(404, {"error": "Target moment cluster not found", "success": False})
+
+            cluster_data = dict(cluster_row)
+            old_status = cluster_data.get("status") or "active"
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor.execute("UPDATE moment_clusters SET status = ?, updated_at = ? WHERE id = ?", (status_val, now_iso, target_id))
+            conn.commit()
+            conn.close()
+
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            record_admin_audit_event(
+                admin_user,
+                action=f"cluster_status_{status_val}",
+                target_type="moment_cluster",
+                target_id=target_id,
+                details=f"Status changed from {old_status} to {status_val}. Reason: {reason_val}",
+                ip_address=client_ip
+            )
+
+            return self.send_json(200, {
+                "success": True,
+                "cluster_id": target_id,
+                "status": status_val,
+                "reason": reason_val
             })
 
         # Phase 18: Professional Creator Activation

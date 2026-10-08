@@ -293,17 +293,82 @@
         </div>
       </div>
 
-      <!-- View: Content (Placeholder for Phase D) -->
+      <!-- View: Content (Phase D Implementation) -->
       <section id="view-content" class="admin-view space-y-4 hidden">
-        <div class="flex justify-between items-center">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Content & Moments</h1>
-            <p class="text-xs text-zinc-400">Phase D — Soft moderation, moment visibility, and cluster preservation</p>
+            <p class="text-xs text-zinc-400">Soft moderation, feed visibility controls, and cluster graph preservation</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="loadAdminPosts(1)" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
+              🔄 Refresh Moments
+            </button>
           </div>
         </div>
-        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
-          <p class="text-sm font-mono-tag text-zinc-400">Content Moderation Module scheduled for Phase D implementation.</p>
-          <p class="text-xs text-zinc-600 font-mono-tag">Will enforce soft moderation (moderation_status='removed') preserving cluster integrity and foreign keys.</p>
+
+        <!-- Filter & Search Bar -->
+        <div class="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col md:flex-row gap-3">
+          <div class="flex-1">
+            <input type="text" id="adminPostSearchInput" placeholder="Search caption, @handle, author, campus..." onkeydown="if(event.key==='Enter') loadAdminPosts(1)" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500/50">
+          </div>
+          <div class="flex gap-2">
+            <select id="adminPostStatusFilter" onchange="loadAdminPosts(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+              <option value="all">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="hidden">Hidden</option>
+              <option value="removed">Removed</option>
+            </select>
+
+            <select id="adminPostVisibilityFilter" onchange="loadAdminPosts(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+              <option value="all">All Visibility</option>
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+
+            <button onclick="loadAdminPosts(1)" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold font-mono-tag text-xs rounded-xl transition cursor-pointer">
+              Search
+            </button>
+          </div>
+        </div>
+
+        <!-- Moments Table -->
+        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono-tag">
+              <thead class="bg-zinc-900/50 border-b border-zinc-800 text-zinc-400">
+                <tr>
+                  <th class="px-4 py-3 font-medium">Moment</th>
+                  <th class="px-4 py-3 font-medium">Author</th>
+                  <th class="px-4 py-3 font-medium">Caption</th>
+                  <th class="px-4 py-3 font-medium">Campus / Context</th>
+                  <th class="px-4 py-3 font-medium">Cluster</th>
+                  <th class="px-4 py-3 font-medium">Status</th>
+                  <th class="px-4 py-3 font-medium">Visibility</th>
+                  <th class="px-4 py-3 font-medium">Created</th>
+                  <th class="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="adminPostsTableBody" class="divide-y divide-zinc-850 text-zinc-300">
+                <tr>
+                  <td colspan="9" class="px-4 py-8 text-center text-zinc-500">
+                    Loading moments...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination Bar -->
+          <div class="p-3 bg-zinc-900/30 border-t border-zinc-800 flex items-center justify-between text-xs font-mono-tag">
+            <button id="adminPostsPrevBtn" onclick="changeAdminPostsPage(-1)" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition">
+              ← Previous
+            </button>
+            <span id="adminPostsPageInfo" class="text-zinc-500">Page 1 of 1</span>
+            <button id="adminPostsNextBtn" onclick="changeAdminPostsPage(1)" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition">
+              Next →
+            </button>
+          </div>
         </div>
       </section>
 
@@ -320,16 +385,83 @@
         </div>
       </section>
 
-      <!-- View: Clusters (Placeholder for Phase D) -->
+      <!-- View: Clusters (Phase D Implementation) -->
       <section id="view-clusters" class="admin-view space-y-4 hidden">
-        <div class="flex justify-between items-center">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Moment Clusters</h1>
-            <p class="text-xs text-zinc-400">Phase D — Perspective clusters and I-Was-There shared graph</p>
+            <p class="text-xs text-zinc-400">Co-located perspective clusters, viral event graphs, and I-Was-There attendance</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="loadAdminClusters(1)" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
+              🔄 Refresh Clusters
+            </button>
           </div>
         </div>
-        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
-          <p class="text-sm font-mono-tag text-zinc-400">Moment Cluster Inspection scheduled for Phase D implementation.</p>
+
+        <!-- Filter & Search Bar -->
+        <div class="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col md:flex-row gap-3">
+          <div class="flex-1">
+            <input type="text" id="adminClusterSearchInput" placeholder="Search context, community, or creator..." onkeydown="if(event.key==='Enter') loadAdminClusters(1)" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500/50">
+          </div>
+          <div class="flex gap-2">
+            <select id="adminClusterStatusFilter" onchange="loadAdminClusters(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+              <option value="all">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="closed">Closed</option>
+              <option value="archived">Archived</option>
+              <option value="hidden">Hidden</option>
+            </select>
+
+            <select id="adminClusterVisibilityFilter" onchange="loadAdminClusters(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+              <option value="all">All Visibility</option>
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+
+            <button onclick="loadAdminClusters(1)" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold font-mono-tag text-xs rounded-xl transition cursor-pointer">
+              Search
+            </button>
+          </div>
+        </div>
+
+        <!-- Clusters Table -->
+        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono-tag">
+              <thead class="bg-zinc-900/50 border-b border-zinc-800 text-zinc-400">
+                <tr>
+                  <th class="px-4 py-3 font-medium">Context / Occasion</th>
+                  <th class="px-4 py-3 font-medium">Community</th>
+                  <th class="px-4 py-3 font-medium">Originator</th>
+                  <th class="px-4 py-3 font-medium">Perspectives</th>
+                  <th class="px-4 py-3 font-medium">Attendees</th>
+                  <th class="px-4 py-3 font-medium">Status</th>
+                  <th class="px-4 py-3 font-medium">Visibility</th>
+                  <th class="px-4 py-3 font-medium">Created</th>
+                  <th class="px-4 py-3 font-medium text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="adminClustersTableBody" class="divide-y divide-zinc-850 text-zinc-300">
+                <tr>
+                  <td colspan="9" class="px-4 py-8 text-center text-zinc-500">
+                    Loading clusters...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination Bar -->
+          <div class="p-3 bg-zinc-900/30 border-t border-zinc-800 flex items-center justify-between text-xs font-mono-tag">
+            <button id="adminClustersPrevBtn" onclick="changeAdminClustersPage(-1)" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition">
+              ← Previous
+            </button>
+            <span id="adminClustersPageInfo" class="text-zinc-500">Page 1 of 1</span>
+            <button id="adminClustersNextBtn" onclick="changeAdminClustersPage(1)" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition">
+              Next →
+            </button>
+          </div>
         </div>
       </section>
 
@@ -379,6 +511,98 @@
     </main>
   </div>
 
-  <script src="/admin.js"></script>
+  <!-- Moment Moderation Modal -->
+  <div id="adminPostModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-xl w-full p-6 space-y-6 shadow-2xl font-mono-tag max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-start border-b border-zinc-800 pb-3">
+        <div>
+          <h2 id="modalPostTitle" class="text-lg font-bold text-white">Moment Inspection</h2>
+          <p id="modalPostSubtitle" class="text-xs text-amber-400">@author</p>
+        </div>
+        <button onclick="closeAdminPostModal()" class="text-zinc-500 hover:text-white text-lg font-bold cursor-pointer">✕</button>
+      </div>
+
+      <div id="modalPostDetailBody" class="space-y-4 text-xs text-zinc-300">
+        <p class="text-zinc-500">Loading moment details...</p>
+      </div>
+
+      <!-- Audit Reason Input -->
+      <div class="space-y-1">
+        <label class="text-[10px] text-zinc-400 uppercase font-bold">Reason for Action (Audit Record)</label>
+        <input type="text" id="adminPostActionReason" placeholder="Enter moderation reason for audit log..." class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500/50">
+      </div>
+
+      <!-- Action Control Buttons -->
+      <div class="space-y-3 pt-2 border-t border-zinc-800">
+        <div class="flex gap-2">
+          <button id="btnModalRestorePost" onclick="executePostModeration('active')" class="flex-1 px-3 py-2 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-900/60 rounded-xl font-bold transition cursor-pointer">
+            Restore Active
+          </button>
+          <button id="btnModalHidePost" onclick="executePostModeration('hidden')" class="flex-1 px-3 py-2 bg-amber-950/60 border border-amber-500/40 text-amber-300 hover:bg-amber-900/60 rounded-xl font-bold transition cursor-pointer">
+            Hide Moment
+          </button>
+          <button id="btnModalRemovePost" onclick="executePostModeration('removed')" class="flex-1 px-3 py-2 bg-red-950/60 border border-red-500/40 text-red-400 hover:bg-red-900/60 rounded-xl font-bold transition cursor-pointer">
+            Remove Moment
+          </button>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="closeAdminPostModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cluster Action & Detail Modal -->
+  <div id="adminClusterModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl font-mono-tag max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-start border-b border-zinc-800 pb-3">
+        <div>
+          <h2 id="modalClusterTitle" class="text-lg font-bold text-white">Cluster Inspection</h2>
+          <p id="modalClusterSubtitle" class="text-xs text-amber-400">Context Occasion</p>
+        </div>
+        <button onclick="closeAdminClusterModal()" class="text-zinc-500 hover:text-white text-lg font-bold cursor-pointer">✕</button>
+      </div>
+
+      <div id="modalClusterDetailBody" class="space-y-4 text-xs text-zinc-300">
+        <p class="text-zinc-500">Loading cluster details...</p>
+      </div>
+
+      <!-- Audit Reason Input -->
+      <div class="space-y-1">
+        <label class="text-[10px] text-zinc-400 uppercase font-bold">Reason for Action (Audit Record)</label>
+        <input type="text" id="adminClusterActionReason" placeholder="Enter reason for cluster status change..." class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500/50">
+      </div>
+
+      <!-- Cluster Status Controls -->
+      <div class="p-3 bg-zinc-900/60 border border-zinc-800 rounded-xl space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] text-amber-400 font-bold uppercase">Update Cluster Status</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">GRAPH STATUS</span>
+        </div>
+        <div class="flex gap-2">
+          <select id="modalClusterStatusSelect" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white">
+            <option value="active">active</option>
+            <option value="closed">closed</option>
+            <option value="archived">archived</option>
+            <option value="hidden">hidden</option>
+          </select>
+          <button onclick="executeClusterStatusChange()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl transition cursor-pointer">
+            Update Status
+          </button>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="closeAdminClusterModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/admin.js?v=5.4.0"></script>
 </body>
 </html>
