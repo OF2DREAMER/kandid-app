@@ -340,7 +340,7 @@ def get_user_community_role(community_id, user_id, cursor):
     if not community_id or not user_id:
         return None
     # 1. Check if user is community creator
-    cursor.execute("SELECT id, creator_id, creator_handle, name FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (community_id, str(community_id).lower(), community_id))
+    cursor.execute("SELECT id, creator_id, creator_handle, name, visibility, type FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (community_id, str(community_id).lower(), community_id))
     crow = cursor.fetchone()
     if crow:
         if crow["creator_id"] and crow["creator_id"] == user_id:
@@ -357,10 +357,10 @@ def get_user_community_role(community_id, user_id, cursor):
         if role in ("owner", "admin", "creator", "member"):
             return role
         return "member"
-    # 3. Check user's home campus
+    # 3. Check user's home campus (strictly for public Campus communities; never for private communities)
     cursor.execute("SELECT campus FROM users WHERE id = ?", (user_id,))
     urow = cursor.fetchone()
-    if urow and urow["campus"] and crow:
+    if urow and urow["campus"] and crow and (crow["visibility"] != "private" and (crow["type"] or "") == "Campus"):
         clean_user_campus = urow["campus"].replace("Near ", "").strip().lower()
         clean_comm_name = crow["name"].replace("Near ", "").strip().lower()
         if clean_user_campus == clean_comm_name or clean_user_campus == crow["id"].lower():
@@ -4015,22 +4015,19 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
     if cursor.fetchone():
         return False, "BLOCKED_USER", 0
 
-    # Tier 1: Registered Drop / Event Attendee (Strongest Context)
-    if moment.get("drop_id"):
-        cursor.execute("""
-            SELECT 1 FROM community_drop_registrations 
-            WHERE drop_id = ? AND user_id = ? AND status IN ('registered', 'attended', 'confirmed')
-        """, (moment["drop_id"], viewer["id"]))
-        if cursor.fetchone():
-            return True, "DROP_ATTENDEE", 1
+    # Tier 1: Drops/Events are not a Kindid feature (retired)
 
     # Tier 2: Community Context & Authorization
     comm_key = moment.get("primary_community_id") or moment.get("context_community_id") or ""
-    if not comm_key and moment.get("cluster_id"):
-        cursor.execute("SELECT community_id FROM moment_clusters WHERE id = ?", (moment["cluster_id"],))
+    is_priv_cluster = False
+    if moment.get("cluster_id"):
+        cursor.execute("SELECT community_id, visibility FROM moment_clusters WHERE id = ?", (moment["cluster_id"],))
         cl_row = cursor.fetchone()
-        if cl_row and cl_row["community_id"]:
-            comm_key = cl_row["community_id"]
+        if cl_row:
+            if not comm_key and cl_row["community_id"]:
+                comm_key = cl_row["community_id"]
+            if cl_row["visibility"] == "private":
+                is_priv_cluster = True
 
     if not comm_key and moment.get("campus"):
         raw_campus = moment.get("campus", "").replace("Near ", "").strip()
@@ -4064,7 +4061,7 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
         # Public Community Rule for I Was There / Attendance:
         # If community is PUBLIC, non-member can declare attendance without joining.
         # If community is PRIVATE, non-member requires valid invitation or is blocked.
-        is_private = bool(c_found and dict(c_found).get("visibility") == "private")
+        is_private = bool(is_priv_cluster or (c_found and dict(c_found).get("visibility") == "private"))
         if not is_private:
             return True, "PUBLIC_COMMUNITY_ATTENDEE", 2
         else:
@@ -4076,6 +4073,8 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
                 if cursor.fetchone():
                     return True, "INVITED_CONTEXT", 3
             return False, "COMMUNITY_MEMBERSHIP_REQUIRED", 2
+    elif is_priv_cluster:
+        return False, "COMMUNITY_MEMBERSHIP_REQUIRED", 2
 
     # Tier 3: Valid Contextual Invitation
     if invite_code:
@@ -4119,17 +4118,26 @@ def create_or_get_moment_cluster(conn, moment, originator_user_id):
         return cluster
 
     cluster_id = f"cls_{uuid.uuid4().hex[:12]}"
-    cluster_type = 'drop' if moment.get("drop_id") else ('community' if (moment.get("primary_community_id") or moment.get("context_community_id")) else 'context')
+    cluster_type = 'community' if (moment.get("primary_community_id") or moment.get("context_community_id")) else 'context'
     originating_context = moment.get("context_location") or moment.get("location_city") or moment.get("campus") or "Shared Context"
     now_iso = datetime.now().isoformat()
     comm_id = moment.get("primary_community_id") or moment.get("context_community_id") or ""
-    drop_id = moment.get("drop_id") or ""
+    drop_id = ""
     event_id = moment.get("event_id") or ""
+
+    comm_vis = 'public'
+    if comm_id:
+        cursor.execute("SELECT visibility FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ? LIMIT 1", (comm_id, comm_id.lower(), comm_id))
+        cv_row = cursor.fetchone()
+        if cv_row and cv_row["visibility"] == "private":
+            comm_vis = 'private'
+    if moment.get("is_private") == 1:
+        comm_vis = 'private'
 
     cursor.execute("""
         INSERT INTO moment_clusters (id, cluster_type, originating_context, originator_moment_id, originator_user_id, community_id, drop_id, event_id, visibility, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'public', 'active', ?, ?)
-    """, (cluster_id, cluster_type, originating_context, moment["id"], originator_user_id, comm_id, drop_id, event_id, now_iso, now_iso))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+    """, (cluster_id, cluster_type, originating_context, moment["id"], originator_user_id, comm_id, drop_id, event_id, comm_vis, now_iso, now_iso))
 
     clsm_id = f"clsm_{uuid.uuid4().hex[:12]}"
     cursor.execute("""
@@ -6453,6 +6461,26 @@ class KandidHandler(SimpleHTTPRequestHandler):
             else:
                 where_clauses.append("(is_private = 0 OR is_private IS NULL)")
 
+            # STRICT COMMUNITY -> FEED ISOLATION:
+            # Global Feed / FOR YOU contains strictly Open Journal / normal Feed content.
+            # No Community posts (public or private), moments, perspectives, or community cluster moments are returned.
+            where_clauses.append("(primary_community_id = '' OR primary_community_id IS NULL)")
+            where_clauses.append("(context_community_id = '' OR context_community_id IS NULL)")
+            where_clauses.append("(drop_id = '' OR drop_id IS NULL)")
+            where_clauses.append("(circle IS NULL OR circle != 'community')")
+            where_clauses.append("""(
+                cluster_id = '' OR cluster_id IS NULL 
+                OR cluster_id NOT IN (
+                    SELECT id FROM moment_clusters 
+                    WHERE (community_id != '' AND community_id IS NOT NULL)
+                       OR originator_moment_id IN (
+                           SELECT id FROM posts 
+                           WHERE (primary_community_id != '' AND primary_community_id IS NOT NULL)
+                              OR (context_community_id != '' AND context_community_id IS NOT NULL)
+                       )
+                )
+            )""")
+
             if circle == "nearby":
                 where_clauses.append("circle IN ('nearby', 'campus')")
             elif circle in ["campus", "global"]:
@@ -6497,24 +6525,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 p["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
                 p["timeAgo"] = format_time_ago(p.get("created_at", ""))
 
-                # Resolve community name and id
-                cid = p.get("primary_community_id") or p.get("context_community_id") or ""
-                if cid and cid in comm_map:
-                    p["community_id"] = cid
-                    p["community_name"] = comm_map[cid]
-                    p["primary_community_name"] = comm_map[cid]
-                elif cid:
-                    p["community_id"] = cid
-                    p["community_name"] = cid
-                    p["primary_community_name"] = cid
-                elif p.get("campus"):
-                    clean_campus = p["campus"].replace("Near ", "").strip()
-                    for k_id, k_name in comm_map.items():
-                        if clean_campus.lower() in (k_id.lower(), k_name.lower()):
-                            p["community_id"] = k_id
-                            p["community_name"] = k_name
-                            p["primary_community_name"] = k_name
-                            break
+                # Feed posts are strictly Open Journal moments with no community attachment
+                p["community_id"] = ""
+                p["community_name"] = ""
+                p["primary_community_name"] = ""
             conn.close()
             return self.send_json(200, {
                 "success": True,
@@ -6900,17 +6914,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             cursor.execute("""
                 SELECT COUNT(*) FROM posts
-                WHERE (campus = ? OR circle = ?) AND user_id = ? AND is_private = 0
+                WHERE (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?) AND user_id = ? AND is_private = 0
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-            """, (comm["name"], comm["name"], user["id"]))
+            """, (comm["id"], comm["id"], comm["name"], user["id"]))
             moments_contributed = cursor.fetchone()[0]
 
             # Last participated at (latest post time)
             cursor.execute("""
                 SELECT MAX(created_at) FROM posts
-                WHERE (campus = ? OR circle = ?) AND user_id = ? AND is_private = 0
+                WHERE (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?) AND user_id = ? AND is_private = 0
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-            """, (comm["name"], comm["name"], user["id"]))
+            """, (comm["id"], comm["id"], comm["name"], user["id"]))
             last_part_row = cursor.fetchone()
             last_participated_at = last_part_row[0] if last_part_row and last_part_row[0] else None
 
@@ -7016,9 +7030,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             cursor.execute("""
                 SELECT COUNT(*) FROM posts
-                WHERE (campus = ? OR circle = ?) AND is_private = 0 AND datetime(created_at) > datetime(?)
+                WHERE (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?) AND is_private = 0 AND datetime(created_at) > datetime(?)
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-            """, (comm["name"], comm["name"], ref_time))
+            """, (comm["id"], comm["id"], comm["name"], ref_time))
             new_moments_count = cursor.fetchone()[0]
 
             has_new_activity = (new_memories_count + new_moments_count) > 0
@@ -7040,10 +7054,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("""
                 SELECT id, author_name, caption, created_at
                 FROM posts
-                WHERE (campus = ? OR circle = ?) AND is_private = 0
+                WHERE (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?) AND is_private = 0
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
                 ORDER BY created_at DESC LIMIT 1
-            """, (comm["name"], comm["name"]))
+            """, (comm["id"], comm["id"], comm["name"]))
             mom_row = cursor.fetchone()
             latest_moment = dict(mom_row) if mom_row else None
 
@@ -7200,18 +7214,52 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (target_comm, target_comm.lower(), target_comm))
             comm_row = cursor.fetchone()
-            comm_id = comm_row["id"] if comm_row else target_comm
-            comm_name = comm_row["name"] if comm_row else target_comm
-            comm_city = comm_row["city"] if comm_row else ""
-            
-            cursor.execute("""
-                SELECT * FROM posts
-                WHERE is_private = 0 
-                  AND (campus = ? OR campus = ? OR primary_community_id = ? OR context_community_id = ?)
-                  AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-                  AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
-                ORDER BY created_at DESC LIMIT 15
-            """, (comm_name, target_comm, comm_id, comm_id))
+
+            if comm_row:
+                comm_dict = dict(comm_row)
+                comm_id = comm_dict["id"]
+                comm_name = comm_dict["name"]
+                comm_city = comm_dict.get("city") or ""
+                comm_vis = comm_dict.get("visibility") or "public"
+
+                # Moderation safety check
+                if comm_dict.get("moderation_status") in ("hidden", "removed", "suspended"):
+                    conn.close()
+                    return self.send_json(404, {"success": False, "error": "Community not found", "code": "NOT_FOUND"})
+
+                # Private community authorization check
+                if comm_vis == "private":
+                    if not user:
+                        conn.close()
+                        return self.send_json(401, {"success": False, "error": "Authentication required for private community", "code": "UNAUTHORIZED"})
+                    role = get_user_community_role(comm_id, user["id"], cursor)
+                    is_member = bool(role)
+                    if not is_member and user.get("role") not in ("admin", "founder"):
+                        conn.close()
+                        return self.send_json(403, {"success": False, "error": "Community membership required to view this private space", "code": "COMMUNITY_RESTRICTED"})
+
+                # Strict Community scoping - NO matching on campus string to prevent Open Journal and cross-community bleeding
+                cursor.execute("""
+                    SELECT * FROM posts
+                    WHERE is_private = 0 
+                      AND (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?)
+                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                      AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
+                    ORDER BY created_at DESC LIMIT 20
+                """, (comm_id, comm_id, comm_name))
+            else:
+                comm_id = target_comm
+                comm_name = target_comm
+                comm_city = ""
+                cursor.execute("""
+                    SELECT * FROM posts
+                    WHERE is_private = 0 
+                      AND (primary_community_id = ? OR context_community_id = ?)
+                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                      AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
+                    ORDER BY created_at DESC LIMIT 20
+                """, (comm_id, comm_id))
+
             pulse_posts = [dict(r) for r in cursor.fetchall()]
             for p in pulse_posts:
                 cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
@@ -7223,24 +7271,48 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if p.get("drop_id"):
                     p["drop_context"] = {"drop_id": p["drop_id"], "label": "From this Drop"}
 
-            # Server-authoritative activity state: LIVE NOW, ACTIVE, or QUIET RIGHT NOW
+            # Calculate real authoritative "NOW" metrics (within 2-hour live window: 7200s)
+            now_utc = datetime.now(timezone.utc)
+            now_local = datetime.now()
+
+            live_posts = []
             pulse_state = "QUIET RIGHT NOW"
-            if len(pulse_posts) > 0:
-                # Check how recent the latest moment is
-                latest_dt_str = pulse_posts[0].get("created_at", "")
+
+            def _calc_post_age(c_str):
+                if not c_str:
+                    return 9999999
                 try:
-                    latest_dt = datetime.fromisoformat(latest_dt_str.replace("Z", "+00:00"))
-                    if latest_dt.tzinfo is None:
-                        latest_dt = latest_dt.replace(tzinfo=timezone.utc)
-                    age_seconds = (datetime.now(timezone.utc) - latest_dt).total_seconds()
-                    if age_seconds <= 7200: # 2 hours
-                        pulse_state = "LIVE NOW"
-                    elif age_seconds <= 86400: # 24 hours
-                        pulse_state = "ACTIVE"
-                    else:
-                        pulse_state = "QUIET RIGHT NOW"
-                except:
+                    dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
+                except Exception:
+                    try:
+                        dt = datetime.strptime(c_str, "%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        return 9999999
+                if dt.tzinfo is None:
+                    diff_u = (now_utc - dt.replace(tzinfo=timezone.utc)).total_seconds()
+                    diff_l = (now_local - dt).total_seconds()
+                    candidates = [d for d in (diff_u, diff_l) if d >= -60]
+                    return min(candidates) if candidates else min(abs(diff_u), abs(diff_l))
+                else:
+                    return (now_utc - dt).total_seconds()
+
+            for p in pulse_posts:
+                age_sec = _calc_post_age((p.get("created_at") or "").strip())
+                # Live Pulse window: activity within the last 2 hours (<= 7200s)
+                if -60 <= age_sec <= 7200:
+                    live_posts.append(p)
+
+            if len(live_posts) > 0:
+                pulse_state = "LIVE NOW"
+            elif len(pulse_posts) > 0:
+                first_age = _calc_post_age((pulse_posts[0].get("created_at") or "").strip())
+                if -60 <= first_age <= 86400:
                     pulse_state = "ACTIVE"
+                else:
+                    pulse_state = "QUIET RIGHT NOW"
+
+            # Real numbers only: zero fake fallbacks, zero minimums
+            active_count = len(live_posts)
 
             conn.close()
             return self.send_json(200, {
@@ -7250,10 +7322,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "name": comm_name,
                     "location": comm_city,
                     "tagline": "A living layer of what's happening around here right now.",
-                    "active_count": max(len(pulse_posts), 4)
+                    "active_count": active_count
                 },
                 "pulse_state": pulse_state,
-                "moments": pulse_posts
+                "moments": live_posts
             })
 
         if path == "/api/community/manage":
@@ -7477,6 +7549,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (target_campus, target_campus.lower(), target_campus))
             comm_row = cursor.fetchone()
             
+            if not comm_row and path == "/api/community/detail":
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Community not found", "code": "NOT_FOUND"})
+            
             if comm_row:
                 comm_id = comm_row["id"]
                 comm_name = comm_row["name"]
@@ -7510,6 +7586,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 else:
                     is_joined = bool(user_role)
 
+            # Private community check: non-members cannot inspect private community content
+            if comm_row and dict(comm_row).get("visibility") == "private":
+                if not user:
+                    conn.close()
+                    return self.send_json(401, {"success": False, "error": "Authentication required for private community", "code": "UNAUTHORIZED"})
+                if not is_joined and user.get("role") not in ("admin", "founder"):
+                    conn.close()
+                    return self.send_json(403, {"success": False, "error": "Community membership required to view this private space", "code": "COMMUNITY_RESTRICTED"})
+
             drops_list = []
 
             campus_info = {
@@ -7530,14 +7615,25 @@ class KandidHandler(SimpleHTTPRequestHandler):
             }
 
             # 2. Campus Pulse & Moments Query
-            cursor.execute("""
-                SELECT * FROM posts
-                WHERE is_private = 0 
-                  AND (campus = ? OR campus = ? OR primary_community_id = ? OR context_community_id = ?)
-                  AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-                  AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
-                ORDER BY created_at DESC LIMIT 20
-            """, (comm_name, target_campus, comm_id, comm_id))
+            if comm_row:
+                cursor.execute("""
+                    SELECT * FROM posts
+                    WHERE is_private = 0 
+                      AND (primary_community_id = ? OR context_community_id = ?)
+                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                      AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
+                    ORDER BY created_at DESC LIMIT 20
+                """, (comm_id, comm_id))
+            else:
+                cursor.execute("""
+                    SELECT * FROM posts
+                    WHERE is_private = 0 
+                      AND (primary_community_id != '' AND primary_community_id IS NOT NULL)
+                      AND (campus = ? OR campus = ?)
+                      AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                      AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
+                    ORDER BY created_at DESC LIMIT 20
+                """, (comm_name, target_campus))
 
             pulse_posts = [dict(r) for r in cursor.fetchall()]
             for p in pulse_posts:
@@ -9822,17 +9918,41 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cluster = dict(c_row)
             user = get_current_user(self.headers)
 
-            if cluster.get("community_id"):
-                cursor.execute("SELECT * FROM communities WHERE id = ?", (cluster["community_id"],))
+            target_cid = cluster.get("community_id") or ""
+            is_priv_cluster = (cluster.get("visibility") == "private")
+            actual_cid = target_cid
+
+            if not target_cid and cluster.get("originator_moment_id"):
+                cursor.execute("SELECT primary_community_id, context_community_id, is_private FROM posts WHERE id = ?", (cluster["originator_moment_id"],))
+                op_row = cursor.fetchone()
+                if op_row:
+                    target_cid = op_row[0] or op_row[1] or ""
+                    actual_cid = target_cid
+                    if op_row[2] == 1:
+                        is_priv_cluster = True
+
+            if target_cid:
+                cursor.execute("SELECT id, visibility FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ? LIMIT 1", (target_cid, target_cid.lower(), target_cid))
                 comm_row = cursor.fetchone()
-                if comm_row and dict(comm_row).get("visibility") == "private":
-                    if not user:
-                        conn.close()
-                        return self.send_json(401, {"success": False, "error": "Authentication required for private community clusters", "code": "UNAUTHORIZED"})
-                    cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (cluster["community_id"], user["id"]))
-                    if not cursor.fetchone() and user.get("role") not in ("admin", "founder"):
-                        conn.close()
-                        return self.send_json(403, {"success": False, "error": "Community membership required to view cluster", "code": "COMMUNITY_RESTRICTED"})
+                if comm_row:
+                    actual_cid = comm_row[0]
+                    if comm_row[1] == "private":
+                        is_priv_cluster = True
+
+            if is_priv_cluster:
+                if not user:
+                    conn.close()
+                    return self.send_json(401, {"success": False, "error": "Authentication required for private community clusters", "code": "UNAUTHORIZED"})
+                is_authed = False
+                if user.get("role") in ("admin", "founder") or user["id"] == cluster.get("originator_user_id"):
+                    is_authed = True
+                elif actual_cid:
+                    cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (actual_cid, user["id"]))
+                    if cursor.fetchone():
+                        is_authed = True
+                if not is_authed:
+                    conn.close()
+                    return self.send_json(403, {"success": False, "error": "Community membership required to view cluster", "code": "COMMUNITY_RESTRICTED"})
 
             cursor.execute("SELECT * FROM posts WHERE id = ?", (cluster["originator_moment_id"],))
             p_row = cursor.fetchone()
@@ -9938,8 +10058,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("""
                 SELECT c.*, COUNT(m.id) as perspectives_count
                 FROM moment_clusters c
+                LEFT JOIN communities comm ON (c.community_id = comm.id OR LOWER(c.community_id) = LOWER(comm.name))
                 LEFT JOIN moment_cluster_members m ON c.id = m.cluster_id AND m.participation_type = 'perspective'
                 WHERE c.visibility = 'public' AND c.status = 'active'
+                  AND (c.community_id = '' OR c.community_id IS NULL OR comm.visibility IS NULL OR comm.visibility != 'private')
                 GROUP BY c.id
                 ORDER BY c.created_at DESC
                 LIMIT 20
@@ -12185,11 +12307,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # Server-authoritative Community Contribution Access Control (Phase 18 Fix)
             target_comm_key = (body.get("community_id") or body.get("primary_community_id") or "").strip()
-            if target_comm_key.lower() in ("all", "global", "foryou", "friends", "feed", "none", "", "personal", "personal (feed)"):
+            if target_comm_key.lower() in ("all", "global", "foryou", "friends", "feed", "none", "", "personal", "personal (feed)", "open journal", "open_journal"):
                 target_comm_key = ""
             if not target_comm_key and body.get("community"):
                 c_cand = str(body.get("community")).strip()
-                if c_cand and c_cand.lower() not in ("all", "global", "foryou", "friends", "feed", "none", "", "personal", "personal (feed)"):
+                if c_cand and c_cand.lower() not in ("all", "global", "foryou", "friends", "feed", "none", "", "personal", "personal (feed)", "open journal", "open_journal"):
                     target_comm_key = c_cand
 
             primary_comm = ""
@@ -12285,7 +12407,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
             shutter = body.get("shutter", "1/250s")
             event_id = body.get("event_id", "")
             drop_id = body.get("drop_id") or body.get("dropId") or ""
-            context_comm = body.get("context_community_id") or ""
             context_loc = body.get("context_location") or body.get("locationCity") or ""
             cluster_id = (body.get("cluster_id") or "").strip()
             # B2-SEC-15 (final blocker): cluster_id is interpolated into an
@@ -12293,6 +12414,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # so only a strict identifier format may ever be persisted.
             if cluster_id and not re.match(r"^[A-Za-z0-9_-]+$", cluster_id):
                 return self.send_json(400, {"error": "Invalid cluster id", "success": False})
+
+            context_comm = body.get("context_community_id") or ""
+            if not primary_comm and not cluster_id:
+                context_comm = ""
 
             raw_audio = body.get("audioData") or body.get("audio_data") or ""
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""
@@ -12360,14 +12485,36 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     return self.send_json(404, {"success": False, "error": "Event/Moment cluster not found.", "code": "CLUSTER_NOT_FOUND"})
                 
                 _cls_dict = dict(_cls_row)
-                if _cls_dict.get("community_id"):
-                    _cls_pre.execute("SELECT visibility FROM communities WHERE id = ?", (_cls_dict["community_id"],))
+                _comm_id = _cls_dict.get("community_id") or ""
+                actual_comm_id = _comm_id
+                is_priv_space = (_cls_dict.get("visibility") == "private")
+
+                if not _comm_id and _cls_dict.get("originator_moment_id"):
+                    _cls_pre.execute("SELECT primary_community_id, context_community_id, is_private FROM posts WHERE id = ?", (_cls_dict["originator_moment_id"],))
+                    _orig_p = _cls_pre.fetchone()
+                    if _orig_p:
+                        _comm_id = _orig_p[0] or _orig_p[1] or ""
+                        actual_comm_id = _comm_id
+                        if _orig_p[2] == 1:
+                            is_priv_space = True
+
+                if _comm_id:
+                    _cls_pre.execute("SELECT id, visibility FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ? LIMIT 1", (_comm_id, _comm_id.lower(), _comm_id))
                     _comm_v = _cls_pre.fetchone()
-                    if _comm_v and _comm_v["visibility"] == "private":
-                        _cls_pre.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (_cls_dict["community_id"], user["id"]))
-                        if not _cls_pre.fetchone() and user.get("role") not in ("admin", "founder"):
+                    if _comm_v:
+                        actual_comm_id = _comm_v[0]
+                        if _comm_v[1] == "private":
+                            is_priv_space = True
+
+                if is_priv_space:
+                    if user.get("role") not in ("admin", "founder"):
+                        _cls_pre.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (actual_comm_id, user["id"]))
+                        if not _cls_pre.fetchone():
                             conn.close()
                             return self.send_json(403, {"success": False, "error": "Community membership required to add perspective.", "code": "COMMUNITY_RESTRICTED"})
+
+                if not primary_comm and actual_comm_id:
+                    primary_comm = actual_comm_id
 
             conn.execute("""
                 INSERT INTO posts (id, user_id, author_name, author_handle, avatar_letter, avatar_url, campus, main_img, pip_img, caption, circle, region, location_city, location_coords, exif_iso, exif_aperture, exif_shutter, is_private, event_id, audio_url, audio_duration, motion_url, primary_community_id, context_community_id, context_location, drop_id, cluster_id)
