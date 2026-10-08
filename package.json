@@ -1,10 +1,11 @@
 {
   "name": "kandid_project",
   "version": "1.0.0",
-  "description": "",
-  "main": "app.js",
+  "description": "Kandid Production Application",
+  "main": "app_core.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "python3 -m unittest discover -s . -p \"test_*.py\"",
+    "build:css": "tailwindcss -i tailwind.input.css -o tailwind.compiled.css --minify"
   },
   "keywords": [],
   "author": "",

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Kandid — Authentic Moments & Communities</title>
   <meta name="description" content="Kandid — The authentic social platform for communities and campuses. Dual-camera moments, live telemetry, and real-time community pulse.">
   <link rel="canonical" href="https://kindid.in/">
@@ -70,7 +70,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <!-- Tailwind CSS & Modern Typography -->
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="tailwind.compiled.css?v=4.3.3">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -276,6 +276,11 @@
 }
 .mood-react-btn:hover .mood-glyph {
   transform: scale(1.1);
+}
+.notif-item-enter { animation: fadeScale 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes fadeScale {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 </style>
 </head>
@@ -1459,95 +1464,6 @@
                   <!-- Rendered via JS -->
               </div>
           </section>
-          
-          <style>
-              .notif-item-enter { animation: fadeScale 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
-              @keyframes fadeScale {
-                  from { opacity: 0; transform: scale(0.96); }
-                  to { opacity: 1; transform: scale(1); }
-              }
-          
-.singularity-btn {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  position: relative;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.singularity-btn.has-notifications {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1.5px solid rgba(245, 158, 11, 0.6);
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
-}
-.singularity-btn.has-notifications .singularity-icon {
-  color: #f59e0b; /* Vibrant Amber */
-}
-.singularity-btn.has-notifications .core-spark {
-  animation: pulseCore 2s infinite ease-in-out;
-}
-
-/* STATE 1.5: PASSIVE AWARENESS (Unread but ignored/older) */
-.singularity-btn.passive-notifications {
-  background: rgba(245, 158, 11, 0.04);
-  border: 1.5px solid rgba(245, 158, 11, 0.25);
-  box-shadow: none;
-}
-.singularity-btn.passive-notifications .singularity-icon {
-  color: rgba(245, 158, 11, 0.6); /* Muted Amber */
-}
-/* No animation for passive state */
-
-.singularity-btn.no-notifications {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1.5px solid rgba(255, 255, 255, 0.08);
-  box-shadow: none;
-}
-.singularity-btn.no-notifications .singularity-icon {
-  color: #a1a1aa; /* Muted Gray */
-}
-@keyframes pulseCore {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.35); opacity: 0.7; }
-}
-.singularity-btn:active {
-  transform: scale(0.95);
-}
-
-.mood-react-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: #f59e0b;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  position: relative;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
-}
-.mood-react-btn:hover {
-  background: rgba(245, 158, 11, 0.2);
-  border-color: rgba(245, 158, 11, 0.7);
-  box-shadow: 0 0 18px rgba(245, 158, 11, 0.35);
-  transform: scale(1.1);
-}
-.mood-react-btn:active {
-  transform: scale(0.92);
-}
-.mood-glyph {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.mood-react-btn:hover .mood-glyph {
-  transform: scale(1.1);
-}
-</style>
       </section>
 
       <!-- =================================================================
@@ -5178,6 +5094,7 @@
 
   </div> <!-- End #appContainer -->
 
+  <script src="observability.js?v=1.0.0"></script>
   <script src="app_core.js?v=3.2.0"></script>
 </body>
 </html>
