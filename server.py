@@ -5732,7 +5732,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             """)
             pending_reports = cursor.fetchone()[0]
 
-            cursor.execute("SELECT COUNT(*) FROM sessions WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP")
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor.execute("SELECT COUNT(*) FROM sessions WHERE expires_at IS NULL OR expires_at > ?", (now_iso,))
             active_sessions = cursor.fetchone()[0]
 
             conn.close()
@@ -5766,7 +5767,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.fetchone()
             db_latency_ms = round((time.time() - t0) * 1000, 2)
 
-            cursor.execute("SELECT COUNT(*) FROM sessions WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP")
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor.execute("SELECT COUNT(*) FROM sessions WHERE expires_at IS NULL OR expires_at > ?", (now_iso,))
             active_sessions = cursor.fetchone()[0]
             conn.close()
 
