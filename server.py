@@ -6914,17 +6914,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             cursor.execute("""
                 SELECT COUNT(*) FROM posts
-                WHERE (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?) AND user_id = ? AND is_private = 0
+                WHERE (primary_community_id = ? OR context_community_id = ?) AND user_id = ? AND is_private = 0
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-            """, (comm["id"], comm["id"], comm["name"], user["id"]))
+            """, (comm["id"], comm["id"], user["id"]))
             moments_contributed = cursor.fetchone()[0]
 
             # Last participated at (latest post time)
             cursor.execute("""
                 SELECT MAX(created_at) FROM posts
-                WHERE (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?) AND user_id = ? AND is_private = 0
+                WHERE (primary_community_id = ? OR context_community_id = ?) AND user_id = ? AND is_private = 0
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-            """, (comm["id"], comm["id"], comm["name"], user["id"]))
+            """, (comm["id"], comm["id"], user["id"]))
             last_part_row = cursor.fetchone()
             last_participated_at = last_part_row[0] if last_part_row and last_part_row[0] else None
 
@@ -7030,9 +7030,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             cursor.execute("""
                 SELECT COUNT(*) FROM posts
-                WHERE (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?) AND is_private = 0 AND datetime(created_at) > datetime(?)
+                WHERE (primary_community_id = ? OR context_community_id = ?) AND is_private = 0 AND datetime(created_at) > datetime(?)
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
-            """, (comm["id"], comm["id"], comm["name"], ref_time))
+            """, (comm["id"], comm["id"], ref_time))
             new_moments_count = cursor.fetchone()[0]
 
             has_new_activity = (new_memories_count + new_moments_count) > 0
@@ -7054,10 +7054,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("""
                 SELECT id, author_name, caption, created_at
                 FROM posts
-                WHERE (primary_community_id = ? OR context_community_id = ? OR primary_community_id = ?) AND is_private = 0
+                WHERE (primary_community_id = ? OR context_community_id = ?) AND is_private = 0
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
                 ORDER BY created_at DESC LIMIT 1
-            """, (comm["id"], comm["id"], comm["name"]))
+            """, (comm["id"], comm["id"]))
             mom_row = cursor.fetchone()
             latest_moment = dict(mom_row) if mom_row else None
 
@@ -7666,9 +7666,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # 3. Campus Areas
             cursor.execute("""
                 SELECT location_city as name, COUNT(*) as count FROM posts
-                WHERE (campus = ? OR circle = 'campus') AND location_city != ''
+                WHERE is_private = 0
+                  AND (primary_community_id = ? OR context_community_id = ?)
+                  AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                  AND location_city != '' AND location_city IS NOT NULL
                 GROUP BY location_city ORDER BY count DESC LIMIT 8
-            """, (target_campus,))
+            """, (comm_id, comm_id))
             area_rows = cursor.fetchall()
             areas = []
             for r in area_rows:
@@ -7676,15 +7679,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if aname:
                     areas.append({"name": aname, "momentsCount": r["count"]})
             
-            if not areas:
-                areas = [
-                    {"name": "Library", "momentsCount": 12},
-                    {"name": "Main Building", "momentsCount": 8},
-                    {"name": "Campus Quad", "momentsCount": 6},
-                    {"name": "Canteen", "momentsCount": 5},
-                    {"name": "Sports Ground", "momentsCount": 4}
-                ]
-
             # 5. Campus Events (Live / Memory) — Events feature not active in V1
             events = []
             # 6. Collective Memory Layer
@@ -7716,7 +7710,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user_moments_count = 0
             user_memories_count = 0
             if user_id:
-                cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND (campus = ? OR circle = 'campus')", (user_id, target_campus))
+                cursor.execute("""
+                    SELECT COUNT(*) FROM posts
+                    WHERE user_id = ? AND is_private = 0
+                      AND (primary_community_id = ? OR context_community_id = ?)
+                """, (user_id, comm_id, comm_id))
                 user_moments_count = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_private = 1", (user_id,))
                 user_memories_count = cursor.fetchone()[0]
@@ -7738,7 +7736,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "present": {
                     "label": "Live Pulse",
                     "pulse_state": pulse_state,
-                    "active_areas_count": max(len(areas), 4),
+                    "active_areas_count": len(areas),
                     "moments_count": len(pulse_posts),
                     "has_live_activity": pulse_state == "LIVE NOW"
                 },
@@ -7758,7 +7756,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "campus": campus_info,
                 "drops": [],
                 "pulse": {
-                    "active_areas_count": max(len(areas), 4),
+                    "active_areas_count": len(areas),
                     "recent_pulse": pulse_posts[:6],
                     "pulse_state": pulse_state
                 },
@@ -7831,11 +7829,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("""
                 SELECT id, user_id, author_name, author_handle, main_img, caption, created_at, drop_id, location_city
                 FROM posts
-                WHERE is_private = 0 AND (campus = ? OR campus = ? OR primary_community_id = ?)
+                WHERE is_private = 0 AND (primary_community_id = ? OR context_community_id = ?)
                   AND (moderation_status IS NULL OR moderation_status NOT IN ('hidden', 'removed', 'suspended'))
                   AND id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')
                 ORDER BY created_at DESC LIMIT 15
-            """, (comm["name"], comm["id"], comm["id"]))
+            """, (comm["id"], comm["id"]))
             mom_rows = cursor.fetchall()
             moments = []
             for m in mom_rows:
@@ -7874,7 +7872,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if user_id:
                 attended_count = 0
 
-                cursor.execute("""SELECT COUNT(*) FROM posts WHERE user_id = ? AND (campus = ? OR campus = ? OR primary_community_id = ?)""", (user_id, comm["name"], comm["id"], comm["id"]))
+                cursor.execute("""SELECT COUNT(*) FROM posts WHERE user_id = ? AND is_private = 0 AND (primary_community_id = ? OR context_community_id = ?)""", (user_id, comm["id"], comm["id"]))
                 contributed_count = cursor.fetchone()[0]
 
                 reg_drops = []
@@ -12400,7 +12398,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if raw_pip and not pip_img:
                     return self.send_json(502, {"success": False, "error": "Failed to upload selfie capture to cloud storage. Moment was not created."})
 
-            location_city = body.get("locationCity", user.get("campus", "North City University"))
+            location_city = body.get("location_city") or body.get("locationCity") or user.get("campus", "North City University")
             location_coords = body.get("locationCoords", "")
             iso = body.get("iso", "ISO 400")
             aperture = body.get("aperture", "f/2.8")

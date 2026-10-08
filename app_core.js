@@ -942,11 +942,23 @@ async function openLivePulse(communityName) {
       if (nameEl) nameEl.textContent = res.community.name;
       if (locEl) locEl.textContent = res.community.location;
       if (taglineEl) taglineEl.textContent = res.community.tagline || "A living layer of what's happening around here right now.";
-      if (badgeEl) badgeEl.textContent = '● ' + res.community.active_count + ' Moments captured recently';
+      if (badgeEl) {
+        if (res.community.active_count > 0) {
+          badgeEl.textContent = '● ' + res.community.active_count + (res.community.active_count === 1 ? ' Moment captured recently' : ' Moments captured recently');
+        } else {
+          badgeEl.textContent = '○ No recent activity';
+        }
+      }
     }
     if (container && Array.isArray(res.moments)) {
-      renderFeedCards(res.moments, container);
+      if (res.moments.length === 0) {
+        container.innerHTML = '<div class="py-12 text-center text-zinc-500 font-mono-tag text-xs">Quiet right now. No recent moments in this space.</div>';
+      } else {
+        renderFeedCards(res.moments, container);
+      }
     }
+  } else if (res && res.error) {
+    showToast(res.error);
   }
 }
 window.openLivePulse = openLivePulse;
@@ -1217,6 +1229,7 @@ async function openCampusPage(campusName) {
 
     // Live Pulse Rendering (Honest server-authoritative states)
     var pulseState = (data.pulse && data.pulse.pulse_state) || (data.pulse && data.pulse.active_areas_count > 0 && Array.isArray(data.pulse.recent_pulse) && data.pulse.recent_pulse.length > 0 ? 'LIVE NOW' : 'QUIET RIGHT NOW');
+    var activeAreasCount = (data.pulse && typeof data.pulse.active_areas_count === 'number') ? data.pulse.active_areas_count : 0;
     if (pulseState === 'LIVE NOW') {
       if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse';
       if (pulseTagEl) {
@@ -1224,7 +1237,7 @@ async function openCampusPage(campusName) {
         pulseTagEl.className = 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-emerald-400 font-bold';
       }
       if (pulseHeadingEl) pulseHeadingEl.textContent = 'An experience is happening across the community right now.';
-      if (activeAreasEl) activeAreasEl.textContent = (data.pulse.active_areas_count || 1) + ' active areas';
+      if (activeAreasEl) activeAreasEl.textContent = activeAreasCount + ' active areas';
     } else if (pulseState === 'ACTIVE') {
       if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-amber-500';
       if (pulseTagEl) {
@@ -1232,7 +1245,7 @@ async function openCampusPage(campusName) {
         pulseTagEl.className = 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-400 font-bold';
       }
       if (pulseHeadingEl) pulseHeadingEl.textContent = 'Life is happening across the community.';
-      if (activeAreasEl) activeAreasEl.textContent = (data.pulse.active_areas_count || 1) + ' active areas';
+      if (activeAreasEl) activeAreasEl.textContent = activeAreasCount + ' active areas';
     } else {
       if (pulseDotEl) pulseDotEl.className = 'w-1.5 h-1.5 rounded-full bg-zinc-600';
       if (pulseTagEl) {
@@ -1271,17 +1284,21 @@ async function openCampusPage(campusName) {
       }
     }
 
-    if (areasListEl && Array.isArray(data.areas) && data.areas.length > 0) {
-      areasListEl.innerHTML = '';
-      data.areas.forEach(function(a) {
-        var aRow = document.createElement('div');
-        aRow.className = 'p-2.5 rounded-xl bg-zinc-900/80 border border-white/[.04] flex items-center justify-between cursor-pointer hover:border-amber-500/30 transition active:scale-95';
-        aRow.onclick = function() { openPlacePage(a.name); };
-        aRow.innerHTML = 
-          '<span class="text-xs font-bold text-white">' + escapeHtml(a.name) + '</span>' +
-          '<span class="font-mono-tag text-[9px] text-zinc-400">' + a.momentsCount + ' Moments</span>';
-        areasListEl.appendChild(aRow);
-      });
+    if (areasListEl) {
+      if (Array.isArray(data.areas) && data.areas.length > 0) {
+        areasListEl.innerHTML = '';
+        data.areas.forEach(function(a) {
+          var aRow = document.createElement('div');
+          aRow.className = 'p-2.5 rounded-xl bg-zinc-900/80 border border-white/[.04] flex items-center justify-between cursor-pointer hover:border-amber-500/30 transition active:scale-95';
+          aRow.onclick = function() { openPlacePage(a.name); };
+          aRow.innerHTML =
+            '<span class="text-xs font-bold text-white">' + escapeHtml(a.name) + '</span>' +
+            '<span class="font-mono-tag text-[9px] text-zinc-400">' + a.momentsCount + ' Moments</span>';
+          areasListEl.appendChild(aRow);
+        });
+      } else {
+        areasListEl.innerHTML = '<div class="py-3 text-center text-xs text-zinc-500 font-mono-tag">No areas tagged yet.</div>';
+      }
     }
 
     if (momentsEl) {

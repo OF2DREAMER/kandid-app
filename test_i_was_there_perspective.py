@@ -1194,6 +1194,82 @@ class TestIWasTherePerspective(unittest.TestCase):
         self.assertEqual(s_admin_priv, 200)
         self.assertIn(priv_post_id, [m["id"] for m in r_admin_priv.get("moments", [])])
 
+    def test_41_community_areas_strict_isolation_and_empty_state(self):
+        """
+        Phase 1 / Step 2 Remediation:
+        - Community A has an area post (Engineering Block).
+        - Community B has zero area posts.
+        - Community A's areas must NOT appear in Community B.
+        - Community B returns areas = [] and active_areas_count = 0 (never 1).
+        - Personal post with campus = Community B name and location_city = Campus Quad
+          must NOT appear as an Area in Community B.
+        - Personal post remains normal Feed/Open Journal post.
+        """
+        conn = server.get_db()
+        cursor = conn.cursor()
+        comm_a_id = f"comm_area_a_{uuid.uuid4().hex[:6]}"
+        comm_b_id = f"comm_area_b_{uuid.uuid4().hex[:6]}"
+        comm_b_name = f"Area Test Community Beta {uuid.uuid4().hex[:4]}"
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, city, description, visibility, members_count, creator_id)
+            VALUES (?, 'Area Test Community Alpha', 'Campus', 'Metro', 'Alpha space', 'public', 1, 'u_att1'),
+                   (?, ?, 'Campus', 'Metro', 'Beta space', 'public', 1, 'u_att1')
+        """, (comm_a_id, comm_b_id, comm_b_name))
+        conn.commit()
+        conn.close()
+
+        # 1. Capture Area post in Community A
+        body_a = {
+            "caption": "Engineering Lab Session in Comm A",
+            "community_id": comm_a_id,
+            "location_city": "Engineering Block",
+            "circle": "all"
+        }
+        s_a, r_a = self._request("/api/moments/capture", token=USER1_TOKEN, method="POST", body=body_a)
+        self.assertEqual(s_a, 201)
+
+        # 2. Inspect Community B detail (should have 0 areas, active_areas_count = 0)
+        s_b, r_b = self._request(f"/api/community/detail?id={comm_b_id}", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_b, 200)
+        self.assertEqual(r_b.get("areas"), [])
+        self.assertEqual(r_b.get("pulse", {}).get("active_areas_count"), 0)
+        self.assertEqual(r_b.get("timeline", {}).get("present", {}).get("active_areas_count"), 0)
+
+        # 3. Inspect Community A detail (should have 1 area: Engineering Block, active_areas_count = 1)
+        s_det_a, r_det_a = self._request(f"/api/community/detail?id={comm_a_id}", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_det_a, 200)
+        areas_a = r_det_a.get("areas", [])
+        self.assertEqual(len(areas_a), 1)
+        self.assertEqual(areas_a[0]["name"], "Engineering Block")
+        self.assertEqual(areas_a[0]["momentsCount"], 1)
+        self.assertEqual(r_det_a.get("pulse", {}).get("active_areas_count"), 1)
+
+        # 4. Create personal collision post matching Community B name with location_city
+        body_collision = {
+            "caption": "Personal post with campus collision",
+            "community": "Personal (Feed)",
+            "campus": comm_b_name,
+            "location_city": "Campus Quad",
+            "circle": "all"
+        }
+        s_col, r_col = self._request("/api/moments/capture", token=USER2_TOKEN, method="POST", body=body_collision)
+        self.assertEqual(s_col, 201)
+        col_post_id = r_col["post"]["id"]
+
+        # 5. Confirm collision post does NOT appear in Community B's Areas or moments
+        s_b2, r_b2 = self._request(f"/api/community/detail?id={comm_b_id}", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_b2, 200)
+        self.assertEqual(r_b2.get("areas"), [])
+        self.assertEqual(r_b2.get("pulse", {}).get("active_areas_count"), 0)
+        b2_moment_ids = [m["id"] for m in r_b2.get("moments", [])]
+        self.assertNotIn(col_post_id, b2_moment_ids)
+
+        # 6. Confirm personal post remains in normal Feed
+        s_feed, r_feed = self._request("/api/feed", token=USER2_TOKEN, method="GET")
+        self.assertEqual(s_feed, 200)
+        feed_ids = [m["id"] for m in r_feed.get("feed", [])]
+        self.assertIn(col_post_id, feed_ids)
+
 if __name__ == "__main__":
     unittest.main()
 
