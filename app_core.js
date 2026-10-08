@@ -206,6 +206,23 @@ async function apiRequest(endpoint, options) {
   var timerId = setTimeout(function() { controller.abort(); }, timeoutMs);
   options.signal = controller.signal;
 
+  var startMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  function recordMetric(status, success, errCat) {
+    try {
+      if (typeof window !== 'undefined' && window.KandidObservability && window.KandidObservability.captureApiMetric) {
+        var durationMs = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - startMs;
+        window.KandidObservability.captureApiMetric({
+          endpoint: endpoint,
+          method: (options && options.method) || 'GET',
+          status: status,
+          duration_ms: durationMs,
+          success: success,
+          error_category: errCat || ''
+        });
+      }
+    } catch (e) {}
+  }
+
   try {
     var res = await fetch(endpoint, options);
     clearTimeout(timerId);
@@ -214,16 +231,21 @@ async function apiRequest(endpoint, options) {
       // Server returned non-JSON (HTML error page, cold-start 502, etc.)
       var text = await res.text();
       console.warn('[API] Non-JSON response for', endpoint, 'status:', res.status, 'body:', text.substring(0, 200));
+      recordMetric(res.status, false, 'NON_JSON_' + res.status);
       return { success: false, error: 'Server error (' + res.status + ')', _status: res.status };
     }
     var data = await res.json();
     // Propagate HTTP status for auth-specific handling
     if (!data._status) data._status = res.status;
+    var isSuccess = Boolean(data && data.success !== false && res.status < 400);
+    var errCategory = isSuccess ? '' : (data && (data.code || data.error_code) ? (data.code || data.error_code) : 'HTTP_' + res.status);
+    recordMetric(res.status, isSuccess, errCategory);
     return data;
   } catch (err) {
     clearTimeout(timerId);
     var isTimeout = err && err.name === 'AbortError';
     console.warn('[API] fetch error for', endpoint, isTimeout ? 'TIMEOUT' : (err && err.message));
+    recordMetric(0, false, isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR');
     return {
       success: false,
       error: isTimeout ? 'Request timed out' : ((err && err.message) ? err.message : 'Network error'),
@@ -1083,6 +1105,12 @@ async function openCampusPage(campusName) {
       state.activeCommunityId = c.id || '';
       state.activeCommunity = c.name || targetParam;
       state.activeCommunityData = c;
+      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+        window.KandidObservability.captureEvent('community_viewed', {
+          community_id: String(c.id || ''),
+          type: String(c.tag || c.type || 'community')
+        });
+      }
       if (titleEl) titleEl.textContent = c.name;
       if (nameEl) {
         nameEl.textContent = c.name;
@@ -1270,7 +1298,7 @@ async function openCampusPage(campusName) {
         if (isEligibleToContribute) {
           momentsEl.innerHTML = '<div class="py-6 text-center space-y-2 rounded-2xl bg-zinc-950/60 border border-white/[.04] p-4">' +
             '<p class="text-xs text-zinc-500 font-mono-tag">No shared moments yet. Be the first to share an authentic moment.</p>' +
-            '<button onclick="openCommunityMomentCapture(\'' + escapeHtml(curCommId) + '\', \'' + jsAttr(curCommName) + '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono-tag font-bold text-[10px] uppercase cursor-pointer active:scale-95 transition">📸 + SHARE FIRST MOMENT</button>' +
+            '<button onclick="openCommunityMomentCapture(\'' + jsAttr(curCommId) + '\', \'' + jsAttr(curCommName) + '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-mono-tag font-bold text-[10px] uppercase cursor-pointer active:scale-95 transition">📸 + SHARE FIRST MOMENT</button>' +
           '</div>';
         } else {
           momentsEl.innerHTML = '<div class="py-6 text-center space-y-2 rounded-2xl bg-zinc-950/60 border border-white/[.04] p-4">' +
@@ -1463,9 +1491,9 @@ async function openCommunityModerationModal(communityId) {
             '</div>' +
             (r.details ? '<p class="text-[10px] text-zinc-300 font-sans bg-zinc-950 p-2 rounded-lg border border-white/[.03]">' + escapeHtml(r.details) + '</p>' : '') +
             '<div class="flex items-center gap-2 pt-1 border-t border-zinc-800">' +
-              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'review\', \'' + escapeHtml(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-amber-400 hover:underline cursor-pointer text-[10px]">Review</button>' : '') +
-              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'dismiss\', \'' + escapeHtml(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-zinc-400 hover:underline cursor-pointer text-[10px]">Dismiss</button>' : '') +
-              (r.target_type === 'moment' ? '<button onclick="handleModerationAction(\'' + escapeHtml(r.id) + '\', \'hide\', \'' + escapeHtml(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + escapeHtml(commId) + '\')" class="text-rose-400 hover:underline cursor-pointer text-[10px]">Hide Content</button>' : '') +
+              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + jsAttr(r.id) + '\', \'review\', \'' + jsAttr(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + jsAttr(commId) + '\')" class="text-amber-400 hover:underline cursor-pointer text-[10px]">Review</button>' : '') +
+              (r.status === 'pending' ? '<button onclick="handleModerationAction(\'' + jsAttr(r.id) + '\', \'dismiss\', \'' + jsAttr(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + jsAttr(commId) + '\')" class="text-zinc-400 hover:underline cursor-pointer text-[10px]">Dismiss</button>' : '') +
+              (r.target_type === 'moment' ? '<button onclick="handleModerationAction(\'' + jsAttr(r.id) + '\', \'hide\', \'' + jsAttr(r.target_type) + '\', \'' + jsAttr(r.target_id) + '\', \'' + jsAttr(commId) + '\')" class="text-rose-400 hover:underline cursor-pointer text-[10px]">Hide Content</button>' : '') +
             '</div>' +
           '</div>';
         }).join('');
@@ -1670,6 +1698,11 @@ async function toggleJoinCommunity() {
     var shareBtn = document.getElementById('campusShareMomentBtn');
     var nonMemberNotice = document.getElementById('campusNonMemberNotice');
     if (res.is_joined) {
+      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+        window.KandidObservability.captureEvent('community_joined', {
+          community_id: String(commId || '')
+        });
+      }
       showToast('Joined ' + name + '! ✦');
       btn.textContent = '[ JOINED ✓ ]';
       btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
@@ -1753,6 +1786,11 @@ async function submitNewCommunity() {
   });
 
   if (res && res.success && res.community) {
+    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+      window.KandidObservability.captureEvent('community_created', {
+        type: String(type || 'Interest')
+      });
+    }
     closeCreateCommunityModal();
     playTactileFeedback('xp');
     showToast('Community "' + name + '" created! ✦ +50 XP');
@@ -1847,6 +1885,9 @@ async function loadFeedMoments(circle) {
     data = { success: false, error: e && e.message ? e.message : 'Network error', _network: true };
   } finally {
     if (data && data.success && Array.isArray(data.feed)) {
+      if (window.KandidObservability) {
+        window.KandidObservability.captureEvent('feed_loaded', { circle: circle, count: data.feed.length });
+      }
       // ── STATE A: SUCCESS WITH POSTS ──────────────────────────────────
       var newDataStr = JSON.stringify(data);
       if (newDataStr !== cachedDataStr) {
@@ -1872,9 +1913,14 @@ async function loadFeedMoments(circle) {
           renderFeedCards(data.feed, container);
         }
       }
-    } else if (hasCache && data && !data.success) {
-       // Silently fail if we have cache, just show a subtle toast
-    } else if (!hasCache) {
+    } else {
+      if (window.KandidObservability) {
+        var errCat = (data && data.error) ? String(data.error).substring(0, 32) : 'load_error';
+        window.KandidObservability.captureEvent('feed_load_failed', { circle: circle, error_category: errCat });
+      }
+      if (hasCache && data && !data.success) {
+        // Silently fail if we have cache, just show a subtle toast
+      } else if (!hasCache) {
       if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
         // ── STATE C: AUTH FAILURE ─────────────────────────────────────
         container.innerHTML =
@@ -1897,6 +1943,7 @@ async function loadFeedMoments(circle) {
       }
     }
   }
+}
 }
 
 function formatPostTime(createdStr) {
@@ -2290,6 +2337,11 @@ async function openCameraStudio() {
   if (!modal) return;
   modal.style.display = 'flex';
   
+  if (window.KandidObservability) {
+    var camSrc = (state.cameraContext && state.cameraContext.source) ? state.cameraContext.source : 'dock';
+    window.KandidObservability.captureEvent('camera_opened', { source: camSrc });
+  }
+
   captureCurrentGeoLocation();
 
   state.cameraFacingMode = 'environment';
@@ -3431,6 +3483,9 @@ async function toggleCameraLens() {
 window.toggleCameraLens = toggleCameraLens;
 
 async function takeSnapshot() {
+  if (window.KandidObservability) {
+    window.KandidObservability.captureEvent('capture_started', { mode: 'dual' });
+  }
   playTactileFeedback('shutter');
   await KandidCameraEngine.capture();
 }
@@ -3486,6 +3541,12 @@ function handleNativeFileCapture(event) {
 window.handleNativeFileCapture = handleNativeFileCapture;
 
 function openMomentReview() {
+  if (window.KandidObservability) {
+    window.KandidObservability.captureEvent('capture_completed', {
+      has_audio: Boolean(state.recordedAudioDataUrl || (state.capturedMomentData && state.capturedMomentData.audioData)),
+      duration_ms: 3000
+    });
+  }
   ['feedContentStream', 'campusContentStream', 'globalContentStream', 'nearbyContentStream'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -3790,13 +3851,19 @@ async function publishCapturedMoment() {
       markDailyAlertCompleted();
     }
     if (isPerspective) {
-      showToast('Perspective added to shared moment cluster! ✦');
       var publishedClusterId = (reviewCtx && reviewCtx.clusterId) ? reviewCtx.clusterId : null;
+      if (window.KandidObservability) {
+        window.KandidObservability.captureEvent('perspective_submitted', { cluster_id: String(publishedClusterId || '') });
+      }
+      showToast('Perspective added to shared moment cluster! ✦');
       closeMomentReview();
       if (publishedClusterId) {
         openMomentClusterModal(publishedClusterId);
       }
     } else {
+      if (window.KandidObservability) {
+        window.KandidObservability.captureEvent('post_publish_success', { is_perspective: false, circle: String(payload.circle || 'campus') });
+      }
       var chosenName = payload.community || 'Feed';
       showToast('Moment shared to ' + chosenName + '! 🔥 +50 XP');
       closeMomentReview();
@@ -3807,6 +3874,10 @@ async function publishCapturedMoment() {
     await loadCampusScreen();
     await loadYouScreen();
   } else {
+    if (window.KandidObservability) {
+      var errCat = (data && data.code) ? data.code : 'publish_failed';
+      window.KandidObservability.captureEvent('post_publish_failed', { is_perspective: Boolean(isPerspective), error_category: errCat });
+    }
     var errMsg = (data && (data.message || data.error)) ? (data.message || data.error) : 'Network error';
     if (data && data.code === 'COMMUNITY_MEMBERSHIP_REQUIRED') {
       errMsg = 'Active membership required to share moments to this community.';
@@ -4388,7 +4459,7 @@ function renderPeopleSearchResults(people) {
     } else if (isRequested) {
       buttonHtml = '<span class="px-3 py-1.5 bg-neutral-900 border border-neutral-800 text-amber-400 rounded-full text-[10px] font-bold flex-shrink-0">REQUESTED</span>';
     } else {
-      buttonHtml = '<button onclick="event.stopPropagation(); connectWithUser(\'' + escapeHtml(p.id) + '\', this)" class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
+      buttonHtml = '<button onclick="event.stopPropagation(); connectWithUser(\'' + jsAttr(p.id) + '\', this)" class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-full text-[10px] font-bold transition flex-shrink-0 cursor-pointer">CONNECT</button>';
     }
 
     var initialLetter = escapeHtml((name || handle || 'U').charAt(0).toUpperCase());
@@ -5082,15 +5153,27 @@ async function submitChangePassword(e) {
 window.submitChangePassword = submitChangePassword;
 
 async function confirmDeleteAccount() {
-  var conf = confirm('⚠️ Are you sure you want to permanently delete your Kandid account?\n\nThis action cannot be undone.');
+  var conf = confirm('⚠️ Are you sure you want to permanently delete your Kandid account?\n\nThis will permanently erase your profile, authentic moments, messages, and memberships. This action cannot be undone.');
   if (!conf) return;
-  var secondConf = prompt('Type DELETE to confirm account deletion:');
+  var secondConf = prompt('Type DELETE to confirm permanent account deletion:');
   if (secondConf !== 'DELETE') {
     showToast('Deletion cancelled.');
     return;
   }
-  showToast('Account deleted.');
-  logoutUser();
+  try {
+    var res = await apiRequest('/api/user/delete-account', {
+      method: 'POST',
+      body: JSON.stringify({ confirmation: 'DELETE' })
+    });
+    if (res && res.success) {
+      showToast('Account permanently deleted.');
+      logoutUser();
+    } else {
+      showToast(res && res.error ? res.error : 'Account deletion failed.');
+    }
+  } catch (err) {
+    showToast('Network error while deleting account.');
+  }
 }
 window.confirmDeleteAccount = confirmDeleteAccount;
 
@@ -6411,6 +6494,23 @@ function handlePushClick() {
 window.handlePushClick = handlePushClick;
 
 document.addEventListener('DOMContentLoaded', async function() {
+  // 0. Observability Initialization (Fail-Safe)
+  try {
+    if (window.KandidObservability && typeof window.KandidObservability.init === 'function') {
+      apiRequest('/api/public/config').then(function(cfg) {
+        if (cfg && cfg.success) {
+          window.KandidObservability.init({
+            apiKey: cfg.posthog_api_key || '',
+            host: cfg.posthog_host || 'https://us.i.posthog.com',
+            enabled: Boolean(cfg.posthog_enabled),
+            environment: cfg.environment || 'production',
+            appVersion: cfg.version || 'v5.2.2'
+          });
+        }
+      }).catch(function() {});
+    }
+  } catch (e) {}
+
   // 1. Navigation Dock
   document.querySelectorAll('.dock-item').forEach(function(btn) {
     btn.addEventListener('click', function() {
@@ -6431,22 +6531,36 @@ document.addEventListener('DOMContentLoaded', async function() {
     attachCardInteractions(card, { id: card.dataset.postId || 'post_sample' });
   });
 
-  // 4. Digital Status Clock
-  setInterval(function() {
+  // 4. Digital Status Clock (Page Visibility Aware)
+  function updateStatusClock() {
+    if (document.hidden) return;
     var now = new Date();
     var hours = String(now.getHours()).padStart(2, '0');
     var minutes = String(now.getMinutes()).padStart(2, '0');
     var clockEl = document.getElementById('statusClock');
     if (clockEl) clockEl.textContent = hours + ':' + minutes;
-  }, 1000);
+  }
+  updateStatusClock();
+  if (!window._statusClockInterval) {
+    window._statusClockInterval = setInterval(updateStatusClock, 1000);
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) {
+        updateStatusClock();
+      }
+    });
+  }
 
   // 5. Initialize Sub-modules
   setupCameraStudio();
+  // Primary critical screen: await initial feed render for immediate visual hydration
   await loadFeedMoments('foryou');
-  await loadNotifications();
-  await loadSearchDiscovery();
-  await loadChatConversations();
-  await loadYouScreen();
+  // Secondary background modules: fetch notifications, search, chat, and profile concurrently
+  await Promise.allSettled([
+    loadNotifications(),
+    loadSearchDiscovery(),
+    loadChatConversations(),
+    loadYouScreen()
+  ]);
 
   // 5b. Real-time Heartbeat, Notification, & Presence Poller
   setInterval(function() {
@@ -6603,6 +6717,15 @@ window.switchScreen = function(screenId) {
     if (target) {
         target.style.display = 'flex';
         target.classList.add('active');
+    }
+
+    if (screenId === 'identity') {
+        state._onboardingStartTime = Date.now();
+        if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+            window.KandidObservability.captureEvent('onboarding_started', {
+                step: 'identity'
+            });
+        }
     }
 
     if (screenId === 'inviteSomeone') {
@@ -6936,6 +7059,9 @@ window.closeGoogleAuthModal = function() {
 window.handleGoogleCredentialResponse = async function(response) {
     var credential = response ? (response.credential || response.id_token) : '';
     if (!credential) {
+        if (window.KandidObservability) {
+            window.KandidObservability.captureEvent('google_login_failed', { error_category: 'missing_credential' });
+        }
         showToast('Google authentication failed: Missing credential');
         return;
     }
@@ -6956,6 +7082,9 @@ window.handleGoogleCredentialResponse = async function(response) {
 
             // Case 1: Existing Active User -> Direct Instant Feed Login
             if (res.status === 'ACTIVE_USER' && res.token && res.user) {
+                if (window.KandidObservability) {
+                    window.KandidObservability.captureEvent('google_login_success', { is_new_user: false });
+                }
                 localStorage.setItem('kandid_token', res.token);
                 localStorage.setItem('kandid_onboarded', 'true');
                 localStorage.setItem('kandid_user', JSON.stringify(res.user));
@@ -6978,6 +7107,9 @@ window.handleGoogleCredentialResponse = async function(response) {
 
             // Case 2: Resume Pending Onboarding Session
             if (res.status === 'RESUME_ONBOARDING') {
+                if (window.KandidObservability) {
+                    window.KandidObservability.captureEvent('google_login_success', { is_new_user: false });
+                }
                 var gp = res.google_profile || {};
                 var saved = res.saved_state || {};
                 
@@ -7011,6 +7143,9 @@ window.handleGoogleCredentialResponse = async function(response) {
 
             // Case 3: New Google User -> Initialize Onboarding Session
             if (res.status === 'NEW_ONBOARDING' || res.is_new) {
+                if (window.KandidObservability) {
+                    window.KandidObservability.captureEvent('google_login_success', { is_new_user: true });
+                }
                 var gp = res.google_profile || {};
                 
                 state.onboardingSession = {
@@ -7029,9 +7164,16 @@ window.handleGoogleCredentialResponse = async function(response) {
                 switchScreen('identity');
             }
         } else {
+            if (window.KandidObservability) {
+                var errCat = (res && res.error) ? String(res.error).substring(0, 32) : 'invalid_token';
+                window.KandidObservability.captureEvent('google_login_failed', { error_category: errCat });
+            }
             showToast('Google verification failed: ' + (res ? (res.error || 'Invalid token') : 'Network error'));
         }
     } catch(e) {
+        if (window.KandidObservability) {
+            window.KandidObservability.captureEvent('google_login_failed', { error_category: 'exception' });
+        }
         console.error('Google Auth error:', e);
         showToast('Google sign-in error.');
     }
@@ -7222,7 +7364,7 @@ window.searchCampuses = async function(query) {
         }
 
         dropdown.innerHTML = campuses.map(function(c) {
-            return '<div onclick="selectCampus(\'' + escapeHtml(c.id) + '\', \'' + jsAttr(c.name) + '\', \'' + jsAttr(c.city || '') + '\')" class="p-3 hover:bg-zinc-800/80 cursor-pointer flex items-center justify-between transition-colors group">' +
+            return '<div onclick="selectCampus(\'' + jsAttr(c.id) + '\', \'' + jsAttr(c.name) + '\', \'' + jsAttr(c.city || '') + '\')" class="p-3 hover:bg-zinc-800/80 cursor-pointer flex items-center justify-between transition-colors group">' +
                 '<div>' +
                     '<h5 class="text-xs font-bold text-white group-hover:text-amber-400 transition-colors">' + escapeHtml(c.name) + '</h5>' +
                     '<p class="text-[10px] text-zinc-400 font-mono-tag">' + escapeHtml(c.city + (c.state ? ', ' + c.state : '')) + '</p>' +
@@ -7366,10 +7508,11 @@ window.handleCampusSearch = function(query) {
     if (addBox) {
         var isWork = state.onboardingSession && state.onboardingSession.vibe === 'work';
         var entityType = isWork ? 'Workspace' : 'Campus';
-        var safeQ = escapeHtml(rawQuery);
+        var safeQDisplay = escapeHtml(rawQuery);
+        var safeQAttr = jsAttr(rawQuery);
         addBox.innerHTML = `
-            <div onclick="selectCampus('custom_added', '${safeQ}', 'Custom Added')" class="p-3 hover:bg-zinc-900 border-t border-amber-500/20 cursor-pointer font-sans bg-amber-500/5">
-                <p class="text-xs font-bold text-amber-500">✨ + Add "${safeQ}"</p>
+            <div onclick="selectCampus('custom_added', '${safeQAttr}', 'Custom Added')" class="p-3 hover:bg-zinc-900 border-t border-amber-500/20 cursor-pointer font-sans bg-amber-500/5">
+                <p class="text-xs font-bold text-amber-500">✨ + Add "${safeQDisplay}"</p>
                 <p class="text-[9px] text-zinc-400 mono font-mono-tag">Set as your ${entityType}</p>
             </div>
         `;
@@ -7678,6 +7821,12 @@ window.submitFinalOnboarding = async function() {
         }
 
         if (res && res.success && res.token && res.user) {
+            if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+                var durationMs = state._onboardingStartTime ? (Date.now() - state._onboardingStartTime) : 0;
+                window.KandidObservability.captureEvent('onboarding_completed', {
+                    duration_ms: durationMs
+                });
+            }
             localStorage.setItem('kandid_token', res.token);
             localStorage.setItem('kandid_onboarded', 'true');
             localStorage.setItem('kandid_user', JSON.stringify(res.user));
@@ -7810,6 +7959,9 @@ window.submitUserLogin = async function() {
             }
             state.token = res.token;
             state.currentUser = res.user;
+            if (window.KandidObservability) {
+                window.KandidObservability.captureEvent('login_success', { method: 'password' });
+            }
             showToast('Welcome back, ' + (res.user.name || res.user.username || 'User') + '! 🎉');
             
             var obFlow = document.getElementById('onboardingFlow');
@@ -7823,6 +7975,10 @@ window.submitUserLogin = async function() {
             await loadChatConversations();
         } else {
             var errMsg = (res && res.error) ? res.error : 'Invalid username or password.';
+            if (window.KandidObservability) {
+                var errCat = (res && res._status === 429) ? 'rate_limited' : 'invalid_credentials';
+                window.KandidObservability.captureEvent('login_failed', { method: 'password', error_category: errCat });
+            }
             if (errBox && errText) {
                 if (errMsg.indexOf('Forgot password') !== -1) {
                     errText.innerHTML = escapeHtml(errMsg).replace(
@@ -8152,6 +8308,12 @@ async function submitReportUser() {
   });
   
   if (res && res.success) {
+    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+      window.KandidObservability.captureEvent('report_submitted', {
+        target_type: 'user',
+        reason_category: 'guidelines'
+      });
+    }
     showToast('Report submitted. Thank you for keeping Kandid safe 🛡️');
   }
   switchScreenView('report-confirm');
@@ -8168,6 +8330,11 @@ async function submitBlockUser() {
   });
   
   if (res && res.success) {
+    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+      window.KandidObservability.captureEvent('block_action', {
+        action: 'block'
+      });
+    }
     showToast('User blocked successfully');
     await loadChatConversations();
   }
@@ -8213,7 +8380,7 @@ async function loadBlockList() {
           '<p class="text-[10px] text-zinc-500 font-mono-tag truncate">@' + escapeHtml(u.handle || '') + '</p>' +
         '</div>' +
       '</div>' +
-      '<button class="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-400 font-bold text-[10px] rounded-full tracking-wider uppercase cursor-pointer flex-shrink-0" onclick="unblockUser(\'' + escapeHtml(u.id) + '\')">UNBLOCK</button>';
+      '<button class="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-400 font-bold text-[10px] rounded-full tracking-wider uppercase cursor-pointer flex-shrink-0" onclick="unblockUser(\'' + jsAttr(u.id) + '\')">UNBLOCK</button>';
     container.appendChild(row);
   });
 }
@@ -8390,7 +8557,7 @@ function renderMemoriesFeed() {
     var perspectivesCount = m.perspective_count || (m.cluster_id ? 3 : 1);
 
     var cardHtml = 
-      '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner cursor-pointer" onclick="openMomentDetail(' + escapeHtml(JSON.stringify(m)) + ')">' +
+      '<div class="moment-thumb-trigger w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner cursor-pointer">' +
         '<img src="' + escapeHtml(mainImg) + '" class="w-full h-full object-cover" alt="Memory moment" loading="lazy">';
 
     if (pipImg) {
@@ -8423,6 +8590,12 @@ function renderMemoriesFeed() {
     cardHtml += '</div>';
 
     card.innerHTML = cardHtml;
+    var thumbTrigger = card.querySelector('.moment-thumb-trigger');
+    if (thumbTrigger) {
+      thumbTrigger.addEventListener('click', function() {
+        openMomentDetail(m);
+      });
+    }
     container.appendChild(card);
   });
 }
@@ -9718,6 +9891,11 @@ function clearChatSearch() {
 window.clearChatSearch = clearChatSearch;
 
 function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
+  if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+    window.KandidObservability.captureEvent('chat_opened', {
+      conversation_type: 'direct'
+    });
+  }
   state.activeChatUser = userId;
   state.activeChatPartner = {
     id: userId,
@@ -9932,6 +10110,9 @@ async function executeChatPrivacyBlock() {
       body: JSON.stringify({ targetUserId: state.activeChatUser })
     });
     if (res && res.success) {
+      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+        window.KandidObservability.captureEvent('block_action', { action: 'block' });
+      }
       closeChatPrivacyModal();
       showToast('User blocked');
       switchScreenView('chat-home');
@@ -9963,6 +10144,12 @@ async function executeChatPrivacyReport() {
       })
     });
     if (res && res.success) {
+      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+        window.KandidObservability.captureEvent('report_submitted', {
+          target_type: 'user',
+          reason_category: String(reason || 'harassment').toLowerCase()
+        });
+      }
       closeChatPrivacyModal();
       showToast('Report submitted. Safety team will review.');
     } else {
@@ -10888,16 +11075,31 @@ async function sendChatMessageV2() {
     });
 
     if (res && res.success) {
+      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+        window.KandidObservability.captureEvent('message_send_success', {
+          has_attachment: false
+        });
+      }
       if (tempBubble && res.message && res.message.id) {
         tempBubble.dataset.msgId = res.message.id;
       }
       await loadChatMessages(state.activeChatUser, true);
       checkChatUnreadBadge();
     } else {
+      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+        window.KandidObservability.captureEvent('message_send_failed', {
+          error_category: (res && res.error) ? 'api_error' : 'unknown'
+        });
+      }
       showToast(res ? res.error : 'Message send failed. Please check connection.');
       if (tempBubble) tempBubble.remove();
     }
   } catch (err) {
+    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+      window.KandidObservability.captureEvent('message_send_failed', {
+        error_category: 'network_or_exception'
+      });
+    }
     console.error('Chat send error:', err);
     showToast('Failed to send message.');
     if (tempBubble) tempBubble.remove();
@@ -11689,7 +11891,7 @@ async function openMomentClusterModal(clusterId, momentId) {
         var rightActionHtml = isOwner
           ? '<div class="flex items-center gap-1.5">' +
               '<span class="text-zinc-500 text-[9px]">' + escapeHtml(persp.location_city || 'Campus') + '</span>' +
-              '<button onclick="event.stopPropagation(); handleDeletePerspectiveMoment(\'' + escapeHtml(persp.id) + '\')" class="px-2 py-0.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-400 hover:text-red-300 font-mono-tag text-[9px] font-bold transition cursor-pointer flex items-center gap-1 active:scale-95" title="Delete perspective"><span>🗑️</span></button>' +
+              '<button onclick="event.stopPropagation(); handleDeletePerspectiveMoment(\'' + jsAttr(persp.id) + '\')" class="px-2 py-0.5 rounded-lg bg-red-950/40 hover:bg-red-900/60 border border-red-500/40 text-red-400 hover:text-red-300 font-mono-tag text-[9px] font-bold transition cursor-pointer flex items-center gap-1 active:scale-95" title="Delete perspective"><span>🗑️</span></button>' +
             '</div>'
           : '<span class="text-zinc-500">' + escapeHtml(persp.location_city || 'Campus') + '</span>';
 
@@ -11888,6 +12090,11 @@ window.handleAddPerspectiveClick = handleAddPerspectiveClick;
 
 function openPerspectiveCapture(clusterId, communityId, location) {
   closeMomentClusterModal();
+  if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+    window.KandidObservability.captureEvent('perspective_started', {
+      cluster_id: String(clusterId || '')
+    });
+  }
   state.cameraContext = {
     mode: 'PERSPECTIVE',
     clusterId: clusterId,
