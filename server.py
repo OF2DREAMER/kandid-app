@@ -5212,6 +5212,9 @@ def get_current_user(headers, body=None, query=None, require_session=False):
 
     if row:
         user_dict = dict(row)
+        if user_dict.get("account_status") in ("suspended", "banned") or user_dict.get("role") == "banned":
+            conn.close()
+            return None
         user_id = user_dict['id']
         try:
             cursor.execute("UPDATE users SET last_active = ? WHERE id = ?", (now_iso, user_id))
@@ -5781,6 +5784,121 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "active_sessions": active_sessions,
                 "environment": ENVIRONMENT,
                 "version": "v5.2.2"
+            })
+
+        if path == "/api/admin/users":
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+
+            q = (query.get("q") or [""])[0].strip()
+            role_filter = (query.get("role") or [""])[0].strip().lower()
+            status_filter = (query.get("status") or [""])[0].strip().lower()
+
+            try:
+                page = int((query.get("page") or ["1"])[0])
+                page = max(1, page)
+            except (ValueError, TypeError):
+                page = 1
+
+            try:
+                limit = int((query.get("limit") or ["25"])[0])
+                limit = max(1, min(100, limit))
+            except (ValueError, TypeError):
+                limit = 25
+
+            offset = (page - 1) * limit
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            where_clauses = ["1=1"]
+            params = []
+
+            if q:
+                clean_q = q.lower().replace("@", "")
+                where_clauses.append("(LOWER(handle) LIKE ? OR LOWER(name) LIKE ? OR LOWER(email) LIKE ?)")
+                params.extend([f"%{clean_q}%", f"%{clean_q}%", f"%{clean_q}%"])
+
+            if role_filter and role_filter in ("student", "creator", "admin", "founder", "banned"):
+                where_clauses.append("role = ?")
+                params.append(role_filter)
+
+            if status_filter and status_filter in ("active", "suspended", "banned"):
+                if status_filter == "active":
+                    where_clauses.append("(account_status IS NULL OR account_status = 'active')")
+                else:
+                    where_clauses.append("account_status = ?")
+                    params.append(status_filter)
+
+            where_sql = " AND ".join(where_clauses)
+
+            cursor.execute(f"SELECT COUNT(*) FROM users WHERE {where_sql}", params)
+            total = cursor.fetchone()[0]
+
+            cursor.execute(f"""
+                SELECT id, handle, name, email, role, account_status, campus, created_at, last_active, authenticity_score, streak_count
+                FROM users
+                WHERE {where_sql}
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+            """, params + [limit, offset])
+
+            rows = cursor.fetchall()
+            users_list = []
+            for r in rows:
+                r_dict = dict(r)
+                r_dict["account_status"] = r_dict.get("account_status") or "active"
+                users_list.append(r_dict)
+
+            conn.close()
+
+            import math
+            pages = math.ceil(total / limit) if limit > 0 else 1
+
+            return self.send_json(200, {
+                "success": True,
+                "users": users_list,
+                "total": total,
+                "page": page,
+                "pages": pages,
+                "limit": limit
+            })
+
+        if path.startswith("/api/admin/users/"):
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+
+            target_raw = path[len("/api/admin/users/"):].strip()
+            if not target_raw:
+                return self.send_json(400, {"error": "Target user ID required", "success": False})
+
+            conn = get_db()
+            target_id = resolve_user_id(target_raw, conn=conn)
+            if not target_id:
+                conn.close()
+                return self.send_json(404, {"error": "User not found", "success": False})
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = ?", (target_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return self.send_json(404, {"error": "User not found", "success": False})
+
+            u_dict = serialize_user(dict(row))
+            u_dict["account_status"] = u_dict.get("account_status") or "active"
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            cursor.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ? AND (expires_at IS NULL OR expires_at > ?)", (target_id, now_iso))
+            sess_count = cursor.fetchone()[0]
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "user": u_dict,
+                "active_sessions": sess_count
             })
 
         if is_blocked_static_path(norm_path):
@@ -10073,6 +10191,155 @@ class KandidHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         body = self.read_json_body()
+
+        # Admin Phase C User Management POST APIs
+        if path.startswith("/api/admin/users/") and path.endswith("/status"):
+            target_raw = path[len("/api/admin/users/"): -len("/status")].strip()
+            admin_user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
+            if err:
+                return self.send_json(*err)
+
+            status_val = (body.get("status") or "").strip().lower()
+            reason_val = (body.get("reason") or "").strip()
+
+            if status_val not in ("active", "suspended"):
+                return self.send_json(400, {"error": "Invalid status. Allowed values: active, suspended", "success": False})
+
+            conn = get_db()
+            target_id = resolve_user_id(target_raw, conn=conn)
+            if not target_id:
+                conn.close()
+                return self.send_json(404, {"error": "Target user not found", "success": False})
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, handle, role, account_status FROM users WHERE id = ?", (target_id,))
+            target_row = cursor.fetchone()
+            if not target_row:
+                conn.close()
+                return self.send_json(404, {"error": "Target user not found", "success": False})
+
+            target_user = dict(target_row)
+
+            if target_user.get("role") == "founder" and status_val == "suspended":
+                cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'founder' AND (account_status IS NULL OR account_status = 'active') AND id != ?", (target_id,))
+                remaining_founders = cursor.fetchone()[0]
+                if remaining_founders < 1:
+                    conn.close()
+                    return self.send_json(400, {"error": "Operation rejected: Cannot suspend the last active founder account", "success": False})
+
+            cursor.execute("UPDATE users SET account_status = ? WHERE id = ?", (status_val, target_id))
+
+            revoked_count = 0
+            if status_val == "suspended":
+                cursor.execute("DELETE FROM sessions WHERE user_id = ?", (target_id,))
+                revoked_count = cursor.rowcount
+
+            conn.commit()
+            conn.close()
+
+            action_name = "suspend_user" if status_val == "suspended" else "restore_user"
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            record_admin_audit_event(
+                admin_user,
+                action=action_name,
+                target_type="user",
+                target_id=target_id,
+                details=f"Account status set to {status_val}. Revoked {revoked_count} sessions. Reason: {reason_val}",
+                ip_address=client_ip
+            )
+
+            return self.send_json(200, {
+                "success": True,
+                "account_status": status_val,
+                "sessions_revoked": revoked_count
+            })
+
+        if path.startswith("/api/admin/users/") and path.endswith("/revoke-sessions"):
+            target_raw = path[len("/api/admin/users/"): -len("/revoke-sessions")].strip()
+            admin_user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
+            if err:
+                return self.send_json(*err)
+
+            conn = get_db()
+            target_id = resolve_user_id(target_raw, conn=conn)
+            if not target_id:
+                conn.close()
+                return self.send_json(404, {"error": "Target user not found", "success": False})
+
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM sessions WHERE user_id = ?", (target_id,))
+            revoked_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            record_admin_audit_event(
+                admin_user,
+                action="revoke_sessions",
+                target_type="user",
+                target_id=target_id,
+                details=f"Revoked {revoked_count} active sessions",
+                ip_address=client_ip
+            )
+
+            return self.send_json(200, {
+                "success": True,
+                "sessions_revoked": revoked_count
+            })
+
+        if path.startswith("/api/admin/users/") and path.endswith("/role"):
+            target_raw = path[len("/api/admin/users/"): -len("/role")].strip()
+            founder_user, err = require_founder(self, self.headers, body=body, strict_bearer=True)
+            if err:
+                return self.send_json(*err)
+
+            new_role = (body.get("role") or "").strip().lower()
+            reason_val = (body.get("reason") or "").strip()
+
+            if new_role not in ("student", "creator", "admin", "founder"):
+                return self.send_json(400, {"error": "Invalid role. Allowed values: student, creator, admin, founder", "success": False})
+
+            conn = get_db()
+            target_id = resolve_user_id(target_raw, conn=conn)
+            if not target_id:
+                conn.close()
+                return self.send_json(404, {"error": "Target user not found", "success": False})
+
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, handle, role, account_status FROM users WHERE id = ?", (target_id,))
+            target_row = cursor.fetchone()
+            if not target_row:
+                conn.close()
+                return self.send_json(404, {"error": "Target user not found", "success": False})
+
+            target_user = dict(target_row)
+            old_role = target_user.get("role") or "student"
+
+            if old_role == "founder" and new_role != "founder":
+                cursor.execute("SELECT COUNT(*) FROM users WHERE role = 'founder' AND (account_status IS NULL OR account_status = 'active') AND id != ?", (target_id,))
+                remaining_founders = cursor.fetchone()[0]
+                if remaining_founders < 1:
+                    conn.close()
+                    return self.send_json(400, {"error": "Operation rejected: Cannot demote the last active founder account", "success": False})
+
+            cursor.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, target_id))
+            conn.commit()
+            conn.close()
+
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            record_admin_audit_event(
+                founder_user,
+                action="change_user_role",
+                target_type="user",
+                target_id=target_id,
+                details=f"Role changed from {old_role} to {new_role}. Reason: {reason_val}",
+                ip_address=client_ip
+            )
+
+            return self.send_json(200, {
+                "success": True,
+                "role": new_role
+            })
 
         # Phase 18: Professional Creator Activation
         if path == "/api/creator/activate" or path == "/api/user/professional/activate":

@@ -154,19 +154,144 @@
         </div>
       </section>
 
-      <!-- View: Users (Placeholder for Phase C) -->
+      <!-- View: Users (Phase C Implementation) -->
       <section id="view-users" class="admin-view space-y-4 hidden">
-        <div class="flex justify-between items-center">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">User Management</h1>
-            <p class="text-xs text-zinc-400">Phase C — User account status, roles, and session controls</p>
+            <p class="text-xs text-zinc-400">Account status, role governance, session revocation, and audit controls</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="loadAdminUsers(1)" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
+              🔄 Refresh Users
+            </button>
           </div>
         </div>
-        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
-          <p class="text-sm font-mono-tag text-zinc-400">User Management Module scheduled for Phase C implementation.</p>
-          <p class="text-xs text-zinc-600 font-mono-tag">Will provide handle search, role modifications (founder-only), account suspensions, and session revocations.</p>
+
+        <!-- Filter & Search Bar -->
+        <div class="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col md:flex-row gap-3">
+          <div class="flex-1">
+            <input type="text" id="adminUserSearchInput" placeholder="Search handle, name, or email..." onkeydown="if(event.key==='Enter') loadAdminUsers(1)" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500/50">
+          </div>
+          <div class="flex gap-2">
+            <select id="adminUserRoleFilter" onchange="loadAdminUsers(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+              <option value="">All Roles</option>
+              <option value="student">student</option>
+              <option value="creator">creator</option>
+              <option value="admin">admin</option>
+              <option value="founder">founder</option>
+            </select>
+
+            <select id="adminUserStatusFilter" onchange="loadAdminUsers(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+              <option value="">All Statuses</option>
+              <option value="active">active</option>
+              <option value="suspended">suspended</option>
+            </select>
+
+            <button onclick="loadAdminUsers(1)" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold font-mono-tag text-xs rounded-xl transition cursor-pointer">
+              Search
+            </button>
+          </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono-tag">
+              <thead class="bg-zinc-900/60 border-b border-zinc-800 text-zinc-400 uppercase text-[10px] tracking-wider">
+                <tr>
+                  <th class="px-4 py-3">User</th>
+                  <th class="px-4 py-3">Email</th>
+                  <th class="px-4 py-3">Role</th>
+                  <th class="px-4 py-3">Status</th>
+                  <th class="px-4 py-3">Campus</th>
+                  <th class="px-4 py-3">Created</th>
+                  <th class="px-4 py-3">Last Active</th>
+                  <th class="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="adminUsersTableBody" class="divide-y divide-zinc-800/60 text-zinc-300">
+                <tr>
+                  <td colspan="8" class="px-4 py-8 text-center text-zinc-500">Loading user records...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination Bar -->
+          <div class="p-4 bg-zinc-900/40 border-t border-zinc-800 flex items-center justify-between text-xs font-mono-tag">
+            <span id="adminUsersPageInfo" class="text-zinc-400">Page 1 of 1 (0 users)</span>
+            <div class="flex gap-2">
+              <button id="adminUsersPrevBtn" onclick="changeAdminUsersPage(-1)" disabled class="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 disabled:opacity-40 cursor-pointer">
+                Previous
+              </button>
+              <button id="adminUsersNextBtn" onclick="changeAdminUsersPage(1)" disabled class="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 disabled:opacity-40 cursor-pointer">
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       </section>
+
+      <!-- User Action & Detail Modal -->
+      <div id="adminUserModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-6 shadow-2xl font-mono-tag">
+          <div class="flex justify-between items-start border-b border-zinc-800 pb-3">
+            <div>
+              <h2 id="modalUserName" class="text-lg font-bold text-white">User Details</h2>
+              <p id="modalUserHandle" class="text-xs text-amber-400">@handle</p>
+            </div>
+            <button onclick="closeAdminUserModal()" class="text-zinc-500 hover:text-white text-lg font-bold">✕</button>
+          </div>
+
+          <div id="modalUserDetailBody" class="space-y-4 text-xs text-zinc-300">
+            <p class="text-zinc-500">Loading user details...</p>
+          </div>
+
+          <!-- Audit Reason Input -->
+          <div class="space-y-1">
+            <label class="text-[10px] text-zinc-400 uppercase font-bold">Reason for Action (Audit Record)</label>
+            <input type="text" id="adminUserActionReason" placeholder="Enter reason for audit log..." class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500/50">
+          </div>
+
+          <!-- Action Control Buttons -->
+          <div class="space-y-3 pt-2 border-t border-zinc-800">
+            <div class="flex gap-2">
+              <button id="btnModalToggleStatus" onclick="executeModalStatusChange()" class="flex-1 px-3 py-2 bg-red-950/60 border border-red-500/40 text-red-400 hover:bg-red-900/60 rounded-xl font-bold transition cursor-pointer">
+                Suspend Account
+              </button>
+              <button onclick="executeModalRevokeSessions()" class="flex-1 px-3 py-2 bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white rounded-xl font-bold transition cursor-pointer">
+                Revoke All Sessions
+              </button>
+            </div>
+
+            <!-- Founder-Only Role Controls -->
+            <div class="p-3 bg-zinc-900/60 border border-zinc-800 rounded-xl space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-amber-400 font-bold uppercase">Role Change (Founder Only)</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">FOUNDER ACCESS</span>
+              </div>
+              <div class="flex gap-2">
+                <select id="modalRoleSelect" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white">
+                  <option value="student">student</option>
+                  <option value="creator">creator</option>
+                  <option value="admin">admin</option>
+                  <option value="founder">founder</option>
+                </select>
+                <button onclick="executeModalRoleChange()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl transition cursor-pointer">
+                  Update Role
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-2">
+            <button onclick="closeAdminUserModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs">
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
 
       <!-- View: Content (Placeholder for Phase D) -->
       <section id="view-content" class="admin-view space-y-4 hidden">
