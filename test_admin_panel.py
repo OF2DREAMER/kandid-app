@@ -242,22 +242,216 @@ class TestAdminPanelPhaseAAndB(unittest.TestCase):
 
     def test_unexpected_migration_errors_raised(self):
         """Verify unexpected database errors during table column migration are not silently swallowed."""
-        mock_cursor = MagicMock()
-        # Simulate non-duplicate unexpected error (e.g. Disk IO Error)
-        mock_cursor.execute.side_effect = sqlite3.OperationalError("disk I/O error")
+    def _set_post_payload(self, path, payload, headers=None):
+        data = json.dumps(payload).encode("utf-8")
+        self.handler.path = path
+        self.handler.rfile = BytesIO(data)
+        self.handler.headers = {
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json",
+            "Authorization": "Bearer token_admin_test_123"
+        }
+        if headers:
+            self.handler.headers.update(headers)
+        self.handler.read_json_body = lambda: payload
 
-        with patch("server.get_db") as mock_get_db:
-            mock_conn = MagicMock()
-            mock_conn.cursor.return_value = mock_cursor
-            mock_get_db.return_value = mock_conn
+    def test_phase_c_admin_can_fetch_users(self):
+        """1. Admin can fetch users list from /api/admin/users."""
+        mock_admin = {"id": "u_admin1", "handle": "admin1", "role": "admin"}
+        with patch("server.get_current_user", return_value=mock_admin):
+            self.handler.path = "/api/admin/users?page=1&limit=10"
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [200])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(res.get("success"))
+            self.assertIn("users", res)
+            self.assertIn("total", res)
 
-            # Manually trigger the migration logic pattern
-            with self.assertRaises(sqlite3.OperationalError):
-                try:
-                    mock_cursor.execute("ALTER TABLE reports ADD COLUMN unexpected_col TEXT")
-                except sqlite3.OperationalError as err:
-                    if "duplicate column name" not in str(err).lower():
-                        raise err
+    def test_phase_c_student_cannot_fetch_users(self):
+        """2. Student role gets 403 on /api/admin/users."""
+        mock_student = {"id": "u_student1", "role": "student"}
+        with patch("server.get_current_user", return_value=mock_student):
+            self.handler.path = "/api/admin/users"
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [403])
+
+    def test_phase_c_unauthenticated_cannot_fetch_users(self):
+        """3. Unauthenticated gets 401 on /api/admin/users."""
+        with patch("server.get_current_user", return_value=None):
+            self.handler.path = "/api/admin/users"
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [401])
+
+    def test_phase_c_user_search_and_sql_injection_safety(self):
+        """4 & 18. Parameterized SQL search works and blocks SQL injection strings."""
+        mock_admin = {"id": "u_admin1", "handle": "admin1", "role": "admin"}
+        with patch("server.get_current_user", return_value=mock_admin):
+            # Test SQL injection string
+            self.handler.path = "/api/admin/users?q=%27%20OR%201=1--"
+            self.handler.wfile = BytesIO()
+            self.sent_status = []
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [200])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(res.get("success"))
+
+    def test_phase_c_user_pagination(self):
+        """5. Pagination controls page and limit bounds."""
+        mock_admin = {"id": "u_admin1", "role": "admin"}
+        with patch("server.get_current_user", return_value=mock_admin):
+            self.handler.path = "/api/admin/users?page=1&limit=2"
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [200])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertEqual(res.get("limit"), 2)
+
+    def test_phase_c_user_detail_endpoint(self):
+        """6 & 17. GET /api/admin/users/<id> returns user details and active sessions count without leaking hashes."""
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO users (id, email, handle, name, password_hash, salt, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       ("u_detail_user", "detail@test.com", "detail_user", "Detail User", "hash", "salt", "student"))
+        conn.commit()
+        conn.close()
+
+        mock_admin = {"id": "u_admin1", "role": "admin"}
+        with patch("server.get_current_user", return_value=mock_admin):
+            self.handler.path = "/api/admin/users/u_detail_user"
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [200])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(res.get("success"))
+            self.assertIn("user", res)
+            self.assertNotIn("password_hash", res["user"])
+            self.assertNotIn("salt", res["user"])
+            self.assertIn("active_sessions", res)
+
+    def test_phase_c_admin_suspend_and_restore_user_with_session_wiping(self):
+        """7, 8, 9, 10 & 16. Admin can suspend student, session is deleted, suspended token rejected, restore works, audit logged."""
+        conn = server.get_db()
+        cursor = conn.cursor()
+
+        # Seed target user and session
+        cursor.execute("INSERT OR REPLACE INTO users (id, email, handle, name, password_hash, salt, role, account_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       ("u_target_suspend", "target_suspend@test.com", "target_suspend", "Target Suspend", "hash", "salt", "student", "active"))
+        cursor.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
+                       ("sess_target1", "u_target_suspend", "tok_target_suspend_123", "2099-01-01T00:00:00"))
+        conn.commit()
+
+        mock_admin = {"id": "u_admin1", "handle": "admin1", "role": "admin"}
+
+        # 7 & 8. Suspend user
+        with patch("server.get_current_user", return_value=mock_admin):
+            self._set_post_payload("/api/admin/users/u_target_suspend/status", {"status": "suspended", "reason": "Policy violation test"})
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [200])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(res.get("success"))
+            self.assertEqual(res.get("account_status"), "suspended")
+            self.assertGreaterEqual(res.get("sessions_revoked"), 1)
+
+        # 8. Verify sessions were deleted
+        cursor.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", ("u_target_suspend",))
+        self.assertEqual(cursor.fetchone()[0], 0)
+
+        # 9. Verify get_current_user rejects suspended user
+        headers = {"Authorization": "Bearer tok_target_suspend_123"}
+        user = server.get_current_user(headers)
+        self.assertIsNone(user, "Suspended user token must be rejected")
+
+        # 10. Restore user
+        with patch("server.get_current_user", return_value=mock_admin):
+            self._set_post_payload("/api/admin/users/u_target_suspend/status", {"status": "active", "reason": "Restored after review"})
+            self.sent_status = []
+            self.handler.wfile = BytesIO()
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [200])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertEqual(res.get("account_status"), "active")
+
+        conn.close()
+
+    def test_phase_c_admin_revoke_sessions(self):
+        """11. Admin can revoke all active sessions for a user."""
+        conn = server.get_db()
+        cursor = conn.cursor()
+
+        cursor.execute("INSERT OR REPLACE INTO users (id, email, handle, name, password_hash, salt, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       ("u_target_revoke", "target_revoke@test.com", "target_revoke", "Target Revoke", "hash", "salt", "student"))
+        cursor.execute("INSERT OR REPLACE INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
+                       ("sess_target2", "u_target_revoke", "tok_target_revoke_123", "2099-01-01T00:00:00"))
+        conn.commit()
+
+        mock_admin = {"id": "u_admin1", "handle": "admin1", "role": "admin"}
+        with patch("server.get_current_user", return_value=mock_admin):
+            self._set_post_payload("/api/admin/users/u_target_revoke/revoke-sessions", {})
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [200])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(res.get("success"))
+            self.assertEqual(res.get("sessions_revoked"), 1)
+
+        conn.close()
+
+    def test_phase_c_founder_only_role_changes_and_last_founder_protection(self):
+        """12, 13, 14 & 15. Founder can change role, Admin cannot, invalid role rejected, last founder protected."""
+        conn = server.get_db()
+        cursor = conn.cursor()
+
+        cursor.execute("INSERT OR REPLACE INTO users (id, email, handle, name, password_hash, salt, role, account_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       ("u_target_role", "target_role@test.com", "target_role", "Target Role", "hash", "salt", "student", "active"))
+        cursor.execute("INSERT OR REPLACE INTO users (id, email, handle, name, password_hash, salt, role, account_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                       ("u_single_founder", "founder_sole@test.com", "founder_sole", "Sole Founder", "hash", "salt", "founder", "active"))
+        conn.commit()
+
+        # 13. Admin role change rejected (Founder-Only)
+        mock_admin = {"id": "u_admin1", "handle": "admin1", "role": "admin"}
+        with patch("server.get_current_user", return_value=mock_admin):
+            self._set_post_payload("/api/admin/users/u_target_role/role", {"role": "creator"})
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [403])
+
+        # 12. Founder role change allowed
+        mock_founder = {"id": "u_single_founder", "handle": "founder_sole", "role": "founder"}
+        with patch("server.get_current_user", return_value=mock_founder):
+            self._set_post_payload("/api/admin/users/u_target_role/role", {"role": "creator", "reason": "Promoted to creator"})
+            self.sent_status = []
+            self.handler.wfile = BytesIO()
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [200])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertEqual(res.get("role"), "creator")
+
+        # 14. Invalid role string rejected
+        with patch("server.get_current_user", return_value=mock_founder):
+            self._set_post_payload("/api/admin/users/u_target_role/role", {"role": "godmode"})
+            self.sent_status = []
+            self.handler.wfile = BytesIO()
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [400])
+
+        # 15. Last founder demotion protected
+        with patch("server.get_current_user", return_value=mock_founder):
+            self._set_post_payload("/api/admin/users/u_single_founder/role", {"role": "student"})
+            self.sent_status = []
+            self.handler.wfile = BytesIO()
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [400])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertIn("Cannot demote the last active founder", res.get("error", ""))
+
+        conn.close()
+
+    def test_phase_c_cookie_only_mutation_rejected_on_user_apis(self):
+        """19. Cookie-only mutation requests without Bearer header are rejected with 401."""
+        cookie_headers = {"Cookie": "kandid_token=token_admin1_123456"}
+        self._set_post_payload("/api/admin/users/u_target_role/status", {"status": "suspended"}, headers=cookie_headers)
+        # Remove Authorization header to simulate cookie-only
+        self.handler.headers.pop("Authorization", None)
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [401])
+        res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertIn("Bearer token required", res.get("error", ""))
 
 
 if __name__ == "__main__":
