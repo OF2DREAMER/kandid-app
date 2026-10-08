@@ -5658,13 +5658,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
         from urllib.parse import unquote
         norm_path = posixpath.normpath(unquote(path))
 
-        # Admin Surface Server-Side Route Gating & APIs
+        # Admin Surface Static Shell & API Routing
         if norm_path in ("/admin", "/admin/", "/admin.html"):
-            user = get_current_user(self.headers)
-            if not user:
-                return self.send_json(401, {"error": "Authentication required", "success": False})
-            if user.get("role") not in ("admin", "founder") or user.get("account_status") in ("suspended", "banned"):
-                return self.send_json(403, {"error": "Access denied. Admin authorization required.", "success": False})
             try:
                 with open("admin.html", "rb") as f:
                     content = f.read()
@@ -5678,11 +5673,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(404, {"error": "Admin portal file not found"})
 
         if norm_path == "/admin.js":
-            user = get_current_user(self.headers)
-            if not user:
-                return self.send_json(401, {"error": "Authentication required", "success": False})
-            if user.get("role") not in ("admin", "founder") or user.get("account_status") in ("suspended", "banned"):
-                return self.send_json(403, {"error": "Access denied. Admin authorization required.", "success": False})
             try:
                 with open("admin.js", "rb") as f:
                     content = f.read()

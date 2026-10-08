@@ -158,30 +158,47 @@ class TestAdminPanelPhaseAAndB(unittest.TestCase):
         self.assertTrue(server.is_blocked_static_path("/admin.js"))
         self.assertTrue(server.is_blocked_static_path("/admin/subpath"))
 
-    def test_admin_route_unauthorized_access_blocked(self):
-        """Verify requesting /admin without auth returns 401, and student returns 403."""
+    def test_admin_static_shell_routes_serve_unconditionally(self):
+        """Verify requesting /admin, /admin/, /admin.html, and /admin.js serves the static UI shell without header auth."""
+        for p in ["/admin", "/admin/", "/admin.html"]:
+            self.handler.path = p
+            self.sent_status = []
+            self.sent_headers = {}
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [200])
+            self.assertEqual(self.sent_headers.get("content-type"), "text/html; charset=utf-8")
+
+        self.handler.path = "/admin.js"
+        self.sent_status = []
+        self.sent_headers = {}
+        self.handler.do_GET()
+        self.assertEqual(self.sent_status, [200])
+        self.assertEqual(self.sent_headers.get("content-type"), "application/javascript; charset=utf-8")
+
+    def test_admin_api_endpoints_enforce_strict_authorization(self):
+        """Verify data endpoints /api/admin/* return 401 for unauthenticated, 403 for student, 200 for founder/admin."""
         # Unauthenticated
         with patch("server.get_current_user", return_value=None):
-            self.handler.path = "/admin"
+            self.handler.path = "/api/admin/overview"
+            self.sent_status = []
             self.handler.do_GET()
             self.assertEqual(self.sent_status, [401])
 
         # Student role
         mock_student = {"id": "u_student1", "role": "student"}
         with patch("server.get_current_user", return_value=mock_student):
-            self.handler.path = "/admin"
+            self.handler.path = "/api/admin/overview"
             self.sent_status = []
             self.handler.do_GET()
             self.assertEqual(self.sent_status, [403])
 
-    def test_admin_and_founder_can_access_admin_route(self):
-        """Verify admin and founder accessing /admin receive 200 with HTML content."""
-        mock_admin = {"id": "u_admin1", "role": "admin"}
-        with patch("server.get_current_user", return_value=mock_admin):
-            self.handler.path = "/admin"
+        # Founder role
+        mock_founder = {"id": "u_founder1", "role": "founder"}
+        with patch("server.get_current_user", return_value=mock_founder):
+            self.handler.path = "/api/admin/overview"
+            self.sent_status = []
             self.handler.do_GET()
             self.assertEqual(self.sent_status, [200])
-            self.assertEqual(self.sent_headers.get("content-type"), "text/html; charset=utf-8")
 
     def test_admin_audit_log_schema_and_logger(self):
         """Verify admin_audit_log table exists and record_admin_audit_event appends logs safely."""
