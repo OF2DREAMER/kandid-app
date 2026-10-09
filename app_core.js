@@ -804,6 +804,9 @@ async function loadCommunityScreen() {
     }
   }
 
+  if (typeof loadMemoriesAroundUs === 'function') {
+    loadMemoriesAroundUs();
+  }
   if (typeof loadMoreAroundYou === 'function') {
     loadMoreAroundYou();
   }
@@ -1090,26 +1093,30 @@ function selectCampusTab(tabName) {
   }
   state.activeCampusTab = activeTab;
 
-  var btnMoments = document.getElementById('campusTabBtnMoments');
-  var btnPulse = document.getElementById('campusTabBtnPulse');
-  var btnMemories = document.getElementById('campusTabBtnMemories');
+  var tabItems = [
+    { id: 'campusTabBtnMoments', tab: 'moments' },
+    { id: 'campusTabBtnPulse', tab: 'pulse' },
+    { id: 'campusTabBtnMemories', tab: 'memories' }
+  ];
+
+  tabItems.forEach(function(item) {
+    var btn = document.getElementById(item.id);
+    if (!btn) return;
+    var isActive = (activeTab === item.tab);
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    if (isActive) {
+      btn.classList.add('text-white', 'bg-[#18181b]', 'border-white/10');
+      btn.classList.remove('text-zinc-500', 'bg-transparent', 'border-0');
+    } else {
+      btn.classList.remove('text-white', 'bg-[#18181b]', 'border-white/10');
+      btn.classList.add('text-zinc-500', 'bg-transparent', 'border-0');
+    }
+  });
 
   var panelMoments = document.getElementById('campusPanelMoments');
   var panelPulse = document.getElementById('campusPanelPulse');
   var panelMemories = document.getElementById('campusPanelMemories');
-
-  if (btnMoments) {
-    btnMoments.classList.toggle('active', activeTab === 'moments');
-    btnMoments.setAttribute('aria-selected', activeTab === 'moments' ? 'true' : 'false');
-  }
-  if (btnPulse) {
-    btnPulse.classList.toggle('active', activeTab === 'pulse');
-    btnPulse.setAttribute('aria-selected', activeTab === 'pulse' ? 'true' : 'false');
-  }
-  if (btnMemories) {
-    btnMemories.classList.toggle('active', activeTab === 'memories');
-    btnMemories.setAttribute('aria-selected', activeTab === 'memories' ? 'true' : 'false');
-  }
 
   if (panelMoments) panelMoments.style.display = (activeTab === 'moments') ? 'block' : 'none';
   if (panelPulse) panelPulse.style.display = (activeTab === 'pulse') ? 'block' : 'none';
@@ -1682,6 +1689,96 @@ async function loadMoreAroundYou() {
   }
 }
 window.loadMoreAroundYou = loadMoreAroundYou;
+
+async function loadMemoriesAroundUs() {
+  var container = document.getElementById('memoriesAroundUsContainer');
+  if (!container) return;
+
+  var userCampus = (state.currentUser && state.currentUser.campus) ? state.currentUser.campus : (state.activeCommunity || '');
+  var userCity = (state.currentUser && (state.currentUser.location_city || state.currentUser.city)) ? (state.currentUser.location_city || state.currentUser.city) : '';
+
+  var res = await loadCommunityDiscovery({
+    campus: userCampus,
+    city: userCity,
+    limit: 20
+  });
+
+  if (!res || !res.success) {
+    container.innerHTML = '<div class="p-3.5 rounded-xl bg-zinc-950/60 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">Unable to load community archives. Please try again later.</div>';
+    return;
+  }
+
+  var rawJoined = Array.isArray(res.joined_communities) ? res.joined_communities : [];
+  var rawAll = Array.isArray(res.all) ? res.all : [];
+
+  var seenIds = {};
+  var joinedComms = [];
+  rawJoined.forEach(function(c) {
+    if (c && c.id && c.name && !seenIds[c.id]) {
+      seenIds[c.id] = true;
+      joinedComms.push(c);
+    }
+  });
+
+  var publicComms = [];
+  rawAll.forEach(function(c) {
+    if (c && c.id && c.name && !seenIds[c.id] && !c.is_member && (c.visibility || 'public') !== 'private') {
+      seenIds[c.id] = true;
+      publicComms.push(c);
+    }
+  });
+
+  function renderCommunityArchiveRow(c) {
+    var metaParts = [];
+    if (c.type) metaParts.push(escapeHtml(c.type));
+    if (c.city) metaParts.push(escapeHtml(c.city));
+    var metaStr = metaParts.join(' · ');
+
+    return '<div class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/30 flex items-center justify-between gap-3 transition">' +
+      '<div class="min-w-0 flex-1 space-y-0.5">' +
+        '<p class="text-xs font-bold text-white truncate">' + escapeHtml(c.name) + '</p>' +
+        (metaStr ? ('<p class="font-mono-tag text-[9px] text-zinc-400 truncate">' + metaStr + '</p>') : '') +
+      '</div>' +
+      '<button type="button" onclick="openCampusPage(\'' + jsAttr(c.id) + '\', \'memories\')" class="shrink-0 font-mono-tag text-[9px] text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-3 py-1.5 rounded-xl font-bold cursor-pointer transition active:scale-95 flex items-center gap-1">' +
+        '<span>Explore memories</span> <span>→</span>' +
+      '</button>' +
+    '</div>';
+  }
+
+  var html = '';
+
+  // Section 1: YOUR COMMUNITIES
+  html += '<div class="space-y-2">';
+  html += '<div class="flex items-center gap-1.5 px-1">';
+  html += '<span class="text-[10px] text-amber-400">🌱</span>';
+  html += '<span class="font-mono-tag text-[9px] uppercase tracking-wider text-zinc-400 font-bold">YOUR COMMUNITIES</span>';
+  html += '</div>';
+
+  if (joinedComms.length > 0) {
+    html += '<div class="space-y-2">' + joinedComms.map(renderCommunityArchiveRow).join('') + '</div>';
+  } else {
+    var emptyJoinedMsg = state.currentUser ? "You haven't joined any communities yet." : "Sign in to see joined communities.";
+    html += '<div class="p-3.5 rounded-xl bg-zinc-950/60 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">' + emptyJoinedMsg + '</div>';
+  }
+  html += '</div>';
+
+  // Section 2: PUBLIC COMMUNITIES
+  html += '<div class="space-y-2 pt-1">';
+  html += '<div class="flex items-center gap-1.5 px-1">';
+  html += '<span class="text-[10px] text-zinc-400">🌐</span>';
+  html += '<span class="font-mono-tag text-[9px] uppercase tracking-wider text-zinc-400 font-bold">PUBLIC COMMUNITIES</span>';
+  html += '</div>';
+
+  if (publicComms.length > 0) {
+    html += '<div class="space-y-2">' + publicComms.map(renderCommunityArchiveRow).join('') + '</div>';
+  } else {
+    html += '<div class="p-3.5 rounded-xl bg-zinc-950/60 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">No public community archives available right now.</div>';
+  }
+  html += '</div>';
+
+  container.innerHTML = html;
+}
+window.loadMemoriesAroundUs = loadMemoriesAroundUs;
 
 async function openCollectiveMemoryPage(memoryId) {
   memoryId = memoryId || 'mem_1';
