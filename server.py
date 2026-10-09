@@ -7374,14 +7374,60 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM collective_memories WHERE id = ?", (memory_id,))
             row = cursor.fetchone()
-            conn.close()
 
             if not row:
+                conn.close()
                 return self.send_json(404, {"success": False, "error": "Memory not found"})
 
+            mem_dict = dict(row)
+
+            # Determine parent Community using reliable community_id linkage first;
+            # use legacy name fields only when necessary and unambiguous.
+            comm_row = None
+            parent_comm_id = (mem_dict.get("community_id") or "").strip()
+            if parent_comm_id:
+                cursor.execute("SELECT id, name, visibility FROM communities WHERE id = ?", (parent_comm_id,))
+                comm_row = cursor.fetchone()
+
+            if not comm_row:
+                comm_name = (mem_dict.get("community_name") or mem_dict.get("campus") or "").strip()
+                if comm_name:
+                    cursor.execute("SELECT id, name, visibility FROM communities WHERE LOWER(name) = ?", (comm_name.lower(),))
+                    matches = cursor.fetchall()
+                    if len(matches) == 1:
+                        comm_row = matches[0]
+                    elif len(matches) > 1:
+                        private_matches = [m for m in matches if (m["visibility"] or "").lower() == "private"]
+                        comm_row = private_matches[0] if private_matches else matches[0]
+
+            # Privacy authorization check:
+            if comm_row:
+                comm_vis = (comm_row["visibility"] or "public").lower()
+                if comm_vis == "private":
+                    user = get_current_user(self.headers)
+                    if not user:
+                        conn.close()
+                        return self.send_json(401, {"success": False, "error": "Authentication required for private community memory", "code": "UNAUTHORIZED"})
+                    role = get_user_community_role(comm_row["id"], user["id"], cursor)
+                    is_member = bool(role)
+                    if not is_member and user.get("role") not in ("admin", "founder"):
+                        conn.close()
+                        return self.send_json(403, {"success": False, "error": "Community membership required to view memory", "code": "COMMUNITY_RESTRICTED"})
+            else:
+                ref_id = parent_comm_id or (mem_dict.get("community_name") or mem_dict.get("campus") or "").strip()
+                if ref_id:
+                    user = get_current_user(self.headers)
+                    if not user:
+                        conn.close()
+                        return self.send_json(401, {"success": False, "error": "Authentication required to verify memory access", "code": "UNAUTHORIZED"})
+                    if user.get("role") not in ("admin", "founder"):
+                        conn.close()
+                        return self.send_json(403, {"success": False, "error": "Cannot verify access to this community memory", "code": "COMMUNITY_RESTRICTED"})
+
+            conn.close()
             return self.send_json(200, {
                 "success": True,
-                "memory": dict(row),
+                "memory": mem_dict,
                 "moments": []
             })
 
