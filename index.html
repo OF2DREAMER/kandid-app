@@ -2963,63 +2963,15 @@
             </div>
         </div>
 
-        <!-- 2. CAMPUS PULSE ("HAPPENING NOW" / "QUIET RIGHT NOW") -->
-        <div class="p-4 rounded-2xl border border-white/[.07] bg-zinc-950 shadow-xl space-y-3">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <span id="campusPagePulseDot" class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                    <p id="campusPagePulseTag" class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold">HAPPENING NOW</p>
-                </div>
-                <span class="font-mono-tag text-[9px] text-zinc-400" id="campusPageActiveAreasCount">4 active areas</span>
-            </div>
-
-            <div>
-                <h2 id="campusPagePulseHeading" class="text-sm font-extrabold text-white">Life is happening across the community.</h2>
-            </div>
-
-            <!-- Horizontal Pulse Preview Tiles with OPEN PULSE tile -->
-            <div class="flex gap-2.5 overflow-x-auto no-scroll pt-1" id="campusPagePulseTiles">
-                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition flex flex-col items-center justify-center text-center">
-                    <span class="text-xs">📚</span>
-                    <p class="text-[10px] font-bold text-white truncate">Library</p>
-                    <p class="font-mono-tag text-[8px] text-zinc-500">Live</p>
-                </div>
-
-                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition flex flex-col items-center justify-center text-center">
-                    <span class="text-xs">🌿</span>
-                    <p class="text-[10px] font-bold text-white truncate">Campus Quad</p>
-                    <p class="font-mono-tag text-[8px] text-zinc-500">Live</p>
-                </div>
-
-                <div class="w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition flex flex-col items-center justify-center text-center">
-                    <span class="text-xs">☕</span>
-                    <p class="text-[10px] font-bold text-white truncate">Canteen</p>
-                    <p class="font-mono-tag text-[8px] text-zinc-500">Live</p>
-                </div>
-
-                <div onclick="openLivePulse()" class="w-20 shrink-0 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-amber-500/20 active:scale-95 transition shadow-sm p-2">
-                    <span class="text-amber-400 text-xs font-bold font-mono-tag">OPEN</span>
-                    <span class="text-[9px] text-amber-300 font-mono-tag font-bold">PULSE →</span>
-                </div>
-            </div>
+        <!-- 2. Community Segmented Tab Bar (MOMENTS | LIVE PULSE | COLLECTIVE MEMORY) -->
+        <div class="community-tab-bar" id="campusTabBar">
+            <button type="button" class="community-tab-btn active" id="campusTabBtnMoments" onclick="selectCampusTab('moments')">MOMENTS</button>
+            <button type="button" class="community-tab-btn" id="campusTabBtnPulse" onclick="selectCampusTab('pulse')">LIVE PULSE</button>
+            <button type="button" class="community-tab-btn" id="campusTabBtnMemories" onclick="selectCampusTab('memories')">COLLECTIVE MEMORY</button>
         </div>
 
-        <!-- 4. COLLECTIVE MEMORY ("Things that happened here" - ARCHIVE) -->
-        <div class="space-y-3 pt-2">
-            <div class="flex items-center justify-between px-1">
-                <div>
-                    <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">RECENT MEMORY</p>
-                    <h2 class="text-sm font-extrabold text-white mt-0.5">Captured together. Remembered together.</h2>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3" id="campusPageMemoriesGrid">
-                <!-- Dynamically populated via collective_memories from backend -->
-            </div>
-        </div>
-
-        <!-- 5. RECENT COMMUNITY MOMENTS (CHRONOLOGICAL PREVIEW) -->
-        <div class="space-y-3 pt-2">
+        <!-- 3. TAB PANEL 1: MOMENTS (Default / RECENT) -->
+        <div class="community-tab-panel space-y-3" id="campusPanelMoments">
             <div class="flex items-center justify-between px-1">
                 <div class="flex items-center gap-2">
                     <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">RECENT MOMENTS</p>
@@ -3037,28 +2989,74 @@
             <div class="space-y-4" id="campusPageMomentsContainer"></div>
         </div>
 
-        <!-- 6. ABOUT THIS COMMUNITY -->
-        <div class="p-4 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-2.5 shadow-md">
-            <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">ABOUT THIS COMMUNITY</p>
-            <div class="space-y-1.5" id="campusPageAreasList">
-                <div class="py-3 text-center text-xs text-zinc-500 font-mono-tag">No areas tagged yet.</div>
+        <!-- 4. TAB PANEL 2: LIVE PULSE (NOW) -->
+        <div class="community-tab-panel space-y-4" id="campusPanelPulse" style="display: none;">
+            <div class="p-4 rounded-2xl border border-white/[.07] bg-zinc-950 shadow-xl space-y-3" id="campusPagePulseCard">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span id="campusPagePulseDot" class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                        <p id="campusPagePulseTag" class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold">HAPPENING NOW</p>
+                    </div>
+                    <span class="font-mono-tag text-[9px] text-zinc-400" id="campusPageActiveAreasCount">0 active areas</span>
+                </div>
+
+                <div>
+                    <h2 id="campusPagePulseHeading" class="text-sm font-extrabold text-white">Life is happening across the community.</h2>
+                </div>
+
+                <!-- Horizontal Pulse Preview Tiles with OPEN PULSE tile -->
+                <div class="flex gap-2.5 overflow-x-auto no-scroll pt-1" id="campusPagePulseTiles">
+                </div>
+            </div>
+
+            <!-- Tagged Areas -->
+            <div class="p-4 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-2.5 shadow-md">
+                <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">TAGGED AREAS</p>
+                <div class="space-y-1.5" id="campusPageAreasList">
+                    <div class="py-3 text-center text-xs text-zinc-500 font-mono-tag">No areas tagged yet.</div>
+                </div>
+            </div>
+
+            <!-- People Around Community -->
+            <div class="space-y-3 pt-1">
+                <div class="px-1 space-y-0.5">
+                    <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">PEOPLE AROUND COMMUNITY</p>
+                    <p class="text-[11px] text-zinc-400">People you've recently encountered through Moments.</p>
+                </div>
+
+                <div class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-2" id="campusPagePeopleList">
+                    <!-- Dynamically loaded -->
+                </div>
             </div>
         </div>
 
-        <!-- 7. PEOPLE AROUND COMMUNITY -->
-        <div class="space-y-3 pt-2">
-            <div class="px-1 space-y-0.5">
-                <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">PEOPLE AROUND COMMUNITY</p>
-                <p class="text-[11px] text-zinc-400">People you've recently encountered through Moments.</p>
+        <!-- 5. TAB PANEL 3: COLLECTIVE MEMORY (PAST) -->
+        <div class="community-tab-panel space-y-3" id="campusPanelMemories" style="display: none;">
+            <div class="flex items-center justify-between px-1">
+                <div>
+                    <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">COLLECTIVE MEMORY</p>
+                    <h2 class="text-sm font-extrabold text-white mt-0.5">Captured together. Remembered together.</h2>
+                </div>
             </div>
 
-            <div class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-2" id="campusPagePeopleList">
-                <!-- Dynamically loaded -->
+            <div class="grid grid-cols-2 gap-3" id="campusPageMemoriesGrid">
+                <!-- Dynamically populated via collective_memories from backend -->
             </div>
         </div>
 
-        <!-- 8. COMMUNITY PRIVACY NOTICE -->
-        <div class="p-3.5 rounded-xl bg-zinc-950 border border-white/[.04] text-center space-y-1">
+        <!-- Private Community Restricted State (Shown when 403 / non-member on private community) -->
+        <div id="campusPageRestrictedView" class="p-8 rounded-3xl bg-zinc-950/90 border border-white/[.07] text-center space-y-3" style="display: none;">
+            <div class="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 text-amber-500 flex items-center justify-center mx-auto text-xl">
+                🔒
+            </div>
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider font-mono-tag">Private Space</h3>
+            <p class="text-xs text-zinc-400 font-sans max-w-xs mx-auto leading-relaxed">
+                This community is private. Membership is required to view moments, live pulse, and collective memories.
+            </p>
+        </div>
+
+        <!-- 6. COMMUNITY PRIVACY NOTICE -->
+        <div class="p-3.5 rounded-xl bg-zinc-950 border border-white/[.04] text-center space-y-1" id="campusPagePrivacyNotice">
             <p class="font-mono-tag text-[8px] text-zinc-500 uppercase tracking-widest">COMMUNITY PRIVACY</p>
             <p class="text-[10px] text-zinc-400">Approximate physical contexts only. Exact coordinates are never shared.</p>
         </div>

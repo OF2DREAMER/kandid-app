@@ -1083,7 +1083,41 @@ async function sendReaction(emoji) {
 }
 window.sendReaction = sendReaction;
 
-async function openCampusPage(campusName) {
+function selectCampusTab(tabName) {
+  var activeTab = tabName || 'moments';
+  if (['moments', 'pulse', 'memories'].indexOf(activeTab) === -1) {
+    activeTab = 'moments';
+  }
+  state.activeCampusTab = activeTab;
+
+  var btnMoments = document.getElementById('campusTabBtnMoments');
+  var btnPulse = document.getElementById('campusTabBtnPulse');
+  var btnMemories = document.getElementById('campusTabBtnMemories');
+
+  var panelMoments = document.getElementById('campusPanelMoments');
+  var panelPulse = document.getElementById('campusPanelPulse');
+  var panelMemories = document.getElementById('campusPanelMemories');
+
+  if (btnMoments) {
+    btnMoments.classList.toggle('active', activeTab === 'moments');
+    btnMoments.setAttribute('aria-selected', activeTab === 'moments' ? 'true' : 'false');
+  }
+  if (btnPulse) {
+    btnPulse.classList.toggle('active', activeTab === 'pulse');
+    btnPulse.setAttribute('aria-selected', activeTab === 'pulse' ? 'true' : 'false');
+  }
+  if (btnMemories) {
+    btnMemories.classList.toggle('active', activeTab === 'memories');
+    btnMemories.setAttribute('aria-selected', activeTab === 'memories' ? 'true' : 'false');
+  }
+
+  if (panelMoments) panelMoments.style.display = (activeTab === 'moments') ? 'block' : 'none';
+  if (panelPulse) panelPulse.style.display = (activeTab === 'pulse') ? 'block' : 'none';
+  if (panelMemories) panelMemories.style.display = (activeTab === 'memories') ? 'block' : 'none';
+}
+window.selectCampusTab = selectCampusTab;
+
+async function openCampusPage(campusName, initialTab) {
   if (state.activeScreen && state.activeScreen !== 'campus-page') {
     state.previousScreen = state.activeScreen;
   }
@@ -1106,12 +1140,25 @@ async function openCampusPage(campusName) {
   var momentsEl = document.getElementById('campusPageMomentsContainer');
   var memoriesGridEl = document.getElementById('campusPageMemoriesGrid');
   var peopleListEl = document.getElementById('campusPagePeopleList');
+  var tabBarEl = document.getElementById('campusTabBar');
+  var restrictedEl = document.getElementById('campusPageRestrictedView');
+
+  // Reset tab selection to default or requested tab
+  selectCampusTab(initialTab || 'moments');
+
+  // Reset restricted/tab visibility while loading
+  if (restrictedEl) restrictedEl.style.display = 'none';
+  if (tabBarEl) tabBarEl.style.display = 'flex';
 
   if (titleEl) titleEl.textContent = targetParam;
   if (nameEl) nameEl.textContent = targetParam;
 
   var data = await apiRequest('/api/community/detail?id=' + encodeURIComponent(targetParam) + '&campus=' + encodeURIComponent(targetParam));
   if (data && data.success) {
+    if (restrictedEl) restrictedEl.style.display = 'none';
+    if (tabBarEl) tabBarEl.style.display = 'flex';
+    selectCampusTab(state.activeCampusTab || initialTab || 'moments');
+
     if (data.campus) {
       var c = data.campus;
       state.activeCommunityId = c.id || '';
@@ -1354,6 +1401,31 @@ async function openCampusPage(campusName) {
           '<button onclick="handlePeerProfileConnect(event, \'' + u.id + '\')" class="font-mono-tag text-[9px] text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded cursor-pointer active:scale-95">Connect</button>' +
         '</div>';
       }).join('');
+    }
+  } else {
+    // 403 or restricted community view
+    var isRestricted = Boolean(
+      (data && (data.code === 'COMMUNITY_RESTRICTED' || data._status === 403)) ||
+      (data && data.error && data.error.toLowerCase().indexOf('membership required') !== -1)
+    );
+    if (isRestricted) {
+      if (tabBarEl) tabBarEl.style.display = 'none';
+      var panelMoments = document.getElementById('campusPanelMoments');
+      var panelPulse = document.getElementById('campusPanelPulse');
+      var panelMemories = document.getElementById('campusPanelMemories');
+      if (panelMoments) panelMoments.style.display = 'none';
+      if (panelPulse) panelPulse.style.display = 'none';
+      if (panelMemories) panelMemories.style.display = 'none';
+      if (restrictedEl) restrictedEl.style.display = 'block';
+
+      if (joinBtn) {
+        joinBtn.textContent = '[ + JOIN COMMUNITY ]';
+        joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
+      }
+    } else {
+      if (momentsEl) {
+        momentsEl.innerHTML = '<div class="py-6 text-center text-xs text-zinc-500 font-mono-tag">Unable to load community content. Please try again.</div>';
+      }
     }
   }
 }
@@ -1730,6 +1802,10 @@ async function toggleJoinCommunity() {
         };
       }
       if (nonMemberNotice) nonMemberNotice.style.display = 'none';
+      var restrictedEl = document.getElementById('campusPageRestrictedView');
+      if (restrictedEl && restrictedEl.style.display !== 'none') {
+        openCampusPage(name);
+      }
     } else {
       showToast('Left ' + name);
       btn.textContent = '[ + JOIN COMMUNITY ]';

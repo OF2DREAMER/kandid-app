@@ -236,3 +236,47 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* ==========================================================================
+   COMMUNITY DETAIL 3-TAB ARCHITECTURE (SCOPED TO #screen-campus-page)
+   ========================================================================== */
+#screen-campus-page .community-tab-bar {
+  display: flex;
+  background: #09090b;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 4px;
+}
+
+#screen-campus-page .community-tab-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #71717a;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+#screen-campus-page .community-tab-btn:hover {
+  color: #d4d4d8;
+}
+
+#screen-campus-page .community-tab-btn.active {
+  background: #18181b;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#screen-campus-page .community-tab-panel {
+  transition: opacity 0.15s ease;
+}
