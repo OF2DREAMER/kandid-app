@@ -280,3 +280,10 @@ body {
 #screen-campus-page .community-tab-panel {
   transition: opacity 0.15s ease;
 }
+
+/* ==========================================================================
+   MEMORIES AROUND US DIRECTORY (SCOPED TO #campusContentStream)
+   ========================================================================== */
+#campusContentStream #memoriesAroundUsSection {
+  transition: opacity 0.15s ease;
+}

@@ -76,7 +76,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="style.css?v=3.1.6">
+  <link rel="stylesheet" href="style.css?v=3.2.1">
   <style>
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
     .font-mono-tag, .mono { font-family: 'JetBrains Mono', monospace; }
@@ -691,30 +691,21 @@
             </p>
           </div>
 
-          <!-- 10. Collective Memory -->
-          <div class="space-y-3 pt-2">
-            <div class="flex items-center justify-between">
+          <!-- 10. Memories Around Us (Truthful Collective Memory Directory) -->
+          <div class="space-y-3 pt-2" id="memoriesAroundUsSection">
+            <div class="flex items-center justify-between px-1">
               <div>
-                <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">COLLECTIVE MEMORY</p>
-                <h2 class="text-sm font-extrabold text-white mt-0.5">Things that happened here.</h2>
+                <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">MEMORIES AROUND US</p>
+                <h2 class="text-sm font-extrabold text-white mt-0.5">Community memory archives</h2>
               </div>
-              <span class="font-mono-tag text-[9px] text-amber-400">Aug 30</span>
             </div>
 
-            <div class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] space-y-3 shadow-xl">
-              <div class="aspect-[16/9] rounded-xl overflow-hidden relative border border-white/[.07] bg-gradient-to-br from-zinc-900 via-zinc-950 to-zinc-900 flex items-end p-4">
-                <div class="w-full flex items-end justify-between z-10">
-                  <div>
-                    <p class="text-xs font-bold text-white">Campus Welcome & Orientation</p>
-                    <p class="font-mono-tag text-[8px] text-zinc-300 mt-0.5">0 Moments captured together</p>
-                  </div>
-                </div>
+            <!-- Dynamic directory container populated by loadMemoriesAroundUs() -->
+            <div id="memoriesAroundUsContainer" class="space-y-4">
+              <div class="py-4 text-center text-xs text-zinc-500 font-mono-tag flex items-center justify-center gap-2">
+                <span class="w-3.5 h-3.5 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></span>
+                <span>Loading community archives...</span>
               </div>
-              <button
-                onclick="openCollectiveMemoryPage('mem_1')"
-                class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-mono-tag text-[10px] tracking-wider uppercase font-extrabold transition cursor-pointer shadow-md active:scale-95 flex items-center justify-center gap-1.5">
-                <span>OPEN COLLECTIVE MEMORY →</span>
-              </button>
             </div>
           </div>
 
@@ -2964,10 +2955,10 @@
         </div>
 
         <!-- 2. Community Segmented Tab Bar (MOMENTS | LIVE PULSE | COLLECTIVE MEMORY) -->
-        <div class="community-tab-bar" id="campusTabBar">
-            <button type="button" class="community-tab-btn active" id="campusTabBtnMoments" onclick="selectCampusTab('moments')">MOMENTS</button>
-            <button type="button" class="community-tab-btn" id="campusTabBtnPulse" onclick="selectCampusTab('pulse')">LIVE PULSE</button>
-            <button type="button" class="community-tab-btn" id="campusTabBtnMemories" onclick="selectCampusTab('memories')">COLLECTIVE MEMORY</button>
+        <div class="community-tab-bar flex items-center bg-[#09090b] p-1 rounded-[14px] border border-white/[.08] gap-1" id="campusTabBar" role="tablist" aria-label="Community sections">
+            <button type="button" class="community-tab-btn active flex-1 py-2 px-2.5 rounded-[10px] font-mono text-[10px] font-bold uppercase tracking-wider text-center transition cursor-pointer text-white bg-[#18181b] border border-white/10 shadow" id="campusTabBtnMoments" role="tab" aria-selected="true" aria-controls="campusPanelMoments" onclick="selectCampusTab('moments')">MOMENTS</button>
+            <button type="button" class="community-tab-btn flex-1 py-2 px-2.5 rounded-[10px] font-mono text-[10px] font-bold uppercase tracking-wider text-center transition cursor-pointer text-zinc-500 hover:text-zinc-300 bg-transparent border-0" id="campusTabBtnPulse" role="tab" aria-selected="false" aria-controls="campusPanelPulse" onclick="selectCampusTab('pulse')">LIVE PULSE</button>
+            <button type="button" class="community-tab-btn flex-1 py-2 px-2.5 rounded-[10px] font-mono text-[10px] font-bold uppercase tracking-wider text-center transition cursor-pointer text-zinc-500 hover:text-zinc-300 bg-transparent border-0" id="campusTabBtnMemories" role="tab" aria-selected="false" aria-controls="campusPanelMemories" onclick="selectCampusTab('memories')">COLLECTIVE MEMORY</button>
         </div>
 
         <!-- 3. TAB PANEL 1: MOMENTS (Default / RECENT) -->
@@ -5082,6 +5073,6 @@
   </div> <!-- End #appContainer -->
 
   <script src="observability.js?v=1.0.0"></script>
-  <script src="app_core.js?v=3.2.0"></script>
+  <script src="app_core.js?v=3.2.1"></script>
 </body>
 </html>
