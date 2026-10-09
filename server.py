@@ -8225,6 +8225,22 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("""
                 SELECT * FROM posts
                 WHERE user_id = ? AND is_private = 0
+                  AND (primary_community_id = '' OR primary_community_id IS NULL)
+                  AND (context_community_id = '' OR context_community_id IS NULL)
+                  AND (drop_id = '' OR drop_id IS NULL)
+                  AND (circle IS NULL OR circle != 'community')
+                  AND (
+                      cluster_id = '' OR cluster_id IS NULL
+                      OR cluster_id NOT IN (
+                          SELECT id FROM moment_clusters
+                          WHERE (community_id != '' AND community_id IS NOT NULL)
+                             OR originator_moment_id IN (
+                                 SELECT id FROM posts
+                                 WHERE (primary_community_id != '' AND primary_community_id IS NOT NULL)
+                                    OR (context_community_id != '' AND context_community_id IS NOT NULL)
+                             )
+                      )
+                  )
                 ORDER BY created_at DESC
             """, (user["id"],))
             moments_rows = [dict(r) for r in cursor.fetchall()]
@@ -8273,7 +8289,27 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             conn = get_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC", (user["id"],))
+            cursor.execute("""
+                SELECT * FROM posts
+                WHERE user_id = ?
+                  AND (primary_community_id = '' OR primary_community_id IS NULL)
+                  AND (context_community_id = '' OR context_community_id IS NULL)
+                  AND (drop_id = '' OR drop_id IS NULL)
+                  AND (circle IS NULL OR circle != 'community')
+                  AND (
+                      cluster_id = '' OR cluster_id IS NULL
+                      OR cluster_id NOT IN (
+                          SELECT id FROM moment_clusters
+                          WHERE (community_id != '' AND community_id IS NOT NULL)
+                             OR originator_moment_id IN (
+                                 SELECT id FROM posts
+                                 WHERE (primary_community_id != '' AND primary_community_id IS NOT NULL)
+                                    OR (context_community_id != '' AND context_community_id IS NOT NULL)
+                             )
+                      )
+                  )
+                ORDER BY created_at DESC
+            """, (user["id"],))
             memories_rows = [dict(r) for r in cursor.fetchall()]
 
             places = set()

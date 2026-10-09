@@ -1270,6 +1270,174 @@ class TestIWasTherePerspective(unittest.TestCase):
         feed_ids = [m["id"] for m in r_feed.get("feed", [])]
         self.assertIn(col_post_id, feed_ids)
 
+    def test_42_open_journal_and_moments_community_isolation(self):
+        """Regression test for Open Journal and personal Moments Community isolation:
+        - Normal personal post appears in Feed, /api/me/memories, and /api/me/moments.
+        - Community post appears in Community detail, but is EXCLUDED from Feed, /api/me/memories, and /api/me/moments.
+        - Campus/community name collision post remains personal in Feed, memories, and moments.
+        - Community perspective / cluster moment is EXCLUDED from personal memories and moments.
+        - Private personal note is included in /api/me/memories, but excluded from /api/me/moments (is_private=0).
+        """
+        # 1. Normal personal post
+        body_personal = {
+            "caption": "My personal candid moment",
+            "community": "Personal (Feed)",
+            "circle": "all",
+            "location_city": "Library Garden"
+        }
+        s_p, r_p = self._request("/api/moments/capture", token=USER1_TOKEN, method="POST", body=body_personal)
+        self.assertEqual(s_p, 201)
+        personal_id = r_p["post"]["id"]
+
+        # Check in /api/feed
+        s_feed, r_feed = self._request("/api/feed", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_feed, 200)
+        feed_ids = [m["id"] for m in r_feed.get("feed", [])]
+        self.assertIn(personal_id, feed_ids)
+
+        # Check in /api/me/memories (Open Journal)
+        s_mem, r_mem = self._request("/api/me/memories", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_mem, 200)
+        self.assertTrue(r_mem.get("success"))
+        mem_ids = [m["id"] for m in r_mem.get("memories", [])]
+        self.assertIn(personal_id, mem_ids)
+
+        # Check in /api/me/moments (Profile Moments grid)
+        s_mom, r_mom = self._request("/api/me/moments", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_mom, 200)
+        self.assertTrue(r_mom.get("success"))
+        mom_ids = [m["id"] for m in r_mom.get("moments", [])]
+        self.assertIn(personal_id, mom_ids)
+
+        # 2. Community post
+        body_comm = {
+            "caption": "Exclusive community festival moment",
+            "community_id": self.comm_id,
+            "circle": "all",
+            "location_city": "Festival Lawn"
+        }
+        s_c, r_c = self._request("/api/moments/capture", token=USER1_TOKEN, method="POST", body=body_comm)
+        self.assertEqual(s_c, 201)
+        comm_post_id = r_c["post"]["id"]
+
+        # Must appear in Community detail
+        s_cdet, r_cdet = self._request(f"/api/community/detail?id={self.comm_id}", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_cdet, 200)
+        cdet_ids = [m["id"] for m in r_cdet.get("moments", [])]
+        self.assertIn(comm_post_id, cdet_ids)
+
+        # MUST BE EXCLUDED from Feed
+        s_feed2, r_feed2 = self._request("/api/feed", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_feed2, 200)
+        feed_ids2 = [m["id"] for m in r_feed2.get("feed", [])]
+        self.assertNotIn(comm_post_id, feed_ids2)
+
+        # MUST BE EXCLUDED from /api/me/memories (Open Journal)
+        s_mem2, r_mem2 = self._request("/api/me/memories", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_mem2, 200)
+        mem_ids2 = [m["id"] for m in r_mem2.get("memories", [])]
+        self.assertNotIn(comm_post_id, mem_ids2)
+
+        # MUST BE EXCLUDED from /api/me/moments (Profile Moments grid)
+        s_mom2, r_mom2 = self._request("/api/me/moments", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_mom2, 200)
+        mom_ids2 = [m["id"] for m in r_mom2.get("moments", [])]
+        self.assertNotIn(comm_post_id, mom_ids2)
+
+        # 3. Campus-name collision: personal post where campus == Community Name
+        # self.comm_id name is "Campus Festival"
+        body_coll = {
+            "caption": "Studying near campus festival grounds",
+            "community": "Personal (Feed)",
+            "campus": "Campus Festival",
+            "circle": "all",
+            "location_city": "Quiet Corner"
+        }
+        s_col, r_col = self._request("/api/moments/capture", token=USER1_TOKEN, method="POST", body=body_coll)
+        self.assertEqual(s_col, 201)
+        coll_post_id = r_col["post"]["id"]
+
+        # MUST be in Feed
+        s_feed3, r_feed3 = self._request("/api/feed", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_feed3, 200)
+        feed_ids3 = [m["id"] for m in r_feed3.get("feed", [])]
+        self.assertIn(coll_post_id, feed_ids3)
+
+        # MUST be in Open Journal (/api/me/memories)
+        s_mem3, r_mem3 = self._request("/api/me/memories", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_mem3, 200)
+        mem_ids3 = [m["id"] for m in r_mem3.get("memories", [])]
+        self.assertIn(coll_post_id, mem_ids3)
+
+        # MUST be in Moments grid (/api/me/moments)
+        s_mom3, r_mom3 = self._request("/api/me/moments", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_mom3, 200)
+        mom_ids3 = [m["id"] for m in r_mom3.get("moments", [])]
+        self.assertIn(coll_post_id, mom_ids3)
+
+        # MUST NOT appear in Community detail moments
+        s_cdet2, r_cdet2 = self._request(f"/api/community/detail?id={self.comm_id}", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_cdet2, 200)
+        cdet_ids2 = [m["id"] for m in r_cdet2.get("moments", [])]
+        self.assertNotIn(coll_post_id, cdet_ids2)
+
+        # 4. Community perspective / cluster moment
+        # USER2 adds "I was there" perspective to the Community post
+        s_iwt, r_iwt = self._request(f"/api/moment/{comm_post_id}/i-was-there", token=USER2_TOKEN, method="POST", body={})
+        self.assertEqual(s_iwt, 200)
+        cluster_id = r_iwt.get("cluster_id")
+
+        body_persp = {
+            "caption": "My perspective on the community festival",
+            "cluster_id": cluster_id,
+            "circle": "all"
+        }
+        s_pcap, r_pcap = self._request("/api/moments/capture", token=USER2_TOKEN, method="POST", body=body_persp)
+        self.assertEqual(s_pcap, 201)
+        persp_post_id = r_pcap["post"]["id"]
+
+        # MUST BE EXCLUDED from USER2's Feed
+        s_feed_u2, r_feed_u2 = self._request("/api/feed", token=USER2_TOKEN, method="GET")
+        self.assertEqual(s_feed_u2, 200)
+        feed_u2_ids = [m["id"] for m in r_feed_u2.get("feed", [])]
+        self.assertNotIn(persp_post_id, feed_u2_ids)
+
+        # MUST BE EXCLUDED from USER2's Open Journal (/api/me/memories)
+        s_mem_u2, r_mem_u2 = self._request("/api/me/memories", token=USER2_TOKEN, method="GET")
+        self.assertEqual(s_mem_u2, 200)
+        mem_u2_ids = [m["id"] for m in r_mem_u2.get("memories", [])]
+        self.assertNotIn(persp_post_id, mem_u2_ids)
+
+        # MUST BE EXCLUDED from USER2's Moments grid (/api/me/moments)
+        s_mom_u2, r_mom_u2 = self._request("/api/me/moments", token=USER2_TOKEN, method="GET")
+        self.assertEqual(s_mom_u2, 200)
+        mom_u2_ids = [m["id"] for m in r_mom_u2.get("moments", [])]
+        self.assertNotIn(persp_post_id, mom_u2_ids)
+
+        # 5. Private personal note/moment
+        conn = server.get_db()
+        cursor = conn.cursor()
+        priv_note_id = f"post_priv_note_{uuid.uuid4().hex[:6]}"
+        cursor.execute("""
+            INSERT INTO posts (id, user_id, author_name, author_handle, campus, main_img, pip_img, caption, circle, is_private, primary_community_id, context_community_id, drop_id, cluster_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, '', '', '', '')
+        """, (priv_note_id, "u_att1", "Attendee One", "att1_handle", "North City University", "data:image/png;base64,note", "data:image/png;base64,pip", "Private personal thought", "campus"))
+        conn.commit()
+        conn.close()
+
+        # Open Journal (/api/me/memories) INCLUDES personal private notes
+        s_mem4, r_mem4 = self._request("/api/me/memories", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_mem4, 200)
+        mem_ids4 = [m["id"] for m in r_mem4.get("memories", [])]
+        self.assertIn(priv_note_id, mem_ids4)
+
+        # Profile public moments (/api/me/moments) EXCLUDES private notes (is_private=0 filter)
+        s_mom4, r_mom4 = self._request("/api/me/moments", token=USER1_TOKEN, method="GET")
+        self.assertEqual(s_mom4, 200)
+        mom_ids4 = [m["id"] for m in r_mom4.get("moments", [])]
+        self.assertNotIn(priv_note_id, mom_ids4)
+
+
 if __name__ == "__main__":
     unittest.main()
 
