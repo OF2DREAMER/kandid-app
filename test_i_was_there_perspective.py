@@ -1437,6 +1437,118 @@ class TestIWasTherePerspective(unittest.TestCase):
         mom_ids4 = [m["id"] for m in r_mom4.get("moments", [])]
         self.assertNotIn(priv_note_id, mom_ids4)
 
+    def test_collective_memory_detail_privacy(self):
+        """
+        Verify privacy and authorization enforcement on GET /api/community/memories/detail.
+        1. Public memory: accessible anonymously and by non-members (HTTP 200).
+        2. Private memory: anonymous request gets 401 UNAUTHORIZED.
+        3. Private memory: authenticated non-member gets 403 COMMUNITY_RESTRICTED.
+        4. Private memory: authenticated active member gets 200 OK.
+        5. Legacy name-only linkage: private community privacy preserved (401/403).
+        6. Unknown memory ID: returns 404 NOT FOUND.
+        7. Unresolved/orphaned memory: does not bypass privacy (401/403).
+        """
+        conn = server.get_db()
+        cursor = conn.cursor()
+
+        # 1. Seed Public Community Memory
+        pub_mem_id = f"mem_pub_{uuid.uuid4().hex[:6]}"
+        cursor.execute("""
+            INSERT INTO collective_memories (id, campus, community_name, community_id, title, story, moments_count, created_at)
+            VALUES (?, 'Campus Festival', 'Campus Festival', ?, 'Festival Opening Celebration', 'Grand celebration', 5, CURRENT_TIMESTAMP)
+        """, (pub_mem_id, self.comm_id))
+
+        # 2. Seed Private Community Memory (explicit community_id)
+        priv_mem_id = f"mem_priv_{uuid.uuid4().hex[:6]}"
+        cursor.execute("""
+            INSERT INTO collective_memories (id, campus, community_name, community_id, title, story, moments_count, created_at)
+            VALUES (?, 'Secret Society', 'Secret Society', ?, 'Secret Initiation Ritual', 'Private memories', 2, CURRENT_TIMESTAMP)
+        """, (priv_mem_id, self.priv_comm_id))
+
+        # 3. Seed Private Community Memory (legacy name-only linkage, empty community_id)
+        legacy_priv_mem_id = f"mem_priv_leg_{uuid.uuid4().hex[:6]}"
+        cursor.execute("""
+            INSERT INTO collective_memories (id, campus, community_name, community_id, title, story, moments_count, created_at)
+            VALUES (?, 'Secret Society', 'Secret Society', '', 'Legacy Secret Gathering', 'Legacy private story', 1, CURRENT_TIMESTAMP)
+        """, (legacy_priv_mem_id,))
+
+        # 4. Seed Unresolved/Orphaned Memory (references non-existent community)
+        orphan_mem_id = f"mem_orphan_{uuid.uuid4().hex[:6]}"
+        cursor.execute("""
+            INSERT INTO collective_memories (id, campus, community_name, community_id, title, story, moments_count, created_at)
+            VALUES (?, '', '', 'comm_nonexistent_9999', 'Ghost Memory Archive', 'Unresolved parent space', 0, CURRENT_TIMESTAMP)
+        """, (orphan_mem_id,))
+
+        conn.commit()
+        conn.close()
+
+        # CASE 1: Public memory is accessible to everyone
+        # Anonymous caller
+        s_pub_anon, r_pub_anon = self._request(f"/api/community/memories/detail?id={pub_mem_id}", token=None)
+        self.assertEqual(s_pub_anon, 200)
+        self.assertTrue(r_pub_anon.get("success"))
+        self.assertEqual(r_pub_anon.get("memory", {}).get("title"), "Festival Opening Celebration")
+
+        # Authenticated non-member of public comm (USER4)
+        s_pub_auth, r_pub_auth = self._request(f"/api/community/memories/detail?id={pub_mem_id}", token=USER4_TOKEN)
+        self.assertEqual(s_pub_auth, 200)
+        self.assertEqual(r_pub_auth.get("memory", {}).get("id"), pub_mem_id)
+
+        # CASE 2: Private memory with explicit community_id
+        # Anonymous caller -> 401 UNAUTHORIZED
+        s_priv_anon, r_priv_anon = self._request(f"/api/community/memories/detail?id={priv_mem_id}", token=None)
+        self.assertEqual(s_priv_anon, 401)
+        self.assertFalse(r_priv_anon.get("success"))
+        self.assertEqual(r_priv_anon.get("code"), "UNAUTHORIZED")
+
+        # Authenticated non-member (USER4 is NOT a member of comm_priv_1) -> 403 COMMUNITY_RESTRICTED
+        s_priv_nonmem, r_priv_nonmem = self._request(f"/api/community/memories/detail?id={priv_mem_id}", token=USER4_TOKEN)
+        self.assertEqual(s_priv_nonmem, 403)
+        self.assertFalse(r_priv_nonmem.get("success"))
+        self.assertEqual(r_priv_nonmem.get("code"), "COMMUNITY_RESTRICTED")
+
+        # Authenticated active member (USER2 is active member of comm_priv_1) -> 200 OK
+        s_priv_mem, r_priv_mem = self._request(f"/api/community/memories/detail?id={priv_mem_id}", token=USER2_TOKEN)
+        self.assertEqual(s_priv_mem, 200)
+        self.assertTrue(r_priv_mem.get("success"))
+        self.assertEqual(r_priv_mem.get("memory", {}).get("title"), "Secret Initiation Ritual")
+
+        # Authenticated creator (USER1 is creator of comm_priv_1) -> 200 OK
+        s_priv_creator, r_priv_creator = self._request(f"/api/community/memories/detail?id={priv_mem_id}", token=USER1_TOKEN)
+        self.assertEqual(s_priv_creator, 200)
+        self.assertTrue(r_priv_creator.get("success"))
+
+        # CASE 3: Private memory with legacy name-only linkage
+        # Anonymous caller -> 401 UNAUTHORIZED
+        s_leg_anon, r_leg_anon = self._request(f"/api/community/memories/detail?id={legacy_priv_mem_id}", token=None)
+        self.assertEqual(s_leg_anon, 401)
+        self.assertEqual(r_leg_anon.get("code"), "UNAUTHORIZED")
+
+        # Authenticated non-member -> 403 COMMUNITY_RESTRICTED
+        s_leg_nonmem, r_leg_nonmem = self._request(f"/api/community/memories/detail?id={legacy_priv_mem_id}", token=USER4_TOKEN)
+        self.assertEqual(s_leg_nonmem, 403)
+        self.assertEqual(r_leg_nonmem.get("code"), "COMMUNITY_RESTRICTED")
+
+        # Authenticated active member -> 200 OK
+        s_leg_mem, r_leg_mem = self._request(f"/api/community/memories/detail?id={legacy_priv_mem_id}", token=USER2_TOKEN)
+        self.assertEqual(s_leg_mem, 200)
+        self.assertEqual(r_leg_mem.get("memory", {}).get("title"), "Legacy Secret Gathering")
+
+        # CASE 4: Unknown memory ID -> 404 NOT FOUND
+        s_unk, r_unk = self._request("/api/community/memories/detail?id=mem_nonexistent_9999", token=None)
+        self.assertEqual(s_unk, 404)
+        self.assertFalse(r_unk.get("success"))
+        self.assertEqual(r_unk.get("error"), "Memory not found")
+
+        # CASE 5: Unresolved / orphaned memory linkage does not bypass privacy
+        s_orph_anon, r_orph_anon = self._request(f"/api/community/memories/detail?id={orphan_mem_id}", token=None)
+        self.assertEqual(s_orph_anon, 401)
+        self.assertEqual(r_orph_anon.get("code"), "UNAUTHORIZED")
+
+        s_orph_auth, r_orph_auth = self._request(f"/api/community/memories/detail?id={orphan_mem_id}", token=USER4_TOKEN)
+        self.assertEqual(s_orph_auth, 403)
+        self.assertEqual(r_orph_auth.get("code"), "COMMUNITY_RESTRICTED")
+
 
 if __name__ == "__main__":
     unittest.main()
