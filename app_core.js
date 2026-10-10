@@ -4450,13 +4450,28 @@ function enableSearchLocation() {
 window.enableSearchLocation = enableSearchLocation;
 
 // ── Around You Discovery ──────────────────────────────────────────────
+var searchDiscoveryRequestSeq = 0;
 async function loadSearchDiscovery() {
   loadRadar();
 
   var aroundContainer = document.getElementById('searchAroundYouContainer');
   if (!aroundContainer) return;
 
+  // Bug fix: loadSearchDiscovery() is triggered from several independent
+  // places (app-boot background prefetch, switching to the Search tab,
+  // category pill changes, clearing the search box, empty-query search).
+  // Each call fires its own async /api/search request with no sequencing,
+  // so an older, slower-resolving call could previously finish AFTER a
+  // newer one and overwrite the freshly-rendered "Around You" cards with
+  // stale/empty content a few seconds later — the list would render then
+  // disappear. Guard with a monotonically increasing request id so only
+  // the most recently *started* call is allowed to update the DOM.
+  var requestSeq = ++searchDiscoveryRequestSeq;
+
   var data = await apiRequest('/api/search?type=all');
+
+  if (requestSeq !== searchDiscoveryRequestSeq) return; // a newer call superseded this one; ignore stale response
+
   if (!data || !data.success) {
     aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT\'S TOO QUIET AROUND HERE</div>';
     return;
