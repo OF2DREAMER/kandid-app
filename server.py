@@ -365,7 +365,7 @@ def get_user_community_role(community_id, user_id, cursor):
         if mrow["status"] != "active":
             return None
         role = (mrow["role"] or "member").lower()
-        if role in ("owner", "admin", "creator", "member"):
+        if role in ("owner", "admin", "creator", "moderator", "member"):
             return role
         return "member"
     # 3. Check user's home campus (strictly for public Campus communities; never for private communities)
@@ -3361,7 +3361,8 @@ def init_db():
         ("creator_handle", "TEXT DEFAULT ''"),
         ("icon", "TEXT DEFAULT '📍'"),
         ("visibility", "TEXT DEFAULT 'public'"),
-        ("members_count", "INTEGER DEFAULT 1")
+        ("members_count", "INTEGER DEFAULT 1"),
+        ("status", "TEXT DEFAULT 'active'")
     ]:
         if col not in comm_cols:
             try:
@@ -3658,7 +3659,9 @@ def init_db():
         ("creator_handle", "TEXT DEFAULT ''"),
         ("checked_in_count", "INTEGER DEFAULT 0"),
         ("media_urls", "TEXT DEFAULT '[]'"),
-        ("metadata", "TEXT DEFAULT '{}'")
+        ("metadata", "TEXT DEFAULT '{}'"),
+        ("theme", "TEXT DEFAULT ''"),
+        ("year", "TEXT DEFAULT ''")
     ]:
         if col not in mem_cols:
             try:
@@ -3835,6 +3838,23 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_cinter_uid ON community_interactions(user_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_cinter_cid ON community_interactions(community_id);")
 
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS community_join_requests (
+        id TEXT PRIMARY KEY,
+        community_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        reviewed_by TEXT DEFAULT '',
+        reviewed_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(community_id, user_id),
+        FOREIGN KEY (community_id) REFERENCES communities(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_join_requests_comm ON community_join_requests(community_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_join_requests_user ON community_join_requests(user_id);")
+
     # ==============================================================================
     # AUTHENTIC VIRAL GRAPH — MOMENT CLUSTERS & NETWORK LAYER SCHEMA
     # ==============================================================================
@@ -3903,6 +3923,15 @@ def init_db():
     if "cluster_id" not in cinv_cols:
         try:
             cursor.execute("ALTER TABLE community_invites ADD COLUMN cluster_id TEXT DEFAULT ''")
+        except:
+            pass
+
+    # Additive column migration: invite_code in community_join_requests
+    cursor.execute("PRAGMA table_info(community_join_requests)")
+    cjr_cols = [row[1] for row in cursor.fetchall()]
+    if "invite_code" not in cjr_cols:
+        try:
+            cursor.execute("ALTER TABLE community_join_requests ADD COLUMN invite_code TEXT DEFAULT ''")
         except:
             pass
 
@@ -5700,6 +5729,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return {}
 
     def do_GET(self):
+        import re
         parsed = urlparse(self.path)
         path = parsed.path
         query = parse_qs(parsed.query)
@@ -6354,6 +6384,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path == "/landing":
             self.path = "/landing.html"
+            return super().do_GET()
+
+        if path.startswith("/invite/") or path.startswith("/i/"):
+            asset_match = re.search(r"/(?:invite|i)/([^/]+\.(css|js|svg|png|jpg|jpeg|ico|json|woff2?|ttf))$", path)
+            if asset_match:
+                self.path = "/" + asset_match.group(1)
+                return super().do_GET()
+            self.path = "/index.html"
             return super().do_GET()
 
         if path in ["/about", "/about/"]:
@@ -7373,8 +7411,84 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(401, {"error": "Authentication required"})
             
             user_id = user["id"]
+            comm_param = query.get("community_id", [""])[0].strip() or query.get("id", [""])[0].strip()
             conn = get_db()
             cursor = conn.cursor()
+
+            # Community-scoped owner management
+            if comm_param:
+                role = get_user_community_role(comm_param, user_id, cursor)
+                if role not in ("owner", "admin") and user.get("role") != "admin":
+                    conn.close()
+                    return self.send_json(403, {
+                        "success": False,
+                        "error": "Forbidden: Only community owners can access owner management.",
+                        "code": "OWNER_REQUIRED"
+                    })
+
+                cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_param, comm_param.lower(), comm_param))
+                comm_row = cursor.fetchone()
+                if not comm_row:
+                    conn.close()
+                    return self.send_json(404, {"success": False, "error": "Community not found", "code": "NOT_FOUND"})
+
+                cd = dict(comm_row)
+                actual_cid = cd["id"]
+
+                # Fetch active moderators
+                cursor.execute("""
+                    SELECT cm.user_id, cm.role, cm.status, cm.joined_at, u.handle, u.name, u.avatar_url
+                    FROM community_members cm
+                    JOIN users u ON cm.user_id = u.id
+                    WHERE cm.community_id = ? AND cm.role = 'moderator' AND cm.status = 'active'
+                    ORDER BY cm.joined_at ASC
+                """, (actual_cid,))
+                moderators = [dict(r) for r in cursor.fetchall()]
+
+                # Fetch pending reports count
+                cursor.execute("SELECT COUNT(*) FROM community_reports WHERE community_id = ? AND status = 'pending'", (actual_cid,))
+                pending_reports = cursor.fetchone()[0]
+
+                # Fetch total active members count
+                cursor.execute("SELECT COUNT(*) FROM community_members WHERE community_id = ? AND status = 'active'", (actual_cid,))
+                members_cnt = cursor.fetchone()[0]
+
+                # Fetch pending join requests count
+                cursor.execute("SELECT COUNT(*) FROM community_join_requests WHERE community_id = ? AND status = 'pending'", (actual_cid,))
+                pending_join_requests = cursor.fetchone()[0]
+
+                # Fetch recent moments count (last 7 days, non-removed)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM posts
+                    WHERE (primary_community_id = ? OR context_community_id = ? OR campus = ?)
+                      AND moderation_status != 'removed'
+                      AND is_private = 0
+                      AND created_at >= datetime('now', '-7 days')
+                """, (actual_cid, actual_cid, cd.get("name", "")))
+                recent_moments = cursor.fetchone()[0]
+
+                conn.close()
+                return self.send_json(200, {
+                    "success": True,
+                    "community": {
+                        "id": actual_cid,
+                        "name": cd.get("name", ""),
+                        "type": cd.get("type", "Campus"),
+                        "city": cd.get("city", ""),
+                        "description": cd.get("description", ""),
+                        "icon": cd.get("icon", "📍"),
+                        "visibility": cd.get("visibility", "public"),
+                        "status": cd.get("status", "active"),
+                        "members_count": members_cnt,
+                        "moderators_count": len(moderators),
+                        "pending_reports_count": pending_reports,
+                        "pending_join_requests_count": pending_join_requests,
+                        "recent_moments_count": recent_moments,
+                        "moderators": moderators,
+                        "monetization_enabled": False,
+                        "role": "owner"
+                    }
+                })
 
             # Find all communities where user is owner, admin, or creator
             cursor.execute("""
@@ -7520,78 +7634,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
             })
 
         if path == "/api/community/earnings":
-            user = get_current_user(self.headers)
-            if not user:
-                return self.send_json(401, {"error": "Authentication required"})
-            
-            user_id = user["id"]
-            target_comm = query.get("community_id", [""])[0].strip() or query.get("community", [""])[0].strip()
-
-            conn = get_db()
-            cursor = conn.cursor()
-
-            if target_comm:
-                cursor.execute("""
-                    SELECT * FROM financial_ledger 
-                    WHERE creator_id = ? AND (community_id = ? OR LOWER(community_id) = ?) AND payment_status = 'successful'
-                    ORDER BY created_at DESC
-                """, (user_id, target_comm, target_comm.lower()))
-            else:
-                cursor.execute("""
-                    SELECT * FROM financial_ledger 
-                    WHERE creator_id = ? AND payment_status = 'successful'
-                    ORDER BY created_at DESC
-                """, (user_id,))
-
-            ledger_rows = [dict(r) for r in cursor.fetchall()]
-
-            if len(ledger_rows) > 0:
-                gross_paise = sum(r.get("gross_amount_paise", 1900) for r in ledger_rows)
-                platform_fee_paise = sum(r.get("platform_fee_paise", 380) for r in ledger_rows)
-                creator_amount_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows)
-                settled_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows if r.get("settlement_status") == "settled")
-                pending_paise = sum(r.get("creator_amount_paise", 1520) for r in ledger_rows if r.get("settlement_status") != "settled")
-            else:
-                if target_comm:
-                    cursor.execute("""
-                        SELECT * FROM community_transactions 
-                        WHERE creator_id = ? AND (community_id = ? OR LOWER(community_id) = ?) AND status = 'completed'
-                        ORDER BY created_at DESC
-                    """, (user_id, target_comm, target_comm.lower()))
-                else:
-                    cursor.execute("""
-                        SELECT * FROM community_transactions 
-                        WHERE creator_id = ? AND status = 'completed'
-                        ORDER BY created_at DESC
-                    """, (user_id,))
-                ctx_rows = [dict(r) for r in cursor.fetchall()]
-                gross_paise = int(round(sum(r.get("gross_amount", 19.0) for r in ctx_rows) * 100))
-                platform_fee_paise = int(round(sum(r.get("platform_fee", 3.80) for r in ctx_rows) * 100))
-                creator_amount_paise = int(round(sum(r.get("creator_amount", 15.20) for r in ctx_rows) * 100))
-                settled_paise = 0
-                pending_paise = creator_amount_paise
-                ledger_rows = ctx_rows
-
-            conn.close()
-            return self.send_json(200, {
-                "success": True,
-                "earnings": {
-                    "gross_volume": gross_paise / 100.0,
-                    "gross_paise": gross_paise,
-                    "platform_fee": platform_fee_paise / 100.0,
-                    "platform_fee_paise": platform_fee_paise,
-                    "platform_pct": "20%",
-                    "creator_net": creator_amount_paise / 100.0,
-                    "creator_amount_paise": creator_amount_paise,
-                    "creator_pct": "80%",
-                    "pending_settlement": pending_paise / 100.0,
-                    "pending_paise": pending_paise,
-                    "settled_amount": settled_paise / 100.0,
-                    "settled_paise": settled_paise,
-                    "currency": "INR",
-                    "transactions_count": len(ledger_rows),
-                    "transactions": ledger_rows
-                }
+            return self.send_json(410, {
+                "success": False,
+                "error": "Community monetization has been permanently excluded from Kindid.",
+                "code": "COMMUNITY_MONETIZATION_EXCLUDED"
             })
 
         if path == "/api/community/moderation/reports":
@@ -7610,9 +7656,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # Server-authoritative role check
             role = get_user_community_role(comm_id, user["id"], cursor)
-            if role not in ("owner", "admin") and user.get("role") != "admin":
+            if role not in ("owner", "admin", "moderator") and user.get("role") != "admin":
                 conn.close()
-                return self.send_json(403, {"error": "Forbidden: Only community owners and admins can access moderation reports."})
+                return self.send_json(403, {"error": "Forbidden: Only community owners, admins, and moderators can access moderation reports."})
 
             if status_filter and status_filter != "all":
                 cursor.execute("""
@@ -7654,9 +7700,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor = conn.cursor()
 
             role = get_user_community_role(comm_id, user["id"], cursor)
-            if role not in ("owner", "admin") and user.get("role") != "admin":
+            if role not in ("owner", "admin", "moderator") and user.get("role") != "admin":
                 conn.close()
-                return self.send_json(403, {"error": "Forbidden: Only community owners and admins can view moderation audit trail."})
+                return self.send_json(403, {"error": "Forbidden: Only community owners, admins, and moderators can view moderation audit trail."})
 
             cursor.execute("""
                 SELECT a.*, u.handle as moderator_handle
@@ -7669,6 +7715,159 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
 
             return self.send_json(200, {"success": True, "community_id": comm_id, "audit_log": logs})
+
+        if path == "/api/community/members":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = query.get("community_id", [""])[0].strip() or query.get("id", [""])[0].strip()
+            if not comm_id:
+                return self.send_json(400, {"error": "community_id is required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm = cursor.fetchone()
+            if not comm:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False})
+
+            comm_dict = dict(comm)
+            actual_cid = comm_dict["id"]
+
+            # Privacy gating: if community is private, viewer must be active member or admin/owner/moderator
+            viewer_role = get_user_community_role(actual_cid, user["id"], cursor)
+            if comm_dict.get("visibility") == "private" and not viewer_role and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "This community is private. Member access required.", "code": "PRIVATE_COMMUNITY_RESTRICTED", "success": False})
+
+            cursor.execute("""
+                SELECT cm.user_id, cm.role, cm.status, cm.joined_at, u.handle, u.name, u.avatar_url, u.avatar_letter
+                FROM community_members cm
+                JOIN users u ON cm.user_id = u.id
+                WHERE cm.community_id = ? AND cm.status = 'active'
+                ORDER BY CASE cm.role WHEN 'owner' THEN 1 WHEN 'creator' THEN 1 WHEN 'moderator' THEN 2 ELSE 3 END, cm.joined_at ASC
+            """, (actual_cid,))
+            members = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "community_id": actual_cid,
+                "members_count": len(members),
+                "members": members,
+                "viewer_role": viewer_role
+            })
+
+        if path == "/api/community/join-requests":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = query.get("community_id", [""])[0].strip() or query.get("id", [""])[0].strip()
+            if not comm_id:
+                return self.send_json(400, {"error": "community_id is required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            role = get_user_community_role(comm_id, user["id"], cursor)
+            if role not in ("owner", "admin", "moderator") and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only community owners and moderators can view join requests.", "code": "FORBIDDEN", "success": False})
+
+            cursor.execute("SELECT id FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm = cursor.fetchone()
+            actual_cid = comm["id"] if comm else comm_id
+
+            cursor.execute("""
+                SELECT jr.id, jr.community_id, jr.user_id, jr.status, jr.created_at,
+                       u.handle, u.name, u.avatar_url, u.avatar_letter
+                FROM community_join_requests jr
+                JOIN users u ON jr.user_id = u.id
+                WHERE jr.community_id = ? AND jr.status = 'pending'
+                ORDER BY jr.created_at ASC
+            """, (actual_cid,))
+            requests = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "community_id": actual_cid,
+                "requests": requests
+            })
+
+        if path == "/api/community/invites":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = query.get("community_id", [""])[0].strip() or query.get("id", [""])[0].strip()
+            if not comm_id:
+                return self.send_json(400, {"error": "community_id is required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False})
+
+            actual_cid = comm_row["id"]
+            caller_role = get_user_community_role(actual_cid, user["id"], cursor)
+            if caller_role not in ("owner", "admin", "moderator") and comm_row["creator_id"] != user["id"] and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only community owners and moderators can view community invites.", "code": "FORBIDDEN", "success": False})
+
+            cursor.execute("""
+                SELECT ci.*, u.handle as inviter_handle, u.name as inviter_name
+                FROM community_invites ci
+                LEFT JOIN users u ON ci.inviter_user_id = u.id
+                WHERE ci.community_id = ?
+                ORDER BY ci.created_at DESC
+            """, (actual_cid,))
+            rows = cursor.fetchall()
+            now_iso = datetime.now().isoformat()
+            invites = []
+            host = self.headers.get("Host", "").strip()
+            proto = "https" if (self.headers.get("X-Forwarded-Proto") == "https" or (APP_URL and APP_URL.startswith("https://") and "localhost" not in host)) else "http"
+            base_url = f"{proto}://{host}" if host else APP_URL
+
+            for r in rows:
+                inv = dict(r)
+                is_expired = bool(inv.get("expires_at") and inv["expires_at"] < now_iso)
+                is_exhausted = bool(inv.get("accepted_count", 0) >= inv.get("max_uses", 1))
+                is_revoked = bool(inv.get("status") == "revoked")
+                status_label = "revoked" if is_revoked else ("expired" if is_expired else ("exhausted" if is_exhausted else "active"))
+                invites.append({
+                    "id": inv["id"],
+                    "invite_code": inv["invite_code"],
+                    "inviter_user_id": inv["inviter_user_id"],
+                    "inviter_handle": inv.get("inviter_handle") or "owner",
+                    "inviter_name": inv.get("inviter_name") or "Community Owner",
+                    "created_at": inv.get("created_at"),
+                    "expires_at": inv.get("expires_at"),
+                    "max_uses": inv.get("max_uses", 1),
+                    "accepted_count": inv.get("accepted_count", 0),
+                    "status": status_label,
+                    "is_active": (status_label == "active"),
+                    "is_expired": is_expired,
+                    "is_exhausted": is_exhausted,
+                    "is_revoked": is_revoked,
+                    "invite_url": f"/invite/{inv['invite_code']}",
+                    "full_invite_url": f"{base_url}/invite/{inv['invite_code']}"
+                })
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "community_id": actual_cid,
+                "invites": invites
+            })
 
         if path in ["/api/campus", "/api/campus/detail", "/api/community/detail"]:
             user = get_current_user(self.headers)
@@ -7726,8 +7925,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     conn.close()
                     return self.send_json(401, {"success": False, "error": "Authentication required for private community", "code": "UNAUTHORIZED"})
                 if not is_joined and user.get("role") not in ("admin", "founder"):
+                    cursor.execute("SELECT id, status FROM community_join_requests WHERE community_id = ? AND user_id = ?", (comm_dict["id"], user["id"]))
+                    req_row = cursor.fetchone()
+                    has_pending = bool(req_row and req_row["status"] == "pending")
+                    join_req_status = req_row["status"] if req_row else None
+
                     conn.close()
-                    return self.send_json(403, {"success": False, "error": "Community membership required to view this private space", "code": "COMMUNITY_RESTRICTED"})
+                    return self.send_json(403, {
+                        "success": False,
+                        "error": "Community membership required to view this private space",
+                        "code": "COMMUNITY_RESTRICTED",
+                        "community_id": comm_dict["id"],
+                        "community_name": comm_dict.get("name", comm_name),
+                        "has_pending_request": has_pending,
+                        "join_request_status": join_req_status
+                    })
 
             drops_list = []
 
@@ -9888,15 +10100,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
             now_iso = datetime.now().isoformat()
             is_expired = bool(invite.get("expires_at") and invite["expires_at"] < now_iso)
             is_revoked = bool(invite.get("status") != "active")
-            is_maxed = bool(invite.get("accepted_count", 0) >= invite.get("max_uses", 50))
+            is_maxed = bool(invite.get("accepted_count", 0) >= invite.get("max_uses", 1))
             
-            if is_expired or is_revoked:
+            if is_expired or is_revoked or is_maxed:
                 conn.close()
                 return self.send_json(200, {
                     "success": False,
-                    "error": "Invite is expired or inactive",
+                    "error": "Invite is expired, revoked, or exhausted",
                     "is_expired": is_expired,
                     "is_revoked": is_revoked,
+                    "is_maxed": is_maxed,
                     "is_valid": False
                 })
 
@@ -9945,9 +10158,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Drop preview if attached (Drops disabled in V1)
             safe_drop = None
 
-            # Moment preview if attached (exclude non-visible moderation states)
+            # Moment preview if attached (exclude private community content or non-visible moderation states)
             safe_moment = None
-            if invite.get("moment_id"):
+            if not is_private and invite.get("moment_id"):
                 cursor.execute("SELECT * FROM posts WHERE id = ?", (invite["moment_id"],))
                 p_row = cursor.fetchone()
                 if p_row:
@@ -9970,7 +10183,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # Cluster preview if attached
             safe_cluster = None
-            if invite.get("cluster_id"):
+            if not is_private and invite.get("cluster_id"):
                 cursor.execute("SELECT id, cluster_type, originating_context, created_at FROM moment_clusters WHERE id = ?", (invite["cluster_id"],))
                 c_row = cursor.fetchone()
                 if c_row:
@@ -9984,6 +10197,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {
                 "success": True,
+                "is_valid": True,
+                "community": safe_community,
                 "invite": {
                     "id": invite["id"],
                     "invite_code": invite["invite_code"],
@@ -10670,7 +10885,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "role_tier": "Community Creator" if is_creator else "Member",
                 "can_create_community": is_creator,
                 "can_host_drops": is_creator,
-                "can_view_earnings": is_creator or len(managed_comms) > 0,
                 "managed_communities_count": len(managed_comms),
                 "managed_communities": managed_comms,
                 "active_drops_count": active_drops_count
@@ -11163,6 +11377,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             comm_id = (body.get("community_id") or body.get("id") or "").strip()
             title = (body.get("title") or "").strip()
             story = (body.get("story") or "").strip()
+            theme = (body.get("theme") or "").strip()[:60]
+            year = (body.get("year") or "").strip()[:10]
             cover_img = (body.get("cover_img") or "").strip()
             raw_moment_ids = body.get("moment_ids") or []
 
@@ -11278,11 +11494,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("""
                 INSERT INTO collective_memories (
                     id, campus, community_id, community_name, title, story,
-                    date_str, cover_img, moments_count, creator_id, creator_handle, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    date_str, cover_img, moments_count, creator_id, creator_handle, theme, year, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 mem_id, comm["name"], comm["id"], comm["name"], title, story,
-                date_str, cover_img, len(valid_moments), user["id"], user.get("handle", "curator"), now_iso
+                date_str, cover_img, len(valid_moments), user["id"], user.get("handle", "curator"), theme, year, now_iso
             ))
 
             # Insert linked moments into collective_memory_moments
@@ -11520,6 +11736,770 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "report_id": rep_id
             })
 
+        if path == "/api/community/members/role":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required"})
+
+            comm_id = (body.get("community_id") or "").strip()
+            target_user_id = (body.get("target_user_id") or "").strip()
+            new_role = (body.get("role") or "").strip().lower()
+
+            if not comm_id or not target_user_id or not new_role:
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "community_id, target_user_id, and role are required",
+                    "code": "MISSING_FIELDS"
+                })
+
+            if new_role not in ("moderator", "member"):
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "Invalid role. Role must be 'moderator' or 'member'.",
+                    "code": "INVALID_ROLE"
+                })
+
+            if target_user_id == user["id"]:
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "You cannot change your own role.",
+                    "code": "CANNOT_MODIFY_SELF"
+                })
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            # Caller must be owner or platform admin
+            caller_role = get_user_community_role(comm_id, user["id"], cursor)
+            if caller_role not in ("owner", "admin") and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {
+                    "success": False,
+                    "error": "Forbidden: Only community owners can manage member roles.",
+                    "code": "OWNER_REQUIRED"
+                })
+
+            # Check community exists
+            cursor.execute("SELECT id, creator_id FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            crow = cursor.fetchone()
+            if not crow:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Community not found", "code": "NOT_FOUND"})
+
+            actual_cid = crow["id"]
+
+            if crow["creator_id"] == target_user_id:
+                conn.close()
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "Community owner role cannot be changed.",
+                    "code": "CANNOT_DEMOTE_OWNER"
+                })
+
+            # Target user must be an active member
+            cursor.execute("SELECT role, status FROM community_members WHERE community_id = ? AND user_id = ?", (actual_cid, target_user_id))
+            target_mem = cursor.fetchone()
+            if not target_mem or target_mem["status"] != "active":
+                conn.close()
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "Target user is not an active member of this community.",
+                    "code": "TARGET_NOT_ACTIVE_MEMBER"
+                })
+
+            if target_mem["role"] == "owner":
+                conn.close()
+                return self.send_json(400, {
+                    "success": False,
+                    "error": "Community owner role cannot be changed.",
+                    "code": "CANNOT_DEMOTE_OWNER"
+                })
+
+            cursor.execute("UPDATE community_members SET role = ? WHERE community_id = ? AND user_id = ?", (new_role, actual_cid, target_user_id))
+
+            # Audit log
+            audit_id = "aud_" + secrets.token_hex(6)
+            audit_action = "assign_moderator" if new_role == "moderator" else "revoke_moderator"
+            cursor.execute("""
+                INSERT INTO moderation_audit_log (id, community_id, moderator_id, target_type, target_id, action, reason, details)
+                VALUES (?, ?, ?, 'user', ?, ?, ?, ?)
+            """, (audit_id, actual_cid, user["id"], target_user_id, audit_action, body.get("reason") or "", f"Role updated to {new_role} by {user.get('handle', 'user')}"))
+
+            conn.commit()
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "community_id": actual_cid,
+                "target_user_id": target_user_id,
+                "role": new_role,
+                "message": f"Successfully updated user role to {new_role}"
+            })
+
+        if path == "/api/community/settings":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = (body.get("community_id") or body.get("id") or "").strip()
+            if not comm_id:
+                return self.send_json(400, {"error": "community_id is required", "success": False, "code": "MISSING_COMMUNITY_ID"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False, "code": "NOT_FOUND"})
+
+            comm = dict(comm_row)
+            actual_cid = comm["id"]
+
+            caller_role = get_user_community_role(actual_cid, user["id"], cursor)
+            if caller_role not in ("owner", "admin") and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only community owners can update community settings.", "code": "OWNER_REQUIRED", "success": False})
+
+            updates = []
+            params = []
+
+            # Name update
+            if "name" in body:
+                new_name = str(body["name"]).strip()
+                if len(new_name) < 2 or len(new_name) > 60:
+                    conn.close()
+                    return self.send_json(400, {"error": "Community name must be between 2 and 60 characters", "code": "INVALID_NAME", "success": False})
+                cursor.execute("SELECT id FROM communities WHERE LOWER(name) = ? AND id != ?", (new_name.lower(), actual_cid))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json(400, {"error": f"A community named '{new_name}' already exists", "code": "NAME_EXISTS", "success": False})
+                updates.append("name = ?")
+                params.append(new_name)
+
+            # Description update
+            if "description" in body:
+                new_desc = str(body["description"]).strip()[:500]
+                updates.append("description = ?")
+                params.append(new_desc)
+
+            # Icon update
+            if "icon" in body:
+                new_icon = str(body["icon"]).strip()[:10]
+                if new_icon:
+                    updates.append("icon = ?")
+                    params.append(new_icon)
+
+            # City update
+            if "city" in body:
+                new_city = str(body["city"]).strip()[:60]
+                updates.append("city = ?")
+                params.append(new_city)
+
+            # Visibility update: public or private
+            # Security rule: Changing visibility to public must NEVER flip or expose existing private moments (is_private=1 remain is_private=1)
+            if "visibility" in body:
+                new_vis = str(body["visibility"]).strip().lower()
+                if new_vis not in ("public", "private"):
+                    conn.close()
+                    return self.send_json(400, {"error": "Visibility must be 'public' or 'private'", "code": "INVALID_VISIBILITY", "success": False})
+                updates.append("visibility = ?")
+                params.append(new_vis)
+
+            if not updates:
+                conn.close()
+                return self.send_json(400, {"error": "No valid settings fields to update", "success": False})
+
+            params.append(actual_cid)
+            cursor.execute(f"UPDATE communities SET {', '.join(updates)} WHERE id = ?", tuple(params))
+
+            # Audit log
+            audit_id = "aud_" + secrets.token_hex(6)
+            cursor.execute("""
+                INSERT INTO moderation_audit_log (id, community_id, moderator_id, target_type, target_id, action, details)
+                VALUES (?, ?, ?, 'community', ?, 'update_settings', ?)
+            """, (audit_id, actual_cid, user["id"], actual_cid, f"Settings updated by @{user.get('handle', 'user')}"))
+
+            conn.commit()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ?", (actual_cid,))
+            updated_comm = dict(cursor.fetchone())
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "message": "Community settings updated successfully",
+                "community": updated_comm
+            })
+
+        if path == "/api/community/members/remove":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = (body.get("community_id") or "").strip()
+            target_user_id = (body.get("target_user_id") or "").strip()
+            reason = (body.get("reason") or "").strip()
+
+            if not comm_id or not target_user_id:
+                return self.send_json(400, {"error": "community_id and target_user_id are required", "code": "MISSING_FIELDS", "success": False})
+
+            if target_user_id == user["id"]:
+                return self.send_json(400, {"error": "Cannot remove yourself via member removal. Use leave instead.", "code": "CANNOT_REMOVE_SELF", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False})
+
+            comm = dict(comm_row)
+            actual_cid = comm["id"]
+
+            caller_role = get_user_community_role(actual_cid, user["id"], cursor)
+            if caller_role not in ("owner", "admin", "moderator") and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only community owners and moderators can remove members.", "code": "FORBIDDEN", "success": False})
+
+            # Check target role & enforce hierarchy
+            target_role = get_user_community_role(actual_cid, target_user_id, cursor)
+            if target_role in ("owner", "creator") or comm.get("creator_id") == target_user_id:
+                conn.close()
+                return self.send_json(403, {"error": "Community owner cannot be removed.", "code": "CANNOT_REMOVE_OWNER", "success": False})
+
+            if target_role in ("moderator", "admin") and caller_role != "owner" and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "Moderators cannot remove other moderators or admins.", "code": "MODERATOR_CANNOT_REMOVE_MODERATOR", "success": False})
+
+            # Check target is currently active member
+            cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (actual_cid, target_user_id))
+            if not cursor.fetchone():
+                conn.close()
+                return self.send_json(404, {"error": "Target user is not an active member of this community.", "code": "TARGET_NOT_ACTIVE_MEMBER", "success": False})
+
+            # Remove member
+            cursor.execute("DELETE FROM community_members WHERE community_id = ? AND user_id = ?", (actual_cid, target_user_id))
+            cursor.execute("UPDATE communities SET members_count = MAX(0, (SELECT COUNT(*) FROM community_members WHERE community_id = ? AND status = 'active')) WHERE id = ?", (actual_cid, actual_cid))
+
+            # Audit log
+            audit_id = "aud_" + secrets.token_hex(6)
+            cursor.execute("""
+                INSERT INTO moderation_audit_log (id, community_id, moderator_id, target_type, target_id, action, reason, details)
+                VALUES (?, ?, ?, 'user', ?, 'remove_member', ?, ?)
+            """, (audit_id, actual_cid, user["id"], target_user_id, reason, f"Removed by @{user.get('handle', 'user')}"))
+
+            conn.commit()
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "message": "Member removed from community successfully",
+                "community_id": actual_cid,
+                "target_user_id": target_user_id
+            })
+
+        if path == "/api/community/join-request":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = (body.get("community_id") or body.get("id") or "").strip()
+            if not comm_id:
+                return self.send_json(400, {"error": "community_id is required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False})
+
+            comm = dict(comm_row)
+            actual_cid = comm["id"]
+
+            # Suspension check
+            cursor.execute("SELECT 1 FROM community_suspensions WHERE user_id = ? AND community_id = ?", (user["id"], actual_cid))
+            if cursor.fetchone():
+                conn.close()
+                return self.send_json(403, {"error": "You are suspended from this community.", "code": "COMMUNITY_SUSPENDED", "success": False})
+
+            # Already member check
+            cursor.execute("SELECT role, status FROM community_members WHERE community_id = ? AND user_id = ?", (actual_cid, user["id"]))
+            mem_row = cursor.fetchone()
+            if mem_row and mem_row["status"] == "active":
+                conn.close()
+                return self.send_json(400, {"error": "You are already an active member of this community.", "code": "ALREADY_MEMBER", "success": False})
+
+            # If public community, instruct direct join
+            if comm.get("visibility") != "private":
+                conn.close()
+                return self.send_json(400, {"error": "This community is public. Join directly.", "code": "COMMUNITY_IS_PUBLIC", "success": False})
+
+            invite_code = (body.get("invite_code") or "").strip()
+            if invite_code:
+                cursor.execute("SELECT * FROM community_invites WHERE invite_code = ?", (invite_code,))
+                inv_row = cursor.fetchone()
+                if not inv_row:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Invalid invite code", "code": "INVITE_INVALID"})
+                inv_dict = dict(inv_row)
+                if inv_dict.get("community_id") != actual_cid:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Invite does not match this community", "code": "INVITE_COMMUNITY_MISMATCH"})
+                if inv_dict.get("status") == "revoked":
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Invite has been revoked", "code": "INVITE_REVOKED"})
+                if inv_dict.get("status") != "active":
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Invite is revoked or inactive", "code": "INVITE_INACTIVE"})
+                if inv_dict.get("expires_at") and inv_dict["expires_at"] < datetime.now().isoformat():
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Invite has expired", "code": "INVITE_EXPIRED"})
+                if inv_dict.get("accepted_count", 0) >= inv_dict.get("max_uses", 1):
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Invite has reached maximum usage limit", "code": "INVITE_MAX_USES"})
+                if inv_dict.get("inviter_user_id") == user["id"]:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Cannot request join using your own invite", "code": "SELF_REFERRAL"})
+                cursor.execute("""
+                    SELECT 1 FROM blocks
+                    WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+                """, (user["id"], inv_dict["inviter_user_id"], inv_dict["inviter_user_id"], user["id"]))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json(403, {"success": False, "error": "Cannot join via this invite due to block restrictions", "code": "BLOCKED"})
+
+            # Check existing request
+            cursor.execute("SELECT id, status FROM community_join_requests WHERE community_id = ? AND user_id = ?", (actual_cid, user["id"]))
+            existing_req = cursor.fetchone()
+            if existing_req and existing_req["status"] == "pending":
+                conn.close()
+                return self.send_json(200, {"success": True, "status": "pending", "message": "Join request is pending review."})
+
+            req_id = "req_" + secrets.token_hex(6)
+            cursor.execute("""
+                INSERT INTO community_join_requests (id, community_id, user_id, status, invite_code, created_at)
+                VALUES (?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(community_id, user_id) DO UPDATE SET status = 'pending', invite_code = excluded.invite_code, reviewed_by = '', reviewed_at = NULL, created_at = CURRENT_TIMESTAMP
+            """, (req_id, actual_cid, user["id"], invite_code))
+
+            conn.commit()
+            conn.close()
+
+            return self.send_json(201, {
+                "success": True,
+                "status": "pending",
+                "message": "Join request submitted successfully. Moderators will review."
+            })
+
+        if path == "/api/community/join-requests/review":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = (body.get("community_id") or "").strip()
+            request_id = (body.get("request_id") or "").strip()
+            target_user_id = (body.get("target_user_id") or "").strip()
+            action = (body.get("action") or "").strip().lower()
+
+            if not comm_id or (not request_id and not target_user_id) or action not in ("approve", "reject"):
+                return self.send_json(400, {"error": "community_id, action ('approve'|'reject'), and request_id or target_user_id are required", "code": "INVALID_PARAMETERS", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False})
+
+            comm = dict(comm_row)
+            actual_cid = comm["id"]
+
+            caller_role = get_user_community_role(actual_cid, user["id"], cursor)
+            if caller_role not in ("owner", "admin", "moderator") and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only community owners and moderators can review join requests.", "code": "FORBIDDEN", "success": False})
+
+            if request_id:
+                cursor.execute("SELECT * FROM community_join_requests WHERE id = ? AND community_id = ?", (request_id, actual_cid))
+            else:
+                cursor.execute("SELECT * FROM community_join_requests WHERE community_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1", (actual_cid, target_user_id))
+
+            req_row = cursor.fetchone()
+            if not req_row:
+                conn.close()
+                return self.send_json(404, {"error": "Join request not found", "code": "REQUEST_NOT_FOUND", "success": False})
+
+            req = dict(req_row)
+            req_uid = req["user_id"]
+
+            if req.get("status") in ("approved", "rejected") or req.get("status") != "pending":
+                conn.close()
+                return self.send_json(409, {
+                    "error": "REQUEST_ALREADY_REVIEWED",
+                    "code": "REQUEST_ALREADY_REVIEWED",
+                    "message": "This join request has already been reviewed.",
+                    "status": req.get("status"),
+                    "success": False
+                })
+
+            new_status = "approved" if action == "approve" else "rejected"
+
+            # Concurrency-safe atomic state transition:
+            # Conditional UPDATE only succeeds if status is still 'pending'
+            cursor.execute("""
+                UPDATE community_join_requests
+                SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND community_id = ? AND status = 'pending'
+            """, (new_status, user["id"], req["id"], actual_cid))
+
+            if cursor.rowcount == 0:
+                conn.rollback()
+                conn.close()
+                return self.send_json(409, {
+                    "error": "REQUEST_ALREADY_REVIEWED",
+                    "code": "REQUEST_ALREADY_REVIEWED",
+                    "message": "This join request has already been reviewed.",
+                    "success": False
+                })
+
+            if action == "approve":
+                cursor.execute("""
+                    INSERT INTO community_members (community_id, user_id, role, status, joined_at)
+                    VALUES (?, ?, 'member', 'active', CURRENT_TIMESTAMP)
+                    ON CONFLICT(community_id, user_id) DO UPDATE SET status = 'active', role = 'member'
+                """, (actual_cid, req_uid))
+                cursor.execute("UPDATE communities SET members_count = (SELECT COUNT(*) FROM community_members WHERE community_id = ? AND status = 'active') WHERE id = ?", (actual_cid, actual_cid))
+
+                # If request was backed by an invite code, increment accepted_count
+                req_inv_code = req.get("invite_code")
+                if req_inv_code:
+                    cursor.execute("""
+                        UPDATE community_invites
+                        SET accepted_count = accepted_count + 1
+                        WHERE invite_code = ? AND status = 'active'
+                    """, (req_inv_code,))
+                    cursor.execute("SELECT id FROM community_invites WHERE invite_code = ?", (req_inv_code,))
+                    inv_match = cursor.fetchone()
+                    if inv_match:
+                        track_invite_event(conn, inv_match["id"], req_inv_code, "community_joined", req_uid)
+
+                # Send acceptance notification
+                notif_id = "notif_" + secrets.token_hex(6)
+                cursor.execute("""
+                    INSERT INTO notifications (id, user_id, title, body, type, is_read, created_at)
+                    VALUES (?, ?, ?, ?, 'community', 0, CURRENT_TIMESTAMP)
+                """, (notif_id, req_uid, "Join Request Approved", f"Your request to join {comm.get('name', 'the community')} has been approved!"))
+
+            # Audit log
+            audit_id = "aud_" + secrets.token_hex(6)
+            cursor.execute("""
+                INSERT INTO moderation_audit_log (id, community_id, moderator_id, target_type, target_id, action, details)
+                VALUES (?, ?, ?, 'user', ?, ?, ?)
+            """, (audit_id, actual_cid, user["id"], req_uid, f"join_request_{action}", f"Join request {action}d by @{user.get('handle', 'user')}"))
+
+            conn.commit()
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "action": action,
+                "message": f"Join request {action}d successfully."
+            })
+
+        if path == "/api/community/invites/revoke":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = (body.get("community_id") or "").strip()
+            invite_code = (body.get("invite_code") or body.get("invite_id") or "").strip()
+
+            if not comm_id or not invite_code:
+                return self.send_json(400, {"error": "community_id and invite_code are required", "code": "MISSING_FIELDS", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False})
+
+            actual_cid = comm_row["id"]
+            caller_role = get_user_community_role(actual_cid, user["id"], cursor)
+
+            cursor.execute("SELECT * FROM community_invites WHERE (invite_code = ? OR id = ?) AND community_id = ?", (invite_code, invite_code, actual_cid))
+            inv_row = cursor.fetchone()
+            if not inv_row:
+                conn.close()
+                return self.send_json(404, {"error": "Invite not found", "success": False})
+
+            inv = dict(inv_row)
+            if caller_role not in ("owner", "admin") and user.get("role") != "admin" and inv["inviter_user_id"] != user["id"]:
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only community owners or the inviter can revoke invites.", "code": "FORBIDDEN", "success": False})
+
+            cursor.execute("UPDATE community_invites SET status = 'revoked' WHERE id = ?", (inv["id"],))
+            conn.commit()
+            conn.close()
+
+            return self.send_json(200, {"success": True, "message": "Invite revoked successfully."})
+
+        if path == "/api/community/memories/curate":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            memory_id = (body.get("memory_id") or body.get("id") or "").strip()
+            if not memory_id:
+                return self.send_json(400, {"error": "memory_id is required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM collective_memories WHERE id = ?", (memory_id,))
+            mem_row = cursor.fetchone()
+            if not mem_row:
+                conn.close()
+                return self.send_json(404, {"error": "Collective memory not found", "success": False})
+
+            mem = dict(mem_row)
+            comm_id = mem.get("community_id")
+            if not comm_id:
+                cursor.execute("SELECT id FROM communities WHERE LOWER(name) = ?", (mem.get("community_name", "").lower(),))
+                cr = cursor.fetchone()
+                comm_id = cr[0] if cr else ""
+
+            caller_role = get_user_community_role(comm_id, user["id"], cursor) if comm_id else None
+            is_curator = (mem.get("creator_id") == user["id"])
+            if caller_role not in ("owner", "admin", "moderator") and user.get("role") != "admin" and not is_curator:
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only community curators, owners, and moderators can edit memory archives.", "code": "FORBIDDEN", "success": False})
+
+            updates = []
+            params = []
+            if "title" in body:
+                t = str(body["title"]).strip()
+                if len(t) >= 2:
+                    updates.append("title = ?")
+                    params.append(t)
+            if "story" in body:
+                updates.append("story = ?")
+                params.append(str(body["story"]).strip())
+            if "theme" in body:
+                updates.append("theme = ?")
+                params.append(str(body["theme"]).strip()[:60])
+            if "year" in body:
+                updates.append("year = ?")
+                params.append(str(body["year"]).strip()[:10])
+
+            if updates:
+                params.append(memory_id)
+                cursor.execute(f"UPDATE collective_memories SET {', '.join(updates)} WHERE id = ?", tuple(params))
+                conn.commit()
+
+            cursor.execute("SELECT * FROM collective_memories WHERE id = ?", (memory_id,))
+            updated_mem = dict(cursor.fetchone())
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "message": "Collective memory updated successfully",
+                "memory": updated_mem
+            })
+
+        if path == "/api/community/memories/delete":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            memory_id = (body.get("memory_id") or body.get("id") or "").strip()
+            if not memory_id:
+                return self.send_json(400, {"error": "memory_id is required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM collective_memories WHERE id = ?", (memory_id,))
+            mem_row = cursor.fetchone()
+            if not mem_row:
+                conn.close()
+                return self.send_json(404, {"error": "Collective memory not found", "success": False})
+
+            mem = dict(mem_row)
+            comm_id = mem.get("community_id")
+            if not comm_id:
+                cursor.execute("SELECT id FROM communities WHERE LOWER(name) = ?", (mem.get("community_name", "").lower(),))
+                cr = cursor.fetchone()
+                comm_id = cr[0] if cr else ""
+
+            caller_role = get_user_community_role(comm_id, user["id"], cursor) if comm_id else None
+            is_curator = (mem.get("creator_id") == user["id"])
+            if caller_role not in ("owner", "admin", "moderator") and user.get("role") != "admin" and not is_curator:
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only community curators, owners, and moderators can remove memory archives.", "code": "FORBIDDEN", "success": False})
+
+            # Safe resolution: Remove archive link & memory, preserving underlying posts in posts table
+            cursor.execute("DELETE FROM collective_memory_moments WHERE memory_id = ?", (memory_id,))
+            cursor.execute("DELETE FROM collective_memories WHERE id = ?", (memory_id,))
+
+            if comm_id:
+                audit_id = "aud_" + secrets.token_hex(6)
+                cursor.execute("""
+                    INSERT INTO moderation_audit_log (id, community_id, moderator_id, target_type, target_id, action, details)
+                    VALUES (?, ?, ?, 'collective_memory', ?, 'delete_memory_archive', ?)
+                """, (audit_id, comm_id, user["id"], memory_id, f"Memory archive '{mem.get('title')}' deleted by @{user.get('handle', 'user')} (moments preserved)"))
+
+            conn.commit()
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "message": "Memory archive removed successfully. Underlying moments remain preserved in community feed."
+            })
+
+        if path == "/api/community/transfer-ownership":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = (body.get("community_id") or "").strip()
+            new_owner_id = (body.get("new_owner_user_id") or body.get("target_user_id") or "").strip()
+            confirmation = str(body.get("confirmation", "")).strip().upper()
+
+            if not comm_id or not new_owner_id:
+                return self.send_json(400, {"error": "community_id and new_owner_user_id are required", "code": "MISSING_FIELDS", "success": False})
+
+            if confirmation != "TRANSFER":
+                return self.send_json(400, {"error": "Confirmation code 'TRANSFER' is required to transfer community ownership.", "code": "CONFIRMATION_REQUIRED", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False})
+
+            comm = dict(comm_row)
+            actual_cid = comm["id"]
+
+            caller_role = get_user_community_role(actual_cid, user["id"], cursor)
+            if caller_role not in ("owner", "creator") and comm.get("creator_id") != user["id"] and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only the community owner can transfer ownership.", "code": "OWNER_REQUIRED", "success": False})
+
+            if new_owner_id == user["id"]:
+                conn.close()
+                return self.send_json(400, {"error": "You are already the owner of this community.", "code": "CANNOT_TRANSFER_TO_SELF", "success": False})
+
+            # Target user eligibility checks
+            cursor.execute("SELECT id, handle, account_status, role FROM users WHERE id = ?", (new_owner_id,))
+            target_u = cursor.fetchone()
+            if not target_u or target_u["account_status"] != "active" or target_u["role"] == "banned":
+                conn.close()
+                return self.send_json(400, {"error": "Target user does not exist or has an inactive/banned account.", "code": "TARGET_USER_INELIGIBLE", "success": False})
+
+            # Target user must be an active member of this community
+            cursor.execute("SELECT role, status FROM community_members WHERE community_id = ? AND user_id = ?", (actual_cid, new_owner_id))
+            target_mem = cursor.fetchone()
+            if not target_mem or target_mem["status"] != "active":
+                conn.close()
+                return self.send_json(400, {"error": "Target user must be an active member of this community before receiving ownership.", "code": "TARGET_NOT_ACTIVE_MEMBER", "success": False})
+
+            # Target user must not be suspended in this community
+            cursor.execute("SELECT 1 FROM community_suspensions WHERE community_id = ? AND user_id = ?", (actual_cid, new_owner_id))
+            if cursor.fetchone():
+                conn.close()
+                return self.send_json(400, {"error": "Target user is currently suspended in this community.", "code": "TARGET_USER_SUSPENDED", "success": False})
+
+            # Transfer ownership
+            cursor.execute("UPDATE communities SET creator_id = ?, creator_handle = ? WHERE id = ?", (target_u["id"], target_u["handle"], actual_cid))
+            cursor.execute("UPDATE community_members SET role = 'owner' WHERE community_id = ? AND user_id = ?", (actual_cid, target_u["id"]))
+            cursor.execute("UPDATE community_members SET role = 'moderator' WHERE community_id = ? AND user_id = ?", (actual_cid, user["id"]))
+
+            # Audit log
+            audit_id = "aud_" + secrets.token_hex(6)
+            cursor.execute("""
+                INSERT INTO moderation_audit_log (id, community_id, moderator_id, target_type, target_id, action, details)
+                VALUES (?, ?, ?, 'community', ?, 'transfer_ownership', ?)
+            """, (audit_id, actual_cid, user["id"], actual_cid, f"Ownership transferred from @{user.get('handle', 'user')} to @{target_u['handle']}"))
+
+            conn.commit()
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "message": f"Community ownership successfully transferred to @{target_u['handle']}.",
+                "community_id": actual_cid,
+                "new_owner": {
+                    "id": target_u["id"],
+                    "handle": target_u["handle"]
+                }
+            })
+
+        if path == "/api/community/close":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"error": "Authentication required", "success": False})
+
+            comm_id = (body.get("community_id") or "").strip()
+            confirmation = str(body.get("confirmation", "")).strip().upper()
+            reason = (body.get("reason") or "").strip()
+
+            if not comm_id:
+                return self.send_json(400, {"error": "community_id is required", "code": "MISSING_COMMUNITY_ID", "success": False})
+
+            if confirmation != "CLOSE":
+                return self.send_json(400, {"error": "Confirmation code 'CLOSE' is required to close this community.", "code": "CONFIRMATION_REQUIRED", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT * FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (comm_id, comm_id.lower(), comm_id))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"error": "Community not found", "success": False})
+
+            comm = dict(comm_row)
+            actual_cid = comm["id"]
+
+            caller_role = get_user_community_role(actual_cid, user["id"], cursor)
+            if caller_role not in ("owner", "creator") and comm.get("creator_id") != user["id"] and user.get("role") != "admin":
+                conn.close()
+                return self.send_json(403, {"error": "Forbidden: Only the community owner can close the community.", "code": "OWNER_REQUIRED", "success": False})
+
+            # Controlled closure & archival
+            cursor.execute("UPDATE communities SET status = 'closed', moderation_status = 'archived' WHERE id = ?", (actual_cid,))
+
+            # Audit log
+            audit_id = "aud_" + secrets.token_hex(6)
+            cursor.execute("""
+                INSERT INTO moderation_audit_log (id, community_id, moderator_id, target_type, target_id, action, reason, details)
+                VALUES (?, ?, ?, 'community', ?, 'close_community', ?, ?)
+            """, (audit_id, actual_cid, user["id"], actual_cid, reason, f"Community closed and archived by @{user.get('handle', 'user')}"))
+
+            conn.commit()
+            conn.close()
+
+            return self.send_json(200, {
+                "success": True,
+                "message": "Community closed and archived successfully.",
+                "community_id": actual_cid
+            })
+
         if path in ("/api/community/moderation/action", "/api/community/moderation/review"):
             user = get_current_user(self.headers)
             if not user:
@@ -11557,7 +12537,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             # Check moderation authority
             role = get_user_community_role(comm_id, user["id"], cursor)
-            is_authorized = (role in ("owner", "admin")) or (user.get("role") == "admin")
+            is_authorized = (role in ("owner", "admin", "moderator")) or (user.get("role") == "admin")
 
             if not is_authorized:
                 conn.close()
@@ -11568,14 +12548,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if action == "dismiss":
                 if report_id:
                     cursor.execute("""
-                        UPDATE community_reports 
+                        UPDATE community_reports
                         SET status = 'dismissed', action_taken = 'dismissed', reviewed_by = ?, reviewed_at = ?
                         WHERE id = ?
                     """, (user["id"], now_iso, report_id))
             elif action == "review":
                 if report_id:
                     cursor.execute("""
-                        UPDATE community_reports 
+                        UPDATE community_reports
                         SET status = 'reviewed', reviewed_by = ?, reviewed_at = ?
                         WHERE id = ?
                     """, (user["id"], now_iso, report_id))
@@ -11643,6 +12623,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
                             "success": False,
                             "error": "Community creator cannot be suspended.",
                             "code": "CANNOT_SUSPEND_OWNER"
+                        })
+                    target_role = get_user_community_role(comm_id, target_id, cursor)
+                    if target_role in ("owner", "admin"):
+                        conn.close()
+                        return self.send_json(400, {
+                            "success": False,
+                            "error": "Community owner or admin cannot be suspended.",
+                            "code": "CANNOT_SUSPEND_OWNER"
+                        })
+                    if role == "moderator" and target_role == "moderator":
+                        conn.close()
+                        return self.send_json(403, {
+                            "success": False,
+                            "error": "Moderators cannot suspend other moderators.",
+                            "code": "CANNOT_SUSPEND_MODERATOR"
                         })
                     cursor.execute("""
                         UPDATE community_members
@@ -14205,6 +15200,28 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn = get_db()
             cursor = conn.cursor()
 
+            # Ownership Continuity Check: Cannot delete account if caller is the active owner of communities that have other active members
+            cursor.execute("""
+                SELECT id, name FROM communities
+                WHERE creator_id = ? AND (status IS NULL OR status != 'closed')
+            """, (user_id,))
+            owned_active_comms = cursor.fetchall()
+            for oc in owned_active_comms:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM community_members
+                    WHERE community_id = ? AND user_id != ? AND status = 'active'
+                """, (oc["id"], user_id))
+                other_active = cursor.fetchone()[0]
+                if other_active > 0:
+                    conn.close()
+                    return self.send_json(400, {
+                        "success": False,
+                        "error": f"Cannot delete account while you own community '{oc['name']}' which has active members. Please transfer ownership or close the community first.",
+                        "code": "CANNOT_DELETE_ACCOUNT_OWNS_COMMUNITIES",
+                        "community_id": oc["id"],
+                        "community_name": oc["name"]
+                    })
+
             try:
                 # 1. Invalidate all active sessions
                 cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
@@ -14346,10 +15363,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             drop_id = (body.get("drop_id") or "").strip()
             moment_id = (body.get("moment_id") or "").strip()
             invite_type = (body.get("invite_type") or ("drop" if drop_id else ("moment" if moment_id else "community"))).strip()
-            max_uses = min(max(int(body.get("max_uses", 50)), 1), 100)
-            expires_in_days = min(max(int(body.get("expires_in_days", 30)), 1), 365)
 
             cluster_id = (body.get("cluster_id") or "").strip()
+            target_handle = (body.get("target_handle") or body.get("username") or "").strip().lstrip("@")
 
             if not community_id:
                 return self.send_json(400, {"success": False, "error": "community_id is required"})
@@ -14378,13 +15394,32 @@ class KandidHandler(SimpleHTTPRequestHandler):
             community = dict(comm_row)
             actual_community_id = community["id"]
 
-            # Private community membership check
-            if community.get("visibility") == "private":
-                cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ?", (actual_community_id, user["id"]))
-                is_member = cursor.fetchone()
-                if not is_member and community.get("creator_id") != user["id"]:
+            is_priv = (community.get("visibility") == "private")
+            default_max_uses = 1 if is_priv else 50
+            default_expires_days = 7 if is_priv else 30
+            max_uses = min(max(int(body.get("max_uses", default_max_uses)), 1), 100)
+            expires_in_days = min(max(int(body.get("expires_in_days", default_expires_days)), 1), 365)
+
+            # Private community authorization check: only Owner/Admin may create invites
+            if is_priv:
+                caller_role = get_user_community_role(actual_community_id, user["id"], cursor)
+                if caller_role not in ("owner", "admin") and community.get("creator_id") != user["id"] and user.get("role") != "admin":
                     conn.close()
-                    return self.send_json(403, {"success": False, "error": "Only community members can create invites for private communities"})
+                    return self.send_json(403, {"success": False, "error": "Only community owners can create invites for private communities", "code": "FORBIDDEN"})
+
+            # Optional invite-by-username
+            target_user = None
+            if target_handle:
+                cursor.execute("SELECT id, name, handle FROM users WHERE LOWER(handle) = LOWER(?)", (target_handle,))
+                t_row = cursor.fetchone()
+                if not t_row:
+                    conn.close()
+                    return self.send_json(404, {"success": False, "error": f"User @{target_handle} not found", "code": "USER_NOT_FOUND"})
+                target_user = dict(t_row)
+                cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ? AND status = 'active'", (actual_community_id, target_user["id"]))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": f"@{target_handle} is already an active member", "code": "ALREADY_MEMBER"})
 
             # Validate drop if provided (Drops disabled in V1)
             if drop_id:
@@ -14419,16 +15454,30 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'active')
             """, (invite_id, invite_code, user["id"], actual_community_id, drop_id, moment_id, cluster_id, invite_type, created_at, expires_at, max_uses))
             
-            conn.commit()
             track_invite_event(conn, invite_id, invite_code, "created", user["id"])
             if cluster_id or moment_id or drop_id:
                 record_viral_graph_event(conn, "CONTEXTUAL_INVITE_CREATED", user["id"], moment_id=moment_id, cluster_id=cluster_id, community_id=actual_community_id, drop_id=drop_id, invite_id=invite_id)
+
+            if target_user:
+                notif_id = f"notif_{uuid.uuid4().hex[:12]}"
+                cursor.execute("""
+                    INSERT INTO notifications (id, user_id, title, body, type, is_read, created_at)
+                    VALUES (?, ?, 'Community Invitation', ?, 'community_invite', 0, ?)
+                """, (notif_id, target_user["id"], f"@{user.get('handle', 'Someone')} invited you to join {community['name']}. Code: {invite_code}", created_at))
+
+            conn.commit()
             conn.close()
 
-            return self.send_json(201, {
+            host = self.headers.get("Host", "").strip()
+            proto = "https" if (self.headers.get("X-Forwarded-Proto") == "https" or (APP_URL and APP_URL.startswith("https://") and "localhost" not in host)) else "http"
+            base_url = f"{proto}://{host}" if host else APP_URL
+            full_invite_url = f"{base_url}/invite/{invite_code}"
+
+            res_payload = {
                 "success": True,
                 "invite_code": invite_code,
                 "invite_url": f"/invite/{invite_code}",
+                "full_invite_url": full_invite_url,
                 "deep_link": f"kandid://invite/{invite_code}",
                 "invite": {
                     "id": invite_id,
@@ -14444,7 +15493,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "expires_at": expires_at,
                     "created_at": created_at
                 }
-            })
+            }
+            if target_user:
+                res_payload["invited_user"] = {"id": target_user["id"], "handle": target_user["handle"]}
+
+            return self.send_json(201, res_payload)
 
         if path == "/api/invite/accept":
             user = get_current_user(self.headers)

@@ -1226,6 +1226,7 @@ async function openCampusPage(campusName, initialTab) {
         (cUserRole === 'owner' || cUserRole === 'creator') ||
         (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
       );
+      var isModerator = Boolean(isOwner || cUserRole === 'moderator' || cUserRole === 'admin');
 
       if (joinBtn) {
         var isPrimary = Boolean(state.currentUser && (
@@ -1234,6 +1235,10 @@ async function openCampusPage(campusName, initialTab) {
         ));
         if (isOwner) {
           joinBtn.textContent = '[ COMMUNITY OWNER ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-amber-400 font-extrabold text-xs font-mono-tag uppercase cursor-default';
+          joinBtn.onclick = null;
+        } else if (cUserRole === 'moderator') {
+          joinBtn.textContent = '[ COMMUNITY MODERATOR ]';
           joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-amber-400 font-extrabold text-xs font-mono-tag uppercase cursor-default';
           joinBtn.onclick = null;
         } else if (isPrimary) {
@@ -1252,8 +1257,17 @@ async function openCampusPage(campusName, initialTab) {
       }
 
       var creatorControls = document.getElementById('campusPageCreatorControls');
+      var ownerOpsBtn = document.getElementById('campusPageOwnerOpsBtn');
+      var modDeskBtn = document.getElementById('campusPageModDeskBtn');
+
       if (creatorControls) {
-        creatorControls.style.display = isOwner ? 'flex' : 'none';
+        creatorControls.style.display = (isOwner || isModerator) ? 'flex' : 'none';
+      }
+      if (ownerOpsBtn) {
+        ownerOpsBtn.style.display = isOwner ? 'flex' : 'none';
+      }
+      if (modDeskBtn) {
+        modDeskBtn.style.display = (isOwner || isModerator) ? 'flex' : 'none';
       }
 
       var publishMemBtn = document.getElementById('campusPagePublishMemoryBtn');
@@ -1268,7 +1282,7 @@ async function openCampusPage(campusName, initialTab) {
       // Community Share Moment action - Membership Authorized
       var isEligibleMember = Boolean(
         c.is_joined || 
-        (c.user_role && ['owner', 'admin', 'creator', 'member'].indexOf(c.user_role.toLowerCase()) !== -1) ||
+        (c.user_role && ['owner', 'admin', 'creator', 'moderator', 'member'].indexOf(c.user_role.toLowerCase()) !== -1) ||
         (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
       );
 
@@ -1473,9 +1487,38 @@ async function openCampusPage(campusName, initialTab) {
       if (panelMemories) panelMemories.style.display = 'none';
       if (restrictedEl) restrictedEl.style.display = 'block';
 
+      var restrictedCommId = (data && data.community_id) ? data.community_id : targetParam;
+      var restrictedCommName = (data && data.community_name) ? data.community_name : targetParam;
+      state.activeCommunityId = restrictedCommId;
+      state.activeCommunity = restrictedCommName;
+      if (titleEl) titleEl.textContent = restrictedCommName;
+      if (nameEl) {
+        nameEl.textContent = restrictedCommName;
+        nameEl.dataset.communityId = restrictedCommId;
+      }
+
+      var creatorControls = document.getElementById('campusPageCreatorControls');
+      if (creatorControls) creatorControls.style.display = 'none';
+      var contextCard = document.getElementById('campusPageConnectionCard');
+      if (contextCard) contextCard.style.display = 'none';
+      var shareBtn = document.getElementById('campusShareMomentBtn');
+      if (shareBtn) shareBtn.style.display = 'none';
+      var nonMemberNotice = document.getElementById('campusNonMemberNotice');
+      if (nonMemberNotice) nonMemberNotice.style.display = 'none';
+
+      var hasPending = Boolean(data && (data.has_pending_request || data.join_request_status === 'pending'));
       if (joinBtn) {
-        joinBtn.textContent = '[ + JOIN COMMUNITY ]';
-        joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
+        if (hasPending) {
+          joinBtn.textContent = '[ REQUEST PENDING ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-extrabold text-xs font-mono-tag uppercase cursor-not-allowed opacity-80';
+          joinBtn.disabled = true;
+          joinBtn.onclick = null;
+        } else {
+          joinBtn.textContent = '[ REQUEST TO JOIN ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
+          joinBtn.disabled = false;
+          joinBtn.onclick = function() { submitCommunityJoinRequest(restrictedCommId); };
+        }
       }
     } else {
       if (momentsEl) {
@@ -1497,28 +1540,103 @@ function openCommunityMomentCapture(commId, commName) {
 window.openCommunityMomentCapture = openCommunityMomentCapture;
 
 
- async function openCreatorEarningsModal() {
-  // Drop earnings removed — no-op
-}
-window.openCreatorEarningsModal = openCreatorEarningsModal;
-
-function closeCreatorEarningsModal() {
-  var modal = document.getElementById('creatorEarningsModal');
-  if (modal) modal.style.display = 'none';
-}
-window.closeCreatorEarningsModal = closeCreatorEarningsModal;
-
-async function openCreatorOperationsModal() {
+async function openCreatorOperationsModal(commId) {
   var modal = document.getElementById('creatorOperationsModal');
   if (modal) modal.style.display = 'flex';
 
+  var targetId = commId || state.activeCommunityId || '';
+  state.opsActiveCommunityId = targetId;
+
+  var scopedContainer = document.getElementById('opsScopedCommunityContainer');
+  var scopedCard = document.getElementById('opsScopedCommunityCard');
+  var titleEl = document.getElementById('opsModalTitle');
+  var subheadEl = document.getElementById('opsModalSubhead');
   var commsListEl = document.getElementById('opsCommunitiesList');
 
+  if (targetId) {
+    if (subheadEl) subheadEl.textContent = 'OWNER CONTROLS';
+    if (titleEl) titleEl.textContent = 'Community Controls';
+    if (scopedContainer) scopedContainer.style.display = 'block';
+    if (typeof switchOpsTab === 'function') switchOpsTab('overview');
+    if (scopedCard) {
+      scopedCard.innerHTML = '<div class="text-xs text-zinc-400 font-mono-tag p-2">Loading owner controls...</div>';
+    }
+
+    var scopedRes = await apiRequest('/api/community/manage?community_id=' + encodeURIComponent(targetId));
+    if (scopedRes && scopedRes.success && scopedRes.community) {
+      var comm = scopedRes.community;
+      if (titleEl) titleEl.textContent = comm.name || 'Community Controls';
+
+      // Prepopulate Settings inputs
+      var nameEl = document.getElementById('opsSettingName');
+      var descEl = document.getElementById('opsSettingDesc');
+      var iconEl = document.getElementById('opsSettingIcon');
+      var visEl = document.getElementById('opsSettingVisibility');
+      if (nameEl) nameEl.value = comm.name || '';
+      if (descEl) descEl.value = comm.description || '';
+      if (iconEl) iconEl.value = comm.icon || '📍';
+      if (visEl) visEl.value = (comm.visibility || 'public').toLowerCase();
+
+      // Populate Overview card with real DB metrics
+      if (scopedCard) {
+        var modsHtml = (comm.moderators && comm.moderators.length > 0)
+          ? comm.moderators.map(function(m) {
+              return '<span class="px-2 py-0.5 rounded bg-zinc-800 text-amber-400 text-[10px] font-mono-tag">@' + escapeHtml(m.handle || 'mod') + '</span>';
+            }).join(' ')
+          : '<span class="text-zinc-500 text-[10px] font-mono-tag">No active moderators</span>';
+
+        scopedCard.innerHTML =
+          '<div class="flex items-center justify-between pb-2 border-b border-white/[.04]">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="text-lg">' + (comm.icon || '📍') + '</span>' +
+              '<div>' +
+                '<span class="text-white font-bold text-xs block">' + escapeHtml(comm.name) + '</span>' +
+                '<span class="text-[9px] font-mono-tag text-zinc-500 uppercase">' + escapeHtml(comm.type || 'COMMUNITY') + ' · ' + escapeHtml(comm.visibility || 'PUBLIC') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<span class="text-[9px] font-mono-tag text-amber-400 font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">OWNER</span>' +
+          '</div>' +
+          '<div class="grid grid-cols-2 gap-2 pt-1 text-[11px] font-mono-tag">' +
+            '<div class="bg-zinc-950 p-2 rounded-xl border border-white/[.04]">' +
+              '<span class="text-zinc-500 block text-[9px] uppercase">Active Members</span>' +
+              '<span class="text-white font-bold text-xs">' + (comm.members_count || 0) + '</span>' +
+            '</div>' +
+            '<div class="bg-zinc-950 p-2 rounded-xl border border-white/[.04]">' +
+              '<span class="text-zinc-500 block text-[9px] uppercase">Pending Reports</span>' +
+              '<span class="' + (comm.pending_reports_count > 0 ? 'text-amber-400' : 'text-zinc-400') + ' font-bold text-xs">' + (comm.pending_reports_count || 0) + '</span>' +
+            '</div>' +
+            '<div class="bg-zinc-950 p-2 rounded-xl border border-white/[.04]">' +
+              '<span class="text-zinc-500 block text-[9px] uppercase">Join Requests</span>' +
+              '<span class="' + (comm.pending_join_requests_count > 0 ? 'text-amber-400' : 'text-zinc-400') + ' font-bold text-xs">' + (comm.pending_join_requests_count || 0) + '</span>' +
+            '</div>' +
+            '<div class="bg-zinc-950 p-2 rounded-xl border border-white/[.04]">' +
+              '<span class="text-zinc-500 block text-[9px] uppercase">Recent Moments (7d)</span>' +
+              '<span class="text-white font-bold text-xs">' + (comm.recent_moments_count || 0) + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="pt-1.5 space-y-1">' +
+            '<span class="text-[9px] font-mono-tag text-zinc-500 uppercase block font-bold">Appointed Moderators</span>' +
+            '<div class="flex flex-wrap gap-1">' + modsHtml + '</div>' +
+          '</div>';
+      }
+
+      // Load members, join requests, and invites lists
+      loadOpsMembers(targetId);
+      loadOpsJoinRequests(targetId);
+      loadOpsInvites(targetId);
+    } else {
+      if (scopedCard) {
+        scopedCard.innerHTML = '<div class="text-xs text-rose-400 font-mono-tag p-2">' + (scopedRes ? escapeHtml(scopedRes.error || 'Failed to load community details') : 'Failed to load community details') + '</div>';
+      }
+    }
+  } else {
+    if (scopedContainer) scopedContainer.style.display = 'none';
+  }
+
+  // Also load list of all managed communities
   var res = await apiRequest('/api/community/manage');
   if (res && res.success && res.operations) {
     var op = res.operations;
-
-    // Communities
     if (commsListEl) {
       if (Array.isArray(op.communities) && op.communities.length > 0) {
         commsListEl.innerHTML = op.communities.map(function(c) {
@@ -1540,12 +1658,490 @@ async function openCreatorOperationsModal() {
   }
 }
 window.openCreatorOperationsModal = openCreatorOperationsModal;
+window.openCommunityOwnerModal = openCreatorOperationsModal;
 
 function closeCreatorOperationsModal() {
   var modal = document.getElementById('creatorOperationsModal');
   if (modal) modal.style.display = 'none';
 }
 window.closeCreatorOperationsModal = closeCreatorOperationsModal;
+
+function switchOpsTab(tabName) {
+  var tabs = ['overview', 'settings', 'members', 'ownership'];
+  tabs.forEach(function(t) {
+    var btn = document.getElementById('opsTabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+    var panel = document.getElementById('opsTabPanel' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) {
+      if (t === tabName) {
+        btn.className = 'flex-1 py-1.5 rounded-xl font-bold uppercase text-center bg-amber-500 text-black shadow transition-all cursor-pointer';
+      } else {
+        btn.className = 'flex-1 py-1.5 rounded-xl font-bold uppercase text-center text-zinc-400 hover:text-white transition-all cursor-pointer';
+      }
+    }
+    if (panel) {
+      panel.style.display = (t === tabName) ? 'block' : 'none';
+    }
+  });
+}
+window.switchOpsTab = switchOpsTab;
+
+function switchOpsMemberSubtab(subtab) {
+  var listPanel = document.getElementById('opsMembersListContainer');
+  var reqsPanel = document.getElementById('opsJoinReqsListContainer');
+  var invitesPanel = document.getElementById('opsInvitesListContainer');
+  var listBtn = document.getElementById('opsMemberSubtabList');
+  var reqsBtn = document.getElementById('opsMemberSubtabReqs');
+  var invitesBtn = document.getElementById('opsMemberSubtabInvites');
+
+  if (listPanel) listPanel.style.display = (subtab === 'list') ? 'block' : 'none';
+  if (reqsPanel) reqsPanel.style.display = (subtab === 'reqs') ? 'block' : 'none';
+  if (invitesPanel) invitesPanel.style.display = (subtab === 'invites') ? 'block' : 'none';
+
+  if (listBtn) listBtn.className = (subtab === 'list') ? 'px-2 py-0.5 rounded bg-zinc-800 text-amber-400 font-bold cursor-pointer' : 'px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 font-bold hover:text-white cursor-pointer';
+  if (reqsBtn) reqsBtn.className = (subtab === 'reqs') ? 'px-2 py-0.5 rounded bg-zinc-800 text-amber-400 font-bold cursor-pointer' : 'px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 font-bold hover:text-white cursor-pointer';
+  if (invitesBtn) invitesBtn.className = (subtab === 'invites') ? 'px-2 py-0.5 rounded bg-zinc-800 text-amber-400 font-bold cursor-pointer' : 'px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 font-bold hover:text-white cursor-pointer';
+
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  if (subtab === 'invites' && commId) {
+    loadOpsInvites(commId);
+  }
+}
+window.switchOpsMemberSubtab = switchOpsMemberSubtab;
+
+async function submitCommunitySettings() {
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  if (!commId) {
+    showToast('No active community');
+    return;
+  }
+  var nameEl = document.getElementById('opsSettingName');
+  var descEl = document.getElementById('opsSettingDesc');
+  var iconEl = document.getElementById('opsSettingIcon');
+  var visEl = document.getElementById('opsSettingVisibility');
+  var btn = document.getElementById('opsSaveSettingsBtn');
+
+  var payload = {
+    community_id: commId,
+    name: nameEl ? nameEl.value.trim() : '',
+    description: descEl ? descEl.value.trim() : '',
+    icon: iconEl ? iconEl.value.trim() : '📍',
+    visibility: visEl ? visEl.value : 'public'
+  };
+
+  if (payload.name.length < 2) {
+    showToast('Name must be at least 2 characters');
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  var res = await apiRequest('/api/community/settings', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+  if (btn) { btn.disabled = false; btn.textContent = 'Save Settings'; }
+
+  if (res && res.success) {
+    showToast('Settings updated ✓');
+    if (typeof openCampusPage === 'function') {
+      await openCampusPage(commId);
+    }
+  } else {
+    showToast(res && res.error ? res.error : 'Failed to update settings');
+  }
+}
+window.submitCommunitySettings = submitCommunitySettings;
+
+async function loadOpsMembers(commId) {
+  var container = document.getElementById('opsMembersListContainer');
+  if (!container) return;
+  container.innerHTML = '<div class="p-3 text-center text-zinc-500 text-[10px]">Loading members...</div>';
+  var res = await apiRequest('/api/community/members?community_id=' + encodeURIComponent(commId));
+  if (res && res.success && Array.isArray(res.members)) {
+    if (res.members.length === 0) {
+      container.innerHTML = '<div class="p-3 text-center text-zinc-500 text-[10px]">No members found.</div>';
+      return;
+    }
+    var currentUserId = state.currentUser ? state.currentUser.id : '';
+    container.innerHTML = res.members.map(function(m) {
+      var isSelf = (m.user_id === currentUserId);
+      var isOwner = (m.role === 'owner' || m.role === 'creator');
+      var isMod = (m.role === 'moderator');
+      var roleBadge = isOwner ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[8px] font-bold">OWNER</span>'
+        : (isMod ? '<span class="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 text-[8px] font-bold">MOD</span>'
+        : '<span class="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 text-[8px]">MEMBER</span>');
+
+      var actionsHtml = '';
+      if (!isSelf && !isOwner) {
+        var modToggleBtn = isMod
+          ? '<button onclick="toggleCommunityMemberRole(\'' + jsAttr(m.user_id) + '\', \'member\')" class="px-1.5 py-1 rounded bg-zinc-800 text-zinc-300 hover:text-white text-[9px] cursor-pointer">Demote</button>'
+          : '<button onclick="toggleCommunityMemberRole(\'' + jsAttr(m.user_id) + '\', \'moderator\')" class="px-1.5 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-[9px] cursor-pointer">Promote Mod</button>';
+        var removeBtn = '<button onclick="removeCommunityMember(\'' + jsAttr(m.user_id) + '\', \'' + jsAttr(m.handle || 'member') + '\')" class="px-1.5 py-1 rounded bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-[9px] cursor-pointer">Remove</button>';
+        actionsHtml = '<div class="flex items-center gap-1">' + modToggleBtn + removeBtn + '</div>';
+      }
+
+      return '<div class="p-2 rounded-xl bg-zinc-900 border border-white/[.04] flex items-center justify-between text-xs">' +
+        '<div class="flex items-center gap-2 min-w-0">' +
+          '<div class="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-300 font-bold shrink-0">' + escapeHtml(m.avatar_letter || (m.handle ? m.handle[0].toUpperCase() : 'U')) + '</div>' +
+          '<div class="min-w-0 truncate">' +
+            '<div class="flex items-center gap-1.5">' +
+              '<span class="text-white font-bold text-[11px] truncate">@' + escapeHtml(m.handle || 'user') + '</span>' +
+              roleBadge +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        actionsHtml +
+      '</div>';
+    }).join('');
+  } else {
+    container.innerHTML = '<div class="p-3 text-center text-rose-400 text-[10px]">' + (res && res.error ? escapeHtml(res.error) : 'Failed to load members') + '</div>';
+  }
+}
+window.loadOpsMembers = loadOpsMembers;
+
+async function loadOpsJoinRequests(commId) {
+  var container = document.getElementById('opsJoinReqsListContainer');
+  var badge = document.getElementById('opsJoinReqsBadge');
+  if (!container) return;
+  var res = await apiRequest('/api/community/join-requests?community_id=' + encodeURIComponent(commId));
+  if (res && res.success && Array.isArray(res.requests)) {
+    if (badge) badge.textContent = res.requests.length;
+    if (res.requests.length === 0) {
+      container.innerHTML = '<div class="p-3 text-center text-zinc-500 text-[10px]">No pending join requests.</div>';
+      return;
+    }
+    container.innerHTML = res.requests.map(function(r) {
+      return '<div class="p-2 rounded-xl bg-zinc-900 border border-white/[.04] flex items-center justify-between text-xs">' +
+        '<div class="flex items-center gap-2 min-w-0">' +
+          '<div class="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] text-zinc-300 font-bold shrink-0">' + escapeHtml(r.avatar_letter || (r.handle ? r.handle[0].toUpperCase() : 'U')) + '</div>' +
+          '<div class="min-w-0 truncate">' +
+            '<span class="text-white font-bold text-[11px] truncate block">@' + escapeHtml(r.handle || 'user') + '</span>' +
+            '<span class="text-[8px] text-zinc-500 font-mono-tag">Requested join</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="flex items-center gap-1">' +
+          '<button onclick="reviewCommunityJoinRequest(\'' + jsAttr(r.id) + '\', \'approve\')" class="px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-[9px] font-bold cursor-pointer">Approve</button>' +
+          '<button onclick="reviewCommunityJoinRequest(\'' + jsAttr(r.id) + '\', \'reject\')" class="px-2 py-1 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 hover:bg-rose-500/20 text-[9px] font-bold cursor-pointer">Reject</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } else {
+    if (badge) badge.textContent = '0';
+    container.innerHTML = '<div class="p-3 text-center text-zinc-500 text-[10px]">No pending requests.</div>';
+  }
+}
+window.loadOpsJoinRequests = loadOpsJoinRequests;
+
+async function toggleCommunityMemberRole(userId, newRole) {
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  if (!commId || !userId) return;
+  var res = await apiRequest('/api/community/members/role', {
+    method: 'POST',
+    body: JSON.stringify({ community_id: commId, target_user_id: userId, role: newRole })
+  });
+  if (res && res.success) {
+    showToast('Role updated to ' + newRole + ' ✓');
+    await loadOpsMembers(commId);
+  } else {
+    showToast(res && res.error ? res.error : 'Failed to update role');
+  }
+}
+window.toggleCommunityMemberRole = toggleCommunityMemberRole;
+
+async function removeCommunityMember(userId, handle) {
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  if (!commId || !userId) return;
+  if (!confirm('Are you sure you want to remove @' + handle + ' from this community?')) return;
+  var res = await apiRequest('/api/community/members/remove', {
+    method: 'POST',
+    body: JSON.stringify({ community_id: commId, target_user_id: userId, reason: 'Removed by moderator/owner' })
+  });
+  if (res && res.success) {
+    showToast('Member removed ✓');
+    await loadOpsMembers(commId);
+  } else {
+    showToast(res && res.error ? res.error : 'Failed to remove member');
+  }
+}
+window.removeCommunityMember = removeCommunityMember;
+
+async function reviewCommunityJoinRequest(reqId, action) {
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  if (!commId || !reqId) return;
+  var res = await apiRequest('/api/community/join-requests/review', {
+    method: 'POST',
+    body: JSON.stringify({ community_id: commId, request_id: reqId, action: action })
+  });
+  if (res && res.success) {
+    showToast('Request ' + action + 'd ✓');
+    await loadOpsJoinRequests(commId);
+    await loadOpsMembers(commId);
+  } else {
+    showToast(res && res.error ? res.error : 'Failed to review request');
+  }
+}
+window.reviewCommunityJoinRequest = reviewCommunityJoinRequest;
+
+async function loadOpsInvites(commId) {
+  var container = document.getElementById('opsInvitesItemsContainer');
+  var badge = document.getElementById('opsInvitesBadge');
+  if (!container) return;
+  var res = await apiRequest('/api/community/invites?community_id=' + encodeURIComponent(commId));
+  if (res && res.success && Array.isArray(res.invites)) {
+    var activeCount = res.invites.filter(function(i) { return i.status === 'active'; }).length;
+    if (badge) badge.textContent = activeCount;
+    if (res.invites.length === 0) {
+      container.innerHTML = '<div class="p-3 text-center text-zinc-500 text-[10px]">No invitations created yet.</div>';
+      return;
+    }
+    container.innerHTML = res.invites.map(function(inv) {
+      var statusColor = (inv.status === 'active') ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                        (inv.status === 'revoked') ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' :
+                        (inv.status === 'exhausted') ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
+                        'bg-zinc-800 text-zinc-500 border-zinc-700';
+      var statusBadge = '<span class="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase border ' + statusColor + '">' + escapeHtml(inv.status) + '</span>';
+      var copyUrl = inv.full_invite_url || (window.location.origin + '/invite/' + inv.invite_code);
+      var actionsHtml = '';
+      if (inv.status === 'active') {
+        actionsHtml = '<div class="flex items-center gap-1.5">' +
+          '<button onclick="copyInviteUrlText(\'' + jsAttr(copyUrl) + '\')" class="px-2 py-1 rounded bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-[9px] font-bold cursor-pointer">Copy Link</button>' +
+          '<button onclick="submitRevokeCommunityInvite(\'' + jsAttr(inv.id) + '\', \'' + jsAttr(inv.invite_code) + '\')" class="px-2 py-1 rounded bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-[9px] font-bold cursor-pointer">Revoke</button>' +
+        '</div>';
+      } else {
+        actionsHtml = '<span class="text-[9px] text-zinc-500 font-mono-tag">Inactive</span>';
+      }
+
+      var usesText = (inv.accepted_count || 0) + ' / ' + inv.max_uses + ' uses';
+      var expiryText = inv.expires_at ? ('Expires ' + formatTimeAgoClean(inv.expires_at)) : 'No expiry';
+
+      return '<div class="p-2.5 rounded-xl bg-zinc-900 border border-white/[.04] flex items-center justify-between text-xs">' +
+        '<div class="min-w-0 space-y-0.5">' +
+          '<div class="flex items-center gap-2">' +
+            '<span class="font-mono text-white font-bold text-[11px] tracking-wider">' + escapeHtml(inv.invite_code) + '</span>' +
+            statusBadge +
+          '</div>' +
+          '<div class="flex items-center gap-2 text-[8px] text-zinc-400 font-mono-tag">' +
+            '<span>' + escapeHtml(usesText) + '</span>' +
+            '<span>•</span>' +
+            '<span>' + escapeHtml(expiryText) + '</span>' +
+          '</div>' +
+        '</div>' +
+        actionsHtml +
+      '</div>';
+    }).join('');
+  } else {
+    if (badge) badge.textContent = '0';
+    container.innerHTML = '<div class="p-3 text-center text-rose-400 text-[10px]">' + (res && res.error ? escapeHtml(res.error) : 'Failed to load invitations') + '</div>';
+  }
+}
+window.loadOpsInvites = loadOpsInvites;
+
+function copyInviteUrlText(url) {
+  if (!url) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(function() {
+      showToast('Invite link copied to clipboard ✓');
+    }).catch(function() {
+      showToast('Copied: ' + url);
+    });
+  } else {
+    showToast('Copied: ' + url);
+  }
+}
+window.copyInviteUrlText = copyInviteUrlText;
+
+function copyOpsGeneratedInviteUrl() {
+  var urlInput = document.getElementById('opsGeneratedInviteUrl');
+  if (urlInput && urlInput.value) {
+    copyInviteUrlText(urlInput.value);
+  }
+}
+window.copyOpsGeneratedInviteUrl = copyOpsGeneratedInviteUrl;
+
+async function submitCreateCommunityInvite() {
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  if (!commId) {
+    showToast('Community not found');
+    return;
+  }
+  var maxUsesEl = document.getElementById('opsInviteMaxUses');
+  var expiryEl = document.getElementById('opsInviteExpiry');
+  var userEl = document.getElementById('opsInviteUsername');
+
+  var maxUses = maxUsesEl ? parseInt(maxUsesEl.value, 10) : 1;
+  var expiresInDays = expiryEl ? parseInt(expiryEl.value, 10) : 7;
+  var targetUsername = userEl ? userEl.value.trim().replace(/^@/, '') : '';
+
+  var payload = {
+    community_id: commId,
+    max_uses: maxUses,
+    expires_in_days: expiresInDays
+  };
+  if (targetUsername) {
+    payload.target_handle = targetUsername;
+  }
+
+  var res = await apiRequest('/api/invite/create', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  if (res && res.success && res.invite_code) {
+    showToast('Invite created ✓');
+    var box = document.getElementById('opsGeneratedInviteBox');
+    var codeEl = document.getElementById('opsGeneratedInviteCode');
+    var urlEl = document.getElementById('opsGeneratedInviteUrl');
+    if (box) box.style.display = 'block';
+    if (codeEl) codeEl.textContent = res.invite_code;
+    var fullUrl = res.full_invite_url || (window.location.origin + '/invite/' + res.invite_code);
+    if (urlEl) urlEl.value = fullUrl;
+    if (userEl) userEl.value = '';
+    await loadOpsInvites(commId);
+  } else {
+    var errMsg = (res && res.error) ? res.error : 'Failed to create invite';
+    showToast(errMsg);
+  }
+}
+window.submitCreateCommunityInvite = submitCreateCommunityInvite;
+
+async function submitRevokeCommunityInvite(inviteId, inviteCode) {
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  if (!commId || (!inviteId && !inviteCode)) return;
+  if (!confirm('Revoke this invite? It will immediately stop working.')) return;
+
+  var res = await apiRequest('/api/community/invites/revoke', {
+    method: 'POST',
+    body: JSON.stringify({ community_id: commId, invite_code: inviteCode || inviteId })
+  });
+
+  if (res && res.success) {
+    showToast('Invite revoked ✓');
+    await loadOpsInvites(commId);
+  } else {
+    showToast(res && res.error ? res.error : 'Failed to revoke invite');
+  }
+}
+window.submitRevokeCommunityInvite = submitRevokeCommunityInvite;
+
+async function checkIncomingInviteUrl() {
+  var inviteCode = '';
+  try {
+    var path = window.location.pathname || '';
+    var match = path.match(/^\/(?:invite|i)\/([^/?#]+)/);
+    if (match && match[1]) {
+      inviteCode = decodeURIComponent(match[1]).trim();
+    }
+    if (!inviteCode && window.location.search) {
+      var params = new URLSearchParams(window.location.search);
+      inviteCode = (params.get('invite') || params.get('code') || '').trim();
+    }
+  } catch (e) {}
+
+  if (!inviteCode) {
+    try {
+      inviteCode = (sessionStorage && sessionStorage.getItem('kandid_pending_invite_code')) || '';
+    } catch (e) {}
+  }
+
+  if (!inviteCode) return;
+
+  try {
+    if (sessionStorage) sessionStorage.setItem('kandid_pending_invite_code', inviteCode);
+  } catch (e) {}
+  state.activeCommunityInviteCode = inviteCode;
+
+  try {
+    if (window.history && window.history.replaceState && (window.location.pathname.startsWith('/invite/') || window.location.pathname.startsWith('/i/') || window.location.search.includes('invite='))) {
+      window.history.replaceState({}, document.title, window.location.pathname.replace(/^\/(?:invite|i)\/[^/?#]+/, '/') || '/');
+    }
+  } catch (e) {}
+
+  try {
+    var preview = await apiRequest('/api/invite/preview?code=' + encodeURIComponent(inviteCode));
+    if (preview && preview.success && preview.is_valid && preview.community) {
+      var comm = preview.community;
+      if (!state.currentUser) {
+        showToast('Invite link valid! Please sign in or register to join ' + (comm.name || 'this community') + '.');
+        var obFlow = document.getElementById('onboardingFlow');
+        if (obFlow) {
+          obFlow.style.display = 'flex';
+          if (typeof switchScreen === 'function') switchScreen('entry');
+        }
+      } else {
+        showToast('Viewing invite for ' + (comm.name || 'community') + '...');
+        if (typeof openCampusPage === 'function') {
+          await openCampusPage(comm.id);
+        }
+      }
+    } else if (preview && preview.error) {
+      showToast('Invitation notice: ' + preview.error);
+    }
+  } catch (err) {
+    console.error('Invite preview check error', err);
+  }
+}
+window.checkIncomingInviteUrl = checkIncomingInviteUrl;
+
+async function submitTransferOwnership() {
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  var targetEl = document.getElementById('opsTransferTarget');
+  var confirmEl = document.getElementById('opsTransferConfirm');
+  var target = targetEl ? targetEl.value.trim() : '';
+  var confirmStr = confirmEl ? confirmEl.value.trim().toUpperCase() : '';
+
+  if (!commId || !target) {
+    showToast('Please enter target user ID or handle');
+    return;
+  }
+  if (confirmStr !== 'TRANSFER') {
+    showToast('Type "TRANSFER" to confirm');
+    return;
+  }
+
+  var res = await apiRequest('/api/community/transfer-ownership', {
+    method: 'POST',
+    body: JSON.stringify({ community_id: commId, new_owner_user_id: target, confirmation: confirmStr })
+  });
+  if (res && res.success) {
+    showToast('Ownership transferred ✓');
+    closeCreatorOperationsModal();
+    if (typeof openCampusPage === 'function') {
+      await openCampusPage(commId);
+    }
+  } else {
+    showToast(res && res.error ? res.error : 'Failed to transfer ownership');
+  }
+}
+window.submitTransferOwnership = submitTransferOwnership;
+
+async function submitCloseCommunity() {
+  var commId = state.opsActiveCommunityId || state.activeCommunityId;
+  var confirmEl = document.getElementById('opsCloseConfirm');
+  var confirmStr = confirmEl ? confirmEl.value.trim().toUpperCase() : '';
+
+  if (!commId) {
+    showToast('No active community');
+    return;
+  }
+  if (confirmStr !== 'CLOSE') {
+    showToast('Type "CLOSE" to confirm');
+    return;
+  }
+
+  var res = await apiRequest('/api/community/close', {
+    method: 'POST',
+    body: JSON.stringify({ community_id: commId, confirmation: confirmStr, reason: 'Closed by owner' })
+  });
+  if (res && res.success) {
+    showToast('Community closed and archived ✓');
+    closeCreatorOperationsModal();
+    if (typeof openCampusPage === 'function') {
+      await openCampusPage(commId);
+    }
+  } else {
+    showToast(res && res.error ? res.error : 'Failed to close community');
+  }
+}
+window.submitCloseCommunity = submitCloseCommunity;
 
 // Phase 9: Safety & Moderation Client Controllers
 var currentReportTarget = { communityId: '', targetType: 'community', targetId: '', reason: 'Spam' };
@@ -1985,6 +2581,10 @@ async function openPublishCollectiveMemoryModal(commId) {
 
   if (titleInput) titleInput.value = '';
   if (storyInput) storyInput.value = '';
+  var themeInput = document.getElementById('memPublishTheme');
+  var yearInput = document.getElementById('memPublishYear');
+  if (themeInput) themeInput.value = '';
+  if (yearInput) yearInput.value = '';
   if (countEl) countEl.textContent = '0 selected';
   if (submitBtn) {
     submitBtn.disabled = false;
@@ -2042,10 +2642,14 @@ async function submitPublishCollectiveMemory() {
   var commId = state.publishingCollectiveMemoryCommId || state.activeCommunityId;
   var titleInput = document.getElementById('memPublishTitle');
   var storyInput = document.getElementById('memPublishStory');
+  var themeInput = document.getElementById('memPublishTheme');
+  var yearInput = document.getElementById('memPublishYear');
   var submitBtn = document.getElementById('memPublishSubmitBtn');
 
   var title = titleInput ? titleInput.value.trim() : '';
   var story = storyInput ? storyInput.value.trim() : '';
+  var theme = themeInput ? themeInput.value.trim() : '';
+  var year = yearInput ? yearInput.value.trim() : '';
 
   if (!commId) {
     showToast('Error: No active community selected');
@@ -2079,6 +2683,8 @@ async function submitPublishCollectiveMemory() {
       community_id: commId,
       title: title,
       story: story,
+      theme: theme,
+      year: year,
       moment_ids: momentIds
     })
   });
@@ -2101,16 +2707,22 @@ async function submitPublishCollectiveMemory() {
 }
 window.submitPublishCollectiveMemory = submitPublishCollectiveMemory;
 
-async function toggleJoinCommunity() {
+async function toggleJoinCommunity(inviteCode) {
   var btn = document.getElementById('campusPageJoinBtn');
   var name = state.activeCommunity || 'North City University';
   var commId = state.activeCommunityId || '';
   if (!btn) return;
   
+  var payload = { name: name, community_id: commId, id: commId };
+  var code = inviteCode || state.activeCommunityInviteCode;
+  if (code) {
+    payload.invite_code = code;
+  }
+
   btn.style.opacity = '0.5';
   var res = await apiRequest('/api/community/join', {
     method: 'POST',
-    body: JSON.stringify({ name: name, community_id: commId, id: commId })
+    body: JSON.stringify(payload)
   });
   btn.style.opacity = '1';
 
@@ -2159,6 +2771,59 @@ async function toggleJoinCommunity() {
   }
 }
 window.toggleJoinCommunity = toggleJoinCommunity;
+
+async function submitCommunityJoinRequest(communityId, inviteCode) {
+  var targetId = communityId || state.activeCommunityId;
+  if (!targetId) {
+    showToast('Community not found');
+    return;
+  }
+  var codeToUse = inviteCode || state.activeCommunityInviteCode || (sessionStorage ? sessionStorage.getItem('kandid_pending_invite_code') : '') || '';
+  var btn = document.getElementById('campusPageJoinBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Submitting request...';
+    btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-extrabold text-xs font-mono-tag uppercase cursor-not-allowed opacity-80';
+  }
+
+  var payload = { community_id: targetId };
+  if (codeToUse) {
+    payload.invite_code = codeToUse;
+  }
+
+  var res = await apiRequest('/api/community/join-request', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+
+  if (res && (res.success || res.status === 'pending')) {
+    if (typeof playTactileFeedback === 'function') playTactileFeedback('xp');
+    showToast('Join request submitted. Awaiting moderator review.');
+    try {
+      if (sessionStorage) sessionStorage.removeItem('kandid_pending_invite_code');
+    } catch (e) {}
+    state.activeCommunityInviteCode = '';
+    if (btn) {
+      btn.textContent = '[ REQUEST PENDING ]';
+      btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-extrabold text-xs font-mono-tag uppercase cursor-not-allowed opacity-80';
+      btn.disabled = true;
+      btn.onclick = null;
+    }
+  } else if (res && res.code === 'ALREADY_MEMBER') {
+    showToast('You are already a member of this community.');
+    openCampusPage(targetId);
+  } else {
+    var errMsg = (res && res.error) ? res.error : 'Failed to submit join request';
+    showToast(errMsg);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '[ REQUEST TO JOIN ]';
+      btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
+      btn.onclick = function() { submitCommunityJoinRequest(targetId, codeToUse); };
+    }
+  }
+}
+window.submitCommunityJoinRequest = submitCommunityJoinRequest;
 
 state.newCommunityType = 'Interest';
 
@@ -2323,26 +2988,26 @@ async function loadFeedMoments(circle) {
       }
       // ── STATE A: SUCCESS WITH POSTS ──────────────────────────────────
       var newDataStr = JSON.stringify(data);
-      if (newDataStr !== cachedDataStr) {
-        localStorage.setItem(cacheKey, newDataStr);
-        if (data.feed.length === 0) {
-          // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
-          container.innerHTML = `
-            <div class="flex flex-col items-center justify-center py-20 space-y-5 text-center px-6 mt-8">
-              <div class="relative">
-                <div class="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-inner mb-2 animate-[pulse_3s_ease-in-out_infinite]">📸</div>
-                <div class="absolute -top-2 -right-2 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-[10px] shadow-lg animate-bounce text-black font-bold">✨</div>
-              </div>
-              <div class="space-y-2">
-                <h3 class="text-lg font-black text-white tracking-tight">Your Canvas is Empty</h3>
-                <p class="text-xs text-zinc-400 max-w-[240px] mx-auto leading-relaxed">No moments in this circle yet. Be the first to drop an authentic dual-camera perspective.</p>
-              </div>
-              <button class="mt-4 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] rounded-[14px] font-mono-tag tracking-widest uppercase cursor-pointer shadow-[0_4px_20px_rgba(245,158,11,0.3)] active:scale-95 transition-all w-full max-w-[240px]" onclick="openCameraStudio()">
-                CAPTURE MOMENT
-              </button>
+      localStorage.setItem(cacheKey, newDataStr);
+      if (data.feed.length === 0) {
+        // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
+        container.innerHTML = `
+          <div class="flex flex-col items-center justify-center py-20 space-y-5 text-center px-6 mt-8">
+            <div class="relative">
+              <div class="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-4xl shadow-inner mb-2 animate-[pulse_3s_ease-in-out_infinite]">📸</div>
+              <div class="absolute -top-2 -right-2 w-6 h-6 bg-amber-500 rounded-full flex items-center justify-center text-[10px] shadow-lg animate-bounce text-black font-bold">✨</div>
             </div>
-          `;
-        } else {
+            <div class="space-y-2">
+              <h3 class="text-lg font-black text-white tracking-tight">Your Canvas is Empty</h3>
+              <p class="text-xs text-zinc-400 max-w-[240px] mx-auto leading-relaxed">No moments in this circle yet. Be the first to drop an authentic dual-camera perspective.</p>
+            </div>
+            <button class="mt-4 px-6 py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[11px] rounded-[14px] font-mono-tag tracking-widest uppercase cursor-pointer shadow-[0_4px_20px_rgba(245,158,11,0.3)] active:scale-95 transition-all w-full max-w-[240px]" onclick="openCameraStudio()">
+              CAPTURE MOMENT
+            </button>
+          </div>
+        `;
+      } else {
+        if (!hasCache || newDataStr !== cachedDataStr) {
           renderFeedCards(data.feed, container);
         }
       }
@@ -2352,31 +3017,31 @@ async function loadFeedMoments(circle) {
         window.KandidObservability.captureEvent('feed_load_failed', { circle: circle, error_category: errCat });
       }
       if (hasCache && data && !data.success) {
-        // Silently fail if we have cache, just show a subtle toast
-      } else if (!hasCache) {
-      if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
-        // ── STATE C: AUTH FAILURE ─────────────────────────────────────
-        container.innerHTML =
-          '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-            '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">🔒</div>' +
-            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">SESSION EXPIRED</h3>' +
-            '<p class="text-[11px] text-zinc-400">Please log in again to see your feed.</p>' +
-            '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="switchScreenView(\'login\')">LOG IN</button>' +
-          '</div>';
+        // Silently fail if we have cache, keep cached cards
       } else {
-        // ── STATE D: SERVER / NETWORK / TIMEOUT ERROR ─────────────────
-        var errLabel = (data && data._timeout) ? "Couldn't reach server." : "Couldn't load Moments.";
-        container.innerHTML =
-          '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
-            '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto text-lg">⚠</div>' +
-            '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">' + errLabel + '</h3>' +
-            '<p class="text-[11px] text-zinc-400">Check your connection and try again.</p>' +
-            '<button class="mt-2 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer active:scale-95 transition border border-zinc-700" onclick="loadFeedMoments(\'' + circle + '\')">TRY AGAIN</button>' +
-          '</div>';
+        if (data && (data._status === 401 || data._status === 403 || (data.error && (data.error + '').toLowerCase().includes('auth')))) {
+          // ── STATE C: AUTH FAILURE ─────────────────────────────────────
+          container.innerHTML =
+            '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+              '<div class="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-xl">🔒</div>' +
+              '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">SESSION EXPIRED</h3>' +
+              '<p class="text-[11px] text-zinc-400">Please log in again to see your feed.</p>' +
+              '<button class="mt-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer shadow-lg active:scale-95 transition" onclick="switchScreenView(\'login\')">LOG IN</button>' +
+            '</div>';
+        } else {
+          // ── STATE D: SERVER / NETWORK / TIMEOUT ERROR ─────────────────
+          var errLabel = (data && data._timeout) ? "Couldn't reach server." : "Couldn't load Moments.";
+          container.innerHTML =
+            '<div class="flex flex-col items-center justify-center py-16 space-y-3 text-center px-6">' +
+              '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 mx-auto text-lg">⚠</div>' +
+              '<h3 class="text-xs font-black text-white uppercase font-mono-tag tracking-wider">' + errLabel + '</h3>' +
+              '<p class="text-[11px] text-zinc-400">Check your connection and try again.</p>' +
+              '<button class="mt-2 px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-xs rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer active:scale-95 transition border border-zinc-700" onclick="loadFeedMoments(\'' + circle + '\')">TRY AGAIN</button>' +
+            '</div>';
+        }
       }
     }
   }
-}
 }
 
 function formatPostTime(createdStr) {
@@ -2595,8 +3260,8 @@ function renderFeedCards(moments, container) {
             '</button>' +
             iWasThereHtml +
             '<div class="relative flex items-center gap-1 reaction-control-container">' +
-              '<button class="mood-react-btn react-trigger-btn" title="React to Post">' +
-                '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="mood-glyph">' +
+              '<button class="mood-react-btn react-trigger-btn" title="React to Post" aria-label="React to Post">' +
+                '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="mood-glyph" aria-hidden="true" focusable="false">' +
                   '<circle cx="12" cy="12" r="9.5" fill="rgba(245, 158, 11, 0.08)" stroke="currentColor" stroke-width="1.6"></circle>' +
                   '<circle cx="9" cy="10" r="1.2" fill="currentColor"></circle>' +
                   '<circle cx="15" cy="10" r="1.2" fill="currentColor"></circle>' +
@@ -5445,13 +6110,26 @@ function openProfileActionsMenu() {
   if (removeBtn) {
     removeBtn.style.display = (state.activePeerConnectionStatus === 'connected') ? 'flex' : 'none';
   }
-  if (overlay) overlay.style.display = 'flex';
+  var targetUid = state.activePeerUserId || state.activeChatUser;
+  if (targetUid) {
+    var mutedList = JSON.parse(localStorage.getItem('kandid_muted_convs') || '[]');
+    var isMuted = mutedList.includes(targetUid);
+    var profileMuteText = document.getElementById('profileMuteBtnText');
+    if (profileMuteText) profileMuteText.textContent = isMuted ? 'Unmute Notifications' : 'Mute Notifications';
+  }
+  if (overlay) {
+    overlay.classList.remove('hidden');
+    overlay.style.display = 'flex';
+  }
 }
 window.openProfileActionsMenu = openProfileActionsMenu;
 
 function closeProfileActionsMenu() {
   var overlay = document.getElementById('profileActionsOverlay');
-  if (overlay) overlay.style.display = 'none';
+  if (overlay) {
+    overlay.classList.add('hidden');
+    overlay.style.display = 'none';
+  }
 }
 window.closeProfileActionsMenu = closeProfileActionsMenu;
 
@@ -5470,30 +6148,15 @@ async function removePeerConnection() {
 }
 window.removePeerConnection = removePeerConnection;
 
-async function blockPeerUser() {
+function blockPeerUser() {
   closeProfileActionsMenu();
-  if (!state.activePeerUserId) return;
-  var conf = confirm('Block this user? You will no longer see their moments or connection.');
-  if (!conf) return;
-
-  var res = await apiRequest('/api/user/block', {
-    method: 'POST',
-    body: { target_id: state.activePeerUserId, user_id: state.activePeerUserId }
-  });
-  showToast('User blocked.');
-  handlePeerProfileBack();
+  openChatPrivacyModal('block');
 }
 window.blockPeerUser = blockPeerUser;
 
-async function reportPeerUser() {
+function reportPeerUser() {
   closeProfileActionsMenu();
-  if (!state.activePeerUserId) return;
-  var reason = prompt('Please describe the problem with this account:') || 'Inappropriate content';
-  await apiRequest('/api/user/report', {
-    method: 'POST',
-    body: { target_id: state.activePeerUserId, reason: reason }
-  });
-  showToast('Report submitted. Thank you for keeping Kandid safe.');
+  openChatPrivacyModal('report');
 }
 window.reportPeerUser = reportPeerUser;
 
@@ -8259,6 +8922,9 @@ window.submitFinalOnboarding = async function() {
             await loadYouScreen();
             await loadNotifications();
             await loadChatConversations();
+            if (typeof checkIncomingInviteUrl === 'function') {
+                checkIncomingInviteUrl();
+            }
         } else {
             showToast('Activation error: ' + (res ? (res.error || res.message) : 'Please try again'));
             if (btn) {
@@ -8387,6 +9053,9 @@ window.submitUserLogin = async function() {
             await loadYouScreen();
             await loadNotifications();
             await loadChatConversations();
+            if (typeof checkIncomingInviteUrl === 'function') {
+                checkIncomingInviteUrl();
+            }
         } else {
             var errMsg = (res && res.error) ? res.error : 'Invalid username or password.';
             if (window.KandidObservability) {
@@ -8600,6 +9269,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     await checkOnboarding();
     checkAndShowFounderModal();
+    if (typeof checkIncomingInviteUrl === 'function') {
+        checkIncomingInviteUrl();
+    }
     if (state.activeScreen === 'feed' && typeof handleNewUserFeedEntry === 'function') {
         handleNewUserFeedEntry();
     }
@@ -8944,7 +9616,7 @@ function renderMemoriesFeed() {
     container.innerHTML = 
       '<div class="bg-zinc-950/60 border border-zinc-800/60 rounded-2xl p-10 text-center space-y-4 my-6">' +
         '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 mx-auto text-sm">' +
-          '<svg class="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>' +
+          '<svg class="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>' +
         '</div>' +
         '<div class="space-y-1">' +
           '<h3 class="text-xs font-bold text-white tracking-[0.15em] uppercase font-mono-tag">NOTHING HERE YET</h3>' +
@@ -10398,7 +11070,18 @@ window.viewChatPartnerProfile = viewChatPartnerProfile;
 function openChatActionMenu() {
   var modal = document.getElementById('chatActionSheetModal');
   if (!modal) return;
-  var partner = state.activeChatPartner || { name: 'Student', handle: '@student', avatarUrl: '' };
+  var targetUid = state.activeChatUser || state.activePeerUserId;
+  var partner = state.activeChatPartner;
+  if (!partner && state.activePeerUser) {
+    partner = {
+      id: state.activePeerUser.id,
+      name: state.activePeerUser.name || 'User',
+      handle: state.activePeerUser.handle ? (state.activePeerUser.handle.startsWith('@') ? state.activePeerUser.handle : '@' + state.activePeerUser.handle) : '@user',
+      avatarUrl: state.activePeerUser.avatar_url || ''
+    };
+  }
+  partner = partner || { name: 'Student', handle: '@student', avatarUrl: '' };
+
   var av = document.getElementById('chatActionAvatar');
   var nm = document.getElementById('chatActionName');
   var hd = document.getElementById('chatActionHandle');
@@ -10416,14 +11099,14 @@ function openChatActionMenu() {
   if (hd) hd.textContent = partner.handle;
 
   var mutedList = JSON.parse(localStorage.getItem('kandid_muted_convs') || '[]');
-  var isMuted = state.activeChatUser && mutedList.includes(state.activeChatUser);
+  var isMuted = targetUid && mutedList.includes(targetUid);
   var muteBtnText = document.getElementById('chatMuteBtnText');
   if (muteBtnText) {
     muteBtnText.textContent = isMuted ? 'Unmute Notifications' : 'Mute Notifications';
   }
 
   modal.classList.remove('hidden');
-  modal.classList.add('flex');
+  modal.style.display = 'flex';
 }
 window.openChatActionMenu = openChatActionMenu;
 
@@ -10431,23 +11114,32 @@ function closeChatActionMenu() {
   var modal = document.getElementById('chatActionSheetModal');
   if (modal) {
     modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    modal.style.display = 'none';
   }
 }
 window.closeChatActionMenu = closeChatActionMenu;
 
-function toggleChatMute() {
-  if (!state.activeChatUser) return;
+function toggleChatMute(targetId) {
+  var uid = targetId || state.activeChatUser || state.activePeerUserId || (state.activeChatPartner && state.activeChatPartner.id) || (state.activePeerUser && state.activePeerUser.id);
+  if (!uid) {
+    showToast('No user selected');
+    return;
+  }
   var mutedList = JSON.parse(localStorage.getItem('kandid_muted_convs') || '[]');
-  var idx = mutedList.indexOf(state.activeChatUser);
+  var idx = mutedList.indexOf(uid);
   if (idx > -1) {
     mutedList.splice(idx, 1);
-    showToast('Notifications unmuted for this chat');
+    showToast('Notifications unmuted');
   } else {
-    mutedList.push(state.activeChatUser);
-    showToast('Notifications muted for this chat 🔕');
+    mutedList.push(uid);
+    showToast('Notifications muted 🔕');
   }
   localStorage.setItem('kandid_muted_convs', JSON.stringify(mutedList));
+  var isMuted = mutedList.includes(uid);
+  var chatMuteText = document.getElementById('chatMuteBtnText');
+  if (chatMuteText) chatMuteText.textContent = isMuted ? 'Unmute Notifications' : 'Mute Notifications';
+  var profileMuteText = document.getElementById('profileMuteBtnText');
+  if (profileMuteText) profileMuteText.textContent = isMuted ? 'Unmute Notifications' : 'Mute Notifications';
 }
 window.toggleChatMute = toggleChatMute;
 
@@ -10475,27 +11167,37 @@ function openChatPrivacyModal(type) {
   var sheetSignout = document.getElementById('chatPrivacySheetSignout');
   if (!container) return;
 
-  if (sheetBlock) sheetBlock.classList.add('hidden');
-  if (sheetReport) sheetReport.classList.add('hidden');
-  if (sheetSignout) sheetSignout.classList.add('hidden');
+  if (sheetBlock) { sheetBlock.classList.add('hidden'); sheetBlock.style.display = 'none'; }
+  if (sheetReport) { sheetReport.classList.add('hidden'); sheetReport.style.display = 'none'; }
+  if (sheetSignout) { sheetSignout.classList.add('hidden'); sheetSignout.style.display = 'none'; }
+
+  var partner = state.activeChatPartner || state.activePeerUser;
+  var handle = partner ? (partner.handle || partner.username || '@user') : '@user';
+  if (!handle.startsWith('@')) handle = '@' + handle;
 
   if (type === 'block') {
-    if (state.activeChatPartner) {
-      var handle = state.activeChatPartner.handle || '@user';
-      var blockTitle = document.getElementById('chatPrivacyBlockPromptTitle');
-      if (blockTitle) {
-        blockTitle.textContent = 'Block ' + (handle.startsWith('@') ? handle : ('@' + handle)) + '?';
-      }
+    var blockTitle = document.getElementById('chatPrivacyBlockPromptTitle');
+    if (blockTitle) {
+      blockTitle.textContent = 'Block ' + handle + '?';
     }
-    if (sheetBlock) sheetBlock.classList.remove('hidden');
+    if (sheetBlock) {
+      sheetBlock.classList.remove('hidden');
+      sheetBlock.style.display = 'block';
+    }
   } else if (type === 'report') {
-    if (sheetReport) sheetReport.classList.remove('hidden');
+    if (sheetReport) {
+      sheetReport.classList.remove('hidden');
+      sheetReport.style.display = 'block';
+    }
   } else if (type === 'signout') {
-    if (sheetSignout) sheetSignout.classList.remove('hidden');
+    if (sheetSignout) {
+      sheetSignout.classList.remove('hidden');
+      sheetSignout.style.display = 'block';
+    }
   }
 
   container.classList.remove('hidden');
-  container.classList.add('flex');
+  container.style.display = 'flex';
 }
 window.openChatPrivacyModal = openChatPrivacyModal;
 
@@ -10506,22 +11208,31 @@ function closeChatPrivacyModal() {
   var sheetSignout = document.getElementById('chatPrivacySheetSignout');
   if (container) {
     container.classList.add('hidden');
-    container.classList.remove('flex');
+    container.style.display = 'none';
   }
-  if (sheetBlock) sheetBlock.classList.add('hidden');
-  if (sheetReport) sheetReport.classList.add('hidden');
-  if (sheetSignout) sheetSignout.classList.add('hidden');
+  if (sheetBlock) { sheetBlock.classList.add('hidden'); sheetBlock.style.display = 'none'; }
+  if (sheetReport) { sheetReport.classList.add('hidden'); sheetReport.style.display = 'none'; }
+  if (sheetSignout) { sheetSignout.classList.add('hidden'); sheetSignout.style.display = 'none'; }
+  var bBtn = document.getElementById('chatPrivacyConfirmBlockBtn');
+  if (bBtn) { bBtn.disabled = false; bBtn.textContent = 'BLOCK'; }
+  var rBtn = document.getElementById('chatPrivacyConfirmReportBtn');
+  if (rBtn) { rBtn.disabled = false; rBtn.textContent = 'SUBMIT REPORT'; }
 }
 window.closeChatPrivacyModal = closeChatPrivacyModal;
 
 async function executeChatPrivacyBlock() {
-  if (!state.activeChatUser) return;
+  var targetUserId = state.activeChatUser || state.activePeerUserId || (state.activeChatPartner && state.activeChatPartner.id) || (state.activePeerUser && state.activePeerUser.id);
+  if (!targetUserId) {
+    showToast('No user selected to block');
+    closeChatPrivacyModal();
+    return;
+  }
   var btn = document.getElementById('chatPrivacyConfirmBlockBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'BLOCKING...'; }
   try {
     var res = await apiRequest('/api/chat/block', {
       method: 'POST',
-      body: JSON.stringify({ targetUserId: state.activeChatUser })
+      body: JSON.stringify({ targetUserId: targetUserId })
     });
     if (res && res.success) {
       if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
@@ -10529,8 +11240,12 @@ async function executeChatPrivacyBlock() {
       }
       closeChatPrivacyModal();
       showToast('User blocked');
-      switchScreenView('chat-home');
-      loadChatConversations();
+      if (state.activeScreen === 'peer-profile') {
+        handlePeerProfileBack();
+      } else {
+        switchScreenView('chat-home');
+        loadChatConversations();
+      }
     } else {
       showToast(res ? (res.error || 'Failed to block user') : 'Failed to block user');
     }
@@ -10543,7 +11258,12 @@ async function executeChatPrivacyBlock() {
 window.executeChatPrivacyBlock = executeChatPrivacyBlock;
 
 async function executeChatPrivacyReport() {
-  if (!state.activeChatUser) return;
+  var targetUserId = state.activeChatUser || state.activePeerUserId || (state.activeChatPartner && state.activeChatPartner.id) || (state.activePeerUser && state.activePeerUser.id);
+  if (!targetUserId) {
+    showToast('No user selected to report');
+    closeChatPrivacyModal();
+    return;
+  }
   var btn = document.getElementById('chatPrivacyConfirmReportBtn');
   var selectedRadio = document.querySelector('input[name="chat-report-reason"]:checked');
   var reason = selectedRadio ? selectedRadio.value : 'Harassment';
@@ -10552,9 +11272,9 @@ async function executeChatPrivacyReport() {
     var res = await apiRequest('/api/chat/report', {
       method: 'POST',
       body: JSON.stringify({
-        reportedUserId: state.activeChatUser,
+        reportedUserId: targetUserId,
         reason: reason,
-        details: 'Reported via Chat Privacy & Security screen'
+        details: 'Reported via Safety & Privacy action sheet'
       })
     });
     if (res && res.success) {
