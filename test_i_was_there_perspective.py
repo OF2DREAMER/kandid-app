@@ -1549,6 +1549,578 @@ class TestIWasTherePerspective(unittest.TestCase):
         self.assertEqual(s_orph_auth, 403)
         self.assertEqual(r_orph_auth.get("code"), "COMMUNITY_RESTRICTED")
 
+    def test_43_public_community_member_and_non_member_actions_matrix(self):
+        # 1. Authenticated public member (u_att2) can assert I Was There
+        status_att, res_att = self._request(f"/api/moment/{self.moment_id}/i-was-there", token=USER2_TOKEN, method="POST", body={"moment_id": self.moment_id})
+        self.assertEqual(status_att, 200)
+        self.assertTrue(res_att.get("success"))
+
+        # 2. Authenticated public non-member (u_att4) can assert I Was There and submit Perspective
+        status_nonmem_att, res_nonmem_att = self._request(f"/api/moment/{self.moment_id}/i-was-there", token=USER4_TOKEN, method="POST", body={"moment_id": self.moment_id})
+        self.assertEqual(status_nonmem_att, 200)
+        self.assertTrue(res_nonmem_att.get("success"))
+        cluster_id = res_nonmem_att.get("cluster_id")
+
+        # Non-member creates a perspective
+        status_persp, res_persp = self._request("/api/moments/capture", token=USER4_TOKEN, method="POST", body={
+            "caption": "Non-member festival angle",
+            "cluster_id": cluster_id,
+            "community_id": self.comm_id,
+            "mainImg": "/uploads/nm_persp.jpg",
+            "pipImg": "/uploads/nm_pippersp.jpg"
+        })
+        self.assertEqual(status_persp, 201)
+        self.assertTrue(res_persp.get("success"))
+
+    def test_44_private_community_authorization_matrix(self):
+        # Create a primary moment in private community
+        now_iso = datetime.now().isoformat()
+        conn = server.get_db()
+        cursor = conn.cursor()
+        priv_moment_id = f"post_priv_test_{uuid.uuid4().hex[:6]}"
+        cursor.execute("""
+            INSERT INTO posts (id, user_id, author_name, author_handle, campus, caption, main_img, pip_img, is_private, primary_community_id, moderation_status, created_at)
+            VALUES (?, 'u_att1', 'Attendee One', 'att1_handle', 'Secret Society', 'Private Ritual Moment', '/uploads/main_priv.jpg', '/uploads/pip_priv.jpg', 0, ?, 'active', ?)
+        """, (priv_moment_id, self.priv_comm_id, now_iso))
+        cluster = server.create_or_get_moment_cluster(conn, {"id": priv_moment_id, "primary_community_id": self.priv_comm_id, "user_id": "u_att1"}, "u_att1")
+        priv_cluster_id = cluster["id"]
+        conn.commit()
+        conn.close()
+
+        # 1. Unauthenticated cannot access cluster, I Was There, or submit perspective
+        s_unauth_cls, _ = self._request(f"/api/cluster/{priv_cluster_id}", method="GET")
+        self.assertEqual(s_unauth_cls, 401)
+        s_unauth_att, _ = self._request(f"/api/moment/{priv_moment_id}/i-was-there", method="POST", body={"moment_id": priv_moment_id})
+        self.assertEqual(s_unauth_att, 401)
+        s_unauth_cap, _ = self._request("/api/moments/capture", method="POST", body={"cluster_id": priv_cluster_id, "mainImg": "/uploads/m.jpg", "pipImg": "/uploads/p.jpg"})
+        self.assertEqual(s_unauth_cap, 401)
+
+        # 2. Unauthorized non-member (u_att4 is NOT in comm_priv_1) -> 403 Forbidden
+        s_nonmem_cls, _ = self._request(f"/api/cluster/{priv_cluster_id}", token=USER4_TOKEN, method="GET")
+        self.assertEqual(s_nonmem_cls, 403)
+        s_nonmem_att, _ = self._request(f"/api/moment/{priv_moment_id}/i-was-there", token=USER4_TOKEN, method="POST", body={"moment_id": priv_moment_id})
+        self.assertEqual(s_nonmem_att, 403)
+        s_nonmem_cap, _ = self._request("/api/moments/capture", token=USER4_TOKEN, method="POST", body={
+            "cluster_id": priv_cluster_id,
+            "community_id": self.priv_comm_id,
+            "caption": "Illegal non-member perspective",
+            "mainImg": "/uploads/p.jpg",
+            "pipImg": "/uploads/pip.jpg"
+        })
+        self.assertEqual(s_nonmem_cap, 403)
+
+        # 3. Authorized active member (u_att2 IS in comm_priv_1) -> 200 / 201 OK
+        s_mem_cls, r_mem_cls = self._request(f"/api/cluster/{priv_cluster_id}", token=USER2_TOKEN, method="GET")
+        self.assertEqual(s_mem_cls, 200)
+        self.assertTrue(r_mem_cls.get("success"))
+
+        s_mem_att, r_mem_att = self._request(f"/api/moment/{priv_moment_id}/i-was-there", token=USER2_TOKEN, method="POST", body={"moment_id": priv_moment_id})
+        self.assertEqual(s_mem_att, 200)
+        self.assertTrue(r_mem_att.get("success"))
+
+        s_mem_cap, r_mem_cap = self._request("/api/moments/capture", token=USER2_TOKEN, method="POST", body={
+            "cluster_id": priv_cluster_id,
+            "community_id": self.priv_comm_id,
+            "caption": "Authorized private member perspective",
+            "mainImg": "/uploads/p_auth.jpg",
+            "pipImg": "/uploads/pip_auth.jpg"
+        })
+        self.assertEqual(s_mem_cap, 201)
+        self.assertTrue(r_mem_cap.get("success"))
+
+    def test_45_join_leave_community_lifecycle(self):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        pub_test_id = f"comm_jl_pub_{uuid.uuid4().hex[:6]}"
+        priv_test_id = f"comm_jl_priv_{uuid.uuid4().hex[:6]}"
+        now_iso = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Join Leave Public', 'Campus', 'u_att1', 'public', 1, ?)
+        """, (pub_test_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, joined_at)
+            VALUES (?, 'u_att1', 'creator', ?)
+        """, (pub_test_id, now_iso))
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Join Leave Private', 'Campus', 'u_att1', 'private', 2, ?)
+        """, (priv_test_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, joined_at)
+            VALUES (?, 'u_att1', 'creator', ?), (?, 'u_att2', 'member', ?)
+        """, (priv_test_id, now_iso, priv_test_id, now_iso))
+        conn.commit()
+        conn.close()
+
+        # 1. Non-member (u_att4) joins public community
+        s_join, r_join = self._request("/api/community/join", token=USER4_TOKEN, method="POST", body={"community_id": pub_test_id})
+        self.assertEqual(s_join, 200)
+        self.assertTrue(r_join.get("success"))
+        self.assertTrue(r_join.get("is_joined"))
+
+        # 2. Member (u_att4) leaves public community
+        s_leave, r_leave = self._request("/api/community/join", token=USER4_TOKEN, method="POST", body={"community_id": pub_test_id})
+        self.assertEqual(s_leave, 200)
+        self.assertTrue(r_leave.get("success"))
+        self.assertFalse(r_leave.get("is_joined"))
+
+        # 3. Member re-joins public community
+        s_rejoin, r_rejoin = self._request("/api/community/join", token=USER4_TOKEN, method="POST", body={"community_id": pub_test_id})
+        self.assertEqual(s_rejoin, 200)
+        self.assertTrue(r_rejoin.get("success"))
+        self.assertTrue(r_rejoin.get("is_joined"))
+
+        # 4. Creator/Owner (u_att1) attempts to leave own community -> 400 CREATOR_CANNOT_LEAVE
+        s_creator_leave, r_creator_leave = self._request("/api/community/join", token=USER1_TOKEN, method="POST", body={"community_id": pub_test_id})
+        self.assertEqual(s_creator_leave, 400)
+        self.assertFalse(r_creator_leave.get("success"))
+        self.assertEqual(r_creator_leave.get("code"), "CREATOR_CANNOT_LEAVE")
+
+        # 5. Member (u_att2) leaves private community
+        s_priv_leave, r_priv_leave = self._request("/api/community/join", token=USER2_TOKEN, method="POST", body={"community_id": priv_test_id})
+        self.assertEqual(s_priv_leave, 200)
+        self.assertTrue(r_priv_leave.get("success"))
+        self.assertFalse(r_priv_leave.get("is_joined"))
+
+        # 6. Verify u_att2 now receives 403 when trying to access private community detail
+        s_det, r_det = self._request(f"/api/community/detail?id={priv_test_id}", token=USER2_TOKEN)
+        self.assertEqual(s_det, 403)
+        self.assertEqual(r_det.get("code"), "COMMUNITY_RESTRICTED")
+
+    def test_46_private_community_join_invite_enforcement(self):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        priv_id = f"comm_pjoin_{uuid.uuid4().hex[:6]}"
+        other_id = f"comm_other_{uuid.uuid4().hex[:6]}"
+        now_iso = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Strict Private Space', 'Campus', 'u_att1', 'private', 1, ?)
+        """, (priv_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, status, joined_at)
+            VALUES (?, 'u_att1', 'creator', 'active', ?)
+        """, (priv_id, now_iso))
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Other Public Space', 'Campus', 'u_att1', 'public', 1, ?)
+        """, (other_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, status, joined_at)
+            VALUES (?, 'u_att1', 'creator', 'active', ?)
+        """, (other_id, now_iso))
+        conn.commit()
+        conn.close()
+
+        # 1. Direct join attempt on private community without invite -> 403 PRIVATE_COMMUNITY_INVITE_REQUIRED
+        s_dir, r_dir = self._request("/api/community/join", token=USER4_TOKEN, method="POST", body={"community_id": priv_id})
+        self.assertEqual(s_dir, 403)
+        self.assertFalse(r_dir.get("success"))
+        self.assertEqual(r_dir.get("code"), "PRIVATE_COMMUNITY_INVITE_REQUIRED")
+
+        # 2. Join attempt with invalid invite code -> 400 INVALID_INVITE
+        s_inv_fake, r_inv_fake = self._request("/api/community/join", token=USER4_TOKEN, method="POST", body={
+            "community_id": priv_id,
+            "invite_code": "NON_EXISTENT_CODE"
+        })
+        self.assertEqual(s_inv_fake, 400)
+        self.assertEqual(r_inv_fake.get("code"), "INVALID_INVITE")
+
+        # 3. Create invite for the wrong community and attempt join -> 400 INVITE_COMMUNITY_MISMATCH
+        s_cr_other, r_cr_other = self._request("/api/invite/create", token=USER1_TOKEN, method="POST", body={
+            "community_id": other_id
+        })
+        self.assertEqual(s_cr_other, 201)
+        other_invite_code = r_cr_other.get("invite_code")
+
+        s_mismatch, r_mismatch = self._request("/api/community/join", token=USER4_TOKEN, method="POST", body={
+            "community_id": priv_id,
+            "invite_code": other_invite_code
+        })
+        self.assertEqual(s_mismatch, 400)
+        self.assertEqual(r_mismatch.get("code"), "INVITE_COMMUNITY_MISMATCH")
+
+        # 4. Creator creates valid invite for target private community
+        s_cr_val, r_cr_val = self._request("/api/invite/create", token=USER1_TOKEN, method="POST", body={
+            "community_id": priv_id
+        })
+        self.assertEqual(s_cr_val, 201)
+        valid_invite_code = r_cr_val.get("invite_code")
+
+        # 5. Non-member (u_att4) joins target private community with valid invite
+        s_val_join, r_val_join = self._request("/api/community/join", token=USER4_TOKEN, method="POST", body={
+            "community_id": priv_id,
+            "invite_code": valid_invite_code
+        })
+        self.assertEqual(s_val_join, 200)
+        self.assertTrue(r_val_join.get("success"))
+        self.assertTrue(r_val_join.get("is_joined"))
+
+        # 6. Verify u_att4 can now access private community detail
+        s_acc, r_acc = self._request(f"/api/community/detail?id={priv_id}", token=USER4_TOKEN)
+        self.assertEqual(s_acc, 200)
+        self.assertTrue(r_acc.get("success"))
+
+    def test_47_community_moderation_suspension_enforcement(self):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        mod_comm_id = f"comm_mod_{uuid.uuid4().hex[:6]}"
+        now_iso = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Moderation Shield Campus', 'Campus', 'u_att1', 'public', 2, ?)
+        """, (mod_comm_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, status, joined_at)
+            VALUES (?, 'u_att1', 'creator', 'active', ?), (?, 'u_att3', 'member', 'active', ?)
+        """, (mod_comm_id, now_iso, mod_comm_id, now_iso))
+        conn.commit()
+        conn.close()
+
+        # 1. Non-moderator (u_att4) attempts to suspend u_att3 -> 403 Forbidden
+        s_unauth_mod, r_unauth_mod = self._request("/api/community/moderation/action", token=USER4_TOKEN, method="POST", body={
+            "community_id": mod_comm_id,
+            "action": "suspend",
+            "target_type": "user",
+            "target_id": "u_att3"
+        })
+        self.assertEqual(s_unauth_mod, 403)
+
+        # 2. Creator attempts to suspend self -> 400 CANNOT_SUSPEND_SELF
+        s_self_mod, r_self_mod = self._request("/api/community/moderation/action", token=USER1_TOKEN, method="POST", body={
+            "community_id": mod_comm_id,
+            "action": "suspend",
+            "target_type": "user",
+            "target_id": "u_att1"
+        })
+        self.assertEqual(s_self_mod, 400)
+        self.assertEqual(r_self_mod.get("code"), "CANNOT_SUSPEND_SELF")
+
+        # 3. Authorized creator (u_att1) suspends member (u_att3) -> 200 OK
+        s_auth_mod, r_auth_mod = self._request("/api/community/moderation/action", token=USER1_TOKEN, method="POST", body={
+            "community_id": mod_comm_id,
+            "action": "suspend",
+            "target_type": "user",
+            "target_id": "u_att3",
+            "reason": "Repeated policy violation"
+        })
+        self.assertEqual(s_auth_mod, 200)
+        self.assertTrue(r_auth_mod.get("success"))
+
+        # Verify DB records
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM community_members WHERE community_id = ? AND user_id = 'u_att3'", (mod_comm_id,))
+        self.assertEqual(cursor.fetchone()[0], "suspended")
+        cursor.execute("SELECT 1 FROM community_suspensions WHERE user_id = 'u_att3' AND community_id = ?", (mod_comm_id,))
+        self.assertIsNotNone(cursor.fetchone())
+        conn.close()
+
+        # 4. Suspended user (u_att3) attempts to capture moment in this community -> 403 Forbidden
+        s_cap_susp, r_cap_susp = self._request("/api/moments/capture", token=USER3_TOKEN, method="POST", body={
+            "community_id": mod_comm_id,
+            "caption": "Illegal moment while suspended",
+            "mainImg": "/uploads/susp_main.jpg",
+            "pipImg": "/uploads/susp_pip.jpg"
+        })
+        self.assertEqual(s_cap_susp, 403)
+
+        # 5. Suspended user (u_att3) attempts to re-join -> 403 COMMUNITY_SUSPENDED
+        s_rejoin_susp, r_rejoin_susp = self._request("/api/community/join", token=USER3_TOKEN, method="POST", body={
+            "community_id": mod_comm_id
+        })
+        self.assertEqual(s_rejoin_susp, 403)
+        self.assertEqual(r_rejoin_susp.get("code"), "COMMUNITY_SUSPENDED")
+
+        # 6. Authorized creator (u_att1) restores member (u_att3) -> 200 OK
+        s_rest, r_rest = self._request("/api/community/moderation/action", token=USER1_TOKEN, method="POST", body={
+            "community_id": mod_comm_id,
+            "action": "restore",
+            "target_type": "user",
+            "target_id": "u_att3",
+            "reason": "Appeal accepted"
+        })
+        self.assertEqual(s_rest, 200)
+        self.assertTrue(r_rest.get("success"))
+
+        # Verify DB records cleared
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM community_members WHERE community_id = ? AND user_id = 'u_att3'", (mod_comm_id,))
+        self.assertEqual(cursor.fetchone()[0], "active")
+        cursor.execute("SELECT 1 FROM community_suspensions WHERE user_id = 'u_att3' AND community_id = ?", (mod_comm_id,))
+        self.assertIsNone(cursor.fetchone())
+        conn.close()
+
+        # 7. Restored user (u_att3) successfully captures moment in the community -> 201 Created
+        s_cap_ok, r_cap_ok = self._request("/api/moments/capture", token=USER3_TOKEN, method="POST", body={
+            "community_id": mod_comm_id,
+            "caption": "Restored member authentic moment",
+            "mainImg": "/uploads/rest_main.jpg",
+            "pipImg": "/uploads/rest_pip.jpg"
+        })
+        self.assertEqual(s_cap_ok, 201)
+        self.assertTrue(r_cap_ok.get("success"))
+
+    def test_48_invite_usage_limit_atomic_exhaustion(self):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        priv_id = f"comm_inv_limit_{uuid.uuid4().hex[:6]}"
+        now_iso = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Invite Limit Space', 'Campus', 'u_att1', 'private', 1, ?)
+        """, (priv_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, status, joined_at)
+            VALUES (?, 'u_att1', 'creator', 'active', ?)
+        """, (priv_id, now_iso))
+        conn.commit()
+        conn.close()
+
+        # Creator creates invite with max_uses = 2
+        s_cr, r_cr = self._request("/api/invite/create", token=USER1_TOKEN, method="POST", body={
+            "community_id": priv_id,
+            "max_uses": 2
+        })
+        self.assertEqual(s_cr, 201)
+        code = r_cr.get("invite_code")
+
+        # First user (u_att2) joins -> 200 OK (accepted_count = 1)
+        s_j1, r_j1 = self._request("/api/community/join", token=USER2_TOKEN, method="POST", body={
+            "community_id": priv_id,
+            "invite_code": code
+        })
+        self.assertEqual(s_j1, 200)
+        self.assertTrue(r_j1.get("is_joined"))
+
+        # Second user (u_att3) joins -> 200 OK (accepted_count = 2)
+        s_j2, r_j2 = self._request("/api/community/join", token=USER3_TOKEN, method="POST", body={
+            "community_id": priv_id,
+            "invite_code": code
+        })
+        self.assertEqual(s_j2, 200)
+        self.assertTrue(r_j2.get("is_joined"))
+
+        # Third user (u_att4) attempts join on exhausted invite -> 400 INVITE_MAX_USES
+        s_j3, r_j3 = self._request("/api/community/join", token=USER4_TOKEN, method="POST", body={
+            "community_id": priv_id,
+            "invite_code": code
+        })
+        self.assertEqual(s_j3, 400)
+        self.assertEqual(r_j3.get("code"), "INVITE_MAX_USES")
+
+        # Verify membership did not leak for u_att4
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = 'u_att4'", (priv_id,))
+        self.assertIsNone(cursor.fetchone())
+        cursor.execute("SELECT accepted_count, max_uses FROM community_invites WHERE invite_code = ?", (code,))
+        inv_data = cursor.fetchone()
+        self.assertEqual(inv_data[0], 2)
+        self.assertEqual(inv_data[1], 2)
+        conn.close()
+
+        # Concurrent join attempt test with two different eligible users (u_att3 vs u_att4) competing for a single-use invite
+        priv_conc_id = f"comm_conc_{uuid.uuid4().hex[:6]}"
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Concurrency Compete Space', 'Campus', 'u_att1', 'private', 1, ?)
+        """, (priv_conc_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, status, joined_at)
+            VALUES (?, 'u_att1', 'creator', 'active', ?)
+        """, (priv_conc_id, now_iso))
+        conn.commit()
+        conn.close()
+
+        s_cr_one, r_cr_one = self._request("/api/invite/create", token=USER1_TOKEN, method="POST", body={
+            "community_id": priv_conc_id,
+            "max_uses": 1
+        })
+        self.assertEqual(s_cr_one, 201)
+        one_code = r_cr_one.get("invite_code")
+
+        import concurrent.futures
+        def try_join_conc(tok):
+            return self._request("/api/community/join", token=tok, method="POST", body={
+                "community_id": priv_conc_id,
+                "invite_code": one_code
+            })
+
+        # Run concurrent join attempts with two different users
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            fut1 = executor.submit(try_join_conc, USER3_TOKEN)
+            fut2 = executor.submit(try_join_conc, USER4_TOKEN)
+            res1 = fut1.result()
+            res2 = fut2.result()
+
+        status_codes = sorted([res1[0], res2[0]])
+        self.assertEqual(status_codes, [200, 400], "Exactly one user must succeed (200) and the other must fail (400)")
+
+        # Verify DB state
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT accepted_count, max_uses FROM community_invites WHERE invite_code = ?", (one_code,))
+        inv_res = cursor.fetchone()
+        self.assertEqual(inv_res[0], 1)
+        self.assertEqual(inv_res[1], 1)
+
+        # Verify exactly one membership was created in addition to creator
+        cursor.execute("SELECT user_id FROM community_members WHERE community_id = ?", (priv_conc_id,))
+        members = [r[0] for r in cursor.fetchall()]
+        self.assertEqual(len(members), 2)
+        self.assertIn("u_att1", members)
+        winner_id = "u_att3" if "u_att3" in members else "u_att4"
+        loser_id = "u_att4" if winner_id == "u_att3" else "u_att3"
+        self.assertIn(winner_id, members)
+        self.assertNotIn(loser_id, members)
+        conn.close()
+
+    def test_49_reaction_community_suspension_enforcement(self):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        mod_comm_id = f"comm_rx_{uuid.uuid4().hex[:6]}"
+        post_id = f"post_rx_{uuid.uuid4().hex[:6]}"
+        global_post_id = f"post_glob_{uuid.uuid4().hex[:6]}"
+        now_iso = datetime.now().isoformat()
+
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Reaction Shield Campus', 'Campus', 'u_att1', 'public', 2, ?)
+        """, (mod_comm_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, status, joined_at)
+            VALUES (?, 'u_att1', 'creator', 'active', ?), (?, 'u_att3', 'member', 'active', ?)
+        """, (mod_comm_id, now_iso, mod_comm_id, now_iso))
+
+        # Insert community moment
+        cursor.execute("""
+            INSERT INTO posts (id, user_id, author_name, author_handle, campus, caption, main_img, pip_img, is_private, primary_community_id, moderation_status, created_at)
+            VALUES (?, 'u_att1', 'Creator User', 'att1_handle', 'Reaction Shield Campus', 'Community moment', '/uploads/m1.jpg', '/uploads/p1.jpg', 0, ?, 'active', ?)
+        """, (post_id, mod_comm_id, now_iso))
+
+        # Insert global non-community post
+        cursor.execute("""
+            INSERT INTO posts (id, user_id, author_name, author_handle, campus, caption, main_img, pip_img, is_private, primary_community_id, moderation_status, created_at)
+            VALUES (?, 'u_att1', 'Creator User', 'att1_handle', '', 'Global moment', '/uploads/m2.jpg', '/uploads/p2.jpg', 0, '', 'active', ?)
+        """, (global_post_id, now_iso))
+
+        conn.commit()
+        conn.close()
+
+        # 1. Active member (u_att3) reacts to community post -> 200 OK
+        s_rx1, r_rx1 = self._request("/api/react", token=USER3_TOKEN, method="POST", body={
+            "postId": post_id,
+            "emoji": "🔥"
+        })
+        self.assertEqual(s_rx1, 200)
+        self.assertTrue(r_rx1.get("success"))
+
+        # 2. Creator (u_att1) suspends u_att3
+        s_susp, r_susp = self._request("/api/community/moderation/action", token=USER1_TOKEN, method="POST", body={
+            "community_id": mod_comm_id,
+            "action": "suspend",
+            "target_type": "user",
+            "target_id": "u_att3"
+        })
+        self.assertEqual(s_susp, 200)
+
+        # 3. Suspended user (u_att3) attempts to react to community post -> 403 COMMUNITY_SUSPENDED
+        s_rx_susp, r_rx_susp = self._request("/api/react", token=USER3_TOKEN, method="POST", body={
+            "postId": post_id,
+            "emoji": "❤️"
+        })
+        self.assertEqual(s_rx_susp, 403)
+        self.assertEqual(r_rx_susp.get("code"), "COMMUNITY_SUSPENDED")
+
+        # 4. Suspended user (u_att3) reacts to normal global post -> 200 OK (unrelated to suspended community)
+        s_rx_glob, r_rx_glob = self._request("/api/react", token=USER3_TOKEN, method="POST", body={
+            "postId": global_post_id,
+            "emoji": "👏"
+        })
+        self.assertEqual(s_rx_glob, 200)
+        self.assertTrue(r_rx_glob.get("success"))
+
+    def test_50_voluntary_mute_preserved_across_suspension_and_restore(self):
+        conn = server.get_db()
+        cursor = conn.cursor()
+        mute_comm_id = f"comm_mute_{uuid.uuid4().hex[:6]}"
+        now_iso = datetime.now().isoformat()
+
+        cursor.execute("""
+            INSERT INTO communities (id, name, type, creator_id, visibility, members_count, created_at)
+            VALUES (?, 'Mute Shield Campus', 'Campus', 'u_att1', 'public', 2, ?)
+        """, (mute_comm_id, now_iso))
+        cursor.execute("""
+            INSERT INTO community_members (community_id, user_id, role, status, joined_at)
+            VALUES (?, 'u_att1', 'creator', 'active', ?), (?, 'u_att3', 'member', 'active', ?)
+        """, (mute_comm_id, now_iso, mute_comm_id, now_iso))
+        conn.commit()
+        conn.close()
+
+        # 1. User u_att3 voluntarily mutes community
+        s_mute, r_mute = self._request("/api/community/mute", token=USER3_TOKEN, method="POST", body={
+            "target_id": mute_comm_id,
+            "target_type": "community"
+        })
+        self.assertEqual(s_mute, 200)
+        self.assertTrue(r_mute.get("is_muted"))
+
+        # Verify voluntary mute in DB
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM community_mutes WHERE user_id = 'u_att3' AND target_type = 'community' AND target_id = ?", (mute_comm_id,))
+        self.assertIsNotNone(cursor.fetchone())
+        conn.close()
+
+        # 2. Moderator suspends u_att3
+        s_susp, r_susp = self._request("/api/community/moderation/action", token=USER1_TOKEN, method="POST", body={
+            "community_id": mute_comm_id,
+            "action": "suspend",
+            "target_type": "user",
+            "target_id": "u_att3",
+            "reason": "Policy check"
+        })
+        self.assertEqual(s_susp, 200)
+
+        # Verify suspension is recorded in community_suspensions AND voluntary mute still in community_mutes
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM community_suspensions WHERE user_id = 'u_att3' AND community_id = ?", (mute_comm_id,))
+        self.assertIsNotNone(cursor.fetchone())
+        cursor.execute("SELECT 1 FROM community_mutes WHERE user_id = 'u_att3' AND target_type = 'community' AND target_id = ?", (mute_comm_id,))
+        self.assertIsNotNone(cursor.fetchone())
+        conn.close()
+
+        # 3. Moderator restores u_att3
+        s_rest, r_rest = self._request("/api/community/moderation/action", token=USER1_TOKEN, method="POST", body={
+            "community_id": mute_comm_id,
+            "action": "restore",
+            "target_type": "user",
+            "target_id": "u_att3"
+        })
+        self.assertEqual(s_rest, 200)
+
+        # 4. Verify suspension is REMOVED but voluntary mute is PRESERVED!
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM community_suspensions WHERE user_id = 'u_att3' AND community_id = ?", (mute_comm_id,))
+        self.assertIsNone(cursor.fetchone())
+        cursor.execute("SELECT 1 FROM community_mutes WHERE user_id = 'u_att3' AND target_type = 'community' AND target_id = ?", (mute_comm_id,))
+        self.assertIsNotNone(cursor.fetchone(), "Voluntary mute must NOT be deleted by moderation restore")
+        conn.close()
+
+        # 5. User u_att3 can explicitly unmute when they choose
+        s_unmute, r_unmute = self._request("/api/community/unmute", token=USER3_TOKEN, method="POST", body={
+            "target_id": mute_comm_id,
+            "target_type": "community"
+        })
+        self.assertEqual(s_unmute, 200)
+        self.assertFalse(r_unmute.get("is_muted"))
 
 if __name__ == "__main__":
     unittest.main()

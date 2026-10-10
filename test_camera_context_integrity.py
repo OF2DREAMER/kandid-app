@@ -177,6 +177,91 @@ context.apiRequest = async (url) => {
     source: context.state.cameraContext.source
   };
 
+  // =========================================================================
+  // TEST 7 — Missing context in handleAddPerspectiveClick never falls back to camera
+  // =========================================================================
+  let toastMsg7 = '';
+  context.showToast = (msg) => { toastMsg7 = msg; };
+  context.state.currentViewingCluster = null;
+  context.state.activeClusterMomentId = null;
+  context.state.cameraContext = { mode: 'INITIAL_STATE', clusterId: null, source: 'none' };
+  let cameraOpened7 = false;
+  context.KandidCameraEngine.initialize = async () => { cameraOpened7 = true; };
+
+  context.handleAddPerspectiveClick();
+
+  results.test7 = {
+    toastMsg: toastMsg7,
+    cameraOpened: cameraOpened7,
+    cameraMode: context.state.cameraContext.mode
+  };
+
+  // =========================================================================
+  // TEST 8 — Community visibility fail-closed evaluation in renderCommunityCards
+  // =========================================================================
+  const createTestContainer = () => {
+    const el = makeEl();
+    el.children = [];
+    el.appendChild = (child) => { el.children.push(child); };
+    return el;
+  };
+
+  // 8A: Unknown/missing visibility, non-member -> FAIL CLOSED
+  const containerUnknown = createTestContainer();
+  context.state.activeCommunityData = null;
+  context.state.currentUser = { id: 'u_viewer', role: 'member' };
+  context.renderCommunityCards([{
+    id: 'm_unk',
+    user_id: 'u_author',
+    caption: 'Unknown Post',
+    cluster_id: 'cls_unk',
+    community_visibility: ''
+  }], containerUnknown);
+  const unkHtml = containerUnknown.children.map(c => c.innerHTML || '').join('');
+
+  // 8B: Confirmed public -> perspective button rendered
+  const containerPub = createTestContainer();
+  context.renderCommunityCards([{
+    id: 'm_pub',
+    user_id: 'u_author',
+    caption: 'Public Post',
+    cluster_id: 'cls_pub',
+    community_visibility: 'public'
+  }], containerPub);
+  const pubHtml = containerPub.children.map(c => c.innerHTML || '').join('');
+
+  // 8C: Private community, authorized member -> perspective button rendered
+  const containerPrivMem = createTestContainer();
+  context.state.activeCommunityData = { id: 'c_priv', visibility: 'private', is_joined: true };
+  context.renderCommunityCards([{
+    id: 'm_priv',
+    user_id: 'u_author',
+    caption: 'Private Post',
+    cluster_id: 'cls_priv',
+    community_visibility: 'private'
+  }], containerPrivMem);
+  const privHtml = containerPrivMem.children.map(c => c.innerHTML || '').join('');
+
+  results.test8 = {
+    unknownHasPerspective: unkHtml.includes('Perspective'),
+    unknownHasIWasThere: unkHtml.includes('I WAS THERE'),
+    pubHasPerspective: pubHtml.includes('Perspective'),
+    privMemHasPerspective: privHtml.includes('Perspective')
+  };
+
+  // =========================================================================
+  // TEST 9 — Live Pulse capture preserves active Community context
+  // =========================================================================
+  context.state.activeCommunityId = 'comm_pulse_test';
+  context.state.activeCommunity = 'Design Studio';
+  context.openCommunityMomentCapture(context.state.activeCommunityId, context.state.activeCommunity);
+  results.test9 = {
+    mode: context.state.cameraContext.mode,
+    communityId: context.state.cameraContext.communityId,
+    source: context.state.cameraContext.source,
+    selectedReviewCommunity: context.state.selectedReviewCommunity
+  };
+
   console.log(JSON.stringify(results));
   process.exit(0);
 })().catch(err => {
@@ -244,6 +329,29 @@ class TestCameraContextIntegrity(unittest.TestCase):
         self.assertEqual(t6["communityId"], "comm_123")
         self.assertIsNone(t6["clusterId"])
         self.assertEqual(t6["source"], "community")
+
+    def test_07_handle_add_perspective_missing_context_fails_safely(self):
+        """TEST 7 — Missing context in handleAddPerspectiveClick never falls back to camera"""
+        t7 = self.results["test7"]
+        self.assertIn("Moment context unavailable", t7["toastMsg"])
+        self.assertFalse(t7["cameraOpened"])
+        self.assertEqual(t7["cameraMode"], "INITIAL_STATE")
+
+    def test_08_community_visibility_fail_closed(self):
+        """TEST 8 — Community visibility fail-closed evaluation in renderCommunityCards"""
+        t8 = self.results["test8"]
+        self.assertFalse(t8["unknownHasPerspective"])
+        self.assertFalse(t8["unknownHasIWasThere"])
+        self.assertTrue(t8["pubHasPerspective"])
+        self.assertTrue(t8["privMemHasPerspective"])
+
+    def test_09_live_pulse_capture_preserves_community_context(self):
+        """TEST 9 — Live Pulse capture preserves active Community context"""
+        t9 = self.results["test9"]
+        self.assertEqual(t9["mode"], "NORMAL")
+        self.assertEqual(t9["communityId"], "comm_pulse_test")
+        self.assertEqual(t9["source"], "community")
+        self.assertEqual(t9["selectedReviewCommunity"], "Design Studio")
 
 
 if __name__ == "__main__":
