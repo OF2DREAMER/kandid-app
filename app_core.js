@@ -747,187 +747,197 @@ function switchScreenView(screenName) {
 }
 window.switchScreenView = switchScreenView;
 
-// Community Stream Scoping (Public Communities by default | Active Community)
+// Community Stream Loader (Unified Public Communities Live Pulse & Recent Moments)
 async function loadCommunityScreen() {
-  if (!state.communityFeedScope) {
-    state.communityFeedScope = 'public';
+  var activeName = document.getElementById('communityActiveName');
+  var activeLoc = document.getElementById('communityActiveLocation');
+  var contextDesc = document.getElementById('communityContextDesc');
+  var momentsContainer = document.getElementById('campusMomentsContainer');
+  var loadingEl = document.getElementById('campusMomentsLoading');
+  var emptyEl = document.getElementById('campusMomentsEmpty');
+  var paginationEl = document.getElementById('campusMomentsPagination');
+
+  var currentCommId = state.activeCommunityId || '';
+  var currentCommName = (state.activeCommunity && state.activeCommunity.trim())
+    || (state.currentUser && state.currentUser.campus && state.currentUser.campus.trim())
+    || 'North City University';
+
+  // 1. Update Active Community Identity in Header
+  if (activeName) {
+    activeName.textContent = currentCommName;
+    activeName.dataset.communityId = currentCommId;
   }
-  setCommunityFeedScope(state.communityFeedScope);
-}
-window.loadCommunityScreen = loadCommunityScreen;
-window.loadCampusScreen = loadCommunityScreen;
+  if (activeLoc) activeLoc.textContent = state.currentGeoApprox || 'New Delhi, India';
 
-function setCommunityFeedScope(scope) {
-  state.communityFeedScope = scope || 'public';
-  var pubBtn = document.getElementById('commScopePublicBtn');
-  var actBtn = document.getElementById('commScopeActiveBtn');
-  var pubView = document.getElementById('publicCommunitiesView');
-  var actView = document.getElementById('activeCommunityView');
+  // Fetch canonical community details in background
+  var targetParam = currentCommId || currentCommName;
+  apiRequest('/api/community/detail?id=' + encodeURIComponent(targetParam) + '&campus=' + encodeURIComponent(targetParam))
+    .then(function(detailRes) {
+      if (detailRes && detailRes.success && detailRes.campus) {
+        var c = detailRes.campus;
+        state.activeCommunityId = c.id;
+        state.activeCommunity = c.name;
+        if (activeName) {
+          activeName.textContent = c.name;
+          activeName.dataset.communityId = c.id;
+        }
+        if (activeLoc) activeLoc.textContent = c.location || 'Local Region';
+        if (contextDesc) {
+          contextDesc.textContent = c.description || ('People capturing ordinary life around ' + c.name + ' without performance or rankings.');
+        }
+      }
+    }).catch(function() {});
 
-  if (state.communityFeedScope === 'public') {
-    if (pubBtn) pubBtn.className = 'flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm transition-all cursor-pointer text-center';
-    if (actBtn) actBtn.className = 'flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer text-center';
-    if (pubView) pubView.style.display = 'block';
-    if (actView) actView.style.display = 'none';
-    loadPublicCommunityFeed();
-  } else {
-    if (pubBtn) pubBtn.className = 'flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer text-center';
-    if (actBtn) actBtn.className = 'flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm transition-all cursor-pointer text-center';
-    if (pubView) pubView.style.display = 'none';
-    if (actView) actView.style.display = 'block';
-    loadSingleCommunityFeed();
-  }
-}
-window.setCommunityFeedScope = setCommunityFeedScope;
-
-function setPublicFeedSubView(subView) {
-  state.publicFeedSubView = subView || 'moments';
-  var momentsBtn = document.getElementById('publicViewMomentsBtn');
-  var pulseBtn = document.getElementById('publicViewPulseBtn');
-
-  if (state.publicFeedSubView === 'moments') {
-    if (momentsBtn) momentsBtn.className = 'px-3 py-1.5 rounded-lg bg-zinc-800 text-white font-bold transition-all cursor-pointer';
-    if (pulseBtn) pulseBtn.className = 'px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5';
-  } else {
-    if (momentsBtn) momentsBtn.className = 'px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white transition-colors cursor-pointer';
-    if (pulseBtn) pulseBtn.className = 'px-3 py-1.5 rounded-lg bg-zinc-800 text-amber-400 font-bold transition-all cursor-pointer flex items-center gap-1.5';
-  }
-  loadPublicCommunityFeed();
-}
-window.setPublicFeedSubView = setPublicFeedSubView;
-
-async function loadPublicCommunityFeed() {
-  var container = document.getElementById('publicMomentsContainer');
-  var loadingEl = document.getElementById('publicMomentsLoading');
-  var emptyEl = document.getElementById('publicMomentsEmpty');
-  var errorEl = document.getElementById('publicMomentsError');
-  var paginationEl = document.getElementById('publicMomentsPagination');
-  var pulseHeader = document.getElementById('publicLivePulseHeader');
-  var pulseDot = document.getElementById('publicPulseDot');
-  var pulseStateLabel = document.getElementById('publicPulseStateLabel');
-  var pulseCountLabel = document.getElementById('publicPulseCountLabel');
-  var pulseIndicatorDot = document.getElementById('publicPulseIndicatorDot');
-
-  if (state.publicFeedLoading) return;
-  state.publicFeedLoading = true;
-  state.publicFeedCursor = '';
-  state.publicFeedLoadedIds = new Set();
+  // 2. Load Public Communities Feed & Live Pulse
+  state.campusFeedLoading = true;
+  state.campusFeedCursor = '';
+  state.campusFeedLoadedIds = new Set();
 
   if (loadingEl) loadingEl.style.display = 'block';
   if (emptyEl) emptyEl.style.display = 'none';
-  if (errorEl) errorEl.style.display = 'none';
-  if (container) container.innerHTML = '';
+  if (momentsContainer) momentsContainer.innerHTML = '';
   if (paginationEl) paginationEl.style.display = 'none';
 
-  var viewParam = (state.publicFeedSubView === 'pulse') ? 'pulse' : 'moments';
-  var res = await apiRequest('/api/community/public-feed?view=' + encodeURIComponent(viewParam) + '&limit=20');
+  var res = await apiRequest('/api/community/public-feed?view=moments&limit=20');
 
-  state.publicFeedLoading = false;
+  state.campusFeedLoading = false;
   if (loadingEl) loadingEl.style.display = 'none';
 
-  if (!res || !res.success) {
-    if (errorEl) errorEl.style.display = 'block';
-    return;
-  }
+  // 3. Populate Live Pulse Widget with original design
+  renderCommunityPulseWidget(res ? res.pulse : null);
 
-  // Update Live Pulse indicators
-  var pulseData = res.pulse || {};
-  var hasLive = Boolean(pulseData.has_live_activity);
-  var activeCount = pulseData.active_count || 0;
-
-  if (pulseIndicatorDot) {
-    pulseIndicatorDot.className = hasLive
-      ? 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse'
-      : 'w-1.5 h-1.5 rounded-full bg-zinc-600';
-  }
-
-  if (pulseHeader) {
-    if (state.publicFeedSubView === 'pulse') {
-      pulseHeader.style.display = 'block';
-      if (pulseDot) {
-        pulseDot.className = hasLive
-          ? 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse'
-          : 'w-1.5 h-1.5 rounded-full bg-zinc-500';
-      }
-      if (pulseStateLabel) {
-        pulseStateLabel.textContent = hasLive ? 'HAPPENING NOW' : 'QUIET RIGHT NOW';
-        pulseStateLabel.className = hasLive
-          ? 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold'
-          : 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-400 font-bold';
-      }
-      if (pulseCountLabel) {
-        pulseCountLabel.textContent = hasLive ? (activeCount + ' active') : '0 active';
-      }
-    } else {
-      if (hasLive) {
-        pulseHeader.style.display = 'block';
-        if (pulseDot) pulseDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse';
-        if (pulseStateLabel) {
-          pulseStateLabel.textContent = 'HAPPENING NOW';
-          pulseStateLabel.className = 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold';
-        }
-        if (pulseCountLabel) pulseCountLabel.textContent = activeCount + ' active';
-      } else {
-        pulseHeader.style.display = 'none';
-      }
-    }
-  }
-
-  var moments = Array.isArray(res.moments) ? res.moments : [];
-  if (moments.length === 0) {
+  // 4. Populate Recent Moments Stream
+  // 4. Populate Recent Moments Stream or Sequence
+  if (!res || !res.success || !Array.isArray(res.moments) || res.moments.length === 0) {
     if (emptyEl) {
       emptyEl.style.display = 'block';
-      if (state.publicFeedSubView === 'pulse') {
-        emptyEl.innerHTML =
-          '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-2 shadow-lg">' +
-            '<div class="text-zinc-500 text-lg font-mono-tag">○</div>' +
-            '<h3 class="text-xs font-bold text-zinc-300 uppercase font-mono-tag">QUIET RIGHT NOW</h3>' +
-            '<p class="text-[11px] text-zinc-400 max-w-xs mx-auto">No live activity across public communities in the last 2 hours. Verified moments appear here in real time.</p>' +
-            '<button onclick="openCameraStudio()" class="mt-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-[10px] rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer">Capture In Public Space 📸</button>' +
-          '</div>';
-      } else {
-        emptyEl.innerHTML =
-          '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-2 shadow-lg">' +
-            '<div class="text-amber-500 text-lg font-mono-tag">✦</div>' +
-            '<h3 class="text-xs font-bold text-white uppercase font-mono-tag">NO PUBLIC MOMENTS YET</h3>' +
-            '<p class="text-[11px] text-zinc-400 max-w-xs mx-auto">Moments published to public communities will appear here in the cross-community stream.</p>' +
-            '<button onclick="openCameraStudio()" class="mt-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[10px] rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer">Capture Now 📸</button>' +
-          '</div>';
-      }
+      emptyEl.innerHTML =
+        '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-2 shadow-lg w-full">' +
+          '<div class="text-amber-500 text-lg font-mono-tag">✦</div>' +
+          '<h3 class="text-xs font-bold text-white uppercase font-mono-tag">NO RECENT MOMENTS</h3>' +
+          '<p class="text-[11px] text-zinc-400 max-w-xs mx-auto">Moments captured in public communities will appear here in chronological order.</p>' +
+          '<button onclick="openCameraStudio()" class="mt-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[10px] rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer">Capture Now 📸</button>' +
+        '</div>';
     }
   } else {
-    moments.forEach(function(m) {
-      state.publicFeedLoadedIds.add(m.id);
+    state.campusLastLoadedMoments = res.moments;
+    res.moments.forEach(function(m) {
+      state.campusFeedLoadedIds.add(m.id);
     });
-    renderCommunityCards(moments, container);
+    var currentMode = 'stream';
+    state.campusMomentsViewMode = 'stream';
+    renderCommunityCards(res.moments, momentsContainer, currentMode);
 
-    state.publicFeedCursor = res.next_cursor || '';
-    state.publicFeedHasMore = Boolean(res.has_more);
+    state.campusFeedCursor = res.next_cursor || '';
+    state.campusFeedHasMore = Boolean(res.has_more);
 
-    if (paginationEl && state.publicFeedSubView === 'moments') {
-      paginationEl.style.display = state.publicFeedHasMore ? 'block' : 'none';
+    if (paginationEl) {
+      paginationEl.style.display = state.campusFeedHasMore ? 'block' : 'none';
     }
   }
 
+  // 5. Populate More Around You
   if (typeof loadMoreAroundYou === 'function') {
     loadMoreAroundYou();
   }
 }
-window.loadPublicCommunityFeed = loadPublicCommunityFeed;
+window.loadCommunityScreen = loadCommunityScreen;
+window.loadCampusScreen = loadCommunityScreen;
 
-async function loadMorePublicMoments() {
-  if (state.publicFeedLoading || !state.publicFeedHasMore || !state.publicFeedCursor) return;
-  state.publicFeedLoading = true;
+function renderCommunityPulseWidget(pulseData) {
+  var pulseDot = document.getElementById('communityPulseDot');
+  var pulseLabel = document.getElementById('communityPulseStatusLabel');
+  var activeCountEl = document.getElementById('communityActiveCount');
+  var tilesContainer = document.getElementById('communityPulsePreviewTiles');
+  var pulseTitle = document.getElementById('communityPulseTitle');
+  var pulseSubtitle = document.getElementById('communityPulseSubtitle');
 
-  var paginationBtn = document.getElementById('publicMomentsLoadMoreBtn');
+  if (pulseTitle) pulseTitle.textContent = 'Life is happening here.';
+  if (pulseSubtitle) pulseSubtitle.textContent = "A living layer of what's happening around here right now.";
+
+  var hasLive = Boolean(pulseData && pulseData.has_live_activity && pulseData.active_count > 0);
+  var activeCount = pulseData ? (pulseData.active_count || 0) : 0;
+  var liveMoments = (pulseData && Array.isArray(pulseData.live_moments)) ? pulseData.live_moments : [];
+
+  if (pulseDot) {
+    pulseDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse';
+  }
+  if (pulseLabel) {
+    pulseLabel.textContent = 'HAPPENING NOW';
+    pulseLabel.className = 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold';
+  }
+  if (activeCountEl) {
+    activeCountEl.textContent = hasLive
+      ? (activeCount + (activeCount === 1 ? ' active moment' : ' active moments'))
+      : '4 people active';
+  }
+
+  if (!tilesContainer) return;
+  tilesContainer.innerHTML = '';
+
+  if (hasLive && liveMoments.length > 0) {
+    liveMoments.slice(0, 6).forEach(function(m) {
+      var tile = document.createElement('div');
+      tile.className = 'w-16 h-20 shrink-0 rounded-xl overflow-hidden relative border border-white/10 bg-zinc-900 shadow-md cursor-pointer select-none group active:scale-95 transition-all';
+      tile.onclick = function() {
+        var comm = m.community_name || m.primary_community_name || m.campus || '';
+        openLivePulse(comm);
+      };
+
+      var thumbImg = m.pip_img || m.main_img || '';
+      var commLabel = escapeHtml(m.community_name || m.primary_community_name || m.campus || 'Public');
+      var timeAgo = escapeHtml(m.timeAgo || 'Now');
+
+      tile.innerHTML =
+        '<img src="' + escapeHtml(thumbImg) + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform" alt="Live Moment">' +
+        '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent"></div>' +
+        '<div class="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>' +
+        '<div class="absolute bottom-1.5 inset-x-1.5 space-y-0.5">' +
+          '<p class="text-[8px] font-bold text-white truncate font-mono-tag">' + commLabel + '</p>' +
+          '<p class="text-[7px] text-zinc-300 font-mono-tag">' + timeAgo + '</p>' +
+        '</div>';
+
+      tilesContainer.appendChild(tile);
+    });
+  } else {
+    // Exact original preview tiles (PULSE | LIVE)
+    var pulseTile1 = document.createElement('div');
+    pulseTile1.className = 'w-16 h-20 shrink-0 rounded-xl overflow-hidden relative border border-white/10 bg-zinc-900 shadow-md cursor-pointer flex items-center justify-center text-zinc-600 font-mono-tag text-[10px]';
+    pulseTile1.onclick = function() { openLivePulse(); };
+    pulseTile1.innerHTML = '<span>PULSE</span>';
+    tilesContainer.appendChild(pulseTile1);
+
+    var pulseTile2 = document.createElement('div');
+    pulseTile2.className = 'w-16 h-20 shrink-0 rounded-xl overflow-hidden relative border border-white/10 bg-zinc-900 shadow-md cursor-pointer flex items-center justify-center text-zinc-600 font-mono-tag text-[10px]';
+    pulseTile2.onclick = function() { openLivePulse(); };
+    pulseTile2.innerHTML = '<span>LIVE</span>';
+    tilesContainer.appendChild(pulseTile2);
+  }
+
+  // Always append OPEN PULSE card
+  var openPulseCard = document.createElement('div');
+  openPulseCard.className = 'w-16 h-20 shrink-0 rounded-xl border border-amber-500/40 bg-amber-500/10 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-amber-500/20 active:scale-95 transition shadow-sm';
+  openPulseCard.onclick = function() { openLivePulse(); };
+  openPulseCard.innerHTML =
+    '<span class="text-amber-400 text-xs font-bold font-mono-tag">OPEN</span>' +
+    '<span class="text-[8px] text-amber-300 font-mono-tag font-bold">PULSE →</span>';
+  tilesContainer.appendChild(openPulseCard);
+}
+window.renderCommunityPulseWidget = renderCommunityPulseWidget;
+
+async function loadMoreCampusMoments() {
+  if (state.campusFeedLoading || !state.campusFeedHasMore || !state.campusFeedCursor) return;
+  state.campusFeedLoading = true;
+
+  var paginationBtn = document.getElementById('campusMomentsLoadMoreBtn');
   if (paginationBtn) {
     paginationBtn.textContent = 'LOADING...';
     paginationBtn.disabled = true;
   }
 
-  var res = await apiRequest('/api/community/public-feed?view=moments&cursor=' + encodeURIComponent(state.publicFeedCursor) + '&limit=20');
+  var res = await apiRequest('/api/community/public-feed?view=moments&cursor=' + encodeURIComponent(state.campusFeedCursor) + '&limit=20');
 
-  state.publicFeedLoading = false;
+  state.campusFeedLoading = false;
   if (paginationBtn) {
     paginationBtn.textContent = 'LOAD MORE MOMENTS ↓';
     paginationBtn.disabled = false;
@@ -935,106 +945,48 @@ async function loadMorePublicMoments() {
 
   if (!res || !res.success || !Array.isArray(res.moments)) return;
 
-  var container = document.getElementById('publicMomentsContainer');
+  var container = document.getElementById('campusMomentsContainer');
   if (container) {
     var newMoments = [];
     res.moments.forEach(function(m) {
-      if (!state.publicFeedLoadedIds.has(m.id)) {
-        state.publicFeedLoadedIds.add(m.id);
+      if (!state.campusFeedLoadedIds.has(m.id)) {
+        state.campusFeedLoadedIds.add(m.id);
         newMoments.push(m);
       }
     });
 
     if (newMoments.length > 0) {
+      var currentMode = 'stream';
       var tempDiv = document.createElement('div');
-      renderCommunityCards(newMoments, tempDiv);
+      renderCommunityCards(newMoments, tempDiv, currentMode);
       while (tempDiv.firstChild) {
         container.appendChild(tempDiv.firstChild);
       }
     }
   }
 
-  state.publicFeedCursor = res.next_cursor || '';
-  state.publicFeedHasMore = Boolean(res.has_more);
+  state.campusFeedCursor = res.next_cursor || '';
+  state.campusFeedHasMore = Boolean(res.has_more);
 
-  var paginationEl = document.getElementById('publicMomentsPagination');
+  var paginationEl = document.getElementById('campusMomentsPagination');
   if (paginationEl) {
-    paginationEl.style.display = state.publicFeedHasMore ? 'block' : 'none';
+    paginationEl.style.display = state.campusFeedHasMore ? 'block' : 'none';
   }
 }
-window.loadMorePublicMoments = loadMorePublicMoments;
+window.loadMoreCampusMoments = loadMoreCampusMoments;
+window.loadMorePublicMoments = loadMoreCampusMoments;
+window.loadPublicCommunityFeed = loadCommunityScreen;
+window.loadSingleCommunityFeed = loadCommunityScreen;
+window.setCommunityFeedScope = function() { loadCommunityScreen(); };
+window.setPublicFeedSubView = function() { loadCommunityScreen(); };
 
-async function loadSingleCommunityFeed() {
-  var campusContainer = document.getElementById('campusMomentsContainer');
-  var activeName = document.getElementById('communityActiveName');
-  var activeLoc = document.getElementById('communityActiveLocation');
-  var activeCount = document.getElementById('communityActiveCount');
-  var contextDesc = document.getElementById('communityContextDesc');
-
-  var currentCommId = state.activeCommunityId || '';
-  var currentCommName = state.activeCommunity || (state.currentUser ? state.currentUser.campus : 'North City University');
-
-  // Load canonical community details
-  var targetParam = currentCommId || currentCommName;
-  var detailRes = await apiRequest('/api/community/detail?id=' + encodeURIComponent(targetParam) + '&campus=' + encodeURIComponent(targetParam));
-  if (detailRes && detailRes.success && detailRes.campus) {
-    var c = detailRes.campus;
-    state.activeCommunityId = c.id;
-    state.activeCommunity = c.name;
-    currentCommId = c.id;
-    currentCommName = c.name;
-    if (activeName) {
-      activeName.textContent = c.name;
-      activeName.dataset.communityId = c.id;
-    }
-    if (activeLoc) activeLoc.textContent = c.location || 'Local Region';
-    if (contextDesc) {
-      contextDesc.textContent = c.description || ('People capturing ordinary life around ' + c.name + ' without performance or rankings.');
-    }
-  } else {
-    if (activeName) {
-      activeName.textContent = currentCommName;
-      activeName.dataset.communityId = currentCommId;
-    }
-    if (activeLoc) activeLoc.textContent = state.currentGeoApprox || 'New Delhi, India';
-    if (contextDesc) {
-      contextDesc.textContent = 'People capturing ordinary life around ' + currentCommName + ' without performance or rankings.';
-    }
-  }
-
-  var feedUrl = currentCommId 
-    ? ('/api/feed?circle=campus&community_id=' + encodeURIComponent(currentCommId))
-    : ('/api/feed?circle=campus&campus=' + encodeURIComponent(currentCommName));
-  var data = await apiRequest(feedUrl);
-  if (data && data.success && Array.isArray(data.feed)) {
-    if (campusContainer) {
-      if (data.feed.length > 0) {
-        renderCommunityCards(data.feed, campusContainer);
-        if (activeCount) activeCount.textContent = (data.feed.length + 3) + ' people active';
-      } else {
-        campusContainer.innerHTML = 
-          '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-2 shadow-lg">' +
-            '<div class="text-amber-500 text-lg font-mono-tag">✦</div>' +
-            '<h3 class="text-xs font-bold text-white uppercase font-mono-tag">NO COMMUNITY MOMENTS YET</h3>' +
-            '<p class="text-[11px] text-zinc-400">Capture the first authentic moment in ' + escapeHtml(currentCommName) + '!</p>' +
-            '<button onclick="openCameraStudio()" class="mt-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[10px] rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer">Capture Now 📸</button>' +
-          '</div>';
-        if (activeCount) activeCount.textContent = 'Quiet right now';
-      }
-    }
-  }
-
-  if (typeof loadMoreAroundYou === 'function') {
-    loadMoreAroundYou();
-  }
-}
-window.loadSingleCommunityFeed = loadSingleCommunityFeed;
-
-function renderCommunityCards(moments, container) {
+function renderCommunityCards(moments, container, mode) {
+  if (!container) return;
   container.innerHTML = '';
+  var isSequence = (mode === 'sequence');
+
   moments.forEach(function(m) {
     var card = document.createElement('article');
-    card.className = 'moment-article space-y-2.5 pb-2 border-b border-white/[.05]';
     card.dataset.postId = m.id;
 
     var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'student');
@@ -1073,8 +1025,8 @@ function renderCommunityCards(moments, container) {
     var clusterBadgeHtml = '';
     if (isEligibleCommunityMoment && (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0))) {
       var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button type="button" onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm" title="View perspectives">' +
-        '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
+      clusterBadgeHtml = '<button type="button" onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-0.5 ' + (isSequence ? 'px-1.5 py-0.5 text-[7.5px] bg-black/60 backdrop-blur-md border border-amber-500/30' : 'px-2.5 py-0.5 text-[9px] bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40') + ' rounded-full font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm" title="View perspectives">' +
+        '<span>✦</span> <span>' + (isSequence ? pCount : (pCount + ' perspective' + (pCount === 1 ? '' : 's'))) + '</span>' +
       '</button>';
     }
 
@@ -1083,86 +1035,159 @@ function renderCommunityCards(moments, container) {
     if (isEligibleCommunityMoment) {
       var pCount = m.perspectives_count || 0;
       var perspLabel = pCount > 0 ? (pCount + ' Perspective' + (pCount === 1 ? '' : 's')) : '+ Perspective';
-      perspectiveBtnHtml = '<button type="button" onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" title="View or add perspective">' +
+      perspectiveBtnHtml = '<button type="button" onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center justify-center gap-1 ' + (isSequence ? 'w-full px-2 py-0.5 text-[7px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-amber-400/90 hover:text-amber-300' : 'px-3 py-1 text-[9px] rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-amber-400 hover:text-amber-300') + ' font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" title="View or add perspective">' +
         '<span>📷</span> <span>' + escapeHtml(perspLabel) + '</span>' +
       '</button>';
 
       if (!state.currentUser || state.currentUser.id !== m.user_id) {
         var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
         if (isAttended) {
-          iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
-            '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>' +
+          iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-0.5 ' + (isSequence ? 'px-2 py-0.5 text-[7.5px] rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400' : 'px-3 py-1 text-[9px] rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400') + ' font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
+            '<span class="font-bold">✓</span> <span>WAS THERE</span>' +
           '</button>';
         } else {
-          iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-3 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
-            'I WAS THERE' +
+          iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center gap-1 ' + (isSequence ? 'px-2 py-0.5 text-[7.5px] rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white' : 'px-3 py-1 text-[9px] rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white') + ' font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
+            '<span>📍</span> <span>WAS THERE</span>' +
           '</button>';
         }
       }
     }
 
-    card.innerHTML = 
-      '<div class="moment-image aspect-[4/5] rounded-[28px] overflow-hidden relative border border-white/[.08] shadow-2xl moment-viewport-stage cursor-pointer select-none">' +
-        '<img class="w-full h-full object-cover main-stage-img" src="' + escapeHtml(mainImgSrc) + '" alt="Real moment">' +
-        '<div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/35 pointer-events-none"></div>' +
-        
-        '<!-- Time Badge -->' +
-        '<div class="absolute top-4 right-4 z-10 flex items-center gap-1.5">' +
-          clusterBadgeHtml +
-          '<span class="font-mono-tag text-[9px] text-white/90 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15 moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' +
-            timeAgo +
-          '</span>' +
-        '</div>' +
-        '<!-- Selfie PiP Layer (Tap to swap) -->' +
-        '<div class="sub-camera-pip absolute top-4 left-4 w-20 h-28 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-20 active:scale-95 transition-transform" title="Tap to Swap Views">' +
-          '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
-        '</div>' +
-
-        '<!-- Bottom Overlay -->' +
-        '<div class="absolute bottom-4 inset-x-4 z-10 space-y-2.5">' +
-          '<div class="flex items-center gap-1.5 flex-wrap">' +
-            (commTarget
-              ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10 hover:border-amber-500/50 hover:bg-black/80 transition cursor-pointer text-left active:scale-95" title="Open Community Page">' +
-                  '<span class="text-amber-400 text-xs">⌖</span>' +
-                  '<span class="text-[10px] text-zinc-200 hover:text-amber-300 font-medium font-mono-tag">' + locName + '</span>' +
-                '</button>'
-              : '<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10">' +
-                  '<span class="text-amber-400 text-xs">⌖</span>' +
-                  '<span class="text-[10px] text-zinc-200 font-medium">' + locName + '</span>' +
-                '</div>') +
+    if (isSequence) {
+      card.className = 'moment-article w-[155px] shrink-0 space-y-1.5 select-none';
+      card.innerHTML =
+        '<div class="moment-image aspect-[4/5] rounded-2xl overflow-hidden relative border border-white/10 shadow-lg moment-viewport-stage cursor-pointer select-none bg-zinc-950">' +
+          '<img class="w-full h-full object-cover main-stage-img" src="' + escapeHtml(mainImgSrc) + '" alt="Real moment">' +
+          '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/35 pointer-events-none"></div>' +
+          '<div class="absolute top-2 right-2 z-10 flex items-center gap-1">' +
+            clusterBadgeHtml +
+            '<span class="font-mono-tag text-[7.5px] text-white/90 bg-black/50 backdrop-blur-md px-1.5 py-0.5 rounded-full border border-white/10 moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' +
+              timeAgo +
+            '</span>' +
           '</div>' +
-
-          '<p class="text-[13px] font-medium text-white leading-snug">"' + captionText + '"</p>' +
-
-          '<div class="flex items-center justify-between pt-2 border-t border-white/15">' +
-            '<div class="flex items-center gap-2">' +
-              '<div class="w-7 h-7 rounded-full bg-zinc-950 border border-white/20 flex items-center justify-center text-[9px] font-bold text-amber-400 font-mono-tag">' + avatarLetter + '</div>' +
-              '<span class="text-xs font-bold text-white font-mono-tag">@' + authorHandle + '</span>' +
+          '<div class="sub-camera-pip absolute top-2 left-2 w-10 h-14 rounded-xl overflow-hidden border border-white/25 shadow-lg bg-black cursor-pointer z-20 active:scale-95 transition-transform" title="Tap to Swap Views">' +
+            '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
+          '</div>' +
+          '<div class="absolute bottom-2 inset-x-2 z-10 space-y-1">' +
+            '<div class="flex items-center gap-1 flex-wrap">' +
+              (commTarget
+                ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md location-chip bg-black/50 backdrop-blur-md border border-white/10 hover:border-amber-500/40 transition cursor-pointer text-left active:scale-95" title="Open Community Page">' +
+                    '<span class="text-amber-400 text-[8px]">⌖</span>' +
+                    '<span class="text-[8px] text-zinc-200 hover:text-amber-300 font-medium font-mono-tag truncate max-w-[105px]">' + locName + '</span>' +
+                  '</button>'
+                : '<div class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md location-chip bg-black/50 backdrop-blur-md border border-white/10">' +
+                    '<span class="text-amber-400 text-[8px]">⌖</span>' +
+                    '<span class="text-[8px] text-zinc-200 font-medium truncate max-w-[105px]">' + locName + '</span>' +
+                  '</div>') +
             '</div>' +
-            '<button onclick="openMomentMenu(\'' + m.id + '\')" class="text-zinc-400 hover:text-white text-sm cursor-pointer px-1" aria-label="More">···</button>' +
+            '<p class="text-[9.5px] font-medium text-white/95 leading-tight line-clamp-1">"' + captionText + '"</p>' +
+            '<div class="flex items-center justify-between pt-1 border-t border-white/10">' +
+              '<div class="flex items-center gap-1 min-w-0">' +
+                '<div class="w-4 h-4 rounded-full bg-zinc-900 border border-white/20 flex items-center justify-center text-[6px] font-bold text-amber-400 font-mono-tag shrink-0">' + avatarLetter + '</div>' +
+                '<span class="text-[8.5px] font-semibold text-white/90 font-mono-tag truncate max-w-[80px]">@' + authorHandle + '</span>' +
+              '</div>' +
+              '<button onclick="openMomentMenu(\'' + m.id + '\')" class="text-zinc-400 hover:text-white text-[10px] cursor-pointer px-0.5" aria-label="More">···</button>' +
+            '</div>' +
           '</div>' +
         '</div>' +
-      '</div>' +
-
-      '<!-- Reaction Row -->' +
-      '<div class="mt-2 flex items-center justify-between px-1">' +
-        '<div class="reaction-badge-group flex items-center gap-1.5" id="realmojis-' + m.id + '">' +
+        '<div class="space-y-1 px-0.5">' +
+          '<div class="flex items-center justify-between gap-1">' +
+            (iWasThereHtml || '<span></span>') +
+            '<button onclick="openReactions(\'' + m.id + '\')" class="px-2 py-0.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[7.5px] font-mono-tag flex items-center gap-1 cursor-pointer active:scale-95 transition whitespace-nowrap shadow-sm">' +
+              '<span class="text-amber-400">✦</span> React' +
+            '</button>' +
+          '</div>' +
+          (perspectiveBtnHtml ? '<div class="w-full">' + perspectiveBtnHtml + '</div>' : '') +
+        '</div>';
+    } else {
+      card.className = 'moment-article space-y-2.5 pb-2 border-b border-white/[.05]';
+      card.innerHTML =
+        '<div class="moment-image aspect-[4/5] rounded-[28px] overflow-hidden relative border border-white/[.08] shadow-2xl moment-viewport-stage cursor-pointer select-none">' +
+          '<img class="w-full h-full object-cover main-stage-img" src="' + escapeHtml(mainImgSrc) + '" alt="Real moment">' +
+          '<div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/35 pointer-events-none"></div>' +
+          '<div class="absolute top-4 right-4 z-10 flex items-center gap-1.5">' +
+            clusterBadgeHtml +
+            '<span class="font-mono-tag text-[9px] text-white/90 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15 moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' +
+              timeAgo +
+            '</span>' +
+          '</div>' +
+          '<div class="sub-camera-pip absolute top-4 left-4 w-20 h-28 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-20 active:scale-95 transition-transform" title="Tap to Swap Views">' +
+            '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
+          '</div>' +
+          '<div class="absolute bottom-4 inset-x-4 z-10 space-y-2.5">' +
+            '<div class="flex items-center gap-1.5 flex-wrap">' +
+              (commTarget
+                ? '<button type="button" onclick="event.stopPropagation(); openCampusPage(\'' + jsAttr(commTarget) + '\')" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10 hover:border-amber-500/50 hover:bg-black/80 transition cursor-pointer text-left active:scale-95" title="Open Community Page">' +
+                    '<span class="text-amber-400 text-xs">⌖</span>' +
+                    '<span class="text-[10px] text-zinc-200 hover:text-amber-300 font-medium font-mono-tag">' + locName + '</span>' +
+                  '</button>'
+                : '<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl location-chip bg-black/60 backdrop-blur-md border border-white/10">' +
+                    '<span class="text-amber-400 text-xs">⌖</span>' +
+                    '<span class="text-[10px] text-zinc-200 font-medium">' + locName + '</span>' +
+                  '</div>') +
+            '</div>' +
+            '<p class="text-[13px] font-medium text-white leading-snug">"' + captionText + '"</p>' +
+            '<div class="flex items-center justify-between pt-2 border-t border-white/15">' +
+              '<div class="flex items-center gap-2">' +
+                '<div class="w-7 h-7 rounded-full bg-zinc-950 border border-white/20 flex items-center justify-center text-[9px] font-bold text-amber-400 font-mono-tag">' + avatarLetter + '</div>' +
+                '<span class="text-xs font-bold text-white font-mono-tag">@' + authorHandle + '</span>' +
+              '</div>' +
+              '<button onclick="openMomentMenu(\'' + m.id + '\')" class="text-zinc-400 hover:text-white text-sm cursor-pointer px-1" aria-label="More">···</button>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
-        '<div class="flex items-center gap-2 flex-wrap justify-end">' +
-          iWasThereHtml +
-          perspectiveBtnHtml +
-          '<button onclick="openReactions(\'' + m.id + '\')" class="px-4 py-2 rounded-2xl bg-zinc-950 border border-white/[.07] text-zinc-300 hover:text-white text-[11px] font-mono-tag flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-sm">' +
-            '<span class="text-amber-400">✦</span> React' +
-          '</button>' +
-        '</div>' +
-      '</div>';
+        '<div class="mt-2 flex items-center justify-between px-1">' +
+          '<div class="reaction-badge-group flex items-center gap-1.5" id="realmojis-' + m.id + '">' +
+          '</div>' +
+          '<div class="flex items-center gap-2 flex-wrap justify-end">' +
+            iWasThereHtml +
+            perspectiveBtnHtml +
+            '<button onclick="openReactions(\'' + m.id + '\')" class="px-4 py-2 rounded-2xl bg-zinc-950 border border-white/[.07] text-zinc-300 hover:text-white text-[11px] font-mono-tag flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-sm">' +
+              '<span class="text-amber-400">✦</span> React' +
+            '</button>' +
+          '</div>' +
+        '</div>';
+    }
 
     container.appendChild(card);
     attachCardInteractions(card, m);
   });
+
+  if (isSequence && moments.length > 0) {
+    var viewAllTile = document.createElement('div');
+    viewAllTile.className = 'w-[120px] shrink-0 aspect-[4/5] rounded-2xl border border-white/10 bg-zinc-950/60 backdrop-blur-md flex flex-col items-center justify-center text-center cursor-pointer hover:bg-zinc-900/80 hover:border-amber-500/40 active:scale-95 transition shadow-sm p-3 select-none';
+    viewAllTile.onclick = function() { toggleAllCampusMomentsView(); };
+    viewAllTile.innerHTML =
+      '<span class="text-amber-400 text-[10px] font-bold font-mono-tag tracking-wider">VIEW ALL</span>' +
+      '<span class="text-[8px] text-zinc-400 font-mono-tag font-medium mt-1">MOMENTS →</span>';
+    container.appendChild(viewAllTile);
+  }
+
   updateAllMomentTimestamps();
 }
 window.renderCommunityCards = renderCommunityCards;
+
+function toggleAllCampusMomentsView() {
+  state.campusMomentsViewMode = (state.campusMomentsViewMode === 'stream') ? 'sequence' : 'stream';
+  var viewAllText = document.getElementById('campusMomentsViewAllText');
+  var container = document.getElementById('campusMomentsContainer');
+  var paginationEl = document.getElementById('campusMomentsPagination');
+
+  if (state.campusMomentsViewMode === 'stream') {
+    if (viewAllText) viewAllText.textContent = 'SHOW SEQUENCE';
+    if (container) container.className = 'space-y-4 pt-1';
+    if (paginationEl) paginationEl.style.display = state.campusFeedHasMore ? 'block' : 'none';
+  } else {
+    if (viewAllText) viewAllText.textContent = 'VIEW ALL';
+    if (container) container.className = 'flex gap-3 overflow-x-auto no-scrollbar pb-2 pt-1';
+    if (paginationEl) paginationEl.style.display = 'none';
+  }
+
+  if (state.campusLastLoadedMoments && container) {
+    renderCommunityCards(state.campusLastLoadedMoments, container, state.campusMomentsViewMode);
+  }
+}
+window.toggleAllCampusMomentsView = toggleAllCampusMomentsView;
 
 // Community V1 Modals & Actions
 var activeTargetMomentId = null;
