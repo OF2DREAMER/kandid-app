@@ -628,6 +628,102 @@
 
         <!-- Community Stream (Production Mobile UI V1) -->
         <div class="space-y-4" id="campusContentStream" style="display:none;">
+
+          <!-- Community Scope Switcher: PUBLIC COMMUNITIES (Default) | ACTIVE COMMUNITY -->
+          <div class="px-1 pt-1 pb-1">
+            <div class="flex items-center bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[10px] font-mono-tag" id="communityScopeSwitcher">
+              <button type="button"
+                id="commScopePublicBtn"
+                onclick="setCommunityFeedScope('public')"
+                class="flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm transition-all cursor-pointer text-center">
+                PUBLIC COMMUNITIES
+              </button>
+              <button type="button"
+                id="commScopeActiveBtn"
+                onclick="setCommunityFeedScope('active')"
+                class="flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer text-center">
+                ACTIVE COMMUNITY
+              </button>
+            </div>
+          </div>
+
+          <!-- PUBLIC COMMUNITIES: Cross-Community Aggregated Feed & Live Pulse (Default Selected View) -->
+          <div id="publicCommunitiesView" class="space-y-4">
+
+            <!-- View Sub-tabs: RECENT MOMENTS (Default) | LIVE PULSE -->
+            <div class="flex items-center justify-between px-1">
+              <div class="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-[9px] font-mono-tag" id="publicViewSubTabs">
+                <button type="button" id="publicViewMomentsBtn" onclick="setPublicFeedSubView('moments')" class="px-3 py-1.5 rounded-lg bg-zinc-800 text-white font-bold transition-all cursor-pointer">
+                  RECENT MOMENTS
+                </button>
+                <button type="button" id="publicViewPulseBtn" onclick="setPublicFeedSubView('pulse')" class="px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5">
+                  <span id="publicPulseIndicatorDot" class="w-1.5 h-1.5 rounded-full bg-zinc-600"></span>
+                  <span>LIVE PULSE</span>
+                </button>
+              </div>
+              <span id="publicFeedStatusBadge" class="font-mono-tag text-[9px] text-zinc-400 tracking-wider">
+                CROSS-COMMUNITY
+              </span>
+            </div>
+
+            <!-- Live Pulse Status / Banner -->
+            <div id="publicLivePulseHeader" style="display:none;" class="p-3.5 rounded-2xl border border-white/[.07] bg-zinc-950/80 shadow-xl space-y-2">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span id="publicPulseDot" class="w-1.5 h-1.5 rounded-full bg-zinc-500"></span>
+                  <p id="publicPulseStateLabel" class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-400 font-bold">QUIET RIGHT NOW</p>
+                </div>
+                <span id="publicPulseCountLabel" class="font-mono-tag text-[9px] text-zinc-400">0 active</span>
+              </div>
+              <div>
+                <h2 id="publicPulseTitle" class="text-sm font-extrabold text-white">Live Pulse</h2>
+                <p id="publicPulseSubtitle" class="text-[11px] text-zinc-400 mt-0.5">Verified live activity across public communities in the last 2 hours.</p>
+              </div>
+            </div>
+
+            <!-- Loading Skeleton -->
+            <div id="publicMomentsLoading" style="display:none;" class="space-y-4 pt-1">
+              <div class="aspect-[4/5] rounded-[28px] bg-zinc-900/60 border border-white/5 animate-pulse flex items-center justify-center">
+                <span class="text-zinc-600 font-mono-tag text-xs">LOADING PUBLIC MOMENTS...</span>
+              </div>
+            </div>
+
+            <!-- Empty State -->
+            <div id="publicMomentsEmpty" style="display:none;"></div>
+
+            <!-- Error State with Retry -->
+            <div id="publicMomentsError" style="display:none;" class="bg-zinc-950 border border-red-500/30 rounded-2xl p-6 text-center space-y-2 shadow-lg">
+              <div class="text-red-400 text-lg font-mono-tag">⚠</div>
+              <h3 class="text-xs font-bold text-white uppercase font-mono-tag">UNABLE TO LOAD PUBLIC FEED</h3>
+              <p class="text-[11px] text-zinc-400">Something went wrong while retrieving public community moments.</p>
+              <button onclick="loadPublicCommunityFeed()" class="mt-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-[10px] rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer">Retry ↺</button>
+            </div>
+
+            <!-- Main Aggregated Moments Stream Container -->
+            <div class="space-y-4 pt-1" id="publicMomentsContainer"></div>
+
+            <!-- Pagination / Load More -->
+            <div id="publicMomentsPagination" class="text-center pt-2 pb-4" style="display:none;">
+              <button type="button" onclick="loadMorePublicMoments()" id="publicMomentsLoadMoreBtn" class="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white font-mono-tag text-[10px] font-bold rounded-xl tracking-wider uppercase transition cursor-pointer active:scale-95 shadow-sm">
+                LOAD MORE MOMENTS ↓
+              </button>
+            </div>
+
+            <!-- Public Communities Directory & Creation Hint -->
+            <div class="space-y-3 pt-2 border-t border-white/[.05]">
+              <div class="flex items-center justify-between px-1">
+                <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">DISCOVER COMMUNITIES</p>
+                <button onclick="openCreateCommunityModal()" class="text-[9px] text-amber-500 hover:text-amber-400 font-mono-tag font-bold cursor-pointer">+ CREATE</button>
+              </div>
+              <div class="flex gap-2.5 overflow-x-auto no-scroll pb-2" id="publicMoreAroundYouContainer">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ACTIVE COMMUNITY: Dedicated Single-Community View (When Switched) -->
+          <div id="activeCommunityView" class="space-y-4" style="display:none;">
           
           <!-- 4. Community Identity Section -->
           <div class="px-1 pt-1 pb-3 border-b border-white/[.05] space-y-2">
@@ -717,6 +813,8 @@
             <div class="flex gap-2.5 overflow-x-auto no-scroll pb-2" id="moreAroundYouContainer">
               <!-- Dynamically populated via loadMoreAroundYou() -->
             </div>
+          </div>
+
           </div>
 
         </div>
