@@ -7385,6 +7385,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     p["area_tag"] = f"Near {aname} · {p['timeAgo']}"
                     p["primary_community_id"] = p.get("community_id", "")
                     p["primary_community_name"] = p.get("community_name", "")
+                    c_id = p.get("cluster_id")
+                    if c_id:
+                        cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'perspective'", (c_id,))
+                        p["perspectives_count"] = cursor.fetchone()[0]
+                        if user and user.get("id"):
+                            cursor.execute("SELECT 1 FROM moment_cluster_members WHERE cluster_id = ? AND user_id = ?", (c_id, user["id"]))
+                            p["is_attended"] = bool(cursor.fetchone())
+                        else:
+                            p["is_attended"] = False
+                    else:
+                        p["perspectives_count"] = 0
+                        p["is_attended"] = False
                     live_pulse_moments.append(p)
 
             has_live = len(live_pulse_moments) > 0
@@ -7437,6 +7449,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 m["area_tag"] = f"Near {aname} · {m['timeAgo']}"
                 m["primary_community_id"] = m.get("community_id", "")
                 m["primary_community_name"] = m.get("community_name", "")
+                c_id = m.get("cluster_id")
+                if c_id:
+                    cursor.execute("SELECT COUNT(*) FROM moment_cluster_members WHERE cluster_id = ? AND participation_type = 'perspective'", (c_id,))
+                    m["perspectives_count"] = cursor.fetchone()[0]
+                    if user and user.get("id"):
+                        cursor.execute("SELECT 1 FROM moment_cluster_members WHERE cluster_id = ? AND user_id = ?", (c_id, user["id"]))
+                        m["is_attended"] = bool(cursor.fetchone())
+                    else:
+                        m["is_attended"] = False
+                else:
+                    m["perspectives_count"] = 0
+                    m["is_attended"] = False
 
             conn.close()
             return self.send_json(200, {
