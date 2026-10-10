@@ -584,6 +584,9 @@ function switchScreenView(screenName) {
   }
 
   if (screenName === 'search') {
+    if (!state.searchQuery) {
+      _searchShowView('idle');
+    }
     loadSearchDiscovery();
   } else if (screenName === 'chat-home') {
     loadChatConversations();
@@ -5090,11 +5093,23 @@ function handleSearchInput(event) {
 }
 window.handleSearchInput = handleSearchInput;
 
-function onSearchFocus() {
+async function onSearchFocus() {
   state.searchFocused = true;
   if (!state.searchQuery) {
-    _searchShowView('focused');
-    loadRecentSearches();
+    if (_recentSearchesCache === null) {
+      try {
+        var data = await apiRequest('/api/search/recent');
+        _recentSearchesCache = (data && data.success && Array.isArray(data.searches)) ? data.searches : [];
+      } catch (e) {
+        _recentSearchesCache = [];
+      }
+    }
+    if (_recentSearchesCache && _recentSearchesCache.length > 0) {
+      _searchShowView('focused');
+      loadRecentSearches();
+    } else {
+      _searchShowView('idle');
+    }
   }
 }
 window.onSearchFocus = onSearchFocus;
@@ -5338,107 +5353,120 @@ function enableSearchLocation() {
 }
 window.enableSearchLocation = enableSearchLocation;
 
-// ── Around You Discovery ──────────────────────────────────────────────
+var _isLoadingSearchDiscovery = false;
 async function loadSearchDiscovery() {
-  loadRadar();
+  if (_isLoadingSearchDiscovery) return;
+  _isLoadingSearchDiscovery = true;
 
-  var aroundContainer = document.getElementById('searchAroundYouContainer');
-  if (!aroundContainer) return;
+  try {
+    loadRadar();
 
-  var data = await apiRequest('/api/search?type=all');
-  if (!data || !data.success) {
-    aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT\'S TOO QUIET AROUND HERE</div>';
-    return;
-  }
+    var aroundContainer = document.getElementById('searchAroundYouContainer');
+    if (!aroundContainer) return;
 
-  if (state.searchCategory === 'people') {
-    if (Array.isArray(data.people)) {
-      aroundContainer.innerHTML = '';
-            // Filter out people we are already connected to or requested
-      var suggested = data.people.filter(function(user) {
-        return user.connection_status === 'connect' || (!user.is_connected && !user.is_requested);
-      });
-      if (suggested.length === 0) {
+    var data = await apiRequest('/api/search?type=all');
+    if (!data || !data.success) {
+      if (!aroundContainer.children.length) {
         aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT\'S TOO QUIET AROUND HERE</div>';
-        return;
       }
-      suggested.slice(0, 5).forEach(function(p) {
-        var card = document.createElement('div');
-        card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:border-neutral-700 transition mb-2.5';
-        var avatarUrl = escapeHtml(p.avatar_url || '');
-        var avatarHtml = avatarUrl 
-            ? '<img src="'+avatarUrl+'" class="w-full h-full object-cover">'
-            : '<span class="font-bold text-amber-500 text-xs">' + escapeHtml(p.avatar_letter || (p.handle ? p.handle.charAt(0).toUpperCase() : 'U')) + '</span>';
-            
-        card.innerHTML = 
-          '<div class="flex items-center space-x-3">' +
-            '<div class="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center overflow-hidden flex-shrink-0">' +
-              avatarHtml +
-            '</div>' +
-            '<div class="min-w-0 flex flex-col">' +
-              '<span class="text-xs font-bold text-white truncate">' + escapeHtml(p.name) + '</span>' +
-              '<span class="text-[10px] text-gray-500 font-mono-meta truncate">@' + escapeHtml(p.handle) + '</span>' +
-            '</div>' +
-          '</div>' +
-          '<button class="px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-500 text-[9px] font-bold tracking-wider uppercase hover:bg-amber-500/20 transition active:scale-95 flex-shrink-0">Connect</button>';
-          
-        card.addEventListener('click', function(e) {
-          if (e.target.tagName === 'BUTTON') {
-            e.stopPropagation();
-            if (typeof connectWithUser === 'function') connectWithUser(p.id, e.target);
-          } else {
-            if (typeof openPeerProfile === 'function') openPeerProfile(p.id);
-          }
-        });
-        aroundContainer.appendChild(card);
-      });
-      return; // Stop here if we rendered people
+      return;
     }
-  }
 
-  var items = [];
-  if (Array.isArray(data.sectors) && data.sectors.length > 0) {
-    data.sectors.forEach(function(s) {
-      items.push({ name: s.name, type: 'Place', subtext: s.area || 'Active area', icon: s.icon || '📍' });
-    });
-  } else if (Array.isArray(data.campuses) && data.campuses.length > 0) {
-    data.campuses.forEach(function(c) {
-      items.push({ name: c.name, type: 'Campus', subtext: (c.city || 'Campus') + ' · Recent Moments', icon: '🎓' });
-    });
-  }
+    if (state.searchCategory === 'people') {
+      if (Array.isArray(data.people)) {
+        // Filter out people we are already connected to or requested
+        var suggested = data.people.filter(function(user) {
+          return user.connection_status === 'connect' || (!user.is_connected && !user.is_requested);
+        });
+        if (suggested.length === 0) {
+          if (!aroundContainer.children.length) {
+            aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT\'S TOO QUIET AROUND HERE</div>';
+          }
+          return;
+        }
+        aroundContainer.innerHTML = '';
+        suggested.slice(0, 5).forEach(function(p) {
+          var card = document.createElement('div');
+          card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3 flex items-center justify-between cursor-pointer hover:border-neutral-700 transition mb-2.5';
+          var avatarUrl = escapeHtml(p.avatar_url || '');
+          var avatarHtml = avatarUrl
+              ? '<img src="'+avatarUrl+'" class="w-full h-full object-cover">'
+              : '<span class="font-bold text-amber-500 text-xs">' + escapeHtml(p.avatar_letter || (p.handle ? p.handle.charAt(0).toUpperCase() : 'U')) + '</span>';
 
-  if (Array.isArray(data.communities) && data.communities.length > 0) {
-    data.communities.slice(0, 2).forEach(function(c) {
-      items.push({ name: c.name, type: 'Community', subtext: c.city || 'Recent Moments', icon: '📸' });
-    });
-  }
+          card.innerHTML =
+            '<div class="flex items-center space-x-3">' +
+              '<div class="w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center overflow-hidden flex-shrink-0">' +
+                avatarHtml +
+              '</div>' +
+              '<div class="min-w-0 flex flex-col">' +
+                '<span class="text-xs font-bold text-white truncate">' + escapeHtml(p.name) + '</span>' +
+                '<span class="text-[10px] text-gray-500 font-mono-meta truncate">@' + escapeHtml(p.handle) + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<button class="px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-500 text-[9px] font-bold tracking-wider uppercase hover:bg-amber-500/20 transition active:scale-95 flex-shrink-0">Connect</button>';
 
-  if (items.length === 0) {
-    aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT\'S TOO QUIET AROUND HERE</div>';
-    return;
-  }
+          card.addEventListener('click', function(e) {
+            if (e.target.tagName === 'BUTTON') {
+              e.stopPropagation();
+              if (typeof connectWithUser === 'function') connectWithUser(p.id, e.target);
+            } else {
+              if (typeof openPeerProfile === 'function') openPeerProfile(p.id);
+            }
+          });
+          aroundContainer.appendChild(card);
+        });
+        return; // Stop here if we rendered people
+      }
+    }
 
-  aroundContainer.innerHTML = '';
-  items.slice(0, 4).forEach(function(item) {
-    var card = document.createElement('div');
-    card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer hover:border-neutral-700 transition select-none';
-    card.innerHTML =
-      '<div class="flex items-center space-x-3 min-w-0">' +
-        '<div class="w-9 h-9 rounded-lg overflow-hidden bg-neutral-800 flex-shrink-0 flex items-center justify-center text-sm">' +
-          item.icon +
+    var items = [];
+    if (Array.isArray(data.sectors) && data.sectors.length > 0) {
+      data.sectors.forEach(function(s) {
+        items.push({ name: s.name, type: 'Place', subtext: s.area || 'Active area', icon: s.icon || '📍' });
+      });
+    } else if (Array.isArray(data.campuses) && data.campuses.length > 0) {
+      data.campuses.forEach(function(c) {
+        items.push({ name: c.name, type: 'Campus', subtext: (c.city || 'Campus') + ' · Recent Moments', icon: '🎓' });
+      });
+    }
+
+    if (Array.isArray(data.communities) && data.communities.length > 0) {
+      data.communities.slice(0, 2).forEach(function(c) {
+        items.push({ name: c.name, type: 'Community', subtext: c.city || 'Recent Moments', icon: '📸' });
+      });
+    }
+
+    if (items.length === 0) {
+      if (!aroundContainer.children.length) {
+        aroundContainer.innerHTML = '<div class="py-6 text-center text-xs text-gray-500 font-mono-meta">IT\'S TOO QUIET AROUND HERE</div>';
+      }
+      return;
+    }
+
+    aroundContainer.innerHTML = '';
+    items.slice(0, 4).forEach(function(item) {
+      var card = document.createElement('div');
+      card.className = 'bg-[#121215]/60 border border-neutral-800/60 rounded-xl p-3.5 flex items-center justify-between cursor-pointer hover:border-neutral-700 transition select-none';
+      card.innerHTML =
+        '<div class="flex items-center space-x-3 min-w-0">' +
+          '<div class="w-9 h-9 rounded-lg overflow-hidden bg-neutral-800 flex-shrink-0 flex items-center justify-center text-sm">' +
+            item.icon +
+          '</div>' +
+          '<div class="min-w-0">' +
+            '<h4 class="text-xs font-bold text-white truncate">' + escapeHtml(item.name) + '</h4>' +
+            '<p class="text-[10px] text-gray-400 mt-0.5 truncate">' + escapeHtml(item.type + ' · ' + item.subtext) + '</p>' +
+          '</div>' +
         '</div>' +
-        '<div class="min-w-0">' +
-          '<h4 class="text-xs font-bold text-white truncate">' + escapeHtml(item.name) + '</h4>' +
-          '<p class="text-[10px] text-gray-400 mt-0.5 truncate">' + escapeHtml(item.type + ' · ' + item.subtext) + '</p>' +
-        '</div>' +
-      '</div>' +
-      '<i class="fa-solid fa-chevron-right text-[10px] text-gray-500 flex-shrink-0"></i>';
+        '<i class="fa-solid fa-chevron-right text-[10px] text-gray-500 flex-shrink-0"></i>';
 
-    card.addEventListener('click', function() {
-      if (typeof openCampusPage === 'function') openCampusPage(item.name);
+      card.addEventListener('click', function() {
+        if (typeof openCampusPage === 'function') openCampusPage(item.name);
+      });
+      aroundContainer.appendChild(card);
     });
-    aroundContainer.appendChild(card);
-  });
+  } finally {
+    _isLoadingSearchDiscovery = false;
+  }
 }
 window.loadSearchDiscovery = loadSearchDiscovery;
 
@@ -7634,7 +7662,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Secondary background modules: fetch notifications, search, chat, and profile concurrently
   await Promise.allSettled([
     loadNotifications(),
-    loadSearchDiscovery(),
+    (state.activeScreen === 'search' ? loadSearchDiscovery() : Promise.resolve()),
     loadChatConversations(),
     loadYouScreen()
   ]);
