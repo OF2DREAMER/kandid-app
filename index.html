@@ -76,7 +76,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="style.css?v=3.2.1">
+  <link rel="stylesheet" href="style.css?v=3.2.4">
   <style>
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
     .font-mono-tag, .mono { font-family: 'JetBrains Mono', monospace; }
@@ -691,22 +691,19 @@
             </p>
           </div>
 
-          <!-- 10. Memories Around Us (Truthful Collective Memory Directory) -->
-          <div class="space-y-3 pt-2" id="memoriesAroundUsSection">
-            <div class="flex items-center justify-between px-1">
-              <div>
-                <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">MEMORIES AROUND US</p>
-                <h2 class="text-sm font-extrabold text-white mt-0.5">Community memory archives</h2>
+          <!-- 10. Memories Around Us (Compact Directory Entry Card) -->
+          <div class="p-4 rounded-3xl bg-zinc-950 border border-white/[.08] shadow-xl flex items-center justify-between gap-3" id="memoriesAroundUsSection">
+            <div class="space-y-0.5 min-w-0 flex-1">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-amber-400">🏛️</span>
+                <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold">MEMORIES AROUND US</p>
               </div>
+              <h2 class="text-sm font-extrabold text-white truncate">Community memory archives</h2>
+              <p class="text-[11px] text-zinc-400 truncate">Explore living archives across campus & public spaces.</p>
             </div>
-
-            <!-- Dynamic directory container populated by loadMemoriesAroundUs() -->
-            <div id="memoriesAroundUsContainer" class="space-y-4">
-              <div class="py-4 text-center text-xs text-zinc-500 font-mono-tag flex items-center justify-center gap-2">
-                <span class="w-3.5 h-3.5 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></span>
-                <span>Loading community archives...</span>
-              </div>
-            </div>
+            <button type="button" onclick="openMemoriesDirectory()" class="shrink-0 font-mono-tag text-[10px] text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-3.5 py-2 rounded-xl font-bold cursor-pointer transition active:scale-95 flex items-center gap-1.5 shadow-sm">
+              <span>EXPLORE ARCHIVES</span> <span>→</span>
+            </button>
           </div>
 
           <!-- 11. More Around You (Dynamic Related Communities) -->
@@ -3028,6 +3025,9 @@
                     <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-500 font-bold">COLLECTIVE MEMORY</p>
                     <h2 class="text-sm font-extrabold text-white mt-0.5">Captured together. Remembered together.</h2>
                 </div>
+                <button type="button" id="campusPagePublishMemoryBtn" onclick="openPublishCollectiveMemoryModal()" class="shrink-0 font-mono-tag text-[10px] text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-3 py-1.5 rounded-xl font-bold cursor-pointer transition active:scale-95 flex items-center gap-1.5 shadow-sm" style="display: none;">
+                    <span>+ PUBLISH ARCHIVE</span>
+                </button>
             </div>
 
             <div class="grid grid-cols-2 gap-3" id="campusPageMemoriesGrid">
@@ -3055,6 +3055,44 @@
     </section>
 
     <!-- ===================================================================
+         COMMUNITY ARCHIVES DIRECTORY SCREEN (MEMORIES AROUND US)
+         =================================================================== -->
+    <section class="app-screen px-4 py-3 space-y-4" id="screen-memories-directory" style="display:none;">
+
+        <!-- Header & Top Bar -->
+         <header class="bg-[#09090b]/90 apple-blur px-1 pt-1 pb-2 border-b border-zinc-800/80 flex justify-between items-center">
+             <button class="text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer flex items-center gap-1.5" onclick="handleMemoriesDirectoryBack()">
+                 <span>←</span> <span>BACK</span>
+             </button>
+             <div class="text-center">
+                 <span class="font-mono-tag text-[9px] text-amber-500 font-bold uppercase tracking-widest">◉ ARCHIVE DIRECTORY</span>
+             </div>
+             <div class="w-12"></div>
+         </header>
+
+         <!-- Directory Overview Card -->
+         <div class="p-5 rounded-3xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-white/[.08] shadow-2xl space-y-2 relative overflow-hidden">
+             <div class="flex items-center gap-1.5">
+                 <span class="text-xs text-amber-400">🏛️</span>
+                 <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold">MEMORIES AROUND US</p>
+             </div>
+             <h1 class="text-lg font-extrabold text-white tracking-tight">Community Memory Archives</h1>
+             <p class="text-xs text-zinc-400 leading-relaxed">
+                 Explore living collective memory archives from your joined communities and public spaces.
+             </p>
+         </div>
+
+         <!-- Dynamic Archive Lists (Populated via loadMemoriesAroundUs) -->
+         <div id="memoriesAroundUsContainer" class="space-y-4">
+             <div class="py-6 text-center text-xs text-zinc-500 font-mono-tag flex items-center justify-center gap-2">
+                 <span class="w-3.5 h-3.5 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></span>
+                 <span>Loading community archives...</span>
+             </div>
+         </div>
+
+     </section>
+
+    <!-- ===================================================================
          COLLECTIVE MEMORY FULL-SCREEN (COMMUNITY SHARED ARCHIVE)
          =================================================================== -->
     <section class="app-screen px-4 py-3 space-y-4" id="screen-collective-memory" style="display:none;">
@@ -3073,13 +3111,13 @@
         <!-- Memory Hero & Overview Card -->
         <div class="p-5 rounded-3xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-amber-500/30 shadow-2xl space-y-3 relative overflow-hidden">
             <div class="flex items-center justify-between">
-                <span id="collectiveMemoryDate" class="font-mono-tag text-[10px] text-amber-400 font-bold uppercase tracking-wider">Aug 30, 2026</span>
-                <span id="collectiveMemoryCountBadge" class="font-mono-tag text-[9px] text-zinc-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded">0 Moments captured together</span>
+                <span id="collectiveMemoryDate" class="font-mono-tag text-[10px] text-amber-400 font-bold uppercase tracking-wider"></span>
+                <span id="collectiveMemoryCountBadge" class="font-mono-tag text-[9px] text-zinc-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded" style="display:none;"></span>
             </div>
 
             <div class="space-y-1">
-                <h1 id="collectiveMemoryTitle" class="text-lg font-extrabold text-white tracking-tight">Campus Welcome & Orientation</h1>
-                <p id="collectiveMemoryCommunity" class="text-xs text-zinc-400 font-mono-tag">North City University</p>
+                <h1 id="collectiveMemoryTitle" class="text-lg font-extrabold text-white tracking-tight">Collective Memory</h1>
+                <p id="collectiveMemoryCommunity" class="text-xs text-zinc-400 font-mono-tag"></p>
             </div>
 
             <!-- Standout HERO MOMENT Preview -->
@@ -3090,16 +3128,15 @@
             <!-- "WHAT HAPPENED HERE" Story Recap -->
             <div class="p-3.5 rounded-2xl bg-zinc-900/80 border border-white/[.06] space-y-1.5">
                 <span class="font-mono-tag text-[8px] text-zinc-500 uppercase tracking-widest block font-bold">WHAT HAPPENED HERE</span>
-                <p id="collectiveMemoryStory" class="text-xs text-zinc-200 font-sans leading-relaxed">
-                    Students arriving on campus, meeting people for the first time, walking around the quad, and sharing unfiltered first impressions.
+                <p id="collectiveMemoryStory" class="text-xs text-zinc-300 font-sans leading-relaxed">
                 </p>
             </div>
 
             <!-- "CAPTURED BY" Minimal Peer Attribution -->
             <div class="p-3 rounded-2xl bg-zinc-950 border border-zinc-800/80 space-y-1">
                 <span class="font-mono-tag text-[8px] text-amber-500 uppercase tracking-widest block font-bold">CAPTURED BY</span>
-                <p id="collectiveMemoryCapturedBy" class="text-xs text-zinc-300 font-mono-tag truncate">
-                    No contributors yet
+                <p id="collectiveMemoryCapturedBy" class="text-xs text-zinc-400 font-mono-tag truncate">
+                    No contributors
                 </p>
             </div>
         </div>
@@ -4835,7 +4872,7 @@
         </div>
 
         <div class="p-5 border-t border-white/[.07] bg-zinc-950">
-            <button onclick="closeLivePulse(); openCameraStudio();" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag tracking-widest cursor-pointer shadow-lg active:scale-95 transition">
+            <button onclick="closeLivePulse(); openCommunityMomentCapture(state.activeCommunityId, state.activeCommunity);" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag tracking-widest cursor-pointer shadow-lg active:scale-95 transition">
                 Capture into Pulse 📸
             </button>
         </div>
@@ -5039,6 +5076,52 @@
         </div>
     </div>
 
+    <!-- PUBLISH COLLECTIVE MEMORY MODAL (Curator/Owner Archive Publishing) -->
+    <div id="publishCollectiveMemoryModal" class="absolute inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4" style="display:none;">
+        <div class="w-full max-w-sm rounded-3xl bg-[#121214] border border-white/[.1] p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-200 text-zinc-200 max-h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between pb-2 border-b border-zinc-800 shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-base text-amber-400">🏛️</span>
+                    <div>
+                        <h3 class="text-sm font-bold text-white tracking-tight">Publish Collective Memory</h3>
+                        <p class="text-[10px] text-zinc-400 font-mono-tag">Preserve community moments as living history</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closePublishCollectiveMemoryModal()" class="text-zinc-500 hover:text-white text-base cursor-pointer p-1">✕</button>
+            </div>
+
+            <div class="space-y-3 font-mono-tag overflow-y-auto flex-1 pr-1">
+                <div class="space-y-1">
+                    <label class="text-[9px] text-zinc-400 uppercase tracking-widest block font-bold">Archive Title *</label>
+                    <input id="memPublishTitle" type="text" placeholder="e.g. Winter Semester Commencement 2026" class="w-full bg-zinc-950 border border-zinc-700 focus:border-amber-500/50 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none font-sans transition-colors">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-[9px] text-zinc-400 uppercase tracking-widest block font-bold">What Happened Here (Story / Recap)</label>
+                    <textarea id="memPublishStory" rows="2" placeholder="Describe the atmosphere, shared experience, and collective energy..." class="w-full bg-zinc-950 border border-zinc-700 focus:border-amber-500/50 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none font-sans transition-colors resize-none"></textarea>
+                </div>
+                <div class="space-y-1">
+                    <div class="flex items-center justify-between">
+                        <label class="text-[9px] text-zinc-400 uppercase tracking-widest block font-bold">Select Moments to Archive *</label>
+                        <span id="memPublishSelectedCount" class="text-[9px] text-amber-400 font-bold">0 selected</span>
+                    </div>
+                    <div id="memPublishMomentsList" class="space-y-2 max-h-48 overflow-y-auto p-1 rounded-xl bg-zinc-950 border border-white/[.05]">
+                        <div class="py-4 text-center text-[10px] text-zinc-500 font-mono-tag">Loading moments...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-2 border-t border-zinc-800 shrink-0 font-mono-tag">
+                <button type="button" id="memPublishSubmitBtn" onclick="submitPublishCollectiveMemory()" class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-[0.98]">
+                    <span>Publish Archive</span>
+                    <span>→</span>
+                </button>
+                <button type="button" onclick="closePublishCollectiveMemoryModal()" class="w-full py-2 bg-zinc-900 text-zinc-400 hover:text-white text-xs rounded-xl cursor-pointer">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- CAMPUS REQUEST MODAL -->
     <div id="campusRequestModal" class="absolute inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4" style="display:none;">
         <div class="w-full max-w-sm rounded-3xl bg-[#121214] border border-zinc-700/80 p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-200 text-zinc-200">
@@ -5073,6 +5156,6 @@
   </div> <!-- End #appContainer -->
 
   <script src="observability.js?v=1.0.0"></script>
-  <script src="app_core.js?v=3.2.1"></script>
+  <script src="app_core.js?v=3.2.4"></script>
 </body>
 </html>

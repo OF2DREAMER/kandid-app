@@ -339,16 +339,27 @@ def get_user_community_role(community_id, user_id, cursor):
     """
     if not community_id or not user_id:
         return None
-    # 1. Check if user is community creator
+
+    # 1. Check community identity
     cursor.execute("SELECT id, creator_id, creator_handle, name, visibility, type FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ?", (community_id, str(community_id).lower(), community_id))
     crow = cursor.fetchone()
+    resolved_cid = crow["id"] if crow else community_id
+
+    # Check if user has an active community suspension
+    cursor.execute("""
+        SELECT 1 FROM community_suspensions
+        WHERE user_id = ? AND (community_id = ? OR community_id = ?)
+    """, (user_id, resolved_cid, community_id))
+    if cursor.fetchone():
+        return None
+
     if crow:
         if crow["creator_id"] and crow["creator_id"] == user_id:
             return "owner"
 
     # 2. Check community_members table
     cursor.execute("SELECT role, status FROM community_members WHERE (community_id = ? OR community_id = ?) AND user_id = ?", 
-                   (community_id, crow["id"] if crow else community_id, user_id))
+                   (community_id, resolved_cid, user_id))
     mrow = cursor.fetchone()
     if mrow:
         if mrow["status"] != "active":
@@ -2642,7 +2653,7 @@ class PostgresCursorWrapper:
                     pg_sql += " ON CONFLICT (token) DO UPDATE SET expires_at = EXCLUDED.expires_at"
                 elif tbl_name == "friendships":
                     pg_sql += " ON CONFLICT (user_id, friend_id) DO UPDATE SET status = EXCLUDED.status"
-                elif tbl_name in ("reactions", "blocks", "community_mutes", "auth_identities"):
+                elif tbl_name in ("reactions", "blocks", "community_mutes", "community_suspensions", "auth_identities"):
                     pg_sql += " ON CONFLICT DO NOTHING"
                 else:
                     pg_sql += " ON CONFLICT (id) DO NOTHING"
@@ -3170,6 +3181,18 @@ def init_db():
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS collective_memory_moments (
+        id TEXT PRIMARY KEY,
+        memory_id TEXT NOT NULL,
+        moment_id TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (memory_id) REFERENCES collective_memories(id) ON DELETE CASCADE,
+        FOREIGN KEY (moment_id) REFERENCES posts(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_cmm_memory ON collective_memory_moments(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_cmm_moment ON collective_memory_moments(moment_id);
+
     CREATE TABLE IF NOT EXISTS campus_areas (
         id TEXT PRIMARY KEY,
         campus TEXT NOT NULL,
@@ -3687,6 +3710,17 @@ def init_db():
     );
     ''')
 
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS community_suspensions (
+        id TEXT PRIMARY KEY,
+        community_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        reason TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(community_id, user_id)
+    );
+    ''')
+
     # Auto-migrations for moderation_status
     cursor.execute("PRAGMA table_info(posts)")
     p_cols_mod = [row[1] for row in cursor.fetchall()]
@@ -3788,6 +3822,7 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_crep_status ON community_reports(status);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_mod_audit_comm ON moderation_audit_log(community_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_comm_mutes_uid ON community_mutes(user_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_comm_susp_uid_cid ON community_suspensions(user_id, community_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_comm_ustate_uid_cid ON community_user_state(user_id, community_id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invites_code ON community_invites(invite_code);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invites_comm ON community_invites(community_id);")
@@ -4040,6 +4075,10 @@ def check_moment_context_eligibility(conn, moment, viewer, invite_code=None):
         cursor.execute("SELECT id, name, creator_id, visibility FROM communities WHERE id = ? OR LOWER(name) = ? OR name = ? LIMIT 1", (comm_key, comm_key.lower(), comm_key))
         c_found = cursor.fetchone()
         target_cid = c_found["id"] if c_found else comm_key
+
+        cursor.execute("SELECT 1 FROM community_suspensions WHERE user_id = ? AND (community_id = ? OR community_id = ?)", (viewer["id"], target_cid, comm_key))
+        if cursor.fetchone():
+            return False, "COMMUNITY_SUSPENDED", 0
 
         cursor.execute("SELECT 1 FROM community_mutes WHERE user_id = ? AND target_type = 'community' AND target_id IN (?, ?)", (viewer["id"], target_cid, comm_key))
         if cursor.fetchone():
@@ -7424,11 +7463,60 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         conn.close()
                         return self.send_json(403, {"success": False, "error": "Cannot verify access to this community memory", "code": "COMMUNITY_RESTRICTED"})
 
+            # Query linked genuine moments from collective_memory_moments
+            cursor.execute("""
+                SELECT p.*, u.name as author_name, u.handle as author_handle, u.avatar_letter, u.avatar_url
+                FROM collective_memory_moments cmm
+                JOIN posts p ON cmm.moment_id = p.id
+                LEFT JOIN users u ON p.user_id = u.id
+                WHERE cmm.memory_id = ?
+                  AND (p.moderation_status IS NULL OR p.moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                ORDER BY cmm.sort_order ASC, cmm.created_at ASC
+            """, (memory_id,))
+            moment_rows = cursor.fetchall()
+            moments_list = []
+            for r in moment_rows:
+                m_dict = dict(r)
+                m_dict["timeAgo"] = format_time_ago(m_dict.get("created_at", ""))
+                cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m_dict["id"],))
+                m_dict["realmojis"] = {rx["emoji"]: rx["cnt"] for rx in cursor.fetchall()}
+
+                # Fetch perspectives if moment has an active cluster
+                cluster_id = m_dict.get("cluster_id")
+                if cluster_id:
+                    cursor.execute("""
+                        SELECT p.*, u.name as author_name, u.handle as author_handle, u.avatar_letter, u.avatar_url
+                        FROM moment_cluster_members mcm
+                        JOIN posts p ON mcm.moment_id = p.id
+                        LEFT JOIN users u ON p.user_id = u.id
+                        WHERE mcm.cluster_id = ? AND mcm.participation_type = 'perspective'
+                          AND (p.moderation_status IS NULL OR p.moderation_status NOT IN ('hidden', 'removed', 'suspended'))
+                        ORDER BY mcm.joined_at ASC
+                    """, (cluster_id,))
+                    p_rows = cursor.fetchall()
+                    perspectives = []
+                    for pr in p_rows:
+                        p_dict = dict(pr)
+                        p_dict["timeAgo"] = format_time_ago(p_dict.get("created_at", ""))
+                        cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p_dict["id"],))
+                        p_dict["realmojis"] = {rx["emoji"]: rx["cnt"] for rx in cursor.fetchall()}
+                        perspectives.append(p_dict)
+                    m_dict["perspectives"] = perspectives
+                    m_dict["perspectives_count"] = len(perspectives)
+                else:
+                    m_dict["perspectives"] = []
+                    m_dict["perspectives_count"] = 0
+
+                moments_list.append(m_dict)
+
+            if moments_list:
+                mem_dict["moments_count"] = len(moments_list)
+
             conn.close()
             return self.send_json(200, {
                 "success": True,
                 "memory": mem_dict,
-                "moments": []
+                "moments": moments_list
             })
 
         if path == "/api/community/earnings":
@@ -11067,34 +11155,272 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(400, {"error": f"Community '{name}' already exists or could not be created."})
 
+        if path == "/api/community/memories/publish":
+            user = get_current_user(self.headers)
+            if not user:
+                return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
+
+            comm_id = (body.get("community_id") or body.get("id") or "").strip()
+            title = (body.get("title") or "").strip()
+            story = (body.get("story") or "").strip()
+            cover_img = (body.get("cover_img") or "").strip()
+            raw_moment_ids = body.get("moment_ids") or []
+
+            if not comm_id:
+                return self.send_json(400, {"success": False, "error": "community_id is required", "code": "MISSING_COMMUNITY_ID"})
+
+            if not title or len(title) < 2:
+                return self.send_json(400, {"success": False, "error": "Archive title must be at least 2 characters", "code": "INVALID_TITLE"})
+
+            if not isinstance(raw_moment_ids, list) or len(raw_moment_ids) == 0:
+                return self.send_json(400, {"success": False, "error": "At least one community moment must be selected", "code": "NO_MOMENTS_SELECTED"})
+
+            # Deduplicate moment IDs preserving order
+            seen_m_ids = set()
+            moment_ids = []
+            for mid in raw_moment_ids:
+                s_mid = str(mid).strip()
+                if s_mid and s_mid not in seen_m_ids:
+                    seen_m_ids.add(s_mid)
+                    moment_ids.append(s_mid)
+
+            if not moment_ids:
+                return self.send_json(400, {"success": False, "error": "No valid moment IDs provided", "code": "INVALID_MOMENT_IDS"})
+
+            if len(moment_ids) > 50:
+                return self.send_json(400, {"success": False, "error": "Maximum 50 moments per collective memory archive", "code": "TOO_MANY_MOMENTS"})
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            # Fetch target community
+            cursor.execute("SELECT * FROM communities WHERE id = ?", (comm_id,))
+            comm_row = cursor.fetchone()
+            if not comm_row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Community not found", "code": "COMMUNITY_NOT_FOUND"})
+            comm = dict(comm_row)
+
+            # Authorization check: User must be owner, creator, admin of the community, or global admin/founder
+            user_role = get_user_community_role(comm["id"], user["id"], cursor)
+            user_role_lower = (user_role or "").lower()
+            is_comm_creator = bool(comm.get("creator_id") and comm["creator_id"] == user["id"])
+            is_global_admin = bool(user.get("role") in ("admin", "founder"))
+            is_authorized = is_comm_creator or (user_role_lower in ("owner", "admin", "creator")) or is_global_admin
+
+            if not is_authorized:
+                conn.close()
+                return self.send_json(403, {"success": False, "error": "Only community owner or authorized curators can publish collective memories", "code": "FORBIDDEN"})
+
+            # Validate all moments belong to target community and are accessible
+            placeholders = ",".join("?" for _ in moment_ids)
+            cursor.execute(f"""
+                SELECT id, user_id, main_img, caption, primary_community_id, context_community_id, campus, is_private, moderation_status
+                FROM posts
+                WHERE id IN ({placeholders})
+            """, tuple(moment_ids))
+            db_moments = {row["id"]: dict(row) for row in cursor.fetchall()}
+
+            valid_moments = []
+            for mid in moment_ids:
+                m_row = db_moments.get(mid)
+                if not m_row:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": f"Moment '{mid}' not found", "code": "MOMENT_NOT_FOUND"})
+
+                # Check moderation status
+                if m_row.get("moderation_status") in ("hidden", "removed", "suspended"):
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": f"Moment '{mid}' is not eligible for archiving", "code": "MOMENT_MODERATED"})
+
+                # Check moment privacy (personal private Open Journal moments cannot be archived into collective memory)
+                if m_row.get("is_private") == 1:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": f"Personal private moment '{mid}' cannot be archived to collective memory", "code": "PRIVATE_MOMENT_RESTRICTED"})
+
+                # Check moment community association with strict authoritative ID precedence
+                m_primary_cid = (m_row.get("primary_community_id") or "").strip()
+                m_context_cid = (m_row.get("context_community_id") or "").strip()
+
+                has_matching_id = bool(
+                    (m_primary_cid and m_primary_cid == comm["id"]) or
+                    (m_context_cid and m_context_cid == comm["id"])
+                )
+                has_conflicting_id = bool(
+                    (m_primary_cid and m_primary_cid != comm["id"]) or
+                    (m_context_cid and m_context_cid != comm["id"])
+                )
+
+                if has_matching_id:
+                    belongs_to_comm = True
+                elif has_conflicting_id:
+                    belongs_to_comm = False
+                else:
+                    # Safe legacy fallback: ONLY for public moments with NO assigned community IDs
+                    belongs_to_comm = bool(m_row.get("campus") and m_row["campus"].lower() == comm["name"].lower())
+
+                if not belongs_to_comm:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": f"Moment '{mid}' does not belong to community '{comm['name']}'", "code": "CROSS_COMMUNITY_MOMENT"})
+
+                valid_moments.append(m_row)
+
+            # Pick cover image if not provided
+            if not cover_img and valid_moments:
+                cover_img = valid_moments[0].get("main_img") or ""
+
+            # Generate memory record
+            mem_id = "mem_" + secrets.token_hex(8)
+            now_dt = datetime.now(timezone.utc)
+            now_iso = now_dt.isoformat()
+            date_str = now_dt.strftime("%b %d, %Y")
+
+            cursor.execute("""
+                INSERT INTO collective_memories (
+                    id, campus, community_id, community_name, title, story,
+                    date_str, cover_img, moments_count, creator_id, creator_handle, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                mem_id, comm["name"], comm["id"], comm["name"], title, story,
+                date_str, cover_img, len(valid_moments), user["id"], user.get("handle", "curator"), now_iso
+            ))
+
+            # Insert linked moments into collective_memory_moments
+            for order_idx, m_row in enumerate(valid_moments):
+                cmm_id = "cmm_" + secrets.token_hex(8)
+                cursor.execute("""
+                    INSERT INTO collective_memory_moments (id, memory_id, moment_id, sort_order, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (cmm_id, mem_id, m_row["id"], order_idx, now_iso))
+
+            conn.commit()
+
+            cursor.execute("SELECT * FROM collective_memories WHERE id = ?", (mem_id,))
+            new_memory = dict(cursor.fetchone())
+            conn.close()
+
+            return self.send_json(201, {
+                "success": True,
+                "memory": new_memory,
+                "moments_count": len(valid_moments),
+                "message": "Collective memory archive published successfully"
+            })
+
         if path == "/api/community/join":
             user = get_current_user(self.headers)
             if not user:
-                return self.send_json(401, {"error": "Authentication required"})
+                return self.send_json(401, {"success": False, "error": "Authentication required", "code": "UNAUTHORIZED"})
             comm_name = (body.get("name") or "").strip()
             comm_id = (body.get("community_id") or body.get("id") or "").strip()
+            invite_code = (body.get("invite_code") or "").strip()
+
             conn = get_db()
             cursor = conn.cursor()
+            comm = None
             if comm_id:
                 cursor.execute("SELECT * FROM communities WHERE id = ?", (comm_id,))
-            else:
-                cursor.execute("SELECT * FROM communities WHERE LOWER(name) = ?", (comm_name.lower(),))
-            comm = cursor.fetchone()
+                comm = cursor.fetchone()
+            if not comm and comm_name:
+                cursor.execute("SELECT * FROM communities WHERE LOWER(name) = ? OR name = ?", (comm_name.lower(), comm_name))
+                comm = cursor.fetchone()
+            if not comm and comm_name:
+                clean_name = comm_name.replace("Near ", "").strip()
+                cursor.execute("SELECT * FROM communities WHERE LOWER(name) = ? OR id = ?", (clean_name.lower(), clean_name))
+                comm = cursor.fetchone()
             if not comm:
                 conn.close()
-                return self.send_json(404, {"error": "Community not found"})
+                return self.send_json(404, {"success": False, "error": "Community not found", "code": "COMMUNITY_NOT_FOUND"})
             
-            cursor.execute("SELECT * FROM community_members WHERE community_id = ? AND user_id = ?", (comm["id"], user["id"]))
+            comm_dict = dict(comm)
+
+            # 1. Check if user is suspended from this community
+            cursor.execute("""
+                SELECT 1 FROM community_suspensions
+                WHERE user_id = ? AND (community_id = ? OR community_id = ?)
+            """, (user["id"], comm_dict["id"], comm_dict["name"]))
+            if cursor.fetchone():
+                conn.close()
+                return self.send_json(403, {"success": False, "error": "You are suspended or restricted from this community", "code": "COMMUNITY_SUSPENDED"})
+
+            cursor.execute("SELECT * FROM community_members WHERE community_id = ? AND user_id = ?", (comm_dict["id"], user["id"]))
             existing = cursor.fetchone()
             if existing:
-                cursor.execute("DELETE FROM community_members WHERE community_id = ? AND user_id = ?", (comm["id"], user["id"]))
-                cursor.execute("UPDATE communities SET members_count = MAX(1, members_count - 1) WHERE id = ?", (comm["id"],))
+                existing_dict = dict(existing)
+                is_creator = bool(comm_dict.get("creator_id") and comm_dict["creator_id"] == user["id"])
+                is_owner_role = (existing_dict.get("role") in ("owner", "creator"))
+                if is_creator or is_owner_role:
+                    conn.close()
+                    return self.send_json(400, {"success": False, "error": "Community creators and owners cannot leave their own community", "code": "CREATOR_CANNOT_LEAVE"})
+
+                cursor.execute("DELETE FROM community_members WHERE community_id = ? AND user_id = ?", (comm_dict["id"], user["id"]))
+                cursor.execute("UPDATE communities SET members_count = MAX(1, members_count - 1) WHERE id = ?", (comm_dict["id"],))
                 conn.commit()
                 conn.close()
                 return self.send_json(200, {"success": True, "is_joined": False, "joined": False})
             else:
-                cursor.execute("INSERT INTO community_members (community_id, user_id, role, status) VALUES (?, ?, 'member', 'active')", (comm["id"], user["id"]))
-                cursor.execute("UPDATE communities SET members_count = members_count + 1 WHERE id = ?", (comm["id"],))
+                # 2. Private Community Authorization Check
+                comm_vis = (comm_dict.get("visibility") or "public").lower()
+                is_creator = bool(comm_dict.get("creator_id") and comm_dict["creator_id"] == user["id"])
+                is_platform_admin = bool(user.get("role") in ("admin", "founder"))
+
+                if comm_vis == "private" and not is_creator and not is_platform_admin:
+                    if not invite_code:
+                        conn.close()
+                        return self.send_json(403, {
+                            "success": False,
+                            "error": "This is a private community. A valid invite is required to join.",
+                            "code": "PRIVATE_COMMUNITY_INVITE_REQUIRED"
+                        })
+
+                    # Validate invite code
+                    cursor.execute("SELECT * FROM community_invites WHERE invite_code = ?", (invite_code,))
+                    inv_row = cursor.fetchone()
+                    if not inv_row:
+                        conn.close()
+                        return self.send_json(400, {"success": False, "error": "Invalid invite code", "code": "INVALID_INVITE"})
+
+                    invite = dict(inv_row)
+                    if invite.get("community_id") != comm_dict["id"]:
+                        conn.close()
+                        return self.send_json(400, {"success": False, "error": "Invite does not match this community", "code": "INVITE_COMMUNITY_MISMATCH"})
+
+                    if invite.get("status") != "active":
+                        conn.close()
+                        return self.send_json(400, {"success": False, "error": "Invite is revoked or inactive", "code": "INVITE_INACTIVE"})
+
+                    if invite.get("expires_at") and invite["expires_at"] < datetime.now().isoformat():
+                        conn.close()
+                        return self.send_json(400, {"success": False, "error": "Invite has expired", "code": "INVITE_EXPIRED"})
+
+                    if invite.get("accepted_count", 0) >= invite.get("max_uses", 50):
+                        conn.close()
+                        return self.send_json(400, {"success": False, "error": "Invite has reached maximum usage limit", "code": "INVITE_MAX_USES"})
+
+                    if invite.get("inviter_user_id") == user["id"]:
+                        conn.close()
+                        return self.send_json(400, {"success": False, "error": "Cannot accept your own invite", "code": "SELF_REFERRAL"})
+
+                    # Block protection between inviter and user
+                    cursor.execute("""
+                        SELECT 1 FROM blocks
+                        WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+                    """, (user["id"], invite["inviter_user_id"], invite["inviter_user_id"], user["id"]))
+                    if cursor.fetchone():
+                        conn.close()
+                        return self.send_json(403, {"success": False, "error": "Cannot join via this invite due to block restrictions", "code": "BLOCKED"})
+
+                    # Atomic increment with conditional guard
+                    cursor.execute("""
+                        UPDATE community_invites
+                        SET accepted_count = accepted_count + 1
+                        WHERE id = ? AND accepted_count < max_uses AND status = 'active'
+                    """, (invite["id"],))
+                    if cursor.rowcount == 0:
+                        conn.close()
+                        return self.send_json(400, {"success": False, "error": "Invite has reached maximum usage limit", "code": "INVITE_MAX_USES"})
+
+                cursor.execute("INSERT INTO community_members (community_id, user_id, role, status) VALUES (?, ?, 'member', 'active')", (comm_dict["id"], user["id"]))
+                cursor.execute("UPDATE communities SET members_count = members_count + 1 WHERE id = ?", (comm_dict["id"],))
                 conn.commit()
                 conn.close()
                 return self.send_json(200, {"success": True, "is_joined": True, "joined": True})
@@ -11301,6 +11627,33 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if report_id:
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'removed', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
             elif action == "suspend":
+                if target_type == "user" and target_id:
+                    if target_id == user["id"]:
+                        conn.close()
+                        return self.send_json(400, {
+                            "success": False,
+                            "error": "You cannot suspend yourself.",
+                            "code": "CANNOT_SUSPEND_SELF"
+                        })
+                    cursor.execute("SELECT creator_id FROM communities WHERE id = ?", (comm_id,))
+                    _c_check = cursor.fetchone()
+                    if _c_check and _c_check["creator_id"] == target_id:
+                        conn.close()
+                        return self.send_json(400, {
+                            "success": False,
+                            "error": "Community creator cannot be suspended.",
+                            "code": "CANNOT_SUSPEND_OWNER"
+                        })
+                    cursor.execute("""
+                        UPDATE community_members
+                        SET status = 'suspended'
+                        WHERE community_id = ? AND user_id = ?
+                    """, (comm_id, target_id))
+                    susp_id = "susp_" + secrets.token_hex(6)
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO community_suspensions (id, community_id, user_id, reason)
+                        VALUES (?, ?, ?, ?)
+                    """, (susp_id, comm_id, target_id, body.get("reason") or ""))
                 if report_id:
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'suspended', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
             elif action == "restore":
@@ -11323,6 +11676,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
                             "code": "MODERATION_TARGET_NOT_IN_COMMUNITY"
                         })
                     cursor.execute("UPDATE posts SET moderation_status = 'active', is_private = 0 WHERE id = ?", (target_id,))
+                elif target_type == "user" and target_id:
+                    cursor.execute("""
+                        UPDATE community_members
+                        SET status = 'active'
+                        WHERE community_id = ? AND user_id = ?
+                    """, (comm_id, target_id))
+                    cursor.execute("""
+                        DELETE FROM community_suspensions
+                        WHERE community_id = ? AND user_id = ?
+                    """, (comm_id, target_id))
                 if report_id:
                     cursor.execute("UPDATE community_reports SET status = 'actioned', action_taken = 'restored', reviewed_by = ?, reviewed_at = ? WHERE id = ?", (user["id"], now_iso, report_id))
 
@@ -12422,7 +12785,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
                             "code": "COMMUNITY_SAFETY_RESTRICTION"
                         })
 
-                # 2. Community Mute Check
+                # 2. Community Suspension & Mute Check
+                cursor_check.execute("SELECT 1 FROM community_suspensions WHERE user_id = ? AND community_id = ?",
+                                     (user["id"], target_comm["id"]))
+                if cursor_check.fetchone():
+                    conn_check.close()
+                    return self.send_json(403, {
+                        "success": False,
+                        "error": "You are suspended from participating in this community.",
+                        "code": "COMMUNITY_SUSPENDED"
+                    })
+
                 cursor_check.execute("SELECT 1 FROM community_mutes WHERE user_id = ? AND target_type = 'community' AND target_id = ?",
                                      (user["id"], target_comm["id"]))
                 if cursor_check.fetchone():
@@ -12790,14 +13163,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if path == "/api/react":
             user = get_current_user(self.headers)
             if not user:
-                return self.send_json(401, {"error": "Authentication required", "success": False})
+                return self.send_json(401, {"error": "Authentication required", "success": False, "code": "UNAUTHORIZED"})
             user_id = user["id"]
-            post_id = body.get("postId")
+            post_id = body.get("postId") or body.get("post_id") or body.get("id")
+            if not post_id:
+                return self.send_json(400, {"error": "postId required", "success": False, "code": "MISSING_POST_ID"})
             emoji = body.get("emoji", "🔥")
             try:
                 emoji = validate_reaction_emoji(emoji)
             except ValueError:
-                return self.send_json(400, {"error": "Invalid reaction emoji", "success": False})
+                return self.send_json(400, {"error": "Invalid reaction emoji", "success": False, "code": "INVALID_EMOJI"})
             custom_photo = body.get("customPhoto") or body.get("photo") or ""
             photo_url = ""
             if custom_photo and custom_photo.startswith("data:image"):
@@ -12805,13 +13180,51 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             conn = get_db()
             cursor = conn.cursor()
+
+            # Parent post validation and community authorization
+            cursor.execute("SELECT id, user_id, primary_community_id, context_community_id, campus, is_private, moderation_status FROM posts WHERE id = ?", (post_id,))
+            p_row = cursor.fetchone()
+            if not p_row:
+                conn.close()
+                return self.send_json(404, {"success": False, "error": "Moment not found", "code": "MOMENT_NOT_FOUND"})
+
+            post_dict = dict(p_row)
+            if post_dict.get("moderation_status") in ("hidden", "removed", "suspended"):
+                conn.close()
+                return self.send_json(403, {"success": False, "error": "Cannot react to moderated content", "code": "MOMENT_MODERATED"})
+
+            # Determine parent Community
+            comm_id = (post_dict.get("primary_community_id") or post_dict.get("context_community_id") or "").strip()
+            comm_row = None
+            if comm_id:
+                cursor.execute("SELECT id, name, visibility, creator_id FROM communities WHERE id = ?", (comm_id,))
+                comm_row = cursor.fetchone()
+
+            if not comm_row and post_dict.get("campus"):
+                c_name = post_dict["campus"].replace("Near ", "").strip()
+                cursor.execute("SELECT id, name, visibility, creator_id FROM communities WHERE LOWER(name) = ? OR id = ?", (c_name.lower(), c_name))
+                comm_row = cursor.fetchone()
+
+            if comm_row:
+                target_cid = comm_row["id"]
+                # Community suspension check
+                cursor.execute("SELECT 1 FROM community_suspensions WHERE user_id = ? AND community_id = ?", (user_id, target_cid))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json(403, {"success": False, "error": "You are suspended from interacting in this community", "code": "COMMUNITY_SUSPENDED"})
+
+                # Private community check: non-members cannot react
+                if (comm_row["visibility"] or "").lower() == "private":
+                    role = get_user_community_role(target_cid, user_id, cursor)
+                    if not role and user.get("role") not in ("admin", "founder"):
+                        conn.close()
+                        return self.send_json(403, {"success": False, "error": "Community membership required to react", "code": "COMMUNITY_RESTRICTED"})
+
             try:
                 conn.execute("INSERT OR REPLACE INTO reactions (id, post_id, user_id, emoji) VALUES (?, ?, ?, ?)",
                              ("react_" + secrets.token_hex(6), post_id, user_id, emoji))
                 
-                cursor.execute("SELECT user_id FROM posts WHERE id = ?", (post_id,))
-                p_row = cursor.fetchone()
-                if p_row and p_row[0] != user_id:
+                if post_dict["user_id"] != user_id:
                     actor_name = user.get("name", "Student") if user else "A student"
                     actor_handle = user.get("handle", "user") if user else "user"
                     actor_avatar = photo_url or user.get("avatar_url", "") if user else ""
@@ -12819,7 +13232,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     conn.execute("""
                         INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar)
                         VALUES (?, ?, ?, ?, 'reaction', 0, ?, ?, ?, ?)
-                    """, ("notif_" + secrets.token_hex(6), p_row[0], f"Reaction from @{actor_handle}", action_msg, user_id, actor_name, actor_handle, actor_avatar))
+                    """, ("notif_" + secrets.token_hex(6), post_dict["user_id"], f"Reaction from @{actor_handle}", action_msg, user_id, actor_name, actor_handle, actor_avatar))
                 conn.commit()
             except Exception as e:
                 print("Reaction notification error:", e)
@@ -13816,6 +14229,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 cursor.execute("DELETE FROM friendships WHERE user_id = ? OR friend_id = ?", (user_id, user_id))
                 cursor.execute("DELETE FROM blocks WHERE blocker_id = ? OR blocked_id = ?", (user_id, user_id))
                 cursor.execute("DELETE FROM community_mutes WHERE user_id = ?", (user_id,))
+                cursor.execute("DELETE FROM community_suspensions WHERE user_id = ?", (user_id,))
 
                 # 6. Community memberships (decrement member counts)
                 cursor.execute("SELECT community_id FROM community_members WHERE user_id = ?", (user_id,))
@@ -14079,14 +14493,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(403, {"success": False, "error": "Cannot join via this invite due to block restrictions", "code": "BLOCKED"})
 
-            # Mute/Ban protection in community
+            # Suspension protection in community
             cursor.execute("""
-                SELECT 1 FROM community_mutes 
-                WHERE user_id = ? AND ((target_type = 'community' AND target_id = ?) OR (target_type = 'user' AND target_id = ?))
-            """, (user["id"], invite["community_id"], invite["community_id"]))
+                SELECT 1 FROM community_suspensions
+                WHERE user_id = ? AND community_id = ?
+            """, (user["id"], invite["community_id"]))
             if cursor.fetchone():
                 conn.close()
-                return self.send_json(403, {"success": False, "error": "You are restricted from joining this community", "code": "RESTRICTED"})
+                return self.send_json(403, {"success": False, "error": "You are suspended from joining this community", "code": "COMMUNITY_SUSPENDED"})
 
             # Check existing membership
             cursor.execute("SELECT 1 FROM community_members WHERE community_id = ? AND user_id = ?", (invite["community_id"], user["id"]))
@@ -14108,6 +14522,16 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             community = dict(comm_row)
 
+            # Atomic increment with conditional guard
+            cursor.execute("""
+                UPDATE community_invites
+                SET accepted_count = accepted_count + 1
+                WHERE id = ? AND accepted_count < max_uses AND status = 'active'
+            """, (invite["id"],))
+            if cursor.rowcount == 0:
+                conn.close()
+                return self.send_json(400, {"success": False, "error": "Invite has reached maximum usage limit", "code": "INVITE_MAX_USES"})
+
             # Add member
             joined_at = datetime.now().isoformat()
             cursor.execute("""
@@ -14121,13 +14545,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 SET members_count = (SELECT COUNT(*) FROM community_members WHERE community_id = ?) 
                 WHERE id = ?
             """, (invite["community_id"], invite["community_id"]))
-
-            # Increment accepted count on invite
-            cursor.execute("""
-                UPDATE community_invites 
-                SET accepted_count = accepted_count + 1 
-                WHERE id = ?
-            """, (invite["id"],))
 
             # Record event
             track_invite_event(conn, invite["id"], invite["invite_code"], "community_joined", user["id"])

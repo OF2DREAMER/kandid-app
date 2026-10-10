@@ -804,9 +804,6 @@ async function loadCommunityScreen() {
     }
   }
 
-  if (typeof loadMemoriesAroundUs === 'function') {
-    loadMemoriesAroundUs();
-  }
   if (typeof loadMoreAroundYou === 'function') {
     loadMoreAroundYou();
   }
@@ -837,26 +834,51 @@ function renderCommunityCards(moments, container) {
     var mainImgSrc = m.main_img || m.mainImg || '';
     var pipImgSrc = m.pip_img || m.pipImg || '';
 
+    // Authoritative Community Moment Evaluation
+    var isPrivatePost = Boolean(m.is_private);
+    var rawVisibility = (
+      m.community_visibility ||
+      (state.activeCommunityData && state.activeCommunityData.visibility) ||
+      ''
+    ).toLowerCase();
+    var isConfirmedPublic = (rawVisibility === 'public');
+    var isAuthorizedMember = Boolean(
+      (state.activeCommunityData && state.activeCommunityData.is_joined) ||
+      (state.activeCommunityData && state.activeCommunityData.user_role && ['owner', 'admin', 'creator', 'member'].indexOf(state.activeCommunityData.user_role.toLowerCase()) !== -1) ||
+      (state.currentUser && ['admin', 'founder'].indexOf(state.currentUser.role) !== -1)
+    );
+
+    // Eligible for community actions: not a personal private post, AND (confirmed-public community OR authorized private community member)
+    var isEligibleCommunityMoment = !isPrivatePost && (isConfirmedPublic || isAuthorizedMember);
+
     var clusterBadgeHtml = '';
-    if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
+    if (isEligibleCommunityMoment && (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0))) {
       var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm">' +
+      clusterBadgeHtml = '<button type="button" onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm" title="View perspectives">' +
         '<span>✦</span> <span>' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
       '</button>';
     }
 
     var iWasThereHtml = '';
-    var hasEventOrLiveMoment = !!(m.cluster_id || m.event_id || m.drop_id);
-    if (!m.is_private && hasEventOrLiveMoment && (!state.currentUser || state.currentUser.id !== m.user_id)) {
-      var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
-      if (isAttended) {
-        iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
-          '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>' +
-        '</button>';
-      } else {
-        iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-3 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
-          'I WAS THERE' +
-        '</button>';
+    var perspectiveBtnHtml = '';
+    if (isEligibleCommunityMoment) {
+      var pCount = m.perspectives_count || 0;
+      var perspLabel = pCount > 0 ? (pCount + ' Perspective' + (pCount === 1 ? '' : 's')) : '+ Perspective';
+      perspectiveBtnHtml = '<button type="button" onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-amber-400 hover:text-amber-300 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" title="View or add perspective">' +
+        '<span>📷</span> <span>' + escapeHtml(perspLabel) + '</span>' +
+      '</button>';
+
+      if (!state.currentUser || state.currentUser.id !== m.user_id) {
+        var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
+        if (isAttended) {
+          iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-3 py-1 rounded-xl bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
+            '<span class="text-amber-400 font-bold">✓</span> <span>I WAS THERE</span>' +
+          '</button>';
+        } else {
+          iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-3 py-1 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
+            'I WAS THERE' +
+          '</button>';
+        }
       }
     }
 
@@ -872,7 +894,6 @@ function renderCommunityCards(moments, container) {
             timeAgo +
           '</span>' +
         '</div>' +
-
         '<!-- Selfie PiP Layer (Tap to swap) -->' +
         '<div class="sub-camera-pip absolute top-4 left-4 w-20 h-28 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-20 active:scale-95 transition-transform" title="Tap to Swap Views">' +
           '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
@@ -908,8 +929,9 @@ function renderCommunityCards(moments, container) {
       '<div class="mt-2 flex items-center justify-between px-1">' +
         '<div class="reaction-badge-group flex items-center gap-1.5" id="realmojis-' + m.id + '">' +
         '</div>' +
-        '<div class="flex items-center gap-2">' +
+        '<div class="flex items-center gap-2 flex-wrap justify-end">' +
           iWasThereHtml +
+          perspectiveBtnHtml +
           '<button onclick="openReactions(\'' + m.id + '\')" class="px-4 py-2 rounded-2xl bg-zinc-950 border border-white/[.07] text-zinc-300 hover:text-white text-[11px] font-mono-tag flex items-center gap-1.5 cursor-pointer active:scale-95 transition shadow-sm">' +
             '<span class="text-amber-400">✦</span> React' +
           '</button>' +
@@ -970,6 +992,12 @@ function handleLivePulseBack() {
   switchScreenView(state.previousScreen || 'feed');
 }
 window.handleLivePulseBack = handleLivePulseBack;
+
+function closeLivePulse() {
+  var modal = document.getElementById('livePulseModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeLivePulse = closeLivePulse;
 
 async function openCommunitySwitcher() {
   var modal = document.getElementById('switcherModal');
@@ -1186,23 +1214,6 @@ async function openCampusPage(campusName, initialTab) {
       if (locEl) locEl.textContent = (c.location || 'Local Region') + (c.creator_handle ? ' · Created by @' + c.creator_handle : '');
       if (descEl) descEl.textContent = c.description || 'Authentic moments and shared daily life.';
 
-      if (joinBtn) {
-        var isPrimary = Boolean(state.currentUser && (
-          (state.currentUser.campus && state.currentUser.campus.toLowerCase() === c.name.toLowerCase()) || 
-          (state.currentUser.campus && state.currentUser.campus === c.id)
-        ));
-        if (isPrimary) {
-          joinBtn.textContent = '[ PRIMARY COMMUNITY ]';
-          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-amber-400 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
-        } else if (c.is_joined) {
-          joinBtn.textContent = '[ JOINED ✓ ]';
-          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
-        } else {
-          joinBtn.textContent = '[ + JOIN COMMUNITY ]';
-          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
-        }
-      }
-
       // Creator Ownership Controls Visibility (Owner-Only)
       var myId = state.currentUser ? String(state.currentUser.id || '').trim() : '';
       var myHandle = state.currentUser ? String(state.currentUser.handle || '').trim().toLowerCase() : '';
@@ -1216,9 +1227,38 @@ async function openCampusPage(campusName, initialTab) {
         (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
       );
 
+      if (joinBtn) {
+        var isPrimary = Boolean(state.currentUser && (
+          (state.currentUser.campus && state.currentUser.campus.toLowerCase() === c.name.toLowerCase()) ||
+          (state.currentUser.campus && state.currentUser.campus === c.id)
+        ));
+        if (isOwner) {
+          joinBtn.textContent = '[ COMMUNITY OWNER ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-amber-400 font-extrabold text-xs font-mono-tag uppercase cursor-default';
+          joinBtn.onclick = null;
+        } else if (isPrimary) {
+          joinBtn.textContent = '[ PRIMARY COMMUNITY ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-amber-400 font-extrabold text-xs font-mono-tag uppercase cursor-default';
+          joinBtn.onclick = null;
+        } else if (c.is_joined) {
+          joinBtn.textContent = '[ LEAVE COMMUNITY ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-red-500/20 text-zinc-300 hover:text-red-400 border border-white/10 hover:border-red-500/30 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
+          joinBtn.onclick = toggleJoinCommunity;
+        } else {
+          joinBtn.textContent = '[ + JOIN COMMUNITY ]';
+          joinBtn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
+          joinBtn.onclick = toggleJoinCommunity;
+        }
+      }
+
       var creatorControls = document.getElementById('campusPageCreatorControls');
       if (creatorControls) {
         creatorControls.style.display = isOwner ? 'flex' : 'none';
+      }
+
+      var publishMemBtn = document.getElementById('campusPagePublishMemoryBtn');
+      if (publishMemBtn) {
+        publishMemBtn.style.display = isOwner ? 'inline-flex' : 'none';
       }
 
       var hostBtn = document.getElementById('campusPageHostBtn');
@@ -1381,11 +1421,19 @@ async function openCampusPage(campusName, initialTab) {
     }
 
     if (memoriesGridEl) {
-      if (Array.isArray(data.collective_memories) && data.collective_memories.length > 0) {
-        memoriesGridEl.innerHTML = data.collective_memories.map(function(m) {
+      var rawMemories = Array.isArray(data.collective_memories) ? data.collective_memories : [];
+      var validMemories = rawMemories.filter(function(m) {
+        if (!m || !m.id) return false;
+        var isDemo = (m.id === 'mem_1' || m.id === 'mem_2' || m.id === 'mem_3') ||
+                     (m.cover_img && m.cover_img.indexOf('unsplash.com') !== -1 && (m.title === 'Campus Welcome & Orientation' || m.title === 'Late Night Architecture Crunch' || m.title === 'Weekend Sunset Street Run'));
+        return !isDemo;
+      });
+
+      if (validMemories.length > 0) {
+        memoriesGridEl.innerHTML = validMemories.map(function(m) {
           var attendeeCount = m.checked_in_count || m.moments_count || 0;
-          var attendeeTxt = attendeeCount > 0 ? (attendeeCount + ' people were there') : 'Archived memory';
-          return '<div onclick="openCollectiveMemoryPage(\'' + (m.id || 'mem_1') + '\')" class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 shadow-md cursor-pointer transition active:scale-95 group">' +
+          var attendeeTxt = attendeeCount > 0 ? (attendeeCount + ' moment' + (attendeeCount === 1 ? '' : 's') + ' captured') : 'Archived memory';
+          return '<div onclick="openCollectiveMemoryPage(\'' + jsAttr(m.id || '') + '\')" class="p-3 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/40 space-y-2 shadow-md cursor-pointer transition active:scale-95 group">' +
             '<div class="w-full aspect-[4/3] rounded-xl overflow-hidden bg-black">' +
               '<img src="' + (m.cover_img || m.cover_image || '') + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
             '</div>' +
@@ -1394,7 +1442,7 @@ async function openCampusPage(campusName, initialTab) {
           '</div>';
         }).join('');
       } else {
-        memoriesGridEl.innerHTML = '<div class="col-span-2 py-6 text-center text-xs text-zinc-500 font-mono-tag">No collective memories yet. Shared moments will appear here.</div>';
+        memoriesGridEl.innerHTML = '<div class="col-span-2 py-6 text-center text-xs text-zinc-500 font-mono-tag">No collective memories published yet.</div>';
       }
     }
 
@@ -1694,22 +1742,15 @@ async function loadMemoriesAroundUs() {
   var container = document.getElementById('memoriesAroundUsContainer');
   if (!container) return;
 
-  var userCampus = (state.currentUser && state.currentUser.campus) ? state.currentUser.campus : (state.activeCommunity || '');
-  var userCity = (state.currentUser && (state.currentUser.location_city || state.currentUser.city)) ? (state.currentUser.location_city || state.currentUser.city) : '';
-
-  var res = await loadCommunityDiscovery({
-    campus: userCampus,
-    city: userCity,
-    limit: 20
-  });
+  var res = await apiRequest('/api/community/discover?limit=50');
 
   if (!res || !res.success) {
-    container.innerHTML = '<div class="p-3.5 rounded-xl bg-zinc-950/60 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">Unable to load community archives. Please try again later.</div>';
+    container.innerHTML = '<div class="p-3.5 rounded-xl bg-zinc-900/40 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">Unable to load community archives. Please try again later.</div>';
     return;
   }
 
   var rawJoined = Array.isArray(res.joined_communities) ? res.joined_communities : [];
-  var rawAll = Array.isArray(res.all) ? res.all : [];
+  var rawAll = Array.isArray(res.all) ? res.all : (Array.isArray(res.communities) ? res.communities : []);
 
   var seenIds = {};
   var joinedComms = [];
@@ -1734,7 +1775,7 @@ async function loadMemoriesAroundUs() {
     if (c.city) metaParts.push(escapeHtml(c.city));
     var metaStr = metaParts.join(' · ');
 
-    return '<div class="p-3.5 rounded-2xl bg-zinc-950 border border-white/[.07] hover:border-amber-500/30 flex items-center justify-between gap-3 transition">' +
+    return '<div class="p-3 rounded-2xl bg-zinc-900/60 border border-white/[.06] hover:border-amber-500/30 flex items-center justify-between gap-3 transition">' +
       '<div class="min-w-0 flex-1 space-y-0.5">' +
         '<p class="text-xs font-bold text-white truncate">' + escapeHtml(c.name) + '</p>' +
         (metaStr ? ('<p class="font-mono-tag text-[9px] text-zinc-400 truncate">' + metaStr + '</p>') : '') +
@@ -1758,12 +1799,12 @@ async function loadMemoriesAroundUs() {
     html += '<div class="space-y-2">' + joinedComms.map(renderCommunityArchiveRow).join('') + '</div>';
   } else {
     var emptyJoinedMsg = state.currentUser ? "You haven't joined any communities yet." : "Sign in to see joined communities.";
-    html += '<div class="p-3.5 rounded-xl bg-zinc-950/60 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">' + emptyJoinedMsg + '</div>';
+    html += '<div class="p-3.5 rounded-xl bg-zinc-900/40 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">' + emptyJoinedMsg + '</div>';
   }
   html += '</div>';
 
   // Section 2: PUBLIC COMMUNITIES
-  html += '<div class="space-y-2 pt-1">';
+  html += '<div class="space-y-2 pt-2 border-t border-white/[.05]">';
   html += '<div class="flex items-center gap-1.5 px-1">';
   html += '<span class="text-[10px] text-zinc-400">🌐</span>';
   html += '<span class="font-mono-tag text-[9px] uppercase tracking-wider text-zinc-400 font-bold">PUBLIC COMMUNITIES</span>';
@@ -1772,7 +1813,7 @@ async function loadMemoriesAroundUs() {
   if (publicComms.length > 0) {
     html += '<div class="space-y-2">' + publicComms.map(renderCommunityArchiveRow).join('') + '</div>';
   } else {
-    html += '<div class="p-3.5 rounded-xl bg-zinc-950/60 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">No public community archives available right now.</div>';
+    html += '<div class="p-3.5 rounded-xl bg-zinc-900/40 border border-white/[.04] text-center text-[11px] text-zinc-500 font-mono-tag">No public community archives available right now.</div>';
   }
   html += '</div>';
 
@@ -1780,8 +1821,48 @@ async function loadMemoriesAroundUs() {
 }
 window.loadMemoriesAroundUs = loadMemoriesAroundUs;
 
+function openMemoriesDirectory() {
+  if (state.activeScreen && state.activeScreen !== 'memories-directory') {
+    state.previousScreen = state.activeScreen;
+  }
+  switchScreenView('memories-directory');
+  loadMemoriesAroundUs();
+}
+window.openMemoriesDirectory = openMemoriesDirectory;
+
+function handleMemoriesDirectoryBack() {
+  var prev = state.previousScreen || 'feed';
+  if (prev === 'memories-directory') prev = 'feed';
+  switchScreenView(prev);
+  if (prev === 'feed' && typeof selectFeedSubTab === 'function') {
+    selectFeedSubTab('community');
+  }
+}
+window.handleMemoriesDirectoryBack = handleMemoriesDirectoryBack;
+
 async function openCollectiveMemoryPage(memoryId) {
-  memoryId = memoryId || 'mem_1';
+  if (!memoryId) {
+    switchScreenView('collective-memory');
+    var titleEl = document.getElementById('collectiveMemoryTitle');
+    var dateEl = document.getElementById('collectiveMemoryDate');
+    var badgeEl = document.getElementById('collectiveMemoryCountBadge');
+    var commEl = document.getElementById('collectiveMemoryCommunity');
+    var storyEl = document.getElementById('collectiveMemoryStory');
+    var heroContainer = document.getElementById('collectiveMemoryHeroContainer');
+    var capturedByEl = document.getElementById('collectiveMemoryCapturedBy');
+    var momentsContainer = document.getElementById('collectiveMemoryMomentsContainer');
+
+    if (titleEl) titleEl.textContent = 'Collective Memory';
+    if (dateEl) dateEl.textContent = '';
+    if (badgeEl) badgeEl.style.display = 'none';
+    if (commEl) commEl.textContent = '';
+    if (storyEl) storyEl.textContent = 'No memory archive selected.';
+    if (heroContainer) heroContainer.innerHTML = '';
+    if (capturedByEl) capturedByEl.textContent = 'No contributors';
+    if (momentsContainer) momentsContainer.innerHTML = '<div class="text-center text-zinc-500 font-mono-tag text-xs py-8">No memory archive selected.</div>';
+    return;
+  }
+
   switchScreenView('collective-memory');
 
   var titleEl = document.getElementById('collectiveMemoryTitle');
@@ -1793,26 +1874,39 @@ async function openCollectiveMemoryPage(memoryId) {
   var capturedByEl = document.getElementById('collectiveMemoryCapturedBy');
   var momentsContainer = document.getElementById('collectiveMemoryMomentsContainer');
 
+  if (titleEl) titleEl.textContent = 'Loading...';
+  if (dateEl) dateEl.textContent = '';
+  if (badgeEl) badgeEl.style.display = 'none';
+  if (commEl) commEl.textContent = '';
+  if (storyEl) storyEl.textContent = '';
+  if (heroContainer) heroContainer.innerHTML = '';
+  if (capturedByEl) capturedByEl.textContent = '...';
+  if (momentsContainer) momentsContainer.innerHTML = '<div class="py-8 text-center text-xs text-zinc-500 font-mono-tag flex items-center justify-center gap-2"><span class="w-3.5 h-3.5 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></span><span>Loading memory archive...</span></div>';
+
   var res = await apiRequest('/api/community/memories/detail?id=' + encodeURIComponent(memoryId));
   if (res && res.success && res.memory) {
     var m = res.memory;
-    if (titleEl) titleEl.textContent = m.title;
-    if (dateEl) dateEl.textContent = m.date_str;
-    if (badgeEl) badgeEl.textContent = (m.moments_count ?? 0) + ' Moments captured together';
-    if (commEl) commEl.textContent = m.community_name;
-    if (storyEl) storyEl.textContent = m.story || 'Unfiltered community moments captured together.';
+    if (titleEl) titleEl.textContent = m.title || 'Collective Memory';
+    if (dateEl) dateEl.textContent = m.date_str || '';
+    var countVal = m.moments_count != null ? m.moments_count : (Array.isArray(res.moments) ? res.moments.length : 0);
+    if (badgeEl) {
+      badgeEl.textContent = countVal + ' Moment' + (countVal === 1 ? '' : 's') + ' captured together';
+      badgeEl.style.display = 'inline-block';
+    }
+    if (commEl) commEl.textContent = m.community_name || '';
+    if (storyEl) storyEl.textContent = m.story || '';
 
     // 1. Render Hero Moment
     if (heroContainer) {
       var heroImg = m.cover_img || (res.moments && res.moments[0] ? (res.moments[0].main_img || res.moments[0].image_url) : '');
-      var heroCaption = (res.moments && res.moments[0] && res.moments[0].caption) ? res.moments[0].caption : 'Opening the day together.';
+      var heroCaption = (res.moments && res.moments[0] && res.moments[0].caption) ? res.moments[0].caption : '';
       if (heroImg) {
         heroContainer.innerHTML =
           '<div class="relative w-full aspect-[4/3] bg-zinc-950 overflow-hidden">' +
             '<img src="' + escapeHtml(heroImg) + '" class="w-full h-full object-cover">' +
             '<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-4">' +
               '<span class="font-mono-tag text-[8px] text-amber-400 font-bold uppercase tracking-widest block mb-1">⭐ HERO MOMENT</span>' +
-              '<p class="text-xs text-white font-medium italic">“' + escapeHtml(heroCaption) + '”</p>' +
+              (heroCaption ? ('<p class="text-xs text-white font-medium italic">“' + escapeHtml(heroCaption) + '”</p>') : '') +
             '</div>' +
           '</div>';
       } else {
@@ -1850,6 +1944,16 @@ async function openCollectiveMemoryPage(memoryId) {
         momentsContainer.innerHTML = '<div class="text-center text-zinc-500 font-mono-tag text-xs py-8">No moments captured yet.</div>';
       }
     }
+  } else {
+    var errMsg = (res && res.error) ? res.error : 'Memory not found or access restricted.';
+    if (titleEl) titleEl.textContent = 'Collective Memory';
+    if (dateEl) dateEl.textContent = '';
+    if (badgeEl) badgeEl.style.display = 'none';
+    if (commEl) commEl.textContent = '';
+    if (storyEl) storyEl.textContent = errMsg;
+    if (heroContainer) heroContainer.innerHTML = '';
+    if (capturedByEl) capturedByEl.textContent = 'No contributors';
+    if (momentsContainer) momentsContainer.innerHTML = '<div class="text-center text-zinc-500 font-mono-tag text-xs py-8">' + escapeHtml(errMsg) + '</div>';
   }
 }
 window.openCollectiveMemoryPage = openCollectiveMemoryPage;
@@ -1865,6 +1969,137 @@ function handleCampusPageBack() {
   switchScreenView(prev);
 }
 window.handleCampusPageBack = handleCampusPageBack;
+
+state.publishingCollectiveMemoryCommId = null;
+
+async function openPublishCollectiveMemoryModal(commId) {
+  var targetCommId = commId || state.activeCommunityId || '';
+  state.publishingCollectiveMemoryCommId = targetCommId;
+
+  var modal = document.getElementById('publishCollectiveMemoryModal');
+  var titleInput = document.getElementById('memPublishTitle');
+  var storyInput = document.getElementById('memPublishStory');
+  var listContainer = document.getElementById('memPublishMomentsList');
+  var countEl = document.getElementById('memPublishSelectedCount');
+  var submitBtn = document.getElementById('memPublishSubmitBtn');
+
+  if (titleInput) titleInput.value = '';
+  if (storyInput) storyInput.value = '';
+  if (countEl) countEl.textContent = '0 selected';
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Publish Archive →';
+  }
+
+  if (modal) modal.style.display = 'flex';
+
+  if (listContainer) {
+    listContainer.innerHTML = '<div class="py-4 text-center text-[10px] text-zinc-500 font-mono-tag flex items-center justify-center gap-2"><span class="w-3 h-3 border-2 border-amber-500/40 border-t-amber-500 rounded-full animate-spin"></span><span>Loading community moments...</span></div>';
+  }
+
+  // Fetch recent community moments for selection
+  var data = await apiRequest('/api/community/detail?id=' + encodeURIComponent(targetCommId) + '&campus=' + encodeURIComponent(targetCommId));
+  if (data && data.success && Array.isArray(data.moments) && data.moments.length > 0) {
+    if (listContainer) {
+      listContainer.innerHTML = data.moments.map(function(m) {
+        var captionText = m.caption ? escapeHtml(m.caption) : 'Captured moment';
+        var imgUrl = m.main_img || m.image_url || '';
+        return '<label class="p-2 rounded-xl bg-zinc-900 border border-white/[.04] hover:border-amber-500/30 flex items-center gap-2.5 cursor-pointer transition select-none">' +
+          '<input type="checkbox" name="publish_moment_cb" value="' + jsAttr(m.id) + '" onchange="updatePublishMemorySelectedCount()" class="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-amber-500 focus:ring-0 cursor-pointer">' +
+          (imgUrl ? ('<div class="w-9 h-9 rounded-lg overflow-hidden bg-black shrink-0"><img src="' + escapeHtml(imgUrl) + '" class="w-full h-full object-cover"></div>') : '<div class="w-9 h-9 rounded-lg bg-zinc-800 flex items-center justify-center text-xs shrink-0">📸</div>') +
+          '<div class="min-w-0 flex-1">' +
+            '<p class="text-[11px] text-white font-bold truncate">' + captionText + '</p>' +
+            '<p class="text-[9px] text-zinc-400 font-mono-tag">@' + escapeHtml(m.author_handle || 'user') + ' · ' + escapeHtml(m.timeAgo || 'recent') + '</p>' +
+          '</div>' +
+        '</label>';
+      }).join('');
+    }
+  } else {
+    if (listContainer) {
+      listContainer.innerHTML = '<div class="py-4 text-center text-[10px] text-zinc-500 font-mono-tag">No moments available in this community to archive. Share moments first!</div>';
+    }
+  }
+}
+window.openPublishCollectiveMemoryModal = openPublishCollectiveMemoryModal;
+
+function closePublishCollectiveMemoryModal() {
+  var modal = document.getElementById('publishCollectiveMemoryModal');
+  if (modal) modal.style.display = 'none';
+  state.publishingCollectiveMemoryCommId = null;
+}
+window.closePublishCollectiveMemoryModal = closePublishCollectiveMemoryModal;
+
+function updatePublishMemorySelectedCount() {
+  var cbs = document.querySelectorAll('input[name="publish_moment_cb"]:checked');
+  var countEl = document.getElementById('memPublishSelectedCount');
+  if (countEl) {
+    countEl.textContent = cbs.length + ' selected';
+  }
+}
+window.updatePublishMemorySelectedCount = updatePublishMemorySelectedCount;
+
+async function submitPublishCollectiveMemory() {
+  var commId = state.publishingCollectiveMemoryCommId || state.activeCommunityId;
+  var titleInput = document.getElementById('memPublishTitle');
+  var storyInput = document.getElementById('memPublishStory');
+  var submitBtn = document.getElementById('memPublishSubmitBtn');
+
+  var title = titleInput ? titleInput.value.trim() : '';
+  var story = storyInput ? storyInput.value.trim() : '';
+
+  if (!commId) {
+    showToast('Error: No active community selected');
+    return;
+  }
+  if (!title || title.length < 2) {
+    showToast('Please enter an archive title (at least 2 characters)');
+    if (titleInput) titleInput.focus();
+    return;
+  }
+
+  var cbs = document.querySelectorAll('input[name="publish_moment_cb"]:checked');
+  var momentIds = [];
+  cbs.forEach(function(cb) {
+    if (cb.value) momentIds.push(cb.value);
+  });
+
+  if (momentIds.length === 0) {
+    showToast('Please select at least 1 moment to archive');
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Publishing...';
+  }
+
+  var res = await apiRequest('/api/community/memories/publish', {
+    method: 'POST',
+    body: JSON.stringify({
+      community_id: commId,
+      title: title,
+      story: story,
+      moment_ids: momentIds
+    })
+  });
+
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Publish Archive →';
+  }
+
+  if (res && res.success) {
+    showToast('Collective memory published successfully ✓');
+    closePublishCollectiveMemoryModal();
+    if (typeof openCampusPage === 'function') {
+      await openCampusPage(commId, 'memories');
+    }
+  } else {
+    var errorMsg = (res && res.error) ? res.error : 'Failed to publish collective memory';
+    showToast('Error: ' + errorMsg);
+  }
+}
+window.submitPublishCollectiveMemory = submitPublishCollectiveMemory;
 
 async function toggleJoinCommunity() {
   var btn = document.getElementById('campusPageJoinBtn');
@@ -1890,8 +2125,9 @@ async function toggleJoinCommunity() {
         });
       }
       showToast('Joined ' + name + '! ✦');
-      btn.textContent = '[ JOINED ✓ ]';
-      btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-800 text-zinc-300 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
+      btn.textContent = '[ LEAVE COMMUNITY ]';
+      btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-red-500/20 text-zinc-300 hover:text-red-400 border border-white/10 hover:border-red-500/30 font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition cursor-pointer';
+      if (state.activeCommunityData) state.activeCommunityData.is_joined = true;
       if (shareBtn) {
         shareBtn.style.display = 'flex';
         shareBtn.onclick = function() {
@@ -1907,12 +2143,19 @@ async function toggleJoinCommunity() {
       showToast('Left ' + name);
       btn.textContent = '[ + JOIN COMMUNITY ]';
       btn.className = 'mt-2 w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs font-mono-tag uppercase active:scale-95 transition shadow-lg cursor-pointer';
+      if (state.activeCommunityData) state.activeCommunityData.is_joined = false;
       if (shareBtn) {
         shareBtn.style.display = 'none';
         shareBtn.onclick = null;
       }
       if (nonMemberNotice) nonMemberNotice.style.display = 'block';
+      if (state.activeCommunityData && (state.activeCommunityData.visibility === 'private' || state.activeCommunityData.is_private)) {
+        openCampusPage(commId || name);
+      }
     }
+  } else {
+    var errMsg = (res && res.error) ? res.error : 'Failed to update membership';
+    showToast(errMsg);
   }
 }
 window.toggleJoinCommunity = toggleJoinCommunity;
@@ -2296,28 +2539,9 @@ function renderFeedCards(moments, container) {
     var motionVideoHtml = motionUrl ?
       '<video src="' + escapeHtml(motionUrl) + '" playsinline loop muted class="live-moment-video absolute inset-0 w-full h-full object-cover z-[5]" style="display:none;"></video>' : '';
 
+    // Strict Isolation: Personal/Global Feed moments never render Community I WAS THERE or Perspective actions
     var clusterBadgeHtml = '';
-    if (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0)) {
-      var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="absolute top-3 right-3 z-10 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-amber-500/40 text-[9px] font-mono-tag font-bold text-amber-400 hover:bg-black/80 transition cursor-pointer active:scale-95 shadow-sm">' +
-        '<span>+' + pCount + ' perspective' + (pCount === 1 ? '' : 's') + '</span>' +
-      '</button>';
-    }
-
     var iWasThereHtml = '';
-    var hasEventOrLiveMoment = !!(m.cluster_id || m.event_id || m.drop_id);
-    if (!m.is_private && hasEventOrLiveMoment && (!state.currentUser || state.currentUser.id !== m.user_id)) {
-      var isAttended = Boolean(m.is_attended || m.user_attended || (state.attendedMoments && state.attendedMoments.has(m.id)));
-      if (isAttended) {
-        iWasThereHtml = '<button type="button" class="i-was-there-btn inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-900/60 border border-zinc-800 text-zinc-400 text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-default select-none whitespace-nowrap" data-moment-id="' + m.id + '" disabled>' +
-          '<span class="text-amber-400 font-bold">✓</span> <span>I Was There</span>' +
-        '</button>';
-      } else {
-        iWasThereHtml = '<button type="button" onclick="event.stopPropagation(); handleIWasThereClick(\'' + m.id + '\')" class="i-was-there-btn inline-flex items-center justify-center px-2.5 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 hover:text-white text-[9px] font-mono-tag font-semibold tracking-wider uppercase cursor-pointer active:scale-95 transition shadow-sm whitespace-nowrap" data-moment-id="' + m.id + '" title="Self-assert contextual attendance">' +
-          'I Was There' +
-        '</button>';
-      }
-    }
 
     if (m && m.id) {
       if (!state.momentCache) state.momentCache = {};
@@ -9540,7 +9764,7 @@ async function loadNotifications() {
         } else if (nType.includes('community') || nType.includes('campus')) {
           openCampusPage(n.community_name || n.target_id || 'North City University');
         } else if (nType.includes('memory')) {
-          openCollectiveMemoryPage(n.memory_id || 'mem_1');
+          openCollectiveMemoryPage(n.memory_id || '');
         } else if (n.action_screen) {
           switchScreenView(n.action_screen);
         } else {
@@ -12226,7 +12450,7 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
       
       if (openCaptureAfter) {
         closeMomentClusterModal();
-        openCameraStudio();
+        openPerspectiveCapture(res.cluster_id, (res.context && res.context.community_id) || '', (res.context && res.context.location) || '');
       } else {
         openMomentClusterModal(res.cluster_id, momentId);
       }
@@ -12271,9 +12495,10 @@ function handleAddPerspectiveClick() {
   var c = state.currentViewingCluster;
   if (c && c.id) {
     openPerspectiveCapture(c.id, c.community_id, c.originating_context);
+  } else if (state.activeClusterMomentId) {
+    handleIWasThereClick(state.activeClusterMomentId, true);
   } else {
-    closeMomentClusterModal();
-    openCameraStudio();
+    showToast('Moment context unavailable. Cannot add perspective.');
   }
 }
 window.handleAddPerspectiveClick = handleAddPerspectiveClick;
