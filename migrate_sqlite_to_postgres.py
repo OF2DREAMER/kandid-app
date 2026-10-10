@@ -49,6 +49,7 @@ KANDID_TABLES = [
     "community_user_state",
     "community_invites",
     "community_invite_events",
+    "community_join_requests",
     "user_activation_milestones",
     "community_interactions",
     "moment_clusters",
