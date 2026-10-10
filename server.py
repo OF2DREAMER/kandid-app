@@ -7280,6 +7280,174 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "primary_campus": user_campus
             })
 
+        if path == "/api/community/public-feed":
+            user = get_current_user(self.headers)
+            user_id = user["id"] if user else ""
+
+            view = query.get("view", ["moments"])[0].strip().lower()
+            cursor_param = query.get("cursor", [""])[0].strip()
+            try:
+                limit_val = int(query.get("limit", ["20"])[0])
+                limit_val = max(1, min(50, limit_val))
+            except (ValueError, TypeError):
+                limit_val = 20
+
+            conn = get_db()
+            cursor = conn.cursor()
+
+            # 1. Exclude blocked users if authenticated
+            blocked_user_ids = set()
+            if user_id:
+                cursor.execute("""
+                    SELECT blocked_user_id FROM blocks WHERE user_id = ?
+                    UNION
+                    SELECT user_id FROM blocks WHERE blocked_user_id = ?
+                """, (user_id, user_id))
+                blocked_user_ids = {r[0] for r in cursor.fetchall()}
+
+            # 2. Verified live activity calculation across all eligible public communities
+            now_utc = datetime.now(timezone.utc)
+            now_local = datetime.now()
+
+            def _calc_feed_age(c_str):
+                if not c_str:
+                    return 9999999
+                try:
+                    dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
+                except Exception:
+                    try:
+                        dt = datetime.strptime(c_str, "%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        return 9999999
+                if dt.tzinfo is None:
+                    diff_u = (now_utc - dt.replace(tzinfo=timezone.utc)).total_seconds()
+                    diff_l = (now_local - dt).total_seconds()
+                    candidates = [d for d in (diff_u, diff_l) if d >= -60]
+                    return min(candidates) if candidates else min(abs(diff_u), abs(diff_l))
+                else:
+                    return (now_utc - dt).total_seconds()
+
+            # Base conditions: strictly public communities, no private moments, no personal feed / open journal posts
+            base_where = [
+                "(p.is_private = 0 OR p.is_private IS NULL)",
+                "(p.moderation_status IS NULL OR p.moderation_status NOT IN ('hidden', 'removed', 'suspended'))",
+                "p.id NOT IN (SELECT moment_id FROM moment_cluster_members WHERE participation_type = 'perspective')",
+                "( (p.primary_community_id != '' AND p.primary_community_id IS NOT NULL) OR (p.context_community_id != '' AND p.context_community_id IS NOT NULL) )",
+                "(p.circle IS NULL OR p.circle NOT IN ('foryou', 'personal', 'open_journal', 'open journal', 'journal'))",
+                "(c.visibility = 'public' OR c.visibility IS NULL OR c.visibility = '')",
+                "(c.visibility NOT IN ('private', 'secret'))",
+                "(c.moderation_status IS NULL OR c.moderation_status NOT IN ('hidden', 'removed', 'suspended'))",
+                """p.id NOT IN (
+                    SELECT p2.id FROM posts p2
+                    JOIN communities c2 ON (p2.primary_community_id = c2.id OR p2.context_community_id = c2.id OR p2.primary_community_id = c2.name)
+                    WHERE c2.visibility IN ('private', 'secret')
+                )"""
+            ]
+
+            select_sql = """
+                SELECT p.*,
+                       u.name as author_name,
+                       u.handle as author_handle,
+                       u.avatar_url as author_avatar_url,
+                       u.avatar_letter as author_avatar_letter,
+                       c.id as community_id,
+                       c.name as community_name,
+                       c.icon as community_icon,
+                       c.city as community_city,
+                       c.type as community_type,
+                       'public' as community_visibility
+                FROM posts p
+                JOIN communities c ON (
+                    (p.primary_community_id != '' AND p.primary_community_id IS NOT NULL AND (p.primary_community_id = c.id OR p.primary_community_id = c.name))
+                    OR (p.context_community_id != '' AND p.context_community_id IS NOT NULL AND (p.context_community_id = c.id OR p.context_community_id = c.name))
+                )
+                LEFT JOIN users u ON p.user_id = u.id
+            """
+
+            # Compute Live Pulse across eligible public communities
+            # Live activity window is strictly -60 <= age_seconds <= 7200 (last 2 hours)
+            cursor.execute(
+                select_sql + " WHERE " + " AND ".join(base_where) + " GROUP BY p.id ORDER BY p.created_at DESC LIMIT 50"
+            )
+            pulse_candidates = [dict(r) for r in cursor.fetchall()]
+            if blocked_user_ids:
+                pulse_candidates = [p for p in pulse_candidates if p.get("user_id") not in blocked_user_ids]
+
+            live_pulse_moments = []
+            for p in pulse_candidates:
+                age_sec = _calc_feed_age((p.get("created_at") or "").strip())
+                if -60 <= age_sec <= 7200:
+                    cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
+                    p["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
+                    p["timeAgo"] = format_time_ago(p.get("created_at", ""))
+                    loc = p.get("location_city") or p.get("campus") or p.get("community_name") or "Community Space"
+                    aname = loc.replace("Near ", "").strip() or "Community Space"
+                    p["area_tag"] = f"Near {aname} · {p['timeAgo']}"
+                    p["primary_community_id"] = p.get("community_id", "")
+                    p["primary_community_name"] = p.get("community_name", "")
+                    live_pulse_moments.append(p)
+
+            has_live = len(live_pulse_moments) > 0
+            pulse_summary = {
+                "pulse_state": "LIVE NOW" if has_live else "QUIET RIGHT NOW",
+                "has_live_activity": has_live,
+                "active_count": len(live_pulse_moments),
+                "live_moments": live_pulse_moments[:10]
+            }
+
+            if view == "pulse":
+                conn.close()
+                return self.send_json(200, {
+                    "success": True,
+                    "view": "pulse",
+                    "pulse": pulse_summary,
+                    "moments": live_pulse_moments
+                })
+
+            # For view == "moments" (or "recent"):
+            moments_where = list(base_where)
+            moments_params = []
+
+            if cursor_param:
+                moments_where.append("p.created_at < ?")
+                moments_params.append(cursor_param)
+
+            sql = select_sql + " WHERE " + " AND ".join(moments_where) + " GROUP BY p.id ORDER BY p.created_at DESC, p.id DESC LIMIT ?"
+            moments_params.append(limit_val + 1)
+
+            cursor.execute(sql, tuple(moments_params))
+            raw_moments = [dict(r) for r in cursor.fetchall()]
+
+            if blocked_user_ids:
+                raw_moments = [p for p in raw_moments if p.get("user_id") not in blocked_user_ids]
+
+            has_more = len(raw_moments) > limit_val
+            feed_moments = raw_moments[:limit_val]
+
+            next_cursor = ""
+            if has_more and feed_moments:
+                next_cursor = feed_moments[-1].get("created_at", "")
+
+            for m in feed_moments:
+                cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (m["id"],))
+                m["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
+                m["timeAgo"] = format_time_ago(m.get("created_at", ""))
+                loc = m.get("location_city") or m.get("campus") or m.get("community_name") or "Community Space"
+                aname = loc.replace("Near ", "").strip() or "Community Space"
+                m["area_tag"] = f"Near {aname} · {m['timeAgo']}"
+                m["primary_community_id"] = m.get("community_id", "")
+                m["primary_community_name"] = m.get("community_name", "")
+
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "view": "moments",
+                "moments": feed_moments,
+                "pulse": pulse_summary,
+                "has_more": has_more,
+                "next_cursor": next_cursor
+            })
+
         if path == "/api/community/pulse":
             user = get_current_user(self.headers)
             target_comm = query.get("community_id", [""])[0].strip() or query.get("id", [""])[0].strip() or query.get("community", [""])[0].strip() or query.get("campus", [""])[0].strip()

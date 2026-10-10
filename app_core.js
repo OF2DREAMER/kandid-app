@@ -747,7 +747,224 @@ function switchScreenView(screenName) {
 }
 window.switchScreenView = switchScreenView;
 
+// Community Stream Scoping (Public Communities by default | Active Community)
 async function loadCommunityScreen() {
+  if (!state.communityFeedScope) {
+    state.communityFeedScope = 'public';
+  }
+  setCommunityFeedScope(state.communityFeedScope);
+}
+window.loadCommunityScreen = loadCommunityScreen;
+window.loadCampusScreen = loadCommunityScreen;
+
+function setCommunityFeedScope(scope) {
+  state.communityFeedScope = scope || 'public';
+  var pubBtn = document.getElementById('commScopePublicBtn');
+  var actBtn = document.getElementById('commScopeActiveBtn');
+  var pubView = document.getElementById('publicCommunitiesView');
+  var actView = document.getElementById('activeCommunityView');
+
+  if (state.communityFeedScope === 'public') {
+    if (pubBtn) pubBtn.className = 'flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm transition-all cursor-pointer text-center';
+    if (actBtn) actBtn.className = 'flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer text-center';
+    if (pubView) pubView.style.display = 'block';
+    if (actView) actView.style.display = 'none';
+    loadPublicCommunityFeed();
+  } else {
+    if (pubBtn) pubBtn.className = 'flex-1 py-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer text-center';
+    if (actBtn) actBtn.className = 'flex-1 py-1.5 bg-zinc-800 text-white font-bold rounded-lg shadow-sm transition-all cursor-pointer text-center';
+    if (pubView) pubView.style.display = 'none';
+    if (actView) actView.style.display = 'block';
+    loadSingleCommunityFeed();
+  }
+}
+window.setCommunityFeedScope = setCommunityFeedScope;
+
+function setPublicFeedSubView(subView) {
+  state.publicFeedSubView = subView || 'moments';
+  var momentsBtn = document.getElementById('publicViewMomentsBtn');
+  var pulseBtn = document.getElementById('publicViewPulseBtn');
+
+  if (state.publicFeedSubView === 'moments') {
+    if (momentsBtn) momentsBtn.className = 'px-3 py-1.5 rounded-lg bg-zinc-800 text-white font-bold transition-all cursor-pointer';
+    if (pulseBtn) pulseBtn.className = 'px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5';
+  } else {
+    if (momentsBtn) momentsBtn.className = 'px-3 py-1.5 rounded-lg text-zinc-400 hover:text-white transition-colors cursor-pointer';
+    if (pulseBtn) pulseBtn.className = 'px-3 py-1.5 rounded-lg bg-zinc-800 text-amber-400 font-bold transition-all cursor-pointer flex items-center gap-1.5';
+  }
+  loadPublicCommunityFeed();
+}
+window.setPublicFeedSubView = setPublicFeedSubView;
+
+async function loadPublicCommunityFeed() {
+  var container = document.getElementById('publicMomentsContainer');
+  var loadingEl = document.getElementById('publicMomentsLoading');
+  var emptyEl = document.getElementById('publicMomentsEmpty');
+  var errorEl = document.getElementById('publicMomentsError');
+  var paginationEl = document.getElementById('publicMomentsPagination');
+  var pulseHeader = document.getElementById('publicLivePulseHeader');
+  var pulseDot = document.getElementById('publicPulseDot');
+  var pulseStateLabel = document.getElementById('publicPulseStateLabel');
+  var pulseCountLabel = document.getElementById('publicPulseCountLabel');
+  var pulseIndicatorDot = document.getElementById('publicPulseIndicatorDot');
+
+  if (state.publicFeedLoading) return;
+  state.publicFeedLoading = true;
+  state.publicFeedCursor = '';
+  state.publicFeedLoadedIds = new Set();
+
+  if (loadingEl) loadingEl.style.display = 'block';
+  if (emptyEl) emptyEl.style.display = 'none';
+  if (errorEl) errorEl.style.display = 'none';
+  if (container) container.innerHTML = '';
+  if (paginationEl) paginationEl.style.display = 'none';
+
+  var viewParam = (state.publicFeedSubView === 'pulse') ? 'pulse' : 'moments';
+  var res = await apiRequest('/api/community/public-feed?view=' + encodeURIComponent(viewParam) + '&limit=20');
+
+  state.publicFeedLoading = false;
+  if (loadingEl) loadingEl.style.display = 'none';
+
+  if (!res || !res.success) {
+    if (errorEl) errorEl.style.display = 'block';
+    return;
+  }
+
+  // Update Live Pulse indicators
+  var pulseData = res.pulse || {};
+  var hasLive = Boolean(pulseData.has_live_activity);
+  var activeCount = pulseData.active_count || 0;
+
+  if (pulseIndicatorDot) {
+    pulseIndicatorDot.className = hasLive
+      ? 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse'
+      : 'w-1.5 h-1.5 rounded-full bg-zinc-600';
+  }
+
+  if (pulseHeader) {
+    if (state.publicFeedSubView === 'pulse') {
+      pulseHeader.style.display = 'block';
+      if (pulseDot) {
+        pulseDot.className = hasLive
+          ? 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse'
+          : 'w-1.5 h-1.5 rounded-full bg-zinc-500';
+      }
+      if (pulseStateLabel) {
+        pulseStateLabel.textContent = hasLive ? 'HAPPENING NOW' : 'QUIET RIGHT NOW';
+        pulseStateLabel.className = hasLive
+          ? 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold'
+          : 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-zinc-400 font-bold';
+      }
+      if (pulseCountLabel) {
+        pulseCountLabel.textContent = hasLive ? (activeCount + ' active') : '0 active';
+      }
+    } else {
+      if (hasLive) {
+        pulseHeader.style.display = 'block';
+        if (pulseDot) pulseDot.className = 'w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse';
+        if (pulseStateLabel) {
+          pulseStateLabel.textContent = 'HAPPENING NOW';
+          pulseStateLabel.className = 'font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold';
+        }
+        if (pulseCountLabel) pulseCountLabel.textContent = activeCount + ' active';
+      } else {
+        pulseHeader.style.display = 'none';
+      }
+    }
+  }
+
+  var moments = Array.isArray(res.moments) ? res.moments : [];
+  if (moments.length === 0) {
+    if (emptyEl) {
+      emptyEl.style.display = 'block';
+      if (state.publicFeedSubView === 'pulse') {
+        emptyEl.innerHTML =
+          '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-2 shadow-lg">' +
+            '<div class="text-zinc-500 text-lg font-mono-tag">○</div>' +
+            '<h3 class="text-xs font-bold text-zinc-300 uppercase font-mono-tag">QUIET RIGHT NOW</h3>' +
+            '<p class="text-[11px] text-zinc-400 max-w-xs mx-auto">No live activity across public communities in the last 2 hours. Verified moments appear here in real time.</p>' +
+            '<button onclick="openCameraStudio()" class="mt-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-extrabold text-[10px] rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer">Capture In Public Space 📸</button>' +
+          '</div>';
+      } else {
+        emptyEl.innerHTML =
+          '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-2 shadow-lg">' +
+            '<div class="text-amber-500 text-lg font-mono-tag">✦</div>' +
+            '<h3 class="text-xs font-bold text-white uppercase font-mono-tag">NO PUBLIC MOMENTS YET</h3>' +
+            '<p class="text-[11px] text-zinc-400 max-w-xs mx-auto">Moments published to public communities will appear here in the cross-community stream.</p>' +
+            '<button onclick="openCameraStudio()" class="mt-2 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-[10px] rounded-xl font-mono-tag tracking-wider uppercase cursor-pointer">Capture Now 📸</button>' +
+          '</div>';
+      }
+    }
+  } else {
+    moments.forEach(function(m) {
+      state.publicFeedLoadedIds.add(m.id);
+    });
+    renderCommunityCards(moments, container);
+
+    state.publicFeedCursor = res.next_cursor || '';
+    state.publicFeedHasMore = Boolean(res.has_more);
+
+    if (paginationEl && state.publicFeedSubView === 'moments') {
+      paginationEl.style.display = state.publicFeedHasMore ? 'block' : 'none';
+    }
+  }
+
+  if (typeof loadMoreAroundYou === 'function') {
+    loadMoreAroundYou();
+  }
+}
+window.loadPublicCommunityFeed = loadPublicCommunityFeed;
+
+async function loadMorePublicMoments() {
+  if (state.publicFeedLoading || !state.publicFeedHasMore || !state.publicFeedCursor) return;
+  state.publicFeedLoading = true;
+
+  var paginationBtn = document.getElementById('publicMomentsLoadMoreBtn');
+  if (paginationBtn) {
+    paginationBtn.textContent = 'LOADING...';
+    paginationBtn.disabled = true;
+  }
+
+  var res = await apiRequest('/api/community/public-feed?view=moments&cursor=' + encodeURIComponent(state.publicFeedCursor) + '&limit=20');
+
+  state.publicFeedLoading = false;
+  if (paginationBtn) {
+    paginationBtn.textContent = 'LOAD MORE MOMENTS ↓';
+    paginationBtn.disabled = false;
+  }
+
+  if (!res || !res.success || !Array.isArray(res.moments)) return;
+
+  var container = document.getElementById('publicMomentsContainer');
+  if (container) {
+    var newMoments = [];
+    res.moments.forEach(function(m) {
+      if (!state.publicFeedLoadedIds.has(m.id)) {
+        state.publicFeedLoadedIds.add(m.id);
+        newMoments.push(m);
+      }
+    });
+
+    if (newMoments.length > 0) {
+      var tempDiv = document.createElement('div');
+      renderCommunityCards(newMoments, tempDiv);
+      while (tempDiv.firstChild) {
+        container.appendChild(tempDiv.firstChild);
+      }
+    }
+  }
+
+  state.publicFeedCursor = res.next_cursor || '';
+  state.publicFeedHasMore = Boolean(res.has_more);
+
+  var paginationEl = document.getElementById('publicMomentsPagination');
+  if (paginationEl) {
+    paginationEl.style.display = state.publicFeedHasMore ? 'block' : 'none';
+  }
+}
+window.loadMorePublicMoments = loadMorePublicMoments;
+
+async function loadSingleCommunityFeed() {
   var campusContainer = document.getElementById('campusMomentsContainer');
   var activeName = document.getElementById('communityActiveName');
   var activeLoc = document.getElementById('communityActiveLocation');
@@ -811,8 +1028,7 @@ async function loadCommunityScreen() {
     loadMoreAroundYou();
   }
 }
-window.loadCommunityScreen = loadCommunityScreen;
-window.loadCampusScreen = loadCommunityScreen;
+window.loadSingleCommunityFeed = loadSingleCommunityFeed;
 
 function renderCommunityCards(moments, container) {
   container.innerHTML = '';
@@ -2333,6 +2549,11 @@ async function loadMoreAroundYou() {
     }).join('');
   } else {
     container.innerHTML = '<div class="w-full py-4 text-center text-[10px] font-mono-tag text-zinc-500">No other nearby public spaces right now</div>';
+  }
+
+  var pubContainer = document.getElementById('publicMoreAroundYouContainer');
+  if (pubContainer) {
+    pubContainer.innerHTML = container.innerHTML;
   }
 }
 window.loadMoreAroundYou = loadMoreAroundYou;
