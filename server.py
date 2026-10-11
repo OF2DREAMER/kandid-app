@@ -12364,6 +12364,29 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 })
 
             if action == "approve":
+                # If this request was backed by an invite code, validate and
+                # consume its usage atomically BEFORE granting membership. The
+                # conditional UPDATE is race-safe (same pattern as
+                # /api/community/join and /api/invite/accept): a single-use
+                # invite can never be consumed by more than one approval.
+                req_inv_code = (req.get("invite_code") or "").strip()
+                if req_inv_code:
+                    cursor.execute("""
+                        UPDATE community_invites
+                        SET accepted_count = accepted_count + 1
+                        WHERE invite_code = ? AND status = 'active'
+                          AND accepted_count < max_uses
+                          AND (expires_at IS NULL OR expires_at = '' OR expires_at >= ?)
+                    """, (req_inv_code, datetime.now().isoformat()))
+                    if cursor.rowcount == 0:
+                        conn.rollback()
+                        conn.close()
+                        return self.send_json(400, {
+                            "error": "The invite backing this request is inactive, expired, or has reached its usage limit.",
+                            "code": "INVITE_MAX_USES",
+                            "success": False
+                        })
+
                 cursor.execute("""
                     INSERT INTO community_members (community_id, user_id, role, status, joined_at)
                     VALUES (?, ?, 'member', 'active', CURRENT_TIMESTAMP)
@@ -12371,14 +12394,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 """, (actual_cid, req_uid))
                 cursor.execute("UPDATE communities SET members_count = (SELECT COUNT(*) FROM community_members WHERE community_id = ? AND status = 'active') WHERE id = ?", (actual_cid, actual_cid))
 
-                # If request was backed by an invite code, increment accepted_count
-                req_inv_code = req.get("invite_code")
                 if req_inv_code:
-                    cursor.execute("""
-                        UPDATE community_invites
-                        SET accepted_count = accepted_count + 1
-                        WHERE invite_code = ? AND status = 'active'
-                    """, (req_inv_code,))
                     cursor.execute("SELECT id FROM community_invites WHERE invite_code = ?", (req_inv_code,))
                     inv_match = cursor.fetchone()
                     if inv_match:
@@ -14380,6 +14396,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(403, {"success": False, "error": "Cannot react to moderated content", "code": "MOMENT_MODERATED"})
 
+            # Block enforcement: a block in either direction prevents reacting
+            # to the post owner's moment (the same bidirectional policy used by
+            # Feed, chat and community endpoints).
+            if post_dict.get("user_id") and post_dict["user_id"] != user_id:
+                cursor.execute("""
+                    SELECT 1 FROM blocks
+                    WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)
+                """, (user_id, post_dict["user_id"], post_dict["user_id"], user_id))
+                if cursor.fetchone():
+                    conn.close()
+                    return self.send_json(403, {"success": False, "error": "Cannot react to this moment", "code": "BLOCKED"})
+
             # Determine parent Community
             comm_id = (post_dict.get("primary_community_id") or post_dict.get("context_community_id") or "").strip()
             comm_row = None
@@ -15423,7 +15451,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 post_ids = [r[0] for r in cursor.fetchall()]
                 for pid in post_ids:
                     cursor.execute("DELETE FROM reactions WHERE post_id = ?", (pid,))
-                    cursor.execute("DELETE FROM moment_cluster_members WHERE perspective_post_id = ?", (pid,))
+                    cursor.execute("DELETE FROM moment_cluster_members WHERE moment_id = ?", (pid,))
                 cursor.execute("DELETE FROM posts WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM reactions WHERE user_id = ?", (user_id,))
 
@@ -15431,12 +15459,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 cursor.execute("DELETE FROM moment_cluster_members WHERE user_id = ?", (user_id,))
 
                 # 4. Delete direct messages and notifications
-                cursor.execute("DELETE FROM messages WHERE sender_id = ? OR recipient_id = ?", (user_id, user_id))
+                cursor.execute("DELETE FROM messages WHERE sender_id = ? OR receiver_id = ?", (user_id, user_id))
                 cursor.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
 
                 # 5. Friendships, blocks, mutes
                 cursor.execute("DELETE FROM friendships WHERE user_id = ? OR friend_id = ?", (user_id, user_id))
-                cursor.execute("DELETE FROM blocks WHERE blocker_id = ? OR blocked_id = ?", (user_id, user_id))
+                cursor.execute("DELETE FROM blocks WHERE user_id = ? OR blocked_user_id = ?", (user_id, user_id))
                 cursor.execute("DELETE FROM community_mutes WHERE user_id = ?", (user_id,))
                 cursor.execute("DELETE FROM community_suspensions WHERE user_id = ?", (user_id,))
 

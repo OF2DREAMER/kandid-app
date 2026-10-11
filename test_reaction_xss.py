@@ -394,5 +394,77 @@ class TestDRegression(ReactionXssBase):
         self.assertNotIn("pillBtn.innerHTML = em + ", src)
 
 
+
+
+# ---------------------------------------------------------------------------
+# Batch 2 — F-2: /api/react must enforce the bidirectional block policy
+# ---------------------------------------------------------------------------
+class TestReactBlockEnforcement(ReactionXssBase):
+    """A block in either direction must prevent reacting to the owner's post,
+    with no persisted reaction and no notification side effect."""
+
+    def setUp(self):
+        conn = server.get_db()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM blocks")
+            cur.execute("DELETE FROM reactions WHERE post_id = 'post_xss'")
+            cur.execute("DELETE FROM notifications WHERE user_id IN ('u_author', 'u_reactor')")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _block(self, blocker, blocked):
+        conn = server.get_db()
+        try:
+            conn.execute(
+                "INSERT INTO blocks (id, user_id, blocked_user_id) VALUES (?, ?, ?)",
+                ("blk_" + blocker + "_" + blocked, blocker, blocked),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _count(self, sql, params=()):
+        conn = server.get_db()
+        try:
+            return conn.execute(sql, params).fetchone()[0]
+        finally:
+            conn.close()
+
+    def _react(self):
+        return self._request("/api/react", token=TOKEN, method="POST",
+                             body={"postId": "post_xss", "emoji": "\U0001F525"})
+
+    def _no_side_effects(self):
+        self.assertEqual(self._count(
+            "SELECT COUNT(*) FROM reactions WHERE post_id = 'post_xss' AND user_id = 'u_reactor'"), 0)
+        self.assertEqual(self._count(
+            "SELECT COUNT(*) FROM notifications WHERE user_id = 'u_author' AND sender_id = 'u_reactor'"), 0)
+
+    def test_01_owner_blocked_reactor_cannot_react(self):
+        self._block("u_author", "u_reactor")  # post owner has blocked the reactor
+        status, data = self._react()
+        self.assertEqual(status, 403, data)
+        self.assertEqual(data.get("code"), "BLOCKED")
+        self._no_side_effects()
+
+    def test_02_reverse_direction_block_cannot_react(self):
+        self._block("u_reactor", "u_author")  # reactor has blocked the post owner
+        status, data = self._react()
+        self.assertEqual(status, 403, data)
+        self.assertEqual(data.get("code"), "BLOCKED")
+        self._no_side_effects()
+
+    def test_03_unblocked_user_reaction_still_succeeds(self):
+        status, data = self._react()
+        self.assertEqual(status, 200, data)
+        self.assertTrue(data.get("success"))
+        self.assertEqual(self._count(
+            "SELECT COUNT(*) FROM reactions WHERE post_id = 'post_xss' AND user_id = 'u_reactor'"), 1)
+        self.assertEqual(self._count(
+            "SELECT COUNT(*) FROM notifications WHERE user_id = 'u_author' AND sender_id = 'u_reactor'"), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

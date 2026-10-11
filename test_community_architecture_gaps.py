@@ -1213,5 +1213,213 @@ class TestPrivateCommunityInvitations(unittest.TestCase):
         self.assertEqual(data.get("code"), "ALREADY_MEMBER")
 
 
+
+
+# =========================================================================
+# Batch 2 — F-3: a single-use private Community invite cannot be consumed
+# more than once through join-request approval.
+# =========================================================================
+TOKEN_B2_OWNER = "tok_b2_owner"
+TOKEN_B2_CAND1 = "tok_b2_cand1"
+TOKEN_B2_CAND2 = "tok_b2_cand2"
+B2_COMM = "comm_b2_single"
+B2_CODE = "B2SINGLE1"
+
+
+class TestSingleUseInviteApprovalReview(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._tmpdir = tempfile.mkdtemp(prefix="kandid_b2inv_")
+        cls._orig_db = server.DB_FILE
+        cls._orig_url = server.DATABASE_URL
+        server.DATABASE_URL = ""
+        server.DB_FILE = os.path.join(cls._tmpdir, "kandid_b2inv.db")
+        server.init_db()
+
+        conn = server.get_db()
+        cur = conn.cursor()
+        for uid, email, handle, name in [
+            ("u_b2_owner", "b2owner@test.com", "b2_owner", "B2 Owner"),
+            ("u_b2_cand1", "b2cand1@test.com", "b2_cand1", "B2 Cand1"),
+            ("u_b2_cand2", "b2cand2@test.com", "b2_cand2", "B2 Cand2"),
+        ]:
+            cur.execute(
+                "INSERT INTO users (id, email, handle, name, password_hash, salt, campus, role, email_verified, is_onboarded) "
+                "VALUES (?, ?, ?, ?, 'h', 's', 'Campus B2', 'student', 1, 1)",
+                (uid, email, handle, name),
+            )
+        for sid, uid, tok in [
+            ("s_b2_owner", "u_b2_owner", TOKEN_B2_OWNER),
+            ("s_b2_c1", "u_b2_cand1", TOKEN_B2_CAND1),
+            ("s_b2_c2", "u_b2_cand2", TOKEN_B2_CAND2),
+        ]:
+            cur.execute("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
+                        (sid, uid, tok, "2099-01-01T00:00:00Z"))
+        cur.execute(
+            "INSERT INTO communities (id, name, type, description, city, creator_id, creator_handle, icon, visibility, members_count, status) "
+            "VALUES (?, ?, 'Interest', '', 'City B2', 'u_b2_owner', 'b2_owner', 'L', 'private', 1, 'active')",
+            (B2_COMM, "B2 Single Hub"),
+        )
+        cur.execute("INSERT INTO community_members (community_id, user_id, role, status) VALUES (?, 'u_b2_owner', 'owner', 'active')", (B2_COMM,))
+        conn.commit()
+        conn.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        server.DB_FILE = cls._orig_db
+        server.DATABASE_URL = cls._orig_url
+        if os.path.exists(cls._tmpdir):
+            shutil.rmtree(cls._tmpdir, ignore_errors=True)
+
+    def _req(self, path, method="GET", token=None, body=None):
+        s1, s2 = socket.socketpair()
+
+        class DummyServer:
+            pass
+
+        def run_handler():
+            try:
+                KandidHandler(s1, ("127.0.0.1", 12345), DummyServer())
+            except Exception:
+                pass
+            finally:
+                try:
+                    s1.close()
+                except Exception:
+                    pass
+
+        t = server.threading.Thread(target=run_handler)
+        t.daemon = True
+        t.start()
+
+        body_bytes = b""
+        if body is not None:
+            body_bytes = json.dumps(body).encode("utf-8")
+
+        req = f"{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+        if token:
+            req += f"Authorization: Bearer {token}\r\nCookie: session_token={token}\r\n"
+        if body_bytes:
+            req += f"Content-Type: application/json\r\nContent-Length: {len(body_bytes)}\r\n"
+        req += "Connection: close\r\n\r\n"
+
+        s2.sendall(req.encode("utf-8") + body_bytes)
+        resp = b""
+        while True:
+            chunk = s2.recv(4096)
+            if not chunk:
+                break
+            resp += chunk
+        s2.close()
+        t.join(timeout=5.0)
+
+        header_part, _, body_part = resp.partition(b"\r\n\r\n")
+        lines = header_part.decode("utf-8", errors="replace").split("\r\n")
+        status_code = int(lines[0].split(" ")[1]) if lines and " " in lines[0] else 500
+        data = {}
+        if body_part:
+            try:
+                data = json.loads(body_part.decode("utf-8"))
+            except Exception:
+                data = {"raw": body_part.decode("utf-8", errors="replace")}
+        return status_code, data
+
+    def _count(self, sql, params=()):
+        conn = server.get_db()
+        try:
+            return conn.execute(sql, params).fetchone()[0]
+        finally:
+            conn.close()
+
+    def _reset(self, max_uses=1):
+        conn = server.get_db()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM community_join_requests WHERE community_id = ?", (B2_COMM,))
+            cur.execute("DELETE FROM community_invites WHERE community_id = ?", (B2_COMM,))
+            cur.execute("DELETE FROM community_members WHERE community_id = ? AND user_id != 'u_b2_owner'", (B2_COMM,))
+            cur.execute(
+                "INSERT INTO community_invites (id, invite_code, inviter_user_id, community_id, expires_at, accepted_count, max_uses, status) "
+                "VALUES ('inv_b2', ?, 'u_b2_owner', ?, '2099-01-01T00:00:00', 0, ?, 'active')",
+                (B2_CODE, B2_COMM, max_uses),
+            )
+            for rid, uid in (("req_b2_1", "u_b2_cand1"), ("req_b2_2", "u_b2_cand2")):
+                cur.execute(
+                    "INSERT INTO community_join_requests (id, community_id, user_id, status, invite_code, created_at) "
+                    "VALUES (?, ?, ?, 'pending', ?, CURRENT_TIMESTAMP)",
+                    (rid, B2_COMM, uid, B2_CODE),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def setUp(self):
+        self._reset()
+
+    def _approve(self, request_id, token=None):
+        return self._req(
+            "/api/community/join-requests/review",
+            method="POST",
+            token=token or TOKEN_B2_OWNER,
+            body={"community_id": B2_COMM, "request_id": request_id, "action": "approve"},
+        )
+
+    def test_01_first_approval_consumes_single_use_invite(self):
+        status, data = self._approve("req_b2_1")
+        self.assertEqual(status, 200, data)
+        self.assertTrue(data.get("success"))
+        self.assertEqual(self._count("SELECT accepted_count FROM community_invites WHERE invite_code = ?", (B2_CODE,)), 1)
+        self.assertEqual(self._count(
+            "SELECT COUNT(*) FROM community_members WHERE community_id = ? AND user_id = 'u_b2_cand1' AND status = 'active'", (B2_COMM,)), 1)
+
+    def test_02_second_approval_cannot_consume_exhausted_invite(self):
+        status, _ = self._approve("req_b2_1")
+        self.assertEqual(status, 200)
+        status, data = self._approve("req_b2_2")
+        self.assertEqual(status, 400, data)
+        self.assertEqual(data.get("code"), "INVITE_MAX_USES")
+        self.assertEqual(self._count(
+            "SELECT COUNT(*) FROM community_members WHERE community_id = ? AND user_id = 'u_b2_cand2'", (B2_COMM,)), 0)
+        self.assertEqual(self._count("SELECT accepted_count FROM community_invites WHERE invite_code = ?", (B2_CODE,)), 1)
+        self.assertEqual(self._count("SELECT COUNT(*) FROM community_join_requests WHERE id = 'req_b2_2' AND status = 'pending'"), 1)
+
+    def test_03_concurrent_approvals_only_one_consumes(self):
+        results = {}
+        barrier = server.threading.Barrier(2)
+
+        def worker(key, rid):
+            barrier.wait()
+            try:
+                results[key] = self._approve(rid)[0]
+            except Exception as exc:  # noqa: BLE001 - record, assert invariant below
+                results[key] = repr(exc)
+
+        t1 = server.threading.Thread(target=worker, args=("a", "req_b2_1"))
+        t2 = server.threading.Thread(target=worker, args=("b", "req_b2_2"))
+        t1.start()
+        t2.start()
+        t1.join(20)
+        t2.join(20)
+
+        successes = sum(1 for s in results.values() if s == 200)
+        self.assertEqual(successes, 1, results)
+        self.assertEqual(self._count("SELECT accepted_count FROM community_invites WHERE invite_code = ?", (B2_CODE,)), 1)
+        self.assertEqual(self._count(
+            "SELECT COUNT(*) FROM community_members WHERE community_id = ? AND user_id IN ('u_b2_cand1', 'u_b2_cand2') AND status = 'active'",
+            (B2_COMM,)), 1)
+
+    def test_04_authorization_still_enforced(self):
+        status, data = self._approve("req_b2_2", token=TOKEN_B2_CAND1)
+        self.assertEqual(status, 403, data)
+        self.assertEqual(self._count(
+            "SELECT COUNT(*) FROM community_members WHERE community_id = ? AND user_id = 'u_b2_cand2'", (B2_COMM,)), 0)
+
+    def test_05_multi_use_invite_still_works(self):
+        self._reset(max_uses=3)
+        self.assertEqual(self._approve("req_b2_1")[0], 200)
+        self.assertEqual(self._approve("req_b2_2")[0], 200)
+        self.assertEqual(self._count("SELECT accepted_count FROM community_invites WHERE invite_code = ?", (B2_CODE,)), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
