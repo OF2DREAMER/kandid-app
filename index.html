@@ -3711,119 +3711,82 @@
     <!-- ===================================================================
          MOMENT CAPTURE (FULL-SCREEN DUAL CAMERA VIEWFINDER MODAL)
          =================================================================== -->
-    <div class="fixed inset-0 z-50 bg-[#000000] flex flex-col justify-between overflow-hidden transition-all duration-300 ease-out translate-y-full opacity-0" id="cameraStudioModal" style="display:none;">
+    <div class="fixed inset-0 z-50 bg-[#000000] flex flex-col justify-between overflow-hidden transition-all duration-300 ease-out translate-y-full opacity-0 px-4 pt-3 pb-8" id="cameraStudioModal" style="display:none;">
 
-      <!-- Full Screen Camera Viewfinder Background -->
-      <div class="absolute inset-0 z-0 bg-zinc-950 flex items-center justify-center">
-        <!-- Live Hardware Video Streams -->
-        <video id="cameraMainVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
-        <img src="" class="w-full h-full object-cover hidden" id="cameraMainPreviewImg">
-        <canvas id="cameraCaptureCanvas" class="hidden"></canvas>
-        <input type="file" id="cameraNativeFileInput" accept="image/*" capture="environment" class="hidden" onchange="handleNativeFileCapture(event)">
-        
-        <!-- Front Camera Picture-in-Picture (PiP) Window -->
-        <div class="absolute top-24 right-5 w-24 h-32 bg-black rounded-2xl overflow-hidden border-2 border-amber-500/40 shadow-2xl z-10 cursor-pointer group" onclick="toggleCameraLens()" title="Tap to flip camera">
-          <video id="cameraPipVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
-          <img src="" class="w-full h-full object-cover hidden" id="cameraPipPreviewImg">
-          <div class="absolute bottom-1.5 inset-x-0 text-center">
-            <span class="text-[7px] text-amber-400 font-mono-tag font-bold bg-black/80 px-1.5 py-0.5 rounded backdrop-blur-sm">FLIP ⇄</span>
+      <!-- Top Header -->
+      <header class="w-full flex justify-between items-center px-2 py-1 z-20 shrink-0">
+        <h1 class="text-xs tracking-[0.28em] font-extrabold text-white uppercase font-mono-tag">K A N D I D</h1>
+        <button class="w-9 h-9 bg-zinc-900/90 border border-zinc-800 rounded-full flex items-center justify-center text-zinc-300 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95" onclick="closeCameraStudio()" title="Close Camera">
+          <span class="text-xs font-bold leading-none">✕</span>
+        </button>
+      </header>
+
+      <!-- Center Viewfinder Enclosed Card -->
+      <div class="flex-1 w-full my-3 flex items-center justify-center relative overflow-hidden z-10 min-h-0">
+        <div class="w-full h-full max-h-[72vh] aspect-[3/4] max-w-sm bg-zinc-950 rounded-[36px] overflow-hidden border border-zinc-800/80 shadow-2xl relative flex items-center justify-center">
+          <!-- Live Hardware Video Stream -->
+          <video id="cameraMainVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+          <img src="" class="w-full h-full object-cover hidden" id="cameraMainPreviewImg">
+          <canvas id="cameraCaptureCanvas" class="hidden"></canvas>
+          <input type="file" id="cameraNativeFileInput" accept="image/*" capture="environment" class="hidden" onchange="handleNativeFileCapture(event)">
+          
+          <!-- PiP Window (Kept for dual selfie preview if needed) -->
+          <div class="absolute top-4 right-4 w-20 h-28 bg-black rounded-2xl overflow-hidden border-2 border-amber-500/40 shadow-2xl z-20 cursor-pointer hidden" id="cameraPipPreviewContainer" onclick="toggleCameraLens()" title="Tap to flip camera">
+            <video id="cameraPipVideo" autoplay playsinline muted class="w-full h-full object-cover"></video>
+            <img src="" class="w-full h-full object-cover hidden" id="cameraPipPreviewImg">
           </div>
-        </div>
 
-        <!-- Gradient Overlays for Readability -->
-        <div class="absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-black/80 via-black/30 to-transparent pointer-events-none z-10"></div>
-        <div class="absolute inset-x-0 bottom-0 h-80 bg-gradient-to-t from-black/95 via-black/70 to-transparent pointer-events-none z-10"></div>
-        
-        <!-- Flash Animation Overlay -->
-        <div class="absolute inset-0 bg-white opacity-0 pointer-events-none transition-opacity duration-200 z-30" id="cameraFlashOverlay"></div>
-        
-        <!-- Sequential Dual Camera & Audio HUD -->
-        <div id="cameraDualCaptureHUD" class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center space-y-4 z-40" style="display:none;">
+          <!-- Flash Animation Overlay -->
+          <div class="absolute inset-0 bg-white opacity-0 pointer-events-none transition-opacity duration-200 z-30" id="cameraFlashOverlay"></div>
+          
+          <!-- Sequential Dual Camera & Audio HUD -->
+          <div id="cameraDualCaptureHUD" class="absolute inset-0 bg-black/75 flex flex-col items-center justify-center space-y-4 z-40" style="display:none;">
             <div class="w-16 h-16 rounded-full border-4 border-amber-500 flex items-center justify-center text-amber-400 text-2xl font-black font-mono-tag animate-pulse" id="cameraDualCountdown">
-                3
+              3
             </div>
             <div class="text-center space-y-1 px-6">
-                <h3 class="text-xs font-black text-white font-mono-tag tracking-widest uppercase" id="cameraDualStatusTitle">NOW SMILE FOR FRONT CAMERA!</h3>
-                <p class="text-[10px] text-amber-400 font-mono-tag" id="cameraDualStatusSub">🎙️ Recording 3.0s Ambient Sound...</p>
-            </div>
-        </div>
-      </div>
-
-      <!-- Top Header & HUD Overlay -->
-      <div class="relative z-20 flex flex-col pt-2">
-        <!-- Kandid Header -->
-        <header class="px-5 pt-1 pb-2 flex justify-between items-center">
-          <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KANDID</h1>
-          <div class="flex items-center gap-2">
-            <button class="w-8 h-8 bg-black/40 apple-blur border border-white/10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white transition-colors relative shadow-sm cursor-pointer" onclick="closeCameraStudio()" title="Close Camera">
-              <span class="text-xs">✕</span>
-            </button>
-          </div>
-        </header>
-
-        <!-- Moment Window HUD Info -->
-        <div class="px-5 pt-1 space-y-1">
-          <h2 class="text-xs font-extrabold text-white tracking-widest uppercase font-mono-tag">KANDID MOMENT</h2>
-          <div class="flex items-center justify-between">
-            <p class="text-[10px] text-zinc-400 font-mono-tag">YOUR MOMENT WINDOW</p>
-            <div class="bg-black/60 apple-blur border border-amber-500/40 px-2.5 py-1 rounded-lg">
-              <span class="text-[10px] text-amber-400 font-mono-tag font-bold" id="momentWindowTimerHUD">14:32 REMAINING</span>
+              <h3 class="text-xs font-black text-white font-mono-tag tracking-widest uppercase" id="cameraDualStatusTitle">NOW SMILE FOR FRONT CAMERA!</h3>
+              <p class="text-[10px] text-amber-400 font-mono-tag" id="cameraDualStatusSub">🎙️ Recording 3.0s Ambient Sound...</p>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Empty middle spacer to keep clean viewfinder view -->
-      <div class="relative z-20 flex-1"></div>
+      <!-- Hidden telemetry and instruction anchors to preserve full script compatibility -->
+      <span id="momentWindowTimerHUD" style="display:none !important; visibility:hidden !important;"></span>
+      <p id="cameraShutterInstruction" style="display:none !important; visibility:hidden !important; position:absolute !important; pointer-events:none !important;"></p>
 
-      <!-- Bottom Shutter & Controls Dock -->
-      <footer class="relative z-20 w-full pb-8 px-6 flex flex-col items-center space-y-4" id="cameraShutterControls">
-        
-        <!-- Helper Instruction -->
-        <p class="text-[11px] font-bold text-zinc-300 font-mono-tag tracking-widest uppercase pb-1" id="cameraShutterInstruction">
-            STEP 1: TAP TO SNAP MOMENT 📸
-        </p>
+      <!-- Bottom Controls & Shutter Area -->
+      <footer class="w-full flex flex-col items-center gap-5 z-20 shrink-0" id="cameraShutterControls">
+        <!-- Control Actions Row: [Flash] - [Ambient Audio Pill] - [Flip] -->
+        <div class="w-full max-w-sm flex justify-between items-center px-4">
+          <!-- Flash Button -->
+          <button class="w-11 h-11 rounded-full bg-zinc-900/90 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white transition-all cursor-pointer shadow-lg active:scale-95" onclick="triggerFlashSimulation()" title="Toggle Flash">
+            <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+              <path d="M13 2L3 14h7v8l11-12h-8l0-8z"/>
+            </svg>
+          </button>
 
-        <!-- Bottom Action Row with Ambient Audio & ISO aligned right above controls -->
-        <div class="w-full flex justify-between items-center px-4">
-            
-            <!-- Left Control: Flash + Ambient Audio Pill Above -->
-            <div class="flex flex-col items-start gap-2">
-                <div class="bg-black/60 apple-blur border border-white/10 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                    <span class="text-[8px] text-zinc-300 font-mono-tag tracking-wider">AMBIENT AUDIO ON</span>
-                </div>
-                <button class="w-11 h-11 rounded-2xl bg-black/50 apple-blur border border-white/10 flex items-center justify-center text-white text-sm hover:bg-black/70 transition-all cursor-pointer shadow-lg" onclick="triggerFlashSimulation()" title="Toggle Flash">
-                    ⚡
-                </button>
-            </div>
+          <!-- Ambient Audio Pill -->
+          <div class="bg-zinc-900/90 border border-zinc-800/90 px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+            <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            <span class="text-[9px] text-zinc-300 font-mono-tag font-bold tracking-widest uppercase">AMBIENT AUDIO ON</span>
+          </div>
 
-            <!-- Authentic Vintage Leica Shutter Button in Center -->
-            <button class="relative group cursor-pointer self-end active:scale-95 transition-transform" id="studioShutterTrigger" onclick="takeSnapshot()" title="Capture Moment">
-                <div class="w-16 h-16 bg-gradient-to-tr from-zinc-600 via-zinc-300 to-zinc-700 rounded-full flex items-center justify-center p-0.5 border border-zinc-500 shadow-2xl">
-                    <div class="w-full h-full rounded-full knurled-ring flex items-center justify-center p-1 relative">
-                        <div class="w-full h-full bg-zinc-950 rounded-full border border-zinc-700 flex items-center justify-center relative">
-                            <span class="absolute top-1 right-2 w-1.5 h-1.5 bg-red-600 rounded-full shadow-[0_0_4px_red]"></span>
-                            <div class="w-6 h-6 bg-gradient-to-b from-zinc-800 to-zinc-950 rounded-full border border-zinc-600 flex items-center justify-center">
-                                <div class="w-2.5 h-2.5 bg-amber-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </button>
-
-            <!-- Right Control: ISO Meta + Flip Camera Button Above -->
-            <div class="flex flex-col items-end gap-2">
-                <div class="text-[8px] text-zinc-400 font-mono-tag bg-black/60 apple-blur border border-white/10 px-2 py-1.5 rounded-xl">
-                    ISO 400 · 1/250s
-                </div>
-                <button class="w-11 h-11 rounded-2xl bg-black/50 apple-blur border border-white/10 flex items-center justify-center text-white text-base hover:bg-black/70 transition-all cursor-pointer shadow-lg" onclick="toggleCameraLens()" title="Flip Camera">
-                    🔄
-                </button>
-            </div>
-
+          <!-- Flip Camera Button -->
+          <button class="w-11 h-11 rounded-full bg-zinc-900/90 border border-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white transition-all cursor-pointer shadow-lg active:scale-95" onclick="toggleCameraLens()" title="Flip Camera">
+            <svg class="w-4 h-4 stroke-current fill-none stroke-2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
         </div>
 
+        <!-- Shutter Button: Clean Outer Ring with Bold Amber Circle -->
+        <button class="relative group cursor-pointer active:scale-95 transition-transform" id="studioShutterTrigger" onclick="takeSnapshot()" title="Capture Moment">
+          <div class="w-[72px] h-[72px] rounded-full border-2 border-zinc-700/80 p-1 flex items-center justify-center shadow-2xl">
+            <div class="w-full h-full rounded-full bg-amber-500 shadow-[0_0_16px_rgba(245,158,11,0.4)]"></div>
+          </div>
+        </button>
       </footer>
 
     </div>
