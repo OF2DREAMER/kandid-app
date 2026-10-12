@@ -274,7 +274,7 @@ class TestBChatReactionsRejectsPayloads(ReactionXssBase):
 # Group C — static sink verification in app.js
 # ---------------------------------------------------------------------------
 def _app_js_source():
-    with open(os.path.join(PROJECT_DIR, "app.js"), "r", encoding="utf-8") as f:
+    with open(os.path.join(PROJECT_DIR, "app_core.js"), "r", encoding="utf-8") as f:
         return f.read()
 
 
