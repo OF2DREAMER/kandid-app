@@ -3920,9 +3920,9 @@ function record3SecAmbientAudio() {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         micStream = await navigator.mediaDevices.getUserMedia({ 
           audio: {
-            echoCancellation: false,
+            echoCancellation: true,
             noiseSuppression: false,
-            autoGainControl: false
+            autoGainControl: true
           } 
         });
       }
@@ -4128,6 +4128,7 @@ const KandidCameraEngine = {
   pendingAudioPromise: null,
   _captureStartedAt: 0,
   _gen: 0, // PHASE 1.2: acquisition generation; stop() invalidates in-flight getUserMedia
+  _audioGen: 0, // audio generation token to prevent stale audio across captures
 
   setState(newState, detail) {
     this.state = newState;
@@ -4194,16 +4195,30 @@ const KandidCameraEngine = {
   // Recordings are chained so at most one microphone stream is ever active.
   startAmbientAudioCapture() {
     var self = this;
+    var currentGen = ++this._audioGen;
+    this.audioClip = '';
+    state.recordedAudioDataUrl = '';
+    if (state.capturedMomentData) {
+      state.capturedMomentData.audioData = '';
+    }
     var previous = this.pendingAudioPromise || Promise.resolve('');
     var next = previous.catch(function() {}).then(function() {
       return record3SecAmbientAudio();
     }).then(function(url) {
+      if (currentGen !== self._audioGen) {
+        return '';
+      }
       self.audioClip = url || '';
       state.recordedAudioDataUrl = self.audioClip;
+      if (state.capturedMomentData) {
+        state.capturedMomentData.audioData = self.audioClip;
+      }
       return self.audioClip;
     }).catch(function(err) {
       console.warn('[CameraEngine] Ambient audio capture failed:', err);
-      self.audioClip = '';
+      if (currentGen === self._audioGen) {
+        self.audioClip = '';
+      }
       return '';
     });
     this.pendingAudioPromise = next;
@@ -4215,7 +4230,7 @@ const KandidCameraEngine = {
     if (this.pendingAudioPromise) {
       try {
         var url = await this.pendingAudioPromise;
-        this.audioClip = url || this.audioClip || '';
+        if (url) this.audioClip = url;
       } catch(e) {
         this.audioClip = this.audioClip || '';
       }
