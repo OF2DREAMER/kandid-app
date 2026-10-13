@@ -4416,6 +4416,11 @@ const KandidCameraEngine = {
 
   async capture() {
     if (this._isBusy()) return;
+    // P0 FIX: snapshot _gen at entry so stale-operation checks throughout this
+    // async method have a stable reference. Without this, `gen` was undefined in
+    // the entire function body, making `gen !== this._gen` always true and
+    // silently aborting before openMomentReview() on every successful capture.
+    var gen = this._gen;
     this.setState('CAPTURING_REAR');
     this._captureStartedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     this._setShutterEnabled(false);
@@ -4897,25 +4902,32 @@ function openMomentReview() {
       duration_ms: 3000
     });
   }
+  if (state.activeScreen !== 'feed') {
+    state.isOpeningReview = true;
+    switchScreenView('feed');
+    state.isOpeningReview = false;
+  }
+
   ['feedContentStream', 'campusContentStream', 'globalContentStream', 'nearbyContentStream'].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
 
   var reviewStream = document.getElementById('reviewContentStream');
-  if (reviewStream) reviewStream.style.display = 'block';
+  if (reviewStream) {
+    reviewStream.style.display = 'block';
+    reviewStream.classList.remove('hidden');
+  }
+
+  // Scroll to top of viewport so review card is immediately visible
+  var viewport = document.getElementById('mainViewport');
+  if (viewport) viewport.scrollTop = 0;
 
   // Bind real captured image to review
   var reviewMain = document.getElementById('reviewMainImg');
   var reviewPip = document.getElementById('reviewPipImg');
   if (reviewMain && state.capturedMomentData) reviewMain.src = state.capturedMomentData.mainImg;
   if (reviewPip && state.capturedMomentData) reviewPip.src = state.capturedMomentData.pipImg;
-
-  if (state.activeScreen !== 'feed') {
-    state.isOpeningReview = true;
-    switchScreenView('feed');
-    state.isOpeningReview = false;
-  }
 
   var statusMode = document.getElementById('statusBarModeTag');
   if (statusMode) statusMode.textContent = 'REVIEW';
@@ -5056,9 +5068,36 @@ function closeMomentReview() {
 }
 window.closeMomentReview = closeMomentReview;
 
-function retakeMomentFromReview() {
-  closeMomentReview();
-  openCameraStudio();
+async function retakeMomentFromReview() {
+  if (activeAudioInstance) {
+    try { activeAudioInstance.pause(); } catch(e) {}
+    activeAudioInstance = null;
+  }
+
+  // Preserve user's intended community/destination across retakes
+  var savedComm = state.selectedReviewCommunity;
+  var savedCommId = state.activeCommunityId;
+  var savedCtx = state.reviewCameraContext || state.cameraContext;
+
+  var reviewStream = document.getElementById('reviewContentStream');
+  if (reviewStream) reviewStream.style.display = 'none';
+
+  // Clear previous captured frames to prevent stale reuse
+  state.capturedMomentData = null;
+  state.recordedAudioDataUrl = '';
+  if (window.KandidCameraEngine) {
+    KandidCameraEngine.rearFrame = null;
+    KandidCameraEngine.frontFrame = null;
+    KandidCameraEngine.compositeImage = null;
+    KandidCameraEngine.audioClip = null;
+  }
+
+  // Restore destination context for subsequent review
+  state.selectedReviewCommunity = savedComm;
+  state.activeCommunityId = savedCommId;
+  if (savedCtx) state.cameraContext = Object.assign({}, savedCtx);
+
+  await openCameraStudio();
 }
 window.retakeMomentFromReview = retakeMomentFromReview;
 

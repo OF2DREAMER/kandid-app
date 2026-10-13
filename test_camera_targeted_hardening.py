@@ -257,7 +257,7 @@ function makeEl(id) {
 ['cameraShutterInstruction', 'cameraDualCaptureHUD', 'cameraStudioModal',
  'cameraMainVideo', 'cameraMainPreviewImg', 'cameraFlashOverlay',
  'cameraDualCountdown', 'cameraDualStatusTitle', 'cameraDualStatusSub',
- 'cameraShutterControls', 'reviewMainImg', 'reviewPipImg'].forEach(id => {
+ 'cameraShutterControls', 'reviewMainImg', 'reviewPipImg', 'reviewContentStream'].forEach(id => {
   elements[id] = makeEl(id);
 });
 
@@ -313,6 +313,7 @@ async function run() {
   const recordedDraws = [];
   const mockCtx = {
     save() {}, restore() {}, beginPath() {}, rect() {}, roundRect() {}, clip() {}, stroke() {},
+    translate() {}, scale() {},
     drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh) {
       recordedDraws.push({ img, sx, sy, sw, sh, dx, dy, dw, dh });
     }
@@ -405,6 +406,44 @@ async function run() {
   assert.strictEqual(capturedResult, 'FAILED_AS_EXPECTED');
   assert.strictEqual(global._reviewOpened, false, 'Must never open review with fabricated missing frame');
   console.log('  ✅ Missing frame prevents review and rejects fabrication!');
+
+  // TEST 4: P0 Regression Test - Full Capture Transitions to Review (No premature abort from undeclared gen)
+  console.log('Testing capture() successfully completes and opens review...');
+  global._reviewOpened = false;
+  engine.state = 'READY';
+  engine._gen = 5;
+  const vid = document.getElementById('cameraMainVideo');
+  vid.videoWidth = 1280;
+  vid.videoHeight = 720;
+  vid.readyState = 4;
+
+  engine.startMainPreview = async (facing) => {
+    engine.activeFacing = facing;
+    return true;
+  };
+
+  await engine.capture();
+
+  const reviewEl = elements['reviewContentStream'];
+  assert.strictEqual(reviewEl.style.display, 'block', 'capture() MUST render reviewContentStream upon successful dual capture!');
+  assert(state.capturedMomentData, 'state.capturedMomentData must be populated');
+  assert(state.capturedMomentData.mainImg, 'mainImg must be populated');
+  assert(state.capturedMomentData.pipImg, 'pipImg must be populated');
+  assert.strictEqual(elements['reviewMainImg'].src, state.capturedMomentData.mainImg, 'reviewMainImg must be bound');
+  assert.strictEqual(elements['reviewPipImg'].src, state.capturedMomentData.pipImg, 'reviewPipImg must be bound');
+  console.log('  ✅ Full capture() correctly completes and renders review without premature abort!');
+
+  // TEST 5: Retake Flow Preserves Destination Context
+  console.log('Testing retake flow destination preservation...');
+  state.selectedReviewCommunity = 'Tech Club';
+  state.activeCommunityId = 'comm_tech_456';
+  await retakeMomentFromReview();
+
+  assert.strictEqual(engine.state, 'READY', 'Camera engine must be reinitialized to READY after retake');
+  assert.strictEqual(state.selectedReviewCommunity, 'Tech Club', 'Selected community must be preserved');
+  assert.strictEqual(state.activeCommunityId, 'comm_tech_456', 'Community ID must be preserved');
+  assert.strictEqual(state.capturedMomentData, null, 'Captured moment data must be cleared for fresh capture');
+  console.log('  ✅ Retake preserves destination context and resets frames for fresh capture!');
 
   console.log('ALL FRONTEND REGRESSION INVARIANTS PASSED!');
 }
