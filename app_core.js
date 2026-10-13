@@ -4846,15 +4846,66 @@ async function takeSnapshot() {
 }
 window.takeSnapshot = takeSnapshot;
 
-function triggerFlashSimulation() {
+var isFlashEnabled = false;
+async function triggerFlashSimulation() {
+  isFlashEnabled = !isFlashEnabled;
+  var flashBtn = document.getElementById('cameraPreviewFlashBtn');
+  var flashSlash = document.getElementById('cameraFlashSlashLine');
+  if (flashSlash) flashSlash.style.display = isFlashEnabled ? 'none' : 'block';
+  if (flashBtn) {
+    if (isFlashEnabled) {
+      flashBtn.classList.add('text-amber-400');
+      flashBtn.classList.remove('text-white/90');
+    } else {
+      flashBtn.classList.remove('text-amber-400');
+      flashBtn.classList.add('text-white/90');
+    }
+  }
+
+  // If rear camera supports hardware torch, toggle torch constraint
+  if (state.mainMediaStream && state.cameraFacingMode === 'environment') {
+    try {
+      var track = state.mainMediaStream.getVideoTracks()[0];
+      if (track && track.getCapabilities && track.getCapabilities().torch) {
+        await track.applyConstraints({ advanced: [{ torch: isFlashEnabled }] });
+      }
+    } catch(e) {}
+  }
+
   var flash = document.getElementById('cameraFlashOverlay');
   if (flash) {
     flash.style.opacity = '1';
-    setTimeout(function() { flash.style.opacity = '0'; }, 180);
+    setTimeout(function() { flash.style.opacity = '0'; }, 160);
   }
-  showToast('Flash Triggered ⚡');
+  showToast(isFlashEnabled ? 'Flash Active ⚡' : 'Flash Off');
 }
 window.triggerFlashSimulation = triggerFlashSimulation;
+
+var currentCameraZoom = 1.0;
+async function cycleCameraZoom() {
+  currentCameraZoom = (currentCameraZoom === 1.0) ? 2.0 : 1.0;
+  var zoomEl = document.getElementById('cameraZoomIndicator');
+  if (zoomEl) zoomEl.textContent = currentCameraZoom.toFixed(1) + 'x';
+
+  if (state.mainMediaStream) {
+    try {
+      var track = state.mainMediaStream.getVideoTracks()[0];
+      if (track && track.getCapabilities && track.getCapabilities().zoom) {
+        var caps = track.getCapabilities().zoom;
+        var targetZoom = (currentCameraZoom === 2.0) ? Math.min(caps.max || 2, 2.0) : Math.max(caps.min || 1, 1.0);
+        await track.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+        return;
+      }
+    } catch(e) {}
+  }
+  // Subtle digital preview zoom fallback for preview experience
+  var mainVideo = document.getElementById('cameraMainVideo');
+  if (mainVideo) {
+    var baseTransform = (state.cameraFacingMode === 'user') ? 'scaleX(-1) ' : '';
+    mainVideo.style.transform = baseTransform + (currentCameraZoom === 2.0 ? 'scale(1.25)' : 'scale(1)');
+  }
+}
+window.cycleCameraZoom = cycleCameraZoom;
 
 function swapReviewImages() {
   var main = document.getElementById('reviewMainImg');
