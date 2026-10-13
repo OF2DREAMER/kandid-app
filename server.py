@@ -2454,6 +2454,50 @@ def validate_and_save_drop_video(raw_video: str, client_duration=None):
 
     return saved_url, final_duration, None
 
+def inspect_image_binary(data: bytes):
+    """Parses binary headers for JPEG (SOF), PNG (IHDR), and WebP (VP8/VP8L/VP8X).
+    Returns (format_str, width, height) or None if corrupt/unrecognized.
+    """
+    if not isinstance(data, (bytes, bytearray)) or len(data) < 16:
+        return None
+    # 1. PNG inspection
+    if data.startswith(b"\x89PNG\r\n\x1a\n") and len(data) >= 24:
+        if data[12:16] == b"IHDR":
+            w, h = struct.unpack(">II", data[16:24])
+            return ("png", w, h)
+    # 2. JPEG inspection
+    if data.startswith(b"\xff\xd8\xff"):
+        idx = 2
+        while idx < len(data) - 9:
+            if data[idx] != 0xff:
+                idx += 1
+                continue
+            marker = data[idx + 1]
+            if marker in (0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf):
+                h, w = struct.unpack(">HH", data[idx + 5:idx + 9])
+                return ("jpg", w, h)
+            elif marker in (0xd9, 0xda):
+                break
+            else:
+                length = struct.unpack(">H", data[idx + 2:idx + 4])[0]
+                idx += 2 + length
+    # 3. WebP inspection
+    if data.startswith(b"RIFF") and len(data) >= 30 and data[8:12] == b"WEBP":
+        sub = data[12:16]
+        if sub == b"VP8X" and len(data) >= 30:
+            w = 1 + struct.unpack("<I", data[24:27] + b"\x00")[0]
+            h = 1 + struct.unpack("<I", data[27:30] + b"\x00")[0]
+            return ("webp", w, h)
+        elif sub == b"VP8 " and len(data) >= 30:
+            w, h = struct.unpack("<HH", data[26:30])
+            return ("webp", w & 0x3fff, h & 0x3fff)
+        elif sub == b"VP8L" and len(data) >= 25:
+            b1, b2, b3, b4 = data[21:25]
+            w = 1 + (((b2 & 0x3f) << 8) | b1)
+            h = 1 + (((b4 & 0xf) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6))
+            return ("webp", w, h)
+    return None
+
 def save_base64_image(data_str, prefix="img"):
     if not data_str or not isinstance(data_str, str):
         return ""
@@ -2464,26 +2508,40 @@ def save_base64_image(data_str, prefix="img"):
     if not data_str.startswith("data:image"):
         return ""
         
-    cloud_url = upload_to_cloudinary(data_str, resource_type="image", folder="kandid/images")
-    if cloud_url:
-        return cloud_url
-        
-    cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
-    if cloudinary_is_setup:
-        print(f"⚠️ [MEDIA WARNING] Cloudinary image upload failed or unavailable, falling back to local storage.")
-        
     try:
         header, encoded = data_str.split(",", 1)
         mime = header.split(";")[0].replace("data:", "").lower()
         if mime not in ALLOWED_IMAGE_MIMES:
             return ""
-        ext = "jpg"
-        if "png" in header:
-            ext = "png"
-        elif "webp" in header:
-            ext = "webp"
-        
-        file_bytes = base64.b64decode(encoded)
+
+        expected_format = "jpg"
+        if "png" in mime:
+            expected_format = "png"
+        elif "webp" in mime:
+            expected_format = "webp"
+
+        file_bytes = base64.b64decode(encoded, validate=True)
+        if len(file_bytes) < 16 or len(file_bytes) > MAX_MEDIA_PAYLOAD_BYTES:
+            return ""
+
+        img_info = inspect_image_binary(file_bytes)
+        if not img_info:
+            return ""
+        actual_format, width, height = img_info
+        if actual_format != expected_format:
+            return ""
+        if width < 10 or height < 10 or width > 8192 or height > 8192:
+            return ""
+
+        cloud_url = upload_to_cloudinary(data_str, resource_type="image", folder="kandid/images")
+        if cloud_url:
+            return cloud_url
+
+        cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))
+        if cloudinary_is_setup:
+            print(f"⚠️ [MEDIA WARNING] Cloudinary image upload failed or unavailable, falling back to local storage.")
+
+        ext = actual_format
         safe_prefix = sanitize_prefix(prefix)
         filename = f"{safe_prefix}_{secrets.token_hex(8)}.{ext}"
         filepath = os.path.join(STATIC_DIR, "uploads", filename)
@@ -5716,17 +5774,56 @@ class KandidHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def read_json_body(self):
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            if length == 0:
-                self._raw_body = b""
-                return {}
-            self._raw_body = self.rfile.read(length)
-            raw = self._raw_body.decode("utf-8")
-            return json.loads(raw)
-        except Exception:
-            self._raw_body = getattr(self, "_raw_body", b"")
+        cl_header = self.headers.get("Content-Length")
+        if cl_header is None:
+            self._raw_body = b""
             return {}
+        try:
+            length = int(cl_header)
+        except (ValueError, TypeError):
+            self.close_connection = True
+            self.send_json(400, {"success": False, "error": "Malformed Content-Length header"})
+            return None
+
+        if length < 0:
+            self.close_connection = True
+            self.send_json(400, {"success": False, "error": "Negative Content-Length header"})
+            return None
+
+        if length > MAX_MEDIA_PAYLOAD_BYTES:
+            self.close_connection = True
+            self.send_json(413, {"success": False, "error": "Payload exceeds maximum allowed size (15MB)"})
+            return None
+
+        if length == 0:
+            self._raw_body = b""
+            return {}
+
+        try:
+            self._raw_body = self.rfile.read(length)
+        except Exception:
+            self.close_connection = True
+            self.send_json(400, {"success": False, "error": "Failed to read request body"})
+            return None
+
+        try:
+            raw = self._raw_body.decode("utf-8")
+        except UnicodeDecodeError:
+            self.send_json(400, {"success": False, "error": "Invalid UTF-8 in request body"})
+            return None
+
+        try:
+            parsed = json.loads(raw)
+            if not isinstance(parsed, dict):
+                self.send_json(400, {"success": False, "error": "Request body must be a JSON object"})
+                return None
+            return parsed
+        except json.JSONDecodeError:
+            self.send_json(400, {"success": False, "error": "Malformed JSON syntax in request body"})
+            return None
+        except Exception:
+            self.send_json(400, {"success": False, "error": "Invalid request body"})
+            return None
 
     def do_GET(self):
         import re
@@ -11205,6 +11302,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         body = self.read_json_body()
+        if body is None:
+            return
 
         # Admin Phase C User Management POST APIs
         if path.startswith("/api/admin/users/") and path.endswith("/status"):
@@ -14045,8 +14144,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
             raw_main = body.get("mainImg") or body.get("main_img") or ""
             raw_pip = body.get("pipImg") or body.get("pip_img") or ""
             
-            main_img = save_base64_image(raw_main, "main") if raw_main else ""
-            pip_img = save_base64_image(raw_pip, "pip") if raw_pip else ""
+            if not raw_main or not raw_pip:
+                return self.send_json(400, {"success": False, "error": "Both primary and selfie camera images are required"})
+
+            main_img = save_base64_image(raw_main, "main")
+            pip_img = save_base64_image(raw_pip, "pip")
+
+            if not main_img or not pip_img:
+                return self.send_json(400, {"success": False, "error": "Invalid, corrupt, or unsupported image content"})
             
             # Strict Production Media Integrity Check (only if Cloudinary CDN is configured)
             cloudinary_is_setup = bool(CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET))

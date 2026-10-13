@@ -4549,33 +4549,24 @@ const KandidCameraEngine = {
 
     if (hud) { hud.style.display = 'none'; hud.style.background = ''; }
 
-    // Desktop/Laptop & Single-Sensor Fallback:
-    // If one camera failed to capture (e.g. videoWidth was 0), we fallback to the successful frame.
-    // If selfie failed, we mirror the rear frame so it looks like a PIP selfie.
-    var createMirroredFrame = async function(srcDataUrl) {
-      return new Promise(function(resolve) {
-        var img = new Image();
-        img.onload = function() {
-          var c = document.createElement('canvas');
-          c.width = img.width; c.height = img.height;
-          var ctx = c.getContext('2d');
-          ctx.translate(c.width, 0);
-          ctx.scale(-1, 1);
-          ctx.drawImage(img, 0, 0);
-          resolve(c.toDataURL('image/jpeg', 0.88));
-        };
-        img.onerror = function() { resolve(srcDataUrl); };
-        img.src = srcDataUrl;
-      });
-    };
-
-    // Ensure neither image is black or empty. If the selfie sensor failed,
-    // mirror the rear frame so the PiP selfie still looks correct.
-    if (!this.frontFrame && this.rearFrame) {
-      this.frontFrame = await createMirroredFrame(this.rearFrame);
+    // PHASE 1.3: Verify both frames were successfully captured.
+    // A missing frame must never silently become a fabricated mirrored image.
+    if (!this.frontFrame || !this.rearFrame) {
+      console.warn('[CameraEngine] Capture incomplete - missing frame (rear=' + Boolean(this.rearFrame) + ', front=' + Boolean(this.frontFrame) + ')');
+      if (hud) { hud.style.display = 'none'; hud.style.background = ''; }
+      if (gen === this._gen && this.state !== 'IDLE') {
+        await this.startMainPreview(startFacing);
+        if (gen === this._gen && this.state !== 'IDLE') {
+          this.setState('READY');
+          this._setShutterEnabled(true);
+        }
+      }
+      showToast('Capture failed: could not capture both perspectives. Please try again.');
+      return;
     }
-    if (!this.rearFrame && this.frontFrame) {
-      this.rearFrame = this.frontFrame; // No need to mirror the main scene
+
+    if (gen !== this._gen || this.state === 'IDLE') {
+      return;
     }
 
     // ==========================================
@@ -4624,6 +4615,22 @@ const KandidCameraEngine = {
       var frontImg = new Image();
       var loadedCount = 0;
 
+      var drawCenterCrop = function(ctx, img, dx, dy, dw, dh) {
+        var srcW = img.naturalWidth || img.width || dw;
+        var srcH = img.naturalHeight || img.height || dh;
+        var targetRatio = dw / dh;
+        var srcRatio = srcW / srcH;
+        var sx = 0, sy = 0, sw = srcW, sh = srcH;
+        if (srcRatio > targetRatio) {
+          sw = srcH * targetRatio;
+          sx = (srcW - sw) / 2;
+        } else {
+          sh = srcW / targetRatio;
+          sy = (srcH - sh) / 2;
+        }
+        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+      };
+
       var onLoaded = function() {
         loadedCount++;
         if (loadedCount === 2) {
@@ -4633,10 +4640,10 @@ const KandidCameraEngine = {
             outCanvas.height = 1350; // Standard 4:5 Portrait Ratio
             var ctx = outCanvas.getContext('2d');
 
-            // 1. Draw Rear Environment (Main Canvas)
-            ctx.drawImage(rearImg, 0, 0, outCanvas.width, outCanvas.height);
+            // 1. Draw Rear Environment (Main Canvas with Aspect-Ratio-Aware Center Crop)
+            drawCenterCrop(ctx, rearImg, 0, 0, outCanvas.width, outCanvas.height);
 
-            // 2. Draw Front Selfie (PiP Top-Left Window with Rounded Corners & Shadow)
+            // 2. Draw Front Selfie (PiP Top-Left Window with Rounded Corners, Shadow & Center Crop)
             var pipW = 270;
             var pipH = 360;
             var pipX = 36;
@@ -4657,7 +4664,7 @@ const KandidCameraEngine = {
               ctx.rect(pipX, pipY, pipW, pipH);
             }
             ctx.clip();
-            ctx.drawImage(frontImg, pipX, pipY, pipW, pipH);
+            drawCenterCrop(ctx, frontImg, pipX, pipY, pipW, pipH);
             ctx.restore();
 
             // Stroke White Border
