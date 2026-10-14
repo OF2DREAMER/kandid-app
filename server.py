@@ -1665,6 +1665,11 @@ def _email_worker_loop():
         except Exception:
             pass
         finally:
+            # B1: long-lived worker thread - never accumulate a leaked pooled slot.
+            try:
+                _release_checked_out_pooled_connections()
+            except Exception:
+                pass
             _email_dispatch_queue.task_done()
 
 
@@ -2964,24 +2969,418 @@ def _get_pg8000_connect_kwargs(secure_dsn: str) -> dict:
         return kwargs
 
 
+# ---------------------------------------------------------------------------
+# Phase 1 performance: PostgreSQL connection reuse.
+#
+# get_db() previously opened a brand-new PostgreSQL connection on every call.
+# Under the thread-per-request server model this paid the full TCP/TLS/auth
+# cost per database-touching request.
+#
+# This adds a small, bounded, thread-safe pool of reusable connections:
+#   * only PostgreSQL connections (psycopg2 / pg8000) are pooled;
+#   * SQLite (development fallback) is intentionally NOT pooled, because
+#     sqlite3 connections are thread-affine by default (check_same_thread=True)
+#     while each request runs on a fresh thread;
+#   * a connection is only returned to the pool once any open or aborted
+#     transaction has been rolled back; broken connections are discarded;
+#   * every checked-out pooled connection is tracked per-thread and released
+#     deterministically at the request/worker boundary, so an exception in a
+#     route or in get_current_user() can never permanently leak a pool slot.
+#
+# Capacity note (H3): DB_POOL_MAX is a PER-PROCESS limit. The repository has no
+# render.yaml / Procfile / start-command metadata, so the number of app
+# instances/worker processes and the database's max_connections are unknown.
+# Total possible connections = (instances x processes) x DB_POOL_MAX. The
+# default of 5 is a conservative placeholder, NOT a validated production-safe
+# value; set DB_POOL_MAX explicitly once Render instance count and the
+# PostgreSQL max_connections limit are confirmed.
+# ---------------------------------------------------------------------------
+
+# Conservative defaults until the production instance count and the database
+# max_connections limit are known. Override with DB_POOL_MIN / DB_POOL_MAX /
+# DB_POOL_ACQUIRE_TIMEOUT / DB_POOL_VALIDATE_IDLE_SECONDS once known.
+try:
+    DB_POOL_MIN = max(0, int(os.environ.get("DB_POOL_MIN", "0")))
+except (TypeError, ValueError):
+    DB_POOL_MIN = 0
+try:
+    DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "5"))
+except (TypeError, ValueError):
+    DB_POOL_MAX = 5
+DB_POOL_MAX = max(1, DB_POOL_MAX, DB_POOL_MIN)
+try:
+    DB_POOL_ACQUIRE_TIMEOUT = float(os.environ.get("DB_POOL_ACQUIRE_TIMEOUT", "10"))
+except (TypeError, ValueError):
+    DB_POOL_ACQUIRE_TIMEOUT = 10.0
+try:
+    # Connections idle longer than this (seconds) are validated with a trivial
+    # round trip before reuse. 0 disables validation (trust the cheap probe).
+    DB_POOL_VALIDATE_IDLE_SECONDS = float(os.environ.get("DB_POOL_VALIDATE_IDLE_SECONDS", "5"))
+except (TypeError, ValueError):
+    DB_POOL_VALIDATE_IDLE_SECONDS = 5.0
+
+
+class PostgresPoolExhaustedError(RuntimeError):
+    """Raised when no pooled database connection becomes available in time."""
+
+
+def _raw_connection_is_usable(raw):
+    """Cheap, no-round-trip liveness probe for a raw DB-API connection.
+
+    Detects only locally-visible states: an explicitly closed handle, a pg8000
+    handle whose socket was cleared on close(), or a psycopg2 connection whose
+    server link is already marked UNKNOWN. A socket that died silently (e.g. a
+    network/database restart) is NOT detectable here without a network round
+    trip; see _validate_connection_on_borrow for that case.
+    """
+    try:
+        if getattr(raw, "closed", 0):
+            return False
+    except Exception:
+        return False
+    # pg8000 has no .closed attribute; it sets ._usock to None on close().
+    usock = getattr(raw, "_usock", None)
+    if usock is None and hasattr(raw, "_usock"):
+        return False
+    # psycopg2 exposes transaction_status: 0 IDLE, 1 ACTIVE, 2 INTRANS,
+    # 3 INERROR, 4 UNKNOWN. UNKNOWN means the server connection was lost.
+    status = getattr(getattr(raw, "info", None), "transaction_status", None)
+    if status == 4:
+        return False
+    return True
+
+
+def _validate_connection_on_borrow(raw):
+    """Round-trip liveness check used only for connections idle past a TTL.
+
+    Returns True when the connection answers a trivial query. On success any
+    read transaction opened by the probe is rolled back so the connection is
+    handed back clean. This is the only reliable way to detect a socket that
+    died silently; it is deliberately skipped for recently-used connections to
+    avoid a network round trip on every request (DB_POOL_VALIDATE_IDLE_SECONDS
+    controls the trade-off: raise it to reduce round trips, lower/zero it for
+    stricter staleness detection).
+    """
+    try:
+        cur = raw.cursor()
+        try:
+            cur.execute("SELECT 1")
+            fetch = getattr(cur, "fetchone", None)
+            if callable(fetch):
+                fetch()
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+        # End the probe's read transaction so the connection is idle on reuse.
+        raw.rollback()
+        return True
+    except Exception:
+        return False
+
+
+def _release_raw_connection(raw):
+    """Roll back any open/failed transaction so the connection is safe to reuse.
+
+    Returns True when the connection is healthy and may be pooled, False when it
+    must be discarded. Guarantees a connection is never returned to the pool
+    while a transaction is still active.
+    """
+    if not _raw_connection_is_usable(raw):
+        return False
+    try:
+        status = getattr(getattr(raw, "info", None), "transaction_status", None)
+        if status is not None and status == 0:
+            # Already idle: nothing to clean up (avoids a needless round trip).
+            return True
+        raw.rollback()
+        return True
+    except Exception:
+        return False
+
+
+def _discard_raw_connection(raw):
+    try:
+        raw.close()
+    except Exception:
+        pass
+
+
+class PostgresConnectionPool(object):
+    """Bounded, thread-safe pool of reusable PostgreSQL connections."""
+
+    def __init__(self, create_fn, max_size=5, min_size=0, acquire_timeout=10.0,
+                 validate_idle_seconds=5.0):
+        self._create = create_fn
+        self._max = max(1, int(max_size))
+        self._min = max(0, min(int(min_size), self._max))
+        self._timeout = float(acquire_timeout)
+        self._validate_idle = float(validate_idle_seconds)
+        self._idle = []           # list of (raw_conn, last_used_monotonic)
+        self._total = 0           # idle + in-use connections created by this pool
+        self._closed = False
+        self._cond = threading.Condition()
+        # Honour min_size eagerly (best-effort) so a configured DB_POOL_MIN
+        # actually pre-opens connections instead of being dead configuration.
+        for _ in range(self._min):
+            try:
+                raw = self._create()
+            except Exception:
+                break
+            self._idle.append((raw, time.monotonic()))
+            self._total += 1
+
+    @property
+    def size(self):
+        with self._cond:
+            return self._total
+
+    @property
+    def idle_count(self):
+        with self._cond:
+            return len(self._idle)
+
+    def acquire(self):
+        deadline = time.monotonic() + self._timeout
+        while True:
+            to_validate = None
+            to_create = False
+            with self._cond:
+                if self._closed:
+                    raise PostgresPoolExhaustedError("database connection pool is closed")
+                # Prefer reusing an idle connection.
+                while self._idle:
+                    raw, last_used = self._idle.pop()
+                    if not _raw_connection_is_usable(raw):
+                        self._total = max(0, self._total - 1)
+                        _discard_raw_connection(raw)
+                        continue
+                    if (self._validate_idle > 0 and
+                            (time.monotonic() - last_used) >= self._validate_idle):
+                        # Needs a liveness round trip before reuse; performed
+                        # outside the lock below so we don't serialize callers.
+                        to_validate = raw
+                        break
+                    # Recently used and locally healthy: hand it straight out.
+                    return raw
+                if to_validate is None:
+                    if self._total < self._max:
+                        self._total += 1
+                        to_create = True
+                    else:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise PostgresPoolExhaustedError(
+                                "database connection pool exhausted (max=%d)" % self._max
+                            )
+                        self._cond.wait(remaining)
+                        continue
+            # --- outside the lock ---
+            if to_validate is not None:
+                if _validate_connection_on_borrow(to_validate):
+                    return to_validate
+                with self._cond:
+                    self._total = max(0, self._total - 1)
+                    self._cond.notify()
+                _discard_raw_connection(to_validate)
+                continue
+            if to_create:
+                # Create outside the lock so a slow connect does not block others.
+                try:
+                    return self._create()
+                except Exception:
+                    with self._cond:
+                        self._total = max(0, self._total - 1)
+                        self._cond.notify()
+                    raise
+
+    def release(self, raw):
+        healthy = _release_raw_connection(raw)
+        now = time.monotonic()
+        with self._cond:
+            if self._closed or not healthy:
+                self._total = max(0, self._total - 1)
+                _discard_raw_connection(raw)
+            elif len(self._idle) < self._max:
+                self._idle.append((raw, now))
+            else:
+                # Defensive bound: never retain more idle connections than max.
+                self._total = max(0, self._total - 1)
+                _discard_raw_connection(raw)
+            self._cond.notify()
+
+    def close_all(self):
+        with self._cond:
+            self._closed = True
+            idle = self._idle
+            self._idle = []
+            self._total = max(0, self._total - len(idle))
+            self._cond.notify_all()
+        for raw, _ts in idle:
+            _discard_raw_connection(raw)
+
+
+_PG_POOL = None
+_PG_POOL_DSN = None
+_PG_POOL_LOCK = threading.Lock()
+
+# Per-thread registry of pooled connections that have been checked out but not
+# yet closed. The HTTP request boundary (KandidHandler.handle_one_request) and
+# the chat-expiration worker release anything left here at end-of-scope, so a
+# route or auth exception can never permanently leak a pool slot. This is the
+# primary leak guard; it does NOT rely on garbage collection.
+_pooled_checked_out = threading.local()
+
+
+def _checked_out_list():
+    lst = getattr(_pooled_checked_out, "items", None)
+    if lst is None:
+        lst = []
+        _pooled_checked_out.items = lst
+    return lst
+
+
+def _release_checked_out_pooled_connections():
+    """Deterministically close any pooled connections still held by this thread.
+
+    Called at the request/worker boundary so that a connection acquired by a
+    route or by get_current_user() is returned to the pool even when an
+    exception skipped the normal conn.close().
+
+    The registry is cleared up-front (not by close()) so that an entry can never
+    be retained even if close() early-returns on an already-released wrapper
+    (e.g. one that was closed from another thread).
+    """
+    lst = _checked_out_list()
+    if not lst:
+        return
+    pending = lst[:]
+    del lst[:]
+    for wrapper in pending:
+        try:
+            wrapper.close()
+        except Exception:
+            pass
+
+
+def _create_raw_postgres_connection(secure_dsn):
+    """Create a brand-new raw PostgreSQL connection using the available driver."""
+    try:
+        import psycopg2
+    except ImportError:
+        import pg8000.dbapi
+        kwargs = _get_pg8000_connect_kwargs(secure_dsn)
+        return pg8000.dbapi.connect(**kwargs)
+    return psycopg2.connect(secure_dsn)
+
+
+class PooledPostgresConnectionWrapper(PostgresConnectionWrapper):
+    """PostgresConnectionWrapper whose close() returns the connection to the pool.
+
+    close() is idempotent and thread-safe. commit()/rollback() after release are
+    safe no-ops: release() already rolled back any open transaction, and the raw
+    handle may by now belong to a different request, so it must not be touched.
+    cursor()/execute() after release raise, because querying a handed-back
+    connection would silently corrupt another request's work.
+    """
+
+    def __init__(self, raw_conn, pool):
+        PostgresConnectionWrapper.__init__(self, raw_conn)
+        self._pool = pool
+        self._released = False
+        self._close_lock = threading.Lock()
+        _checked_out_list().append(self)
+
+    def _ensure_active(self):
+        if self._released:
+            raise RuntimeError(
+                "Pooled database connection used after it was returned to the pool"
+            )
+
+    def cursor(self):
+        self._ensure_active()
+        return PostgresConnectionWrapper.cursor(self)
+
+    def execute(self, sql, params=None):
+        self._ensure_active()
+        return PostgresConnectionWrapper.execute(self, sql, params)
+
+    def executescript(self, sql_script):
+        self._ensure_active()
+        return PostgresConnectionWrapper.executescript(self, sql_script)
+
+    def commit(self):
+        # No-op once released: the transaction was already resolved at release
+        # time and the raw handle may now belong to another request.
+        if self._released:
+            return
+        self.raw_conn.commit()
+
+    def rollback(self):
+        if self._released:
+            return
+        self.raw_conn.rollback()
+
+    def close(self):
+        with self._close_lock:
+            if self._released:
+                return
+            self._released = True
+        # Unregister from this thread's checked-out list (best-effort).
+        try:
+            _checked_out_list().remove(self)
+        except Exception:
+            pass
+        self._pool.release(self.raw_conn)
+
+
+def _get_pooled_postgres_connection(secure_dsn):
+    global _PG_POOL, _PG_POOL_DSN
+    pool = _PG_POOL
+    if pool is None or _PG_POOL_DSN != secure_dsn:
+        old_pool = None
+        with _PG_POOL_LOCK:
+            pool = _PG_POOL
+            if pool is None or _PG_POOL_DSN != secure_dsn:
+                old_pool = _PG_POOL
+                pool = PostgresConnectionPool(
+                    create_fn=lambda: _create_raw_postgres_connection(secure_dsn),
+                    max_size=DB_POOL_MAX,
+                    min_size=DB_POOL_MIN,
+                    acquire_timeout=DB_POOL_ACQUIRE_TIMEOUT,
+                    validate_idle_seconds=DB_POOL_VALIDATE_IDLE_SECONDS,
+                )
+                _PG_POOL = pool
+                _PG_POOL_DSN = secure_dsn
+        # Dispose of the superseded pool (M1): close idle connections now; any
+        # connection still checked out by an in-flight request is discarded when
+        # that request releases it (release() sees _closed and closes it), so
+        # in-flight work is not invalidated mid-request.
+        if old_pool is not None and old_pool is not pool:
+            try:
+                old_pool.close_all()
+            except Exception:
+                pass
+    raw = pool.acquire()
+    return PooledPostgresConnectionWrapper(raw, pool)
+
+
 def get_db():
     global DATABASE_URL
     if DATABASE_URL:
         secure_dsn = _ensure_secure_sslmode(DATABASE_URL)
         try:
-            import psycopg2
-            raw_conn = psycopg2.connect(secure_dsn)
-            return PostgresConnectionWrapper(raw_conn)
-        except ImportError:
-            try:
-                import pg8000.dbapi
-                kwargs = _get_pg8000_connect_kwargs(secure_dsn)
-                raw_conn = pg8000.dbapi.connect(**kwargs)
-                return PostgresConnectionWrapper(raw_conn)
-            except Exception as e:
-                if is_production_env():
-                    raise RuntimeError(f"CRITICAL: Failed to connect to production PostgreSQL database: {e}")
-                print(f"⚠️ PostgreSQL connection error: {e}. Falling back to SQLite in development.")
+            # Phase 1 performance: reuse a pooled PostgreSQL connection instead of
+            # opening a brand-new connection on every call.
+            return _get_pooled_postgres_connection(secure_dsn)
+        except PostgresPoolExhaustedError as e:
+            # Pool exhaustion is NOT a connection failure: report it distinctly
+            # (M3) and never fall back to SQLite (that would silently write to
+            # the wrong database under load).
+            raise RuntimeError(
+                f"CRITICAL: Database connection pool exhausted (DB_POOL_MAX={DB_POOL_MAX}): {e}"
+            )
         except Exception as e:
             if is_production_env():
                 raise RuntimeError(f"CRITICAL: Failed to connect to production PostgreSQL database: {e}")
@@ -5271,6 +5670,13 @@ def get_current_user(headers, body=None, query=None, require_session=False):
             elif item_s.startswith("kandid_session="):
                 token = item_s.split("=")[1].strip()
     
+    # Phase 1 performance: a request carrying no credential can never
+    # authenticate, so do not open a database connection merely to prove it
+    # is anonymous. All authentication semantics below are unchanged for any
+    # request that does present a token.
+    if not token or token in ("null", "undefined", ""):
+        return None
+
     conn = get_db()
     cursor = conn.cursor()
     row = None
@@ -5506,6 +5912,14 @@ def _chat_expiration_worker():
                         pass
         except Exception as e:
             print("Chat Expiration Worker error:", e)
+        finally:
+            # B1: this is a long-lived single thread, so a pooled connection
+            # leaked on an exception would otherwise accumulate across
+            # iterations. Release anything still checked out deterministically.
+            try:
+                _release_checked_out_pooled_connections()
+            except Exception:
+                pass
 
         time.sleep(3600)
 
@@ -5537,22 +5951,35 @@ class KandidHandler(SimpleHTTPRequestHandler):
           when no response has started (self._response_status, set by the
           overridden send_response and read by end_headers). If a response has
           already started, the connection is simply closed safely.
-        - The connection is closed after an unexpected exception; route-local
-          DB connections are intentionally left alone.
+        - The connection is closed after an unexpected exception.
+        - Phase 1 (B1): any pooled PostgreSQL connection this request checked
+          out but did not close is returned to the pool in the finally block,
+          so a route or auth exception can never permanently leak a pool slot.
+          Only pooled connections are affected; SQLite connections and any
+          connection a route already closed are untouched.
         """
         try:
-            super().handle_one_request()
-        except (BrokenPipeError, ConnectionResetError):
-            self.close_connection = True
-        except Exception as e:
-            self.close_connection = True
-            log_operational_event("unhandled_exception", category="server_error", properties={"exception_type": type(e).__name__}, level="ERROR")
-            started = getattr(self, "_response_status", 0)
-            if not started:
-                try:
-                    self.send_json(500, {"success": False, "error": "Internal server error"})
-                except Exception:
-                    pass
+            try:
+                super().handle_one_request()
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
+            except Exception as e:
+                self.close_connection = True
+                log_operational_event("unhandled_exception", category="server_error", properties={"exception_type": type(e).__name__}, level="ERROR")
+                started = getattr(self, "_response_status", 0)
+                if not started:
+                    try:
+                        self.send_json(500, {"success": False, "error": "Internal server error"})
+                    except Exception:
+                        pass
+        finally:
+            # B1: deterministic release of any pooled connection left open by
+            # this request thread. Guarded so a release error can never mask
+            # the response already sent above.
+            try:
+                _release_checked_out_pooled_connections()
+            except Exception:
+                pass
 
     @staticmethod
     def _static_asset_etag(fs_path):
@@ -15982,7 +16409,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     validate_environment()
-    init_db()
+    try:
+        init_db()
+    finally:
+        # B1: deterministically drop any pooled connection init_db left open.
+        try:
+            _release_checked_out_pooled_connections()
+        except Exception:
+            pass
     t = threading.Thread(target=_chat_expiration_worker, name="chat-expiration-worker", daemon=True)
     t.start()
     
