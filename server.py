@@ -5925,50 +5925,125 @@ class KandidThreadingServer(socketserver.ThreadingMixIn, HTTPServer):
 import time
 import os
 
+# P0-B: trash_expires_at_sender / trash_expires_at_receiver are TEXT columns
+# holding UTC "YYYY-MM-DD HH:MM:SS" strings (written by the chat delete
+# handler). They are compared as normalized UTC text - never against
+# CURRENT_TIMESTAMP (text vs timestamp with time zone fails on PostgreSQL) and
+# never via CAST(... AS TIMESTAMP). Expiry is decided in Python so NULL, empty
+# or malformed values can never be misread as "expired".
+_MESSAGE_TS_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def _parse_message_utc_timestamp(value):
+    """Return the naive UTC datetime for a stored timestamp, else None.
+
+    NULL, empty, non-string and malformed values all return None, so a bad
+    timestamp is never interpreted as expired.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    text = value.strip()
+    if len(text) != 19:
+        return None
+    try:
+        return datetime.strptime(text, _MESSAGE_TS_FORMAT)
+    except (ValueError, TypeError):
+        return None
+
+
+def _is_expired_message_timestamp(value, now_utc):
+    """True only for a well-formed timestamp at or before now_utc."""
+    parsed = _parse_message_utc_timestamp(value)
+    return parsed is not None and parsed <= now_utc
+
+
+def _run_chat_expiration_cycle(conn):
+    """One chat-expiration pass on an open connection.
+
+    The caller owns commit/rollback/close. Returns the media URLs the caller
+    should unlink after the transaction commits. Existing retention semantics
+    are unchanged: a row is purged only once BOTH sides are 'deleted'.
+    """
+    cursor = conn.cursor()
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    cursor.execute(
+        "SELECT id, trash_expires_at_sender FROM messages "
+        "WHERE sender_state = 'in_trash' AND trash_expires_at_sender IS NOT NULL"
+    )
+    expired_sender_ids = [
+        row["id"] for row in cursor.fetchall()
+        if _is_expired_message_timestamp(row["trash_expires_at_sender"], now_utc)
+    ]
+
+    cursor.execute(
+        "SELECT id, trash_expires_at_receiver FROM messages "
+        "WHERE receiver_state = 'in_trash' AND trash_expires_at_receiver IS NOT NULL"
+    )
+    expired_receiver_ids = [
+        row["id"] for row in cursor.fetchall()
+        if _is_expired_message_timestamp(row["trash_expires_at_receiver"], now_utc)
+    ]
+
+    if expired_sender_ids:
+        cursor.executemany(
+            "UPDATE messages SET sender_state = 'deleted', trash_expires_at_sender = NULL WHERE id = ?",
+            [(mid,) for mid in expired_sender_ids],
+        )
+    if expired_receiver_ids:
+        cursor.executemany(
+            "UPDATE messages SET receiver_state = 'deleted', trash_expires_at_receiver = NULL WHERE id = ?",
+            [(mid,) for mid in expired_receiver_ids],
+        )
+
+    cursor.execute("""
+        SELECT media_url FROM messages
+        WHERE is_deleted_for_everyone = 1
+           OR (sender_state = 'deleted' AND receiver_state = 'deleted')
+    """)
+    media_rows = cursor.fetchall()
+
+    cursor.execute("""
+        DELETE FROM messages
+        WHERE sender_state = 'deleted' AND receiver_state = 'deleted'
+    """)
+    return [row["media_url"] for row in media_rows]
+
+
 def _chat_expiration_worker():
     while True:
+        conn = None
         try:
             conn = get_db()
-            cursor = conn.cursor()
-            
-            cursor.execute("""
-                UPDATE messages 
-                SET sender_state = 'deleted', trash_expires_at_sender = NULL
-                WHERE sender_state = 'in_trash' AND trash_expires_at_sender <= CURRENT_TIMESTAMP
-            """)
-            
-            cursor.execute("""
-                UPDATE messages 
-                SET receiver_state = 'deleted', trash_expires_at_receiver = NULL
-                WHERE receiver_state = 'in_trash' AND trash_expires_at_receiver <= CURRENT_TIMESTAMP
-            """)
-            
-            cursor.execute("""
-                SELECT media_url FROM messages
-                WHERE is_deleted_for_everyone = 1 
-                   OR (sender_state = 'deleted' AND receiver_state = 'deleted')
-            """)
-            files_to_delete = cursor.fetchall()
-            
-            cursor.execute("""
-                DELETE FROM messages
-                WHERE sender_state = 'deleted' AND receiver_state = 'deleted'
-            """)
+            files_to_delete = _run_chat_expiration_cycle(conn)
             conn.commit()
             conn.close()
+            conn = None
 
             # Safely unlink
-            for row in files_to_delete:
-                url = row["media_url"]
+            for url in files_to_delete:
                 if url and url.startswith("/uploads/"):
                     from __main__ import STATIC_DIR
                     try:
                         filepath = os.path.join(STATIC_DIR, url.lstrip("/"))
                         if os.path.exists(filepath):
                             os.remove(filepath)
-                    except:
+                    except Exception:
                         pass
         except Exception as e:
+            # A failed transaction must be rolled back and the connection
+            # released on every path; the original error is never masked.
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
             print("Chat Expiration Worker error:", e)
         finally:
             # B1: this is a long-lived single thread, so a pooled connection
@@ -7868,6 +7943,21 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 )"""
             ]
 
+            # P0-A: a post may reference its primary and/or context community by
+            # id or name (see the publish handler and legacy rows). The previous
+            # OR-join matched BOTH communities for such a post and relied on
+            # "GROUP BY p.id" to collapse the duplicates; PostgreSQL rejects that
+            # grouping because the selected u.* / c.* columns are neither
+            # aggregated nor functionally dependent on p.id.
+            #
+            # Resolve exactly ONE community per post - primary (by id, then by
+            # name) first, then context - through a ranked correlated subquery
+            # (outer columns are referenced only in WHERE, which SQLite requires;
+            # ordering uses the subquery's own rank column). The join on the
+            # unique communities.id is then strictly 1:1, so no GROUP BY is
+            # required and no duplicate rows can be produced, while
+            # primary-community preference and the context-only fallback are
+            # preserved on both SQLite and PostgreSQL.
             select_sql = """
                 SELECT p.*,
                        u.name as author_name,
@@ -7881,9 +7971,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                        c.type as community_type,
                        'public' as community_visibility
                 FROM posts p
-                JOIN communities c ON (
-                    (p.primary_community_id != '' AND p.primary_community_id IS NOT NULL AND (p.primary_community_id = c.id OR p.primary_community_id = c.name))
-                    OR (p.context_community_id != '' AND p.context_community_id IS NOT NULL AND (p.context_community_id = c.id OR p.context_community_id = c.name))
+                JOIN communities c ON c.id = (
+                    SELECT _resolved.id FROM (
+                        SELECT cc.id AS id, 0 AS _rank FROM communities cc WHERE cc.id = p.primary_community_id
+                        UNION ALL
+                        SELECT cc.id AS id, 1 AS _rank FROM communities cc WHERE cc.name = p.primary_community_id
+                        UNION ALL
+                        SELECT cc.id AS id, 2 AS _rank FROM communities cc WHERE cc.id = p.context_community_id
+                        UNION ALL
+                        SELECT cc.id AS id, 3 AS _rank FROM communities cc WHERE cc.name = p.context_community_id
+                    ) AS _resolved
+                    ORDER BY _resolved._rank
+                    LIMIT 1
                 )
                 LEFT JOIN users u ON p.user_id = u.id
             """
@@ -7891,7 +7990,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             # Compute Live Pulse across eligible public communities
             # Live activity window is strictly -60 <= age_seconds <= 7200 (last 2 hours)
             cursor.execute(
-                select_sql + " WHERE " + " AND ".join(base_where) + " GROUP BY p.id ORDER BY p.created_at DESC LIMIT 50"
+                select_sql + " WHERE " + " AND ".join(base_where) + " ORDER BY p.created_at DESC LIMIT 50"
             )
             pulse_candidates = [dict(r) for r in cursor.fetchall()]
             if blocked_user_ids:
@@ -7948,7 +8047,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 moments_where.append("p.created_at < ?")
                 moments_params.append(cursor_param)
 
-            sql = select_sql + " WHERE " + " AND ".join(moments_where) + " GROUP BY p.id ORDER BY p.created_at DESC, p.id DESC LIMIT ?"
+            sql = select_sql + " WHERE " + " AND ".join(moments_where) + " ORDER BY p.created_at DESC, p.id DESC LIMIT ?"
             moments_params.append(limit_val + 1)
 
             cursor.execute(sql, tuple(moments_params))
