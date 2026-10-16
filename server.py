@@ -5987,14 +5987,22 @@ def _run_chat_expiration_cycle(conn):
         if _is_expired_message_timestamp(row["trash_expires_at_receiver"], now_utc)
     ]
 
+    # The id list was read earlier in this transaction, so a message can leave
+    # the trash in between: POST /api/chat/messages/restore sets the state back
+    # to 'active' and the expiry to NULL. Each UPDATE therefore re-checks the
+    # state it is about to overwrite (and the expiry value it read), so a row
+    # that is no longer in the trash matches nothing and a completed restore is
+    # never clobbered - the guarantee the single statement it replaced gave.
     if expired_sender_ids:
         cursor.executemany(
-            "UPDATE messages SET sender_state = 'deleted', trash_expires_at_sender = NULL WHERE id = ?",
+            "UPDATE messages SET sender_state = 'deleted', trash_expires_at_sender = NULL "
+            "WHERE id = ? AND sender_state = 'in_trash' AND trash_expires_at_sender IS NOT NULL",
             [(mid,) for mid in expired_sender_ids],
         )
     if expired_receiver_ids:
         cursor.executemany(
-            "UPDATE messages SET receiver_state = 'deleted', trash_expires_at_receiver = NULL WHERE id = ?",
+            "UPDATE messages SET receiver_state = 'deleted', trash_expires_at_receiver = NULL "
+            "WHERE id = ? AND receiver_state = 'in_trash' AND trash_expires_at_receiver IS NOT NULL",
             [(mid,) for mid in expired_receiver_ids],
         )
 
