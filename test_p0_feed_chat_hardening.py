@@ -478,6 +478,45 @@ class P0FeedAndWorkerTests(unittest.TestCase):
         self.assertEqual(st["sender_state"], "in_trash")
         self.assertEqual(st["receiver_state"], "in_trash")
 
+    def test_p0b_restored_message_is_not_expired_by_the_worker(self):
+        """End to end: once POST /api/chat/messages/restore has run, a full
+        expiry cycle must leave the message active and must not schedule its
+        media for deletion (P1 review: a restore is never undone by the worker)."""
+        self._clear_messages()
+        media_url = "/uploads/chat_attachments/restored.jpg"
+        self._msg("m_restored", sender_state="in_trash", s_exp=_now_str(-60), media=media_url)
+
+        status, res = self._req("/api/chat/messages/restore", method="POST",
+                                token=TOKEN_MAIN, body={"message_ids": ["m_restored"]})
+        self.assertEqual(status, 200, res)
+        self.assertTrue(res.get("success"))
+        self.assertEqual(self._msg_state("m_restored")["sender_state"], "active")
+
+        files = self._run_cycle()
+
+        st = self._msg_state("m_restored")
+        self.assertIsNotNone(st, "a restored message must never be purged")
+        self.assertEqual(st["sender_state"], "active")
+        self.assertIsNone(st["trash_expires_at_sender"])
+        self.assertNotIn(media_url, files)
+
+    def test_p0b_expiry_updates_re_check_trash_state_in_source(self):
+        """Tripwire for the P1 review: within the expiration cycle both UPDATE
+        statements must re-check the trash state (and the expiry they read), so a
+        restore committing mid-cycle can never be overwritten. The behavioural
+        proof on real PostgreSQL lives in test_p0_real_postgres
+        (test_p1_restore_between_select_and_update_is_not_overwritten and its
+        pre-fix control test_p1_legacy_unguarded_update_really_did_clobber_a_restore)."""
+        src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")
+        with open(src_path, encoding="utf-8") as fh:
+            src = fh.read()
+        cycle = src[src.index("def _run_chat_expiration_cycle(conn):"):
+                    src.index("def _chat_expiration_worker():")]
+        self.assertIn("AND sender_state = 'in_trash' AND trash_expires_at_sender IS NOT NULL", cycle)
+        self.assertIn("AND receiver_state = 'in_trash' AND trash_expires_at_receiver IS NOT NULL", cycle)
+        self.assertNotIn("trash_expires_at_sender = NULL WHERE id = ?", cycle)
+        self.assertNotIn("trash_expires_at_receiver = NULL WHERE id = ?", cycle)
+
     # --------------------------------------------- P0-B: connection lifecycle
     class _FakeCursor:
         def __init__(self, fail):
