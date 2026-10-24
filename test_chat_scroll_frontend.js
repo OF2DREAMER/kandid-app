@@ -72,7 +72,9 @@ check("no global touch handlers added",
       !/document\.addEventListener\('touch/.test(SRC) && !/window\.addEventListener\('touch/.test(SRC));
 
 // ---- PART 7 / regression: handlers untouched ----------------------------
-check("photo handler intact", SRC.includes(String.raw`safeOpenMediaUrl(this.dataset.mediaUrl)`));
+check("photo handler uses openChatPhotoViewer", SRC.includes(String.raw`openChatPhotoViewer(this.dataset.mediaUrl, this)`));
+check("safeOpenMediaUrl remains defined and HTTPS-only",
+      /function safeOpenMediaUrl\(url\)\s*\{\s*if\s*\(url\s*&&\s*typeof url === 'string'\s*&&\s*url\.trim\(\)\.startsWith\('https:\/\/'\)\)\s*\{\s*window\.open\(url,\s*'_blank',\s*'noopener,noreferrer'\);\s*\}\s*\}/.test(SRC));
 check("moment handler intact", SRC.includes(String.raw`onclick="switchScreenView(\'feed\')"`));
 check("Reply handler intact", SRC.includes(String.raw`handleChatReplyClick(\'' + m.id + '\')`));
 check("React handler intact", SRC.includes(String.raw`openChatReactionSheet(\'' + m.id + '\')`));

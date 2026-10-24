@@ -77,7 +77,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
 
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/style.css?v=3.2.4">
+  <link rel="stylesheet" href="/style.css?v=3.2.5">
   <style>
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
     .font-mono-tag, .mono { font-family: 'JetBrains Mono', monospace; }
@@ -5351,9 +5351,34 @@
         </div>
     </div>
 
+    <!-- FULL-SCREEN CHAT PHOTO VIEWER MODAL -->
+    <div id="chatPhotoViewer" class="fixed inset-0 z-[10000] bg-black/95 backdrop-blur-md flex flex-col items-center justify-center hidden" role="dialog" aria-modal="true" aria-label="Photo viewer" tabindex="-1">
+        <!-- Close button / top bar -->
+        <div class="absolute top-4 right-4 z-10 flex items-center gap-3">
+            <button type="button" id="chatPhotoViewerCloseBtn" onclick="closeChatPhotoViewer()" class="w-10 h-10 rounded-full bg-zinc-900/80 hover:bg-zinc-800 border border-white/10 text-white flex items-center justify-center text-lg font-mono-tag cursor-pointer transition-transform active:scale-95" aria-label="Close photo viewer">
+                ✕
+            </button>
+        </div>
+        <!-- Viewer Content Area -->
+        <div id="chatPhotoViewerContent" class="w-full h-full p-4 flex items-center justify-center relative overflow-hidden" onclick="if(event.target === this) closeChatPhotoViewer()">
+            <!-- Loading Spinner -->
+            <div id="chatPhotoViewerLoading" class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400 font-mono-tag text-xs hidden pointer-events-none">
+                <span class="w-6 h-6 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></span>
+                <span>Loading photo...</span>
+            </div>
+            <!-- Error State -->
+            <div id="chatPhotoViewerError" class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-400 font-mono-tag text-xs hidden pointer-events-none">
+                <span class="text-2xl">⚠️</span>
+                <span>Photo unavailable</span>
+            </div>
+            <!-- Image element -->
+            <img id="chatPhotoViewerImg" src="" alt="Full-screen photo view" class="max-w-full max-h-full object-contain rounded-lg shadow-2xl transition-opacity duration-200 select-none hidden" onclick="event.stopPropagation()">
+        </div>
+    </div>
+
   </div> <!-- End #appContainer -->
 
   <script src="/observability.js?v=1.0.0"></script>
-  <script src="/app_core.js?v=3.2.4"></script>
+  <script src="/app_core.js?v=3.2.5"></script>
 </body>
 </html>
