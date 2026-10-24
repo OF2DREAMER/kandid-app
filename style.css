@@ -287,3 +287,35 @@ body {
 #campusContentStream #memoriesAroundUsSection {
   transition: opacity 0.15s ease;
 }
+
+/* ==========================================================================
+   FULL-SCREEN CHAT PHOTO VIEWER
+   ========================================================================== */
+#chatPhotoViewer {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  touch-action: pinch-zoom;
+}
+
+#chatPhotoViewer.active {
+  display: flex !important;
+}
+
+/* Prevent flex min-height:auto from letting the content area overflow the
+   viewport. Both the wrapper and the image must declare min-height:0 so that
+   max-height:100% can take effect on the flex item (image). */
+#chatPhotoViewerContent {
+  min-height: 0;
+  min-width: 0;
+}
+
+#chatPhotoViewerImg {
+  object-fit: contain;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}

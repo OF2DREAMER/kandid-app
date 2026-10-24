@@ -76,8 +76,14 @@ function getAudioContext() {
 
 function playTactileFeedback(type) {
   // 1. Hardware Haptic Vibration (Phones)
+  // Guard with navigator.userActivation: vibrate is only permitted after a
+  // transient user gesture. Skipping silently when not activated is correct
+  // (the browser blocks it anyway) and prevents Chromium intervention logs.
   try {
-    if (navigator.vibrate) {
+    var hasActivation = navigator.userActivation
+      ? navigator.userActivation.isActive || navigator.userActivation.hasBeenActive
+      : true; // fallback for browsers that don't expose userActivation
+    if (navigator.vibrate && hasActivation) {
       if (type === 'shutter') {
         navigator.vibrate([30]);
       } else if (type === 'success' || type === 'xp') {
@@ -255,6 +261,537 @@ async function apiRequest(endpoint, options) {
   }
 }
 
+// =====================================================================
+// PRIVATE CHAT PHOTO URL VALIDATION & BOUNDED BLOB CACHE
+// =====================================================================
+var _CHAT_ATTACHMENT_URL_RE = /^\/api\/chat\/attachments\/att_[0-9a-f]{16}$/;
+
+function isPrivateChatAttachmentUrl(url) {
+  if (typeof url !== 'string') return false;
+  return _CHAT_ATTACHMENT_URL_RE.test(url.trim());
+}
+
+function isPermittedChatHttpsUrl(url) {
+  if (typeof url !== 'string') return false;
+  var u = url.trim();
+  if (!u.startsWith('https://')) return false;
+  for (var i = 0; i < u.length; i++) {
+    var code = u.charCodeAt(i);
+    if (code <= 0x20 || code === 0x7F || code === 34 || code === 39 || code === 60 || code === 62 || code === 92 || code === 96) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isSafeChatPhotoUrl(url) {
+  return isPrivateChatAttachmentUrl(url) || isPermittedChatHttpsUrl(url);
+}
+window.isPrivateChatAttachmentUrl = isPrivateChatAttachmentUrl;
+window.isPermittedChatHttpsUrl = isPermittedChatHttpsUrl;
+window.isSafeChatPhotoUrl = isSafeChatPhotoUrl;
+
+var ChatPhotoCache = (function() {
+  var SOFT_MAX_ENTRIES = 24;
+  var SOFT_MAX_BYTES = 32 * 1024 * 1024; // 32 MB
+  var HARD_MAX_BYTES = 48 * 1024 * 1024; // 48 MB
+  var TRANSIENT_THRESHOLD_BYTES = 4 * 1024 * 1024; // 4 MB
+  var FAILURE_TTL_MS = 30000; // 30 seconds
+  var MAX_FAILURES = 50;
+
+  var cache = new Map(); // url -> { blobUrl, byteSize, lastAccessed, isTransient }
+  var inFlight = new Map(); // url -> { promise, controller, consumerCount }
+  var failures = new Map(); // url -> timestamp
+  var totalBytes = 0;
+  var currentUserId = null;
+  var sessionEpoch = 0;
+  var pinnedUrl = null;
+
+  function getEpoch() {
+    return sessionEpoch;
+  }
+
+  function incrementEpoch() {
+    sessionEpoch++;
+  }
+
+  function checkUserOwnership() {
+    var activeUid = (typeof getActiveUserId === 'function') ? getActiveUserId() : '';
+    if (activeUid !== currentUserId) {
+      clearAll(true);
+      currentUserId = activeUid;
+    }
+  }
+
+  function isFailed(url) {
+    var ts = failures.get(url);
+    if (!ts) return false;
+    if (Date.now() - ts > FAILURE_TTL_MS) {
+      failures.delete(url);
+      return false;
+    }
+    return true;
+  }
+
+  function recordFailure(url) {
+    if (failures.size >= MAX_FAILURES) {
+      var oldestKey = failures.keys().next().value;
+      failures.delete(oldestKey);
+    }
+    failures.set(url, Date.now());
+  }
+
+  function get(url) {
+    checkUserOwnership();
+    var entry = cache.get(url);
+    if (entry) {
+      entry.lastAccessed = Date.now();
+      return entry.blobUrl;
+    }
+    return null;
+  }
+
+  function has(url) {
+    checkUserOwnership();
+    return cache.has(url);
+  }
+
+  function pin(url) {
+    pinnedUrl = url;
+  }
+
+  function unpin(url) {
+    if (pinnedUrl === url) {
+      pinnedUrl = null;
+      var entry = cache.get(url);
+      if (entry && entry.isTransient) {
+        evictEntry(url);
+      }
+    }
+  }
+
+  function detachDomReferences(blobUrl) {
+    if (typeof document === 'undefined') return;
+    var selector = blobUrl
+      ? ('img[src="' + blobUrl + '"], img[data-blob-url="' + blobUrl + '"]')
+      : 'img.chat-attachment-img';
+    try {
+      var imgs = document.querySelectorAll(selector);
+      imgs.forEach(function(img) {
+        if (img.id !== 'chatPhotoViewerImg') {
+          img.removeAttribute('src');
+          img.removeAttribute('data-blob-url');
+          img.classList.add('hidden');
+          var parentDiv = img.parentElement;
+          if (parentDiv) {
+            parentDiv.classList.add('bg-zinc-800/80', 'min-h-[120px]', 'flex', 'items-center', 'justify-center');
+            var loadingDiv = parentDiv.querySelector('.chat-photo-loading');
+            if (loadingDiv) loadingDiv.classList.remove('hidden');
+          }
+        }
+      });
+    } catch(e) {}
+  }
+
+  function evictEntry(url) {
+    var entry = cache.get(url);
+    if (!entry) return false;
+    if (pinnedUrl === url) return false;
+
+    detachDomReferences(entry.blobUrl);
+
+    try {
+      if (typeof URL !== 'undefined' && URL.revokeObjectURL) {
+        URL.revokeObjectURL(entry.blobUrl);
+      }
+    } catch(e) {}
+
+    totalBytes -= entry.byteSize;
+    if (totalBytes < 0) totalBytes = 0;
+    cache.delete(url);
+    return true;
+  }
+
+  function prune(requiredBytes) {
+    requiredBytes = requiredBytes || 0;
+    var entries = Array.from(cache.entries()).sort(function(a, b) {
+      return a[1].lastAccessed - b[1].lastAccessed;
+    });
+
+    for (var i = 0; i < entries.length; i++) {
+      var url = entries[i][0];
+      var entry = entries[i][1];
+      if (url === pinnedUrl) continue;
+
+      var overSoftEntries = cache.size > SOFT_MAX_ENTRIES;
+      var overSoftBytes = totalBytes > SOFT_MAX_BYTES;
+      var overHardBytes = (totalBytes + requiredBytes) > HARD_MAX_BYTES;
+      var isTrans = entry.isTransient;
+
+      if (overSoftEntries || overSoftBytes || overHardBytes || isTrans) {
+        evictEntry(url);
+        if ((totalBytes + requiredBytes) <= HARD_MAX_BYTES && cache.size <= SOFT_MAX_ENTRIES && totalBytes <= SOFT_MAX_BYTES) {
+          break;
+        }
+      }
+    }
+  }
+
+  async function loadAttachment(url) {
+    checkUserOwnership();
+
+    if (!isPrivateChatAttachmentUrl(url)) {
+      return Promise.reject(new Error('Invalid private attachment URL'));
+    }
+
+    if (isFailed(url)) {
+      return Promise.reject(new Error('Recent failure cooldown for attachment'));
+    }
+
+    var cached = cache.get(url);
+    if (cached) {
+      cached.lastAccessed = Date.now();
+      return cached.blobUrl;
+    }
+
+    if (inFlight.has(url)) {
+      var inf = inFlight.get(url);
+      inf.consumerCount++;
+      return inf.promise;
+    }
+
+    var currentEpoch = sessionEpoch;
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
+    var promise = (async function() {
+      try {
+        var token = '';
+        try {
+          token = localStorage.getItem('kandid_token') || sessionStorage.getItem('kandid_token') || '';
+        } catch(e) {}
+
+        var headers = {};
+        if (token) {
+          headers['Authorization'] = 'Bearer ' + token;
+        }
+
+        var res = await fetch(url, {
+          method: 'GET',
+          headers: headers,
+          cache: 'no-store',
+          signal: controller ? controller.signal : undefined
+        });
+
+        if (!res.ok) {
+          throw new Error('Attachment fetch failed: HTTP ' + res.status);
+        }
+
+        var contentType = res.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().startsWith('image/')) {
+          throw new Error('Invalid content-type: ' + contentType);
+        }
+
+        var blob = await res.blob();
+        var byteSize = blob.size;
+
+        if (sessionEpoch !== currentEpoch) {
+          throw new Error('Session epoch changed during load');
+        }
+
+        if (byteSize > HARD_MAX_BYTES) {
+          throw new Error('Image exceeds 48MB hard limit ceiling');
+        }
+
+        prune(byteSize);
+
+        if (totalBytes + byteSize > HARD_MAX_BYTES) {
+          throw new Error('Cannot fit image within 48MB hard ceiling');
+        }
+
+        var blobUrl = URL.createObjectURL(blob);
+        var isTransient = byteSize > TRANSIENT_THRESHOLD_BYTES;
+
+        cache.set(url, {
+          blobUrl: blobUrl,
+          byteSize: byteSize,
+          lastAccessed: Date.now(),
+          isTransient: isTransient
+        });
+        totalBytes += byteSize;
+
+        return blobUrl;
+      } catch(err) {
+        if (err.name !== 'AbortError') {
+          recordFailure(url);
+        }
+        throw err;
+      } finally {
+        inFlight.delete(url);
+      }
+    })();
+
+    inFlight.set(url, {
+      promise: promise,
+      controller: controller,
+      consumerCount: 1
+    });
+
+    return promise;
+  }
+
+  function releaseConsumer(url) {
+    if (inFlight.has(url)) {
+      var inf = inFlight.get(url);
+      inf.consumerCount--;
+      if (inf.consumerCount <= 0) {
+        if (inf.controller) {
+          try { inf.controller.abort(); } catch(e) {}
+        }
+        inFlight.delete(url);
+      }
+    }
+  }
+
+  function clearAll(revokeActiveViewer) {
+    inFlight.forEach(function(inf) {
+      if (inf.controller) {
+        try { inf.controller.abort(); } catch(e) {}
+      }
+    });
+    inFlight.clear();
+
+    cache.forEach(function(entry, url) {
+      if (!revokeActiveViewer && url === pinnedUrl) {
+        return;
+      }
+      detachDomReferences(entry.blobUrl);
+      try {
+        if (typeof URL !== 'undefined' && URL.revokeObjectURL) {
+          URL.revokeObjectURL(entry.blobUrl);
+        }
+      } catch(e) {}
+    });
+
+    if (revokeActiveViewer) {
+      pinnedUrl = null;
+      cache.clear();
+      totalBytes = 0;
+    } else {
+      var newMap = new Map();
+      totalBytes = 0;
+      if (pinnedUrl && cache.has(pinnedUrl)) {
+        var pEntry = cache.get(pinnedUrl);
+        newMap.set(pinnedUrl, pEntry);
+        totalBytes = pEntry.byteSize;
+      }
+      cache = newMap;
+    }
+    failures.clear();
+  }
+
+  function getStats() {
+    return {
+      entries: cache.size,
+      totalBytes: totalBytes,
+      inFlight: inFlight.size,
+      failures: failures.size,
+      epoch: sessionEpoch,
+      pinnedUrl: pinnedUrl
+    };
+  }
+
+  return {
+    get: get,
+    has: has,
+    loadAttachment: loadAttachment,
+    releaseConsumer: releaseConsumer,
+    pin: pin,
+    unpin: unpin,
+    prune: prune,
+    clearAll: clearAll,
+    getStats: getStats,
+    checkUserOwnership: checkUserOwnership,
+    getEpoch: getEpoch,
+    incrementEpoch: incrementEpoch,
+    detachDomReferences: detachDomReferences
+  };
+})();
+window.ChatPhotoCache = ChatPhotoCache;
+
+// =====================================================================
+// FULL-SCREEN CHAT PHOTO VIEWER
+// =====================================================================
+var _activeViewerRequestId = 0;
+var _lastFocusedPhotoEl = null;
+
+function handleViewerKeydown(e) {
+  var viewer = document.getElementById('chatPhotoViewer');
+  if (!viewer || viewer.classList.contains('hidden')) return;
+
+  if (e.key === 'Escape' || e.key === 'Esc') {
+    e.preventDefault();
+    closeChatPhotoViewer();
+    return;
+  }
+
+  if (e.key === 'Tab') {
+    var focusables = viewer.querySelectorAll('button, [tabindex="0"], a, input');
+    var focusableList = Array.prototype.slice.call(focusables).filter(function(el) {
+      return !el.disabled && el.offsetParent !== null;
+    });
+    if (focusableList.length === 0) {
+      e.preventDefault();
+      viewer.focus();
+      return;
+    }
+    var first = focusableList[0];
+    var last = focusableList[focusableList.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first || document.activeElement === viewer) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  }
+}
+
+async function openChatPhotoViewer(url, originEl) {
+  if (!url || !isSafeChatPhotoUrl(url)) {
+    if (typeof showToast === 'function') {
+      showToast('Photo unavailable');
+    }
+    return;
+  }
+
+  var viewer = document.getElementById('chatPhotoViewer');
+  var img = document.getElementById('chatPhotoViewerImg');
+  var loading = document.getElementById('chatPhotoViewerLoading');
+  var errorEl = document.getElementById('chatPhotoViewerError');
+  var closeBtn = document.getElementById('chatPhotoViewerCloseBtn');
+
+  if (!viewer || !img) return;
+
+  _lastFocusedPhotoEl = originEl || document.activeElement;
+  var reqId = ++_activeViewerRequestId;
+
+  var prevPinned = ChatPhotoCache.getStats().pinnedUrl;
+  if (prevPinned && prevPinned !== url) {
+    ChatPhotoCache.unpin(prevPinned);
+  }
+
+  viewer.classList.remove('hidden');
+  viewer.classList.add('active');
+
+  img.classList.add('hidden');
+  img.removeAttribute('src');
+  if (errorEl) errorEl.classList.add('hidden');
+  if (loading) loading.classList.remove('hidden');
+
+  if (closeBtn) closeBtn.focus();
+  else viewer.focus();
+
+  window.removeEventListener('keydown', handleViewerKeydown);
+  window.addEventListener('keydown', handleViewerKeydown);
+
+  try {
+    var displaySrc = '';
+    if (isPrivateChatAttachmentUrl(url)) {
+      ChatPhotoCache.pin(url);
+      displaySrc = await ChatPhotoCache.loadAttachment(url);
+    } else if (isPermittedChatHttpsUrl(url)) {
+      displaySrc = url;
+    }
+
+    if (reqId !== _activeViewerRequestId) return;
+    if (viewer.classList.contains('hidden')) return;
+
+    if (loading) loading.classList.add('hidden');
+    img.src = displaySrc;
+    img.alt = 'Full-screen photo view';
+    img.classList.remove('hidden');
+  } catch(err) {
+    if (reqId !== _activeViewerRequestId) return;
+    if (loading) loading.classList.add('hidden');
+    if (errorEl) errorEl.classList.remove('hidden');
+  }
+}
+
+function closeChatPhotoViewer() {
+  var viewer = document.getElementById('chatPhotoViewer');
+  var img = document.getElementById('chatPhotoViewerImg');
+  var loading = document.getElementById('chatPhotoViewerLoading');
+  var errorEl = document.getElementById('chatPhotoViewerError');
+
+  _activeViewerRequestId++;
+
+  window.removeEventListener('keydown', handleViewerKeydown);
+
+  var pinned = ChatPhotoCache.getStats().pinnedUrl;
+  if (pinned) {
+    ChatPhotoCache.unpin(pinned);
+  }
+
+  if (viewer) {
+    viewer.classList.add('hidden');
+    viewer.classList.remove('active');
+  }
+  if (img) {
+    img.classList.add('hidden');
+    img.removeAttribute('src');
+  }
+  if (loading) loading.classList.add('hidden');
+  if (errorEl) errorEl.classList.add('hidden');
+
+  if (_lastFocusedPhotoEl && typeof _lastFocusedPhotoEl.focus === 'function') {
+    try {
+      if (document.body && document.body.contains(_lastFocusedPhotoEl)) {
+        _lastFocusedPhotoEl.focus();
+      }
+    } catch(e) {}
+    _lastFocusedPhotoEl = null;
+  }
+}
+window.openChatPhotoViewer = openChatPhotoViewer;
+window.closeChatPhotoViewer = closeChatPhotoViewer;
+
+function hydrateChatPhotos(container) {
+  if (!container) container = document.getElementById('chatMessageHistoryV2');
+  if (!container) return;
+  if (state.activeScreen !== 'chat-conversation') return;
+
+  var unhydrated = container.querySelectorAll('img.chat-attachment-img[data-media-url]:not([src])');
+  if (!unhydrated.length) return;
+
+  unhydrated.forEach(function(img) {
+    var rawUrl = img.dataset.mediaUrl;
+    if (!isPrivateChatAttachmentUrl(rawUrl)) return;
+
+    var parentDiv = img.parentElement;
+    var loadingDiv = parentDiv ? parentDiv.querySelector('.chat-photo-loading') : null;
+
+    ChatPhotoCache.loadAttachment(rawUrl).then(function(blobUrl) {
+      if (!img.isConnected || state.activeScreen !== 'chat-conversation') return;
+      img.src = blobUrl;
+      img.dataset.blobUrl = blobUrl;
+      img.classList.remove('hidden');
+      if (parentDiv) parentDiv.classList.remove('bg-zinc-800/80', 'min-h-[120px]', 'flex', 'items-center', 'justify-center');
+      if (loadingDiv) loadingDiv.classList.add('hidden');
+    }).catch(function(err) {
+      if (!img.isConnected) return;
+      if (loadingDiv) {
+        loadingDiv.innerHTML = '<span class="text-zinc-500 font-mono-tag text-[10px]">⚠️ Photo unavailable</span>';
+        loadingDiv.classList.remove('hidden');
+      }
+    });
+  });
+}
+window.hydrateChatPhotos = hydrateChatPhotos;
+
 // Sub-Tab Switcher (FOR YOU | NEARBY | CAMPUS | GLOBAL)
 function selectSubTab(circleName) {
   state.activeCircle = circleName;
@@ -330,11 +867,11 @@ async function loadNearbyScreen() {
   var banner = document.getElementById('nearbyProximityBanner');
   var emptyState = document.getElementById('nearbyEmptyState');
   var locState = document.getElementById('nearbyLocationState');
-  
+
   if (!container) return;
 
   var locStatus = localStorage.getItem('kandid_location_status') || 'needed';
-  
+
   if (locStatus === 'needed') {
     if (banner) banner.style.display = 'none';
     if (container) container.style.display = 'none';
@@ -342,7 +879,7 @@ async function loadNearbyScreen() {
     if (locState) { locState.style.display = 'flex'; locState.classList.remove('hidden'); }
     return;
   }
-  
+
   if (locStatus === 'denied') {
     if (banner) banner.style.display = 'none';
     if (container) container.style.display = 'none';
@@ -501,7 +1038,23 @@ window.renderGlobalCards = renderGlobalCards;
 
 // Screen Switcher (FEED | SEARCH | CHAT | YOU)
 function switchScreenView(screenName) {
+  var prevScreen = state.activeScreen;
   state.activeScreen = screenName;
+
+  if (prevScreen === 'chat-conversation' && screenName !== 'chat-conversation') {
+    if (typeof closeChatPhotoViewer === 'function') {
+      closeChatPhotoViewer();
+    }
+    if (typeof ChatPhotoCache !== 'undefined') {
+      ChatPhotoCache.detachDomReferences();
+      ChatPhotoCache.clearAll(false);
+    }
+  } else if (screenName === 'chat-conversation') {
+    var chatHist = document.getElementById('chatMessageHistoryV2');
+    if (chatHist && typeof hydrateChatPhotos === 'function') {
+      hydrateChatPhotos(chatHist);
+    }
+  }
 
   // Cleanup transient camera/review flows on navigation away
   if (!state.isOpeningReview) {
@@ -625,7 +1178,7 @@ function switchScreenView(screenName) {
   var headerChatSettings = document.getElementById("headerChatSettings");
   var headerPeerProfile = document.getElementById("headerPeerProfile");
   var headerCampusPage = document.getElementById("headerCampusPage");
-  
+
   if (globalHeader) {
     // Hide all headers first
     globalHeader.style.display = "none";
@@ -650,7 +1203,7 @@ function switchScreenView(screenName) {
     var statusText = "LIVE";
     var statusColorClass = "text-amber-500";
     var dotClass = "w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse";
-    
+
     if (screenName === "settings") {
       if (settingsHeader) settingsHeader.style.display = "block";
       statusText = "SETTINGS";
@@ -712,7 +1265,7 @@ function switchScreenView(screenName) {
     } else {
       globalHeader.style.display = "block";
     }
-    
+
     var modeTag = document.getElementById("statusBarModeTag");
     var modeDot = document.getElementById("statusBarDot");
     if (modeTag) {
@@ -727,7 +1280,7 @@ function switchScreenView(screenName) {
   var unifiedDock = document.getElementById("unifiedDock");
   var composerMain = document.getElementById("chatComposerMain");
   var composerShared = document.getElementById("chatComposerShared");
-  
+
   if (unifiedDock) {
     if (screenName === "collective-memory" || screenName === "live-pulse" || screenName === "chat-conversation" || screenName === "chat-shared" || screenName === "chat-privacy") {
       unifiedDock.style.display = "none";
@@ -738,7 +1291,7 @@ function switchScreenView(screenName) {
 
   if (composerMain) composerMain.style.display = "none";
   if (composerShared) composerShared.style.display = "none";
-  
+
   if (screenName === "chat-conversation" && composerMain) composerMain.style.display = "flex";
   if (screenName === "chat-shared" && composerShared) composerShared.style.display = "flex";
 
@@ -1282,7 +1835,7 @@ async function openCommunitySwitcher() {
       '</div>';
     }).join('');
   } else {
-    listEl.innerHTML = 
+    listEl.innerHTML =
       '<div class="py-6 text-center text-xs text-zinc-400 font-mono-tag">You haven\'t found your world yet.</div>';
   }
 }
@@ -1302,7 +1855,7 @@ function switchCommunity(commId, commName) {
   closeCommunitySwitcher();
   playTactileFeedback('click');
   showToast('Switched to ' + targetName + ' ✦');
-  
+
   if (state.activeScreen === 'campus-page') {
     openCampusPage(targetId || targetName);
   } else {
@@ -1465,8 +2018,8 @@ async function openCampusPage(campusName, initialTab) {
       var cCreatorHandle = c.creator_handle ? String(c.creator_handle).trim().toLowerCase() : '';
       var cUserRole = c.user_role ? String(c.user_role).trim().toLowerCase() : '';
       var isOwner = Boolean(
-        (cCreatorId && myId && cCreatorId === myId) || 
-        (cCreatorHandle && myHandle && cCreatorHandle === myHandle) || 
+        (cCreatorId && myId && cCreatorId === myId) ||
+        (cCreatorHandle && myHandle && cCreatorHandle === myHandle) ||
         (cUserRole === 'owner' || cUserRole === 'creator') ||
         (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
       );
@@ -1525,7 +2078,7 @@ async function openCampusPage(campusName, initialTab) {
       }
       // Community Share Moment action - Membership Authorized
       var isEligibleMember = Boolean(
-        c.is_joined || 
+        c.is_joined ||
         (c.user_role && ['owner', 'admin', 'creator', 'moderator', 'member'].indexOf(c.user_role.toLowerCase()) !== -1) ||
         (state.currentUser && (state.currentUser.role === 'admin' || state.currentUser.role === 'founder'))
       );
@@ -1615,7 +2168,7 @@ async function openCampusPage(campusName, initialTab) {
           var tile = document.createElement('div');
           tile.className = 'w-20 shrink-0 p-2 rounded-xl bg-zinc-900 border border-white/10 space-y-1 cursor-pointer hover:border-amber-500/40 transition active:scale-95';
           tile.onclick = function() { openPlacePage(p.area); };
-          tile.innerHTML = 
+          tile.innerHTML =
             '<div class="w-full aspect-square rounded-lg overflow-hidden bg-black">' +
               '<img src="' + escapeHtml(p.main_img || '') + '" class="w-full h-full object-cover">' +
             '</div>' +
@@ -2961,7 +3514,7 @@ async function toggleJoinCommunity(inviteCode) {
   var name = state.activeCommunity || 'North City University';
   var commId = state.activeCommunityId || '';
   if (!btn) return;
-  
+
   var payload = { name: name, community_id: commId, id: commId };
   var code = inviteCode || state.activeCommunityInviteCode;
   if (code) {
@@ -3181,7 +3734,7 @@ async function loadFeedMoments(circle) {
 
   circle = circle || state.activeCircle || 'foryou';
   var endpoint = (circle === 'foryou') ? '/api/feed?circle=all' : ('/api/feed?circle=' + circle);
-  
+
   var cacheKey = 'kandid_feed_cache_' + circle;
   var cachedDataStr = localStorage.getItem(cacheKey);
   var hasCache = false;
@@ -3664,7 +4217,7 @@ async function openCameraStudio() {
   var modal = document.getElementById('cameraStudioModal');
   if (!modal) return;
   modal.style.display = 'flex';
-  
+
   if (window.KandidObservability) {
     var camSrc = (state.cameraContext && state.cameraContext.source) ? state.cameraContext.source : 'dock';
     window.KandidObservability.captureEvent('camera_opened', { source: camSrc });
@@ -3871,22 +4424,22 @@ function audioBufferToWav(buffer) {
   var sampleRate = buffer.sampleRate;
   var format = 1; // PCM
   var bitDepth = 16;
-  
+
   var samples = buffer.getChannelData(0);
   var blockAlign = numChannels * (bitDepth / 8);
   var byteRate = sampleRate * blockAlign;
   var dataSize = samples.length * (bitDepth / 8);
   var bufferLength = 44 + dataSize;
-  
+
   var arrayBuffer = new ArrayBuffer(bufferLength);
   var view = new DataView(arrayBuffer);
-  
+
   function writeString(offset, string) {
     for (var i = 0; i < string.length; i++) {
       view.setUint8(offset + i, string.charCodeAt(i));
     }
   }
-  
+
   writeString(0, 'RIFF');
   view.setUint32(4, 36 + dataSize, true);
   writeString(8, 'WAVE');
@@ -3900,14 +4453,14 @@ function audioBufferToWav(buffer) {
   view.setUint16(34, bitDepth, true);
   writeString(36, 'data');
   view.setUint32(40, dataSize, true);
-  
+
   // Write 16-bit PCM samples
   var offset = 44;
   for (var i = 0; i < samples.length; i++, offset += 2) {
     var s = Math.max(-1, Math.min(1, samples[i]));
     view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
   }
-  
+
   return new Blob([view], { type: 'audio/wav' });
 }
 
@@ -3918,12 +4471,12 @@ function record3SecAmbientAudio() {
 
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        micStream = await navigator.mediaDevices.getUserMedia({ 
+        micStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: false,
             autoGainControl: true
-          } 
+          }
         });
       }
     } catch(e) {
@@ -4158,7 +4711,7 @@ const KandidCameraEngine = {
       if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
       var devices = await navigator.mediaDevices.enumerateDevices();
       var videoDevices = devices.filter(function(d) { return d.kind === 'videoinput'; });
-      
+
       if (videoDevices.length > 0) {
         // Only trust device labels if they are populated (after permission)
         var front = videoDevices.find(function(d) {
@@ -4324,7 +4877,7 @@ const KandidCameraEngine = {
     var preferredDeviceId = (targetMode === 'user') ? this.frontDeviceId : this.rearDeviceId;
 
     var constraintsList = [];
-    
+
     // 1. Force exact device if known
     if (preferredDeviceId) {
       constraintsList.push({ video: { deviceId: { exact: preferredDeviceId }, width: { ideal: 2560 }, height: { ideal: 1440 } }, audio: false });
@@ -4929,7 +5482,7 @@ function handleNativeFileCapture(event) {
   reader.onload = function(e) {
     var dataUrl = e.target.result;
     stopHardwareCameraStreams();
-    
+
     state.capturedMomentData = {
       mainImg: dataUrl,
       pipImg: (state.currentUser && state.currentUser.avatar_url) ? state.currentUser.avatar_url : dataUrl,
@@ -4938,7 +5491,7 @@ function handleNativeFileCapture(event) {
       aperture: 'f/1.8',
       shutter: '1/400s'
     };
-    
+
     closeCameraStudio();
     openMomentReview();
   };
@@ -5023,8 +5576,8 @@ async function setupReviewContextUI() {
   var locEl = document.getElementById('reviewApproxLocation');
   var listEl = document.getElementById('reviewCommunityOptionsList');
 
-  var approxLocName = state.currentGeoApprox ? 
-    (state.currentGeoApprox.startsWith('Near ') ? state.currentGeoApprox : ('Near ' + state.currentGeoApprox)) : 
+  var approxLocName = state.currentGeoApprox ?
+    (state.currentGeoApprox.startsWith('Near ') ? state.currentGeoApprox : ('Near ' + state.currentGeoApprox)) :
     (state.currentUser ? ('Near Quad · ' + (state.currentUser.campus || 'Supaul')) : 'Near Quad · Supaul');
 
   if (locEl) locEl.textContent = '⌖ ' + approxLocName;
@@ -5036,7 +5589,7 @@ async function setupReviewContextUI() {
 
   if (isPerspective) {
     var clusterName = (reviewCtx && reviewCtx.clusterName) || 'Shared Event';
-    listEl.innerHTML = 
+    listEl.innerHTML =
       '<div class="p-3 rounded-2xl bg-zinc-900 border border-amber-500/30 flex items-center justify-between">' +
         '<div class="flex items-center gap-2.5">' +
           '<div class="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xs">📷</div>' +
@@ -5194,8 +5747,8 @@ async function publishCapturedMoment() {
 
   showToast('Publishing your unfiltered moment... 🚀');
 
-  var approxLocName = state.currentGeoApprox ? 
-    (state.currentGeoApprox.startsWith('Near ') ? state.currentGeoApprox : ('Near ' + state.currentGeoApprox)) : 
+  var approxLocName = state.currentGeoApprox ?
+    (state.currentGeoApprox.startsWith('Near ') ? state.currentGeoApprox : ('Near ' + state.currentGeoApprox)) :
     (state.currentUser ? ('Near Quad · ' + (state.currentUser.campus || 'Supaul')) : 'Near Quad · Supaul');
 
   // Ensure the existing 3.0s ambient recording (started at shutter, running in the
@@ -5308,7 +5861,7 @@ async function publishCapturedMoment() {
       showToast('Moment shared to ' + chosenName + '! 🔥 +50 XP');
       closeMomentReview();
     }
-    
+
     // Refresh feeds and profile
     await loadFeedMoments('foryou');
     await loadCampusScreen();
@@ -6961,7 +7514,7 @@ function applyUserToYouScreen(u) {
 
   if (nameEl) nameEl.textContent = finalName;
   if (usernameEl) usernameEl.textContent = '@' + finalHandle.toLowerCase();
-  
+
   var commName = u.campus || u.community || (state.currentUser ? state.currentUser.campus : 'Campus Community');
   var cityName = u.location_city || u.city || (state.currentUser ? (state.currentUser.location_city || state.currentUser.city) : 'Local');
   var campusNameEl = document.getElementById('youProfileCampusName');
@@ -6981,9 +7534,9 @@ function applyUserToYouScreen(u) {
     var jc = (u.joined_communities && u.joined_communities.length) || 0;
     commDescEl.textContent = jc > 0 ? (jc + (jc === 1 ? ' community' : ' communities')) : 'Spaces you\'re part of.';
   }
-  
+
   if (bioEl) bioEl.textContent = u.bio || 'Authentic moments across campus.';
-  
+
   var sNum = (u.streak != null ? u.streak : (u.streak_count != null ? u.streak_count : 1));
   if (streakVal) streakVal.textContent = sNum + (sNum === 1 ? ' DAY' : ' DAYS');
   if (momentsCountVal) momentsCountVal.textContent = (u.momentCount != null ? u.momentCount : (state.myMoments ? state.myMoments.length : 1));
@@ -7006,7 +7559,7 @@ async function loadYouJournalThumbnails() {
 
   var memData = await apiRequest('/api/me/memories');
   var memories = (memData && memData.success && Array.isArray(memData.memories)) ? memData.memories : [];
-  
+
   strip.innerHTML = '';
   if (!memories || memories.length === 0) {
     var myMoments = state.myMoments || [];
@@ -7118,7 +7671,7 @@ function renderYouTodayCard(u) {
           '<span>→</span>' +
         '</button>' +
       '</div>';
-    
+
     var viewBtn = document.getElementById('youViewTodayMomentBtn');
     if (viewBtn) {
       viewBtn.onclick = function() {
@@ -7205,7 +7758,7 @@ async function loadProgressScreen() {
     var nextXp = level * 250;
     var progressPct = Math.min(100, Math.floor((xp % 250) / 250 * 100));
     var remainingXp = nextXp - xp;
-    
+
     // Update You Screen Card
     var levelSnippet = document.getElementById('youLevelSnippet');
     var xpSnippet = document.getElementById('youXpSnippet');
@@ -7239,7 +7792,7 @@ async function loadProgressScreen() {
     var mcap = document.getElementById('questStatusMoment');
     var dmiss = document.getElementById('questStatusMission');
     var cdisc = document.getElementById('questStatusCampus');
-    
+
     if (mcap) {
       if (q.moment_captured) {
         mcap.className = 'text-[9px] text-amber-400 font-mono-tag bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-lg font-bold';
@@ -7249,7 +7802,7 @@ async function loadProgressScreen() {
         mcap.textContent = 'PENDING';
       }
     }
-    
+
     if (dmiss) {
       if (q.daily_mission) {
         dmiss.className = 'text-[9px] text-amber-400 font-mono-tag bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-lg font-bold';
@@ -7318,7 +7871,7 @@ function renderMomentsHorizontal(moments, container) {
       var locText = escapeHtml((m.campus || m.community_name || m.location_city || 'KANDID')).toUpperCase();
       var imgSrc = escapeHtml(m.mediaUrl || m.mainImg || m.main_img || '');
 
-      var imgHtml = imgSrc 
+      var imgHtml = imgSrc
         ? '<img src="' + imgSrc + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300">'
         : '<div class="w-full h-full bg-zinc-900 flex items-center justify-center text-zinc-700 font-mono-tag text-xs">MOMENT</div>';
 
@@ -7659,11 +8212,11 @@ function openStoryShareModal(momentId) {
     var card = document.querySelector('article[data-post-id="' + momentId + '"]');
     if (card) {
       var img = card.querySelector('.main-stage-img');
-      m = { 
-        id: momentId, 
-        main_img: img ? img.src : '', 
-        location_city: 'Supaul', 
-        author_handle: (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : 'user' 
+      m = {
+        id: momentId,
+        main_img: img ? img.src : '',
+        location_city: 'Supaul',
+        author_handle: (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : 'user'
       };
     }
   }
@@ -8035,12 +8588,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                   // Update unread notification dot
                   var notifBtn = document.getElementById('notifBtn');
                   var chatNotifBtn = document.getElementById('chatNotifBtn');
-                  
+
                   if (hb.unreadCount > 0) {
                       var sessionKey = 'kandid_notif_seen_' + hb.unreadCount;
                       var isAlreadySeen = sessionStorage.getItem(sessionKey);
                       var btnState = 'has-notifications';
-                      
+
                       if (isAlreadySeen) {
                           btnState = 'passive-notifications';
                       } else {
@@ -8054,7 +8607,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                               }, 15000);
                           }
                       }
-                      
+
                       if (notifBtn) {
                           notifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
                           notifBtn.classList.add(btnState);
@@ -8226,7 +8779,7 @@ window.openLegalModal = function(type) {
     var heading = document.getElementById('modal-heading');
     var body = document.getElementById('modal-body');
     var modal = document.getElementById('legal-modal');
-    
+
     if (type === 'privacy') {
         if (heading) heading.innerText = "KANDID PRIVACY POLICY";
         if (body) body.innerHTML = privacyText;
@@ -8322,7 +8875,7 @@ window.openPlaceModal = function(type) {
     var subtitle = document.getElementById('place-modal-subtitle');
     var header = document.getElementById('placeModalSuggestionsHeader');
     var input = document.getElementById('placeModalInput');
-    
+
     if (title) title.innerText = cat.title;
     if (subtitle) subtitle.innerText = cat.subtitle;
     if (header) header.innerText = cat.header;
@@ -8330,9 +8883,9 @@ window.openPlaceModal = function(type) {
         input.value = '';
         input.placeholder = cat.placeholder;
     }
-    
+
     renderPlaceSuggestions(type, '');
-    
+
     var modal = document.getElementById('place-modal');
     if (modal) modal.style.display = 'flex';
 };
@@ -8345,25 +8898,25 @@ window.closePlaceModal = function() {
 function renderPlaceSuggestions(type, filterText) {
     var container = document.getElementById('placeModalSuggestions');
     if (!container) return;
-    
+
     var cat = PLACE_CATEGORIES_DATA[type] || PLACE_CATEGORIES_DATA['Community'];
     var items = cat.items || [];
-    
+
     var q = (filterText || '').trim().toLowerCase();
     if (q) {
         items = items.filter(function(it) {
             return it.name.toLowerCase().includes(q) || (it.meta && it.meta.toLowerCase().includes(q));
         });
     }
-    
+
     if (items.length === 0) {
-        container.innerHTML = 
+        container.innerHTML =
             '<div class="p-3 bg-zinc-900/30 border border-zinc-800 rounded-xl text-center text-zinc-500 text-[10px]">' +
                 'No exact preset found. Tap "Save Selection" below to add "' + escapeHtml(filterText) + '".' +
             '</div>';
         return;
     }
-    
+
     container.innerHTML = items.map(function(it) {
         return '<div onclick="selectPlace(\'' + jsAttr(it.name) + '\')" class="p-2.5 bg-zinc-900/60 hover:bg-zinc-900 active:scale-98 border border-zinc-800/80 hover:border-amber-500/40 rounded-xl cursor-pointer flex justify-between items-center transition-all shadow-sm group">' +
             '<div class="flex items-center gap-2.5 min-w-0">' +
@@ -8388,7 +8941,7 @@ window.selectPlace = function(name) {
     var type = state.currentPlaceModalType || 'Community';
     playTactileFeedback('pop');
     showToast('Added ' + name + ' 📍');
-    
+
     if (type === 'Community') {
         state.onboardPlaces.community = name;
         state.onboardPlaces.campus = name;
@@ -8423,7 +8976,7 @@ window.selectPlace = function(name) {
         if (sub) sub.textContent = 'Your Selected Workplace';
         if (plus) { plus.textContent = '✓'; plus.className = 'text-amber-500 text-sm font-bold'; }
     }
-    
+
     closePlaceModal();
 };
 
@@ -8566,7 +9119,7 @@ window.handleGoogleCredentialResponse = async function(response) {
                 await loadNotifications();
                 await loadChatConversations();
                 return;
-            } 
+            }
 
             // Case 2: Resume Pending Onboarding Session
             if (res.status === 'RESUME_ONBOARDING') {
@@ -8575,7 +9128,7 @@ window.handleGoogleCredentialResponse = async function(response) {
                 }
                 var gp = res.google_profile || {};
                 var saved = res.saved_state || {};
-                
+
                 state.onboardingSession = {
                     id: res.session_id,
                     profile: gp,
@@ -8587,13 +9140,13 @@ window.handleGoogleCredentialResponse = async function(response) {
                 };
 
                 populateOnboardingIdentityFields(gp.name || '', gp.email || '', state.onboardingSession.handle, gp.avatar_url || '');
-                
+
                 if (state.onboardingSession.campusName) {
                     selectCampus(state.onboardingSession.campusId, state.onboardingSession.campusName, state.onboardingSession.city);
                 }
 
                 showToast('Welcome back! Resuming your setup... 🔄');
-                
+
                 if (res.step === 2) {
                     switchScreen('world');
                 } else if (res.step === 3) {
@@ -8602,7 +9155,7 @@ window.handleGoogleCredentialResponse = async function(response) {
                     switchScreen('identity');
                 }
                 return;
-            } 
+            }
 
             // Case 3: New Google User -> Initialize Onboarding Session
             if (res.status === 'NEW_ONBOARDING' || res.is_new) {
@@ -8610,7 +9163,7 @@ window.handleGoogleCredentialResponse = async function(response) {
                     window.KandidObservability.captureEvent('google_login_success', { is_new_user: true });
                 }
                 var gp = res.google_profile || {};
-                
+
                 state.onboardingSession = {
                     id: res.session_id,
                     profile: gp,
@@ -8819,7 +9372,7 @@ window.searchCampuses = async function(query) {
     try {
         var res = await apiRequest('/api/campuses/search?q=' + encodeURIComponent((query || '').trim()));
         var campuses = (res && res.campuses) ? res.campuses : [];
-        
+
         if (campuses.length === 0) {
             dropdown.innerHTML = '<div class="p-3 text-center text-zinc-500 text-xs font-mono-tag">No campuses found. <span onclick="openCampusRequestModal()" class="text-amber-400 underline cursor-pointer">Request to add your campus →</span></div>';
             dropdown.classList.remove('hidden');
@@ -8958,16 +9511,16 @@ window.handleCampusSearch = function(query) {
     var results = document.getElementById('campusResults');
     var addBox = document.getElementById('customCampusAddBox');
     if (!results) return;
-    
+
     var rawQuery = (query || '').trim();
     var lowerQuery = rawQuery.toLowerCase();
-    
+
     if (!rawQuery) {
         results.classList.add('hidden');
         if (addBox) addBox.innerHTML = '';
         return;
     }
-    
+
     if (addBox) {
         var isWork = state.onboardingSession && state.onboardingSession.vibe === 'work';
         var entityType = isWork ? 'Workspace' : 'Campus';
@@ -8980,7 +9533,7 @@ window.handleCampusSearch = function(query) {
             </div>
         `;
     }
-    
+
     results.classList.remove('hidden');
 };
 
@@ -9026,26 +9579,26 @@ window.resetCampusSelection = function() {
 window.setWorldVibe = function(vibe) {
     if (!state.onboardingSession) state.onboardingSession = {};
     state.onboardingSession.vibe = vibe;
-    
+
     var btnCampus = document.getElementById('vibeToggleCampus');
     var btnWork = document.getElementById('vibeToggleWork');
     var label = document.getElementById('lblCampusOrWork');
     var input = document.getElementById('campusSearchInput');
     var skipBtn = document.getElementById('skipCampusBtn');
-    
+
     if (vibe === 'campus') {
         btnCampus.classList.add('selected');
         btnCampus.style.background = 'rgba(245, 158, 11, 0.12)';
         btnCampus.style.borderColor = 'rgba(245, 158, 11, 0.4)';
         btnCampus.style.color = '#f59e0b';
         btnCampus.style.fontWeight = '700';
-        
+
         btnWork.classList.remove('selected');
         btnWork.style.background = '';
         btnWork.style.borderColor = '';
         btnWork.style.color = '#d4d4d8';
         btnWork.style.fontWeight = '500';
-        
+
         if (label) label.textContent = 'CAMPUS / UNIVERSITY';
         if (input) input.placeholder = 'Search university or college (optional)...';
         if (skipBtn) skipBtn.textContent = 'Skip campus';
@@ -9055,13 +9608,13 @@ window.setWorldVibe = function(vibe) {
         btnWork.style.borderColor = 'rgba(245, 158, 11, 0.4)';
         btnWork.style.color = '#f59e0b';
         btnWork.style.fontWeight = '700';
-        
+
         btnCampus.classList.remove('selected');
         btnCampus.style.background = '';
         btnCampus.style.borderColor = '';
         btnCampus.style.color = '#d4d4d8';
         btnCampus.style.fontWeight = '500';
-        
+
         if (label) label.textContent = 'WORKSPACE / TECH PARK';
         if (input) input.placeholder = 'Enter office, coworking or tech park...';
         if (skipBtn) skipBtn.textContent = 'Skip workspace';
@@ -9091,7 +9644,7 @@ window.persistWorldContext = function() {
 window.goToOnboardingReview = async function() {
     var cityInput = document.getElementById('onboardCityInput');
     var cityVal = cityInput ? cityInput.value.trim() : '';
-    
+
     if (!state.onboardingSession) {
         state.onboardingSession = {};
     }
@@ -9153,11 +9706,11 @@ function renderOnboardingReview() {
     if (rEmail) rEmail.textContent = emailVal;
         var rCampusLabel = document.getElementById('summaryCampusLabel');
     var isWork = state.onboardingSession && state.onboardingSession.vibe === 'work';
-    
+
     if (rCampusLabel) {
         rCampusLabel.textContent = isWork ? 'WORKSPACE' : 'CAMPUS';
     }
-    
+
     if (rCampus) {
         if (campusVal && campusVal !== 'Independent Creator / City') {
             rCampus.textContent = campusVal;
@@ -9332,7 +9885,7 @@ window.copyInviteLink = function() {
     var usernameInput = document.getElementById('final-username');
     var handle = (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : (usernameInput ? usernameInput.value.trim().replace('@', '') : 'you');
     var link = 'https://kandid.network/invite/@' + (handle || 'you');
-    
+
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(link).then(function() {
             showToast('Invite link copied to clipboard 📋');
@@ -9347,7 +9900,7 @@ window.copyInviteLink = function() {
 async function checkOnboarding() {
     var token = localStorage.getItem('kandid_token');
     var obFlow = document.getElementById('onboardingFlow');
-    
+
     if (!token) {
         state.token = null;
         state.currentUser = null;
@@ -9359,7 +9912,7 @@ async function checkOnboarding() {
     } else {
         state.token = token;
         if (obFlow) obFlow.style.display = 'none';
-        
+
         try {
             var res = await apiRequest('/api/auth/me');
             if (res && res.user) {
@@ -9391,12 +9944,12 @@ window.submitUserLogin = async function() {
     var passwordInput = document.getElementById('loginPassword');
     var errBox = document.getElementById('loginErrorBox');
     var errText = document.getElementById('loginErrorText');
-    
+
     if (errBox) errBox.classList.add('hidden');
 
     var identifier = identifierInput ? identifierInput.value.trim().replace('@', '') : '';
     var password = passwordInput ? passwordInput.value.trim() : '';
-    
+
     if (!identifier) {
         showToast('Please enter your username or email');
         if (identifierInput) identifierInput.focus();
@@ -9407,15 +9960,15 @@ window.submitUserLogin = async function() {
         if (passwordInput) passwordInput.focus();
         return;
     }
-    
+
     showToast('Logging in...');
-    
+
     try {
         var res = await apiRequest('/api/auth/login', {
             method: 'POST',
             body: JSON.stringify({ identifier: identifier, password: password })
         });
-        
+
         if (res && res.success && res.token) {
             localStorage.setItem('kandid_token', res.token);
             localStorage.setItem('kandid_onboarded', 'true');
@@ -9429,10 +9982,10 @@ window.submitUserLogin = async function() {
                 window.KandidObservability.captureEvent('login_success', { method: 'password' });
             }
             showToast('Welcome back, ' + (res.user.name || res.user.username || 'User') + '! 🎉');
-            
+
             var obFlow = document.getElementById('onboardingFlow');
             if (obFlow) obFlow.style.display = 'none';
-            
+
             switchScreenView('feed');
             await loadFeedMoments('foryou');
             await loadCampusScreen();
@@ -9561,7 +10114,7 @@ window.submitResetPassword = async function() {
     var idInput = document.getElementById('resetIdentifier');
     var otpInput = document.getElementById('resetOtpCode');
     var passInput = document.getElementById('resetNewPassword');
-    
+
     var identifier = idInput ? idInput.value.trim() : '';
     var otp = otpInput ? otpInput.value.trim() : '';
     var newPassword = passInput ? passInput.value.trim() : '';
@@ -9619,7 +10172,7 @@ function checkAndShowFounderModal() {
     var seen = localStorage.getItem('kandid_founder_note_seen');
     var token = localStorage.getItem('kandid_token');
     var onboarded = localStorage.getItem('kandid_onboarded');
-    
+
     if (token && onboarded && !seen) {
         var modal = document.getElementById('founderWelcomeModal');
         if (modal) {
@@ -9685,9 +10238,9 @@ window.handleChatNewSearch = handleChatNewSearch;
 async function loadChatNewSuggestions() {
   var container = document.getElementById('chatNewSearchResults');
   if (!container) return;
-  
+
   container.innerHTML = '<div class="text-center py-4 text-xs text-zinc-500 font-mono-tag">Loading campus peers...</div>';
-  
+
   var data = await apiRequest('/api/search?type=people&q=');
   if (data && data.success && Array.isArray(data.people)) {
     renderChatNewUserList(data.people, container, 'CAMPUS CONNECTIONS');
@@ -9715,7 +10268,7 @@ async function searchPeopleForChat(query) {
 
 function renderChatNewUserList(users, container, title) {
   container.innerHTML = '';
-  
+
   var header = document.createElement('span');
   header.className = 'text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase px-1 font-bold block mb-2';
   header.textContent = title;
@@ -9729,13 +10282,13 @@ function renderChatNewUserList(users, container, title) {
 
     var item = document.createElement('div');
     item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between shadow-md cursor-pointer hover:bg-zinc-900/50 transition-all';
-    
+
     var avatarSrc = (u.avatar_url && !u.avatar_url.includes('api.dicebear.com')) ? u.avatar_url : '';
     var name = escapeHtml(u.name || 'Student');
     var handle = escapeHtml(u.handle || 'user');
     var campus = escapeHtml(u.campus || 'North City University');
 
-    item.innerHTML = 
+    item.innerHTML =
       '<div class="flex items-center gap-3">' +
         '<div class="w-11 h-11 rounded-full bg-zinc-900 overflow-hidden border border-zinc-800 flex-shrink-0">' +
           '<img src="' + escapeHtml(avatarSrc) + '" class="w-full h-full object-cover">' +
@@ -9778,7 +10331,7 @@ async function submitReportUser() {
       details: 'Reported via mobile in-app flow'
     })
   });
-  
+
   if (res && res.success) {
     if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
       window.KandidObservability.captureEvent('report_submitted', {
@@ -9800,7 +10353,7 @@ async function submitBlockUser() {
       targetId: targetId
     })
   });
-  
+
   if (res && res.success) {
     if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
       window.KandidObservability.captureEvent('block_action', {
@@ -9999,7 +10552,7 @@ function renderMemoriesFeed() {
   container.innerHTML = '';
 
   if (moments.length === 0) {
-    container.innerHTML = 
+    container.innerHTML =
       '<div class="bg-zinc-950/60 border border-zinc-800/60 rounded-2xl p-10 text-center space-y-4 my-6">' +
         '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 mx-auto text-sm">' +
           '<svg class="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>' +
@@ -10020,7 +10573,7 @@ function renderMemoriesFeed() {
   moments.forEach(function(m) {
     var card = document.createElement('article');
     card.className = 'bg-zinc-950/80 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-3 shadow-xl transition';
-    
+
     var mainImg = m.mainImg || m.main_img || m.mediaUrl || '';
     var pipImg = m.pipImg || m.pip_img || '';
     var location = escapeHtml(m.locationCity || m.campus || m.location_city || 'CAMPUS');
@@ -10028,26 +10581,26 @@ function renderMemoriesFeed() {
     var timeStr = m.timeAgo || (typeof formatTimeAgo === 'function' ? formatTimeAgo(m.created_at || '') : 'RECENT');
     var perspectivesCount = m.perspective_count || (m.cluster_id ? 3 : 1);
 
-    var cardHtml = 
+    var cardHtml =
       '<div class="moment-thumb-trigger w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner cursor-pointer">' +
         '<img src="' + escapeHtml(mainImg) + '" class="w-full h-full object-cover" alt="Memory moment" loading="lazy">';
 
     if (pipImg) {
-      cardHtml += 
+      cardHtml +=
         '<div class="absolute top-3 left-3 w-20 h-28 rounded-lg overflow-hidden border-2 border-white/20 shadow-2xl bg-black">' +
           '<img src="' + escapeHtml(pipImg) + '" class="w-full h-full object-cover" alt="Front perspective" loading="lazy">' +
         '</div>';
     }
 
     if (perspectivesCount > 1) {
-      cardHtml += 
+      cardHtml +=
         '<div class="absolute bottom-3 right-3 px-2.5 py-1 bg-black/75 backdrop-blur-md rounded-md border border-zinc-700/60 flex items-center gap-1.5 text-[9px] text-zinc-300 font-mono-tag">' +
           '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>' +
           '<span>' + perspectivesCount + ' PERSPECTIVES</span>' +
         '</div>';
     }
 
-    cardHtml += 
+    cardHtml +=
       '</div>' +
       '<div class="space-y-1 px-0.5">' +
         '<div class="flex justify-between items-center text-[10px] text-zinc-400 font-mono-tag">' +
@@ -10386,6 +10939,23 @@ function logoutUser() {
   if (typeof handleNewUserFeedExit === 'function') {
     handleNewUserFeedExit();
   }
+  if (typeof closeChatPhotoViewer === 'function') {
+    closeChatPhotoViewer();
+  }
+  if (typeof ChatPhotoCache !== 'undefined') {
+    ChatPhotoCache.incrementEpoch();
+    ChatPhotoCache.clearAll(true);
+  }
+  var historyContainer = document.getElementById('chatMessageHistoryV2');
+  if (historyContainer) {
+    var imgs = historyContainer.querySelectorAll('img');
+    imgs.forEach(function(img) {
+      img.removeAttribute('src');
+      img.removeAttribute('data-blob-url');
+      img.removeAttribute('data-media-url');
+    });
+    historyContainer.innerHTML = '';
+  }
   localStorage.removeItem('kandid_token');
   localStorage.removeItem('kandid_onboarded');
   localStorage.removeItem('kandid_user');
@@ -10498,7 +11068,7 @@ async function loadConnectionRequests() {
   var res = await apiRequest('/api/friend/requests');
   if (res && res.success && Array.isArray(res.requests)) {
     var reqs = res.requests;
-    
+
     // Update YOU page Requests Badge & People Section
     if (typeof updatePendingRequestsUI === 'function') {
       updatePendingRequestsUI(reqs.length, reqs);
@@ -10519,7 +11089,7 @@ async function loadConnectionRequests() {
     reqs.forEach(function(r) {
       var item = document.createElement('div');
       item.className = 'bg-zinc-950 border border-amber-500/40 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-xl transition-all';
-      
+
       var avSrc = (r.avatar_url && !r.avatar_url.includes('api.dicebear.com')) ? r.avatar_url : '';
       var name = escapeHtml((r.name || 'Student').toUpperCase());
       var handle = escapeHtml((r.handle || 'user').toUpperCase());
@@ -10701,12 +11271,12 @@ async function loadNotifications() {
 
                   var notifBtn = document.getElementById('notifBtn');
                   var chatNotifBtn = document.getElementById('chatNotifBtn');
-                  
+
                   if (unreadCount > 0) {
                       var sessionKey = 'kandid_notif_seen_' + unreadCount;
                       var isAlreadySeen = sessionStorage.getItem(sessionKey);
                       var btnState = 'has-notifications';
-                      
+
                       if (isAlreadySeen) {
                           btnState = 'passive-notifications';
                       } else {
@@ -10720,7 +11290,7 @@ async function loadNotifications() {
                               }, 15000);
                           }
                       }
-                      
+
                       if (notifBtn) {
                           notifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
                           notifBtn.classList.add(btnState);
@@ -10745,7 +11315,7 @@ async function loadNotifications() {
     container.innerHTML = '';
 
     if (notifs.length === 0) {
-      container.innerHTML = 
+      container.innerHTML =
         '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-8 text-center space-y-2">' +
           '<div class="w-10 h-10 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-amber-500 mx-auto text-sm font-mono-tag">🔔</div>' +
           '<h3 class="text-xs font-bold text-white uppercase font-mono-tag">YOU\'RE ALL CAUGHT UP</h3>' +
@@ -11011,12 +11581,12 @@ async function checkChatUnreadBadge() {
     }
                   var notifBtn = document.getElementById('notifBtn');
                   var chatNotifBtn = document.getElementById('chatNotifBtn');
-                  
+
                   if (unreadCnt > 0) {
                       var sessionKey = 'kandid_notif_seen_' + unreadCnt;
                       var isAlreadySeen = sessionStorage.getItem(sessionKey);
                       var btnState = 'has-notifications';
-                      
+
                       if (isAlreadySeen) {
                           btnState = 'passive-notifications';
                       } else {
@@ -11030,7 +11600,7 @@ async function checkChatUnreadBadge() {
                               }, 15000);
                           }
                       }
-                      
+
                       if (notifBtn) {
                           notifBtn.classList.remove('no-notifications', 'has-notifications', 'passive-notifications');
                           notifBtn.classList.add(btnState);
@@ -11135,7 +11705,7 @@ function renderChatConversations(convos, filterQuery = '') {
     if (avatarSrc.includes('unsplash.com') || avatarSrc.includes('api.dicebear.com')) {
       avatarSrc = '';
     }
-    
+
     var initialLetter = escapeHtml((rawName || rawHandle || 'U').charAt(0).toUpperCase());
     var avatarHtml = avatarSrc
       ? '<img src="' + escapeHtml(avatarSrc) + '" alt="' + escapeHtml(name) + '" class="w-full h-full object-cover" onerror="this.style.display=\'none\';">'
@@ -11155,17 +11725,17 @@ function renderChatConversations(convos, filterQuery = '') {
 
     var messagePreviewHtml = '';
     if (isMoment) {
-      messagePreviewHtml = 
+      messagePreviewHtml =
         '<div class="text-[11px] text-gray-300 truncate mt-0.5 flex items-center space-x-1.5">' +
           '<span class="inline-block w-3.5 h-3.5 rounded overflow-hidden flex-shrink-0 border border-neutral-700 bg-neutral-800 text-[9px] flex items-center justify-center">📸</span>' +
           '<span class="truncate">' + lastMsgText + '</span>' +
         '</div>';
     } else {
-      messagePreviewHtml = 
+      messagePreviewHtml =
         '<p class="text-[11px] ' + (hasUnread ? 'text-gray-200 font-medium' : 'text-gray-400') + ' truncate mt-0.5">' + lastMsgText + '</p>';
     }
 
-    article.innerHTML = 
+    article.innerHTML =
       '<div class="flex items-center space-x-3.5 min-w-0 flex-1">' +
         '<div class="relative w-11 h-11 rounded-full flex-shrink-0">' +
           '<div class="w-full h-full rounded-full overflow-hidden border border-neutral-800 bg-neutral-800">' +
@@ -11249,7 +11819,7 @@ function renderChatConnections(connections, filterQuery = '') {
     if (filterQuery) {
       container.innerHTML = '<div class="text-center py-8 text-xs text-gray-500 font-mono-meta">No connections matching "' + escapeHtml(filterQuery) + '"</div>';
     } else {
-      container.innerHTML = 
+      container.innerHTML =
         '<div class="py-8 text-center space-y-2">' +
           '<p class="text-xs text-gray-400 font-mono-meta">NO CONNECTIONS YET</p>' +
           '<p class="text-[11px] text-gray-500">Connect with people in Search to start conversations.</p>' +
@@ -11273,7 +11843,7 @@ function renderChatConnections(connections, filterQuery = '') {
     if (avatarSrc.includes('unsplash.com') || avatarSrc.includes('api.dicebear.com')) {
       avatarSrc = '';
     }
-    
+
     var initialLetter = escapeHtml((rawName || rawHandle || 'U').charAt(0).toUpperCase());
     var avatarHtml = avatarSrc
       ? '<img src="' + escapeHtml(avatarSrc) + '" alt="" class="w-full h-full object-cover" onerror="this.style.display=\'none\';">'
@@ -11283,7 +11853,7 @@ function renderChatConnections(connections, filterQuery = '') {
     row.className = 'flex items-center justify-between p-2 -mx-2 rounded-xl hover:bg-neutral-900/60 cursor-pointer transition';
     row.setAttribute('data-user-id', c.id);
 
-    row.innerHTML = 
+    row.innerHTML =
       '<div class="flex items-center space-x-3 min-w-0 flex-1">' +
         '<div class="relative w-10 h-10 rounded-full flex-shrink-0">' +
           '<div class="w-full h-full rounded-full overflow-hidden border border-neutral-800 bg-neutral-800">' +
@@ -11378,11 +11948,25 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
     campus: campus || ''
   };
 
+  if (typeof closeChatPhotoViewer === 'function') {
+    closeChatPhotoViewer();
+  }
+
   // Synchronously wipe chat container DOM to prevent old friend messages from lingering
   var historyContainer = document.getElementById('chatMessageHistoryV2');
   if (historyContainer) {
+    var oldImgs = historyContainer.querySelectorAll('img.chat-attachment-img[data-media-url]');
+    oldImgs.forEach(function(img) {
+      var rawUrl = img.dataset.mediaUrl;
+      if (rawUrl && typeof ChatPhotoCache !== 'undefined') ChatPhotoCache.releaseConsumer(rawUrl);
+      img.removeAttribute('src');
+      img.removeAttribute('data-blob-url');
+    });
     delete historyContainer.dataset.msgSig;
     historyContainer.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+  }
+  if (typeof ChatPhotoCache !== 'undefined') {
+    ChatPhotoCache.clearAll(false);
   }
 
   clearChatReplyTo();
@@ -11395,18 +11979,18 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
   var headerName = document.getElementById('headerChatName');
   var headerHandle = document.getElementById('headerChatHandle');
   var headerCampus = document.getElementById('headerChatCampus');
-  
+
   if (headerAvatar) {
     var parentDiv = headerAvatar.parentNode;
     var rawN = state.activeChatPartner.name || state.activeChatPartner.handle || 'U';
     var initialLetter = escapeHtml(rawN.charAt(0).toUpperCase());
-    
+
     var existingFb = parentDiv.querySelector('.avatar-fb-text');
     if (existingFb) parentDiv.removeChild(existingFb);
 
     if (avatarUrl && avatarUrl.trim() && !avatarUrl.includes('api.dicebear.com')) {
-      headerAvatar.onerror = function() { 
-        this.style.display = 'none'; this.removeAttribute('src'); 
+      headerAvatar.onerror = function() {
+        this.style.display = 'none'; this.removeAttribute('src');
         if (!parentDiv.querySelector('.avatar-fb-text')) {
           var fb = document.createElement('div');
           fb.className = 'avatar-fb-text absolute inset-0 w-full h-full flex items-center justify-center bg-neutral-900 text-amber-500 font-bold text-[13px] font-mono-tag';
@@ -11923,7 +12507,7 @@ async function openChatMomentPicker() {
         shareMomentToActiveChat(m.id);
       };
       var imgUrl = m.image_url || m.main_img || '';
-      item.innerHTML = 
+      item.innerHTML =
         '<img src="' + escapeHtml(imgUrl) + '" class="w-full h-full object-cover group-hover:scale-105 transition-transform">' +
         '<div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 p-1.5 flex flex-col justify-between">' +
           '<span class="text-[8px] font-mono-tag text-amber-400 font-bold uppercase truncate">' + escapeHtml(m.campus || 'CAMPUS') + '</span>' +
@@ -11998,7 +12582,7 @@ async function loadChatMessages(userId, isSilent = false) {
 
   var myUid = getActiveUserId();
   var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid) + '&limit=50');
-  
+
   // Guard against race conditions when switching conversations quickly
   if (state.activeChatUser !== userId) {
     return;
@@ -12016,12 +12600,12 @@ async function loadChatMessages(userId, isSilent = false) {
       return m.id + '_' + (m.read_at ? '1' : '0') + '_' + rxCnt;
     }));
     if (isSilent && container.dataset.msgSig === msgSignature) {
-        return; 
+        return;
     }
     container.dataset.msgSig = msgSignature;
 
     if (data.messages.length === 0 && !state.chatOlderMessages.length) {
-      container.innerHTML = 
+      container.innerHTML =
         '<div class="text-center py-10 space-y-1 my-auto">' +
           '<span class="text-2xl block">👋</span>' +
           '<p class="text-xs text-white font-bold font-mono-tag uppercase">START OF THE CONVERSATION</p>' +
@@ -12063,12 +12647,23 @@ function renderChatMessages(container, messages) {
     var myId = state.chatMyId;
     var activePartnerId = state.chatPartnerId;
 
+    // Detach and release outgoing attachment images
+    var outgoingImgs = container.querySelectorAll('img.chat-attachment-img[data-media-url]');
+    outgoingImgs.forEach(function(img) {
+      var rawUrl = img.dataset.mediaUrl;
+      if (rawUrl && typeof ChatPhotoCache !== 'undefined') {
+        ChatPhotoCache.releaseConsumer(rawUrl);
+      }
+      img.removeAttribute('src');
+      img.removeAttribute('data-blob-url');
+    });
+
     container.innerHTML = '';
     var lastDateGroup = null;
     messages.forEach(function(m) {
       var senderId = String(m.sender_id || '').toLowerCase();
       var isMe = (senderId === myId) || (senderId !== activePartnerId);
-      
+
       var createdAtStr = m.created_at || '';
       if (createdAtStr && !createdAtStr.endsWith('Z') && createdAtStr.indexOf('+') === -1 && createdAtStr.lastIndexOf('-') <= 10) {
         createdAtStr += 'Z';
@@ -12087,7 +12682,7 @@ function renderChatMessages(container, messages) {
           }
         }
       }
-      
+
       if (dateStr !== lastDateGroup) {
         lastDateGroup = dateStr;
         var dateDivider = document.createElement('div');
@@ -12100,8 +12695,8 @@ function renderChatMessages(container, messages) {
       bubbleWrap.className = isMe ? 'flex flex-col items-end space-y-1 group' : 'flex flex-col items-start space-y-1 group';
       bubbleWrap.dataset.msgId = m.id;
 
-      var bubbleStyle = isMe 
-        ? 'bg-amber-500 text-black font-medium' 
+      var bubbleStyle = isMe
+        ? 'bg-amber-500 text-black font-medium'
         : 'bg-zinc-900 text-zinc-100 border border-zinc-800';
 
       var timeOnly = '';
@@ -12111,7 +12706,7 @@ function renderChatMessages(container, messages) {
           timeOnly = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
       }
-      
+
       var statusIcon = '';
       if (isMe) {
         if (m.read_at) {
@@ -12124,7 +12719,7 @@ function renderChatMessages(container, messages) {
       var isTombstone = (m.message_type === 'deleted' || m.content === 'Message deleted' || m.is_deleted_for_everyone === 1);
 
       if (isTombstone) {
-        bubbleWrap.innerHTML = 
+        bubbleWrap.innerHTML =
           '<div class="flex items-end gap-1.5 ' + (isMe ? 'flex-row-reverse' : 'flex-row') + ' max-w-[85%]">' +
             '<div class="rounded-2xl px-3.5 py-2 text-xs bg-zinc-900/60 text-zinc-500 border border-zinc-800/80 shadow-sm space-y-0.5 max-w-full">' +
               '<p class="italic text-[11px] text-zinc-500 font-mono-tag">Message deleted</p>' +
@@ -12146,7 +12741,7 @@ function renderChatMessages(container, messages) {
       var replyHtml = '';
       if (m.reply_to) {
         var replyBg = isMe ? 'bg-black/15 border-amber-600' : 'bg-zinc-950 border-amber-500';
-        replyHtml = 
+        replyHtml =
           '<div class="rounded-xl ' + replyBg + ' px-2.5 py-1 mb-1.5 border-l-2 text-[10px] space-y-0.5 max-w-full overflow-hidden">' +
             '<span class="font-bold ' + (isMe ? 'text-black font-mono-tag' : 'text-amber-400 font-mono-tag') + ' block truncate">@' + escapeHtml(m.reply_to.sender_handle || 'user') + '</span>' +
             '<span class="truncate block ' + (isMe ? 'text-black/80' : 'text-zinc-300') + '">' + escapeHtml(m.reply_to.content || '') + '</span>' +
@@ -12156,17 +12751,36 @@ function renderChatMessages(container, messages) {
       // Photo Attachment Block
       var photoHtml = '';
       if (m.message_type === 'photo' || (m.media_url && !m.moment)) {
-        // SECURITY B-04: use data-media-url + safeOpenMediaUrl() instead of inline onclick with window.open to prevent javascript: XSS
-        photoHtml = 
-          '<div class="rounded-xl overflow-hidden border ' + (isMe ? 'border-amber-600/30' : 'border-zinc-800') + ' my-1 max-w-[240px]">' +
-            '<img src="' + escapeHtml(m.media_url) + '" class="w-full h-auto max-h-60 object-cover rounded-lg cursor-pointer" loading="lazy" data-media-url="' + escapeHtml(m.media_url) + '" onclick="safeOpenMediaUrl(this.dataset.mediaUrl)">' +
-          '</div>';
+        var rawUrl = (m.media_url || '').trim();
+        if (isPrivateChatAttachmentUrl(rawUrl)) {
+          var cachedBlobUrl = ChatPhotoCache.get(rawUrl);
+          var initialSrc = cachedBlobUrl ? ('src="' + escapeHtml(cachedBlobUrl) + '" data-blob-url="' + escapeHtml(cachedBlobUrl) + '"') : '';
+          var initialBg = cachedBlobUrl ? '' : 'bg-zinc-800/80 min-h-[120px] flex items-center justify-center';
+          photoHtml =
+            '<div class="rounded-xl overflow-hidden border ' + (isMe ? 'border-amber-600/30' : 'border-zinc-800') + ' my-1 max-w-[240px] relative ' + initialBg + '">' +
+              '<img ' + initialSrc + ' class="w-full h-auto max-h-60 object-cover rounded-lg cursor-pointer chat-attachment-img ' + (cachedBlobUrl ? '' : 'hidden') + '" alt="Photo attachment" data-media-url="' + escapeHtml(rawUrl) + '" onclick="openChatPhotoViewer(this.dataset.mediaUrl, this)">' +
+              '<div class="chat-photo-loading text-[10px] text-zinc-500 font-mono-tag ' + (cachedBlobUrl ? 'hidden' : 'flex items-center gap-1.5 p-4') + '">' +
+                '<span class="w-3.5 h-3.5 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></span>' +
+                '<span>Loading photo...</span>' +
+              '</div>' +
+            '</div>';
+        } else if (isPermittedChatHttpsUrl(rawUrl)) {
+          photoHtml =
+            '<div class="rounded-xl overflow-hidden border ' + (isMe ? 'border-amber-600/30' : 'border-zinc-800') + ' my-1 max-w-[240px]">' +
+              '<img src="' + escapeHtml(rawUrl) + '" class="w-full h-auto max-h-60 object-cover rounded-lg cursor-pointer" loading="lazy" alt="Chat photo" data-media-url="' + escapeHtml(rawUrl) + '" onclick="openChatPhotoViewer(this.dataset.mediaUrl, this)">' +
+            '</div>';
+        } else {
+          photoHtml =
+            '<div class="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-900/50 my-1 p-3 max-w-[240px] text-zinc-500 font-mono-tag text-[10px] flex items-center gap-2 select-none">' +
+              '<span>⚠️</span><span>Photo unavailable</span>' +
+            '</div>';
+        }
       }
 
       // Moment Card Block
       var momentHtml = '';
       if (m.message_type === 'moment' && m.moment) {
-        momentHtml = 
+        momentHtml =
           '<div class="rounded-xl overflow-hidden border border-zinc-700 bg-black/40 my-1 max-w-[240px] cursor-pointer shadow-md" onclick="switchScreenView(\'feed\')">' +
             '<img src="' + escapeHtml(m.moment.image_url) + '" class="w-full aspect-[4/3] object-cover">' +
             '<div class="p-2 space-y-0.5 bg-zinc-950/90 border-t border-zinc-800">' +
@@ -12187,7 +12801,7 @@ function renderChatMessages(container, messages) {
       var senderLabel = isMe ? 'You' : (state.activeChatPartner ? state.activeChatPartner.name : 'Student');
       var quoteText = m.content || (m.message_type === 'photo' ? 'Photo' : 'Moment');
 
-      bubbleWrap.innerHTML = 
+      bubbleWrap.innerHTML =
         '<div class="flex items-end gap-1.5 ' + (isMe ? 'flex-row-reverse' : 'flex-row') + ' max-w-[85%]">' +
           '<div class="rounded-2xl px-3.5 py-2 text-xs ' + bubbleStyle + ' shadow-sm space-y-0.5 max-w-full">' +
             replyHtml +
@@ -12233,6 +12847,10 @@ function renderChatMessages(container, messages) {
 
       container.appendChild(bubbleWrap);
     });
+
+    if (typeof hydrateChatPhotos === 'function') {
+      hydrateChatPhotos(container);
+    }
 }
 window.renderChatMessages = renderChatMessages;
 
@@ -12419,7 +13037,7 @@ async function loadRecentlyDeletedScreen() {
     var data = await apiRequest('/api/chat/trash');
     if (data && data.success && Array.isArray(data.trash)) {
       if (data.trash.length === 0) {
-        container.innerHTML = 
+        container.innerHTML =
           '<div class="text-center py-16 space-y-2">' +
             '<span class="text-3xl block opacity-40">🗑️</span>' +
             '<p class="text-xs font-bold text-white font-mono-tag uppercase">No Recently Deleted Messages</p>' +
@@ -12439,7 +13057,7 @@ async function loadRecentlyDeletedScreen() {
         var expiryInfo = item.expires_at ? ('Expires ' + item.expires_at.split(' ')[0]) : 'Retained for 30 days';
         var previewText = item.content || (item.message_type === 'photo' ? 'Photo message' : (item.message_type === 'moment' ? 'Shared moment' : 'Message'));
 
-        itemEl.innerHTML = 
+        itemEl.innerHTML =
           '<div class="flex items-start justify-between gap-2 border-b border-zinc-900 pb-2">' +
             '<div>' +
               '<span class="text-[9px] text-amber-400 font-mono-tag font-bold uppercase tracking-wider block">DELETED MESSAGE</span>' +
@@ -12556,7 +13174,7 @@ async function sendChatMessageV2() {
     tempBubble = document.createElement('div');
     tempBubble.className = 'flex flex-col items-end space-y-1 transform translate-y-4 opacity-0 transition-all duration-300 ease-out';
     var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    tempBubble.innerHTML = 
+    tempBubble.innerHTML =
       '<div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
         '<p class="leading-relaxed">' + escapeHtml(text) + '</p>' +
         '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
@@ -12565,7 +13183,7 @@ async function sendChatMessageV2() {
         '</div>' +
       '</div>';
     container.appendChild(tempBubble);
-    
+
     // Trigger animation
     setTimeout(function() {
       if (tempBubble) {
@@ -12574,7 +13192,7 @@ async function sendChatMessageV2() {
         container.scrollTop = container.scrollHeight;
       }
     }, 10);
-    
+
     if (typeof playTactileFeedback === 'function') {
       playTactileFeedback('shutter');
     }
@@ -12686,7 +13304,7 @@ function openEditProfileModal() {
     }
     if (cityInp) cityInp.value = state.currentUser.location_city || state.currentUser.city || 'Supaul, Bihar';
     if (vibeInp) vibeInp.value = state.currentUser.vibe || 'Creator';
-    
+
     if (initsEl) {
       initsEl.style.display = 'none';
       initsEl.textContent = '';
@@ -12971,7 +13589,7 @@ async function loadConnectedFriends() {
   if (data && data.success && Array.isArray(data.friends)) {
     var friends = data.friends;
     if (friends.length === 0) {
-      container.innerHTML = 
+      container.innerHTML =
         '<div class="bg-zinc-950 border border-zinc-800/80 rounded-2xl p-6 text-center space-y-2">' +
           '<div class="text-2xl">👥</div>' +
           '<h3 class="text-xs font-bold text-white font-mono-tag uppercase">NO CONNECTED FRIENDS YET</h3>' +
@@ -12985,7 +13603,7 @@ async function loadConnectedFriends() {
     friends.forEach(function(f) {
       var item = document.createElement('div');
       item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-2xl p-3 flex items-center justify-between gap-3 shadow-md hover:border-zinc-700 transition';
-      
+
       var avatarSrc = (f.avatar_url && !f.avatar_url.includes('api.dicebear.com')) ? f.avatar_url : '';
       var name = escapeHtml(f.name || 'Student');
       var handle = escapeHtml(f.handle || 'user');
@@ -12994,7 +13612,7 @@ async function loadConnectedFriends() {
       var isOnline = (typeof isUserOnline === 'function') ? isUserOnline(f.last_active) : false;
       var statusDot = isOnline ? '<span class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" title="Online now"></span>' : '<span class="w-2 h-2 rounded-full bg-zinc-600" title="Offline"></span>';
 
-      item.innerHTML = 
+      item.innerHTML =
         '<div class="flex items-center gap-3 cursor-pointer" onclick="openUserProfile(\'' + f.id + '\')">' +
           '<div class="relative w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden flex-shrink-0 flex items-center justify-center">' +
             (avatarSrc ? '<img src="' + escapeHtml(avatarSrc) + '" class="w-full h-full object-cover" onerror="this.style.display=\047none\047">' : '') +
@@ -13390,7 +14008,7 @@ async function openMomentClusterModal(clusterId, momentId) {
 
   if (primaryEl && clusterData.primary_moment) {
     var pm = clusterData.primary_moment;
-    primaryEl.innerHTML = 
+    primaryEl.innerHTML =
       '<div class="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800 space-y-2">' +
         '<div class="flex items-center justify-between text-[10px] font-mono-tag">' +
           '<span class="text-amber-400 font-bold uppercase tracking-wider text-[9px]">PRIMARY MOMENT</span>' +
@@ -13417,7 +14035,7 @@ async function openMomentClusterModal(clusterId, momentId) {
 
         var card = document.createElement('div');
         card.className = 'p-3 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-2';
-        card.innerHTML = 
+        card.innerHTML =
           '<div class="flex items-center justify-between text-[10px] font-mono-tag">' +
             '<div class="flex items-center gap-1.5">' +
               '<div class="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center font-bold text-amber-400 text-[9px]">' + escapeHtml(persp.avatar_letter || 'K') + '</div>' +
@@ -13469,8 +14087,8 @@ window.closeMomentClusterModal = closeMomentClusterModal;
 
 async function handleClusterModalIWasThere() {
   var c = state.currentViewingCluster;
-  var momentId = (c && c.primary_moment && c.primary_moment.id) 
-    ? c.primary_moment.id 
+  var momentId = (c && c.primary_moment && c.primary_moment.id)
+    ? c.primary_moment.id
     : (c && (c.originator_moment_id || c.moment_id))
       ? (c.originator_moment_id || c.moment_id)
       : (state.activeClusterMomentId || '');
@@ -13513,7 +14131,7 @@ async function handleClusterModalIWasThere() {
       var attTextEl = document.getElementById('momentClusterAttendanceText');
       var finalCount = res.attendance_count || (c ? c.attendance_count : 1);
       if (attTextEl) attTextEl.textContent = finalCount + (finalCount === 1 ? ' person was there' : ' people were there');
-      
+
       var addBtn = document.getElementById('momentClusterAddPerspectiveBtn');
       var noticeEl = document.getElementById('momentClusterAttendanceNotice');
       if (addBtn) addBtn.style.display = 'flex';
@@ -13553,7 +14171,7 @@ async function handleIWasThereClick(momentId, openCaptureAfter) {
       showToast(res.message || 'Participation recorded! ✦');
       if (!state.attendedMoments) state.attendedMoments = new Set();
       state.attendedMoments.add(momentId);
-      
+
       if (openCaptureAfter) {
         closeMomentClusterModal();
         openPerspectiveCapture(res.cluster_id, (res.context && res.context.community_id) || '', (res.context && res.context.location) || '');
@@ -13694,7 +14312,7 @@ window.handleDeletePerspectiveMoment = handleDeletePerspectiveMoment;
   var isPulling = false;
   var viewport = document.getElementById('mainViewport');
   if (!viewport) return;
-  
+
   viewport.addEventListener('touchstart', function(e) {
     if (viewport.scrollTop <= 0) {
       pStartY = e.touches[0].clientY;
@@ -13727,7 +14345,7 @@ window.filterNotificationsView = function(type, button) {
   buttons.forEach(function(btn) {
     btn.className = "flex-none bg-zinc-950 text-zinc-400 border border-zinc-800 rounded-full px-4 py-1.5 text-[10.5px] font-bold hover:border-zinc-600 transition-all active:scale-95 filter-btn";
   });
-  
+
   if (button) {
     button.className = "flex-none bg-white text-black border border-white rounded-full px-4 py-1.5 text-[10.5px] font-bold shadow-md transition-all active:scale-95 filter-btn";
   }
@@ -13745,3 +14363,42 @@ window.filterNotificationsView = function(type, button) {
 window.requestContactsSync = function() {
   showToast("Contact syncing is currently in early access preview.");
 };
+
+// =====================================================================
+// CHAT PHOTO BFCACHE & LIFECYCLE LISTENERS
+// =====================================================================
+if (typeof window !== 'undefined' && !window._chatPhotoLifecycleBound) {
+  window._chatPhotoLifecycleBound = true;
+
+  window.addEventListener('pagehide', function(e) {
+    if (e && e.persisted) {
+      // Document entering BFCache: retain object URLs for back/forward restoration
+      return;
+    }
+    // Non-persisted pagehide: abort pending work and release/revoke eligible private Blob URLs
+    if (typeof ChatPhotoCache !== 'undefined') {
+      ChatPhotoCache.clearAll(true);
+    }
+  });
+
+  window.addEventListener('pageshow', function(e) {
+    if (typeof ChatPhotoCache !== 'undefined') {
+      ChatPhotoCache.checkUserOwnership();
+    }
+    if (e && e.persisted) {
+      // BFCache restore: reconcile DOM sources and close viewer if pointing to missing/revoked URL
+      var viewer = document.getElementById('chatPhotoViewer');
+      var viewerImg = document.getElementById('chatPhotoViewerImg');
+      if (viewer && !viewer.classList.contains('hidden')) {
+        var pinned = ChatPhotoCache.getStats().pinnedUrl;
+        if (!pinned || !viewerImg || !viewerImg.src) {
+          closeChatPhotoViewer();
+        }
+      }
+      var historyContainer = document.getElementById('chatMessageHistoryV2');
+      if (historyContainer && state.activeScreen === 'chat-conversation' && typeof hydrateChatPhotos === 'function') {
+        hydrateChatPhotos(historyContainer);
+      }
+    }
+  });
+}

@@ -2121,6 +2121,36 @@ def validate_media_url(value, field="url"):
     return value.strip()
 
 
+_CHAT_ATTACHMENT_URL_RE = re.compile(r"^/api/chat/attachments/att_[0-9a-f]{16}$")
+
+
+def is_safe_chat_media_url(url):
+    """Validate chat media URLs for the chat-send endpoint.
+    Permits:
+      - Valid same-origin chat attachment URLs: /api/chat/attachments/att_[0-9a-f]{16}
+      - Established https:// media URLs
+    Rejects:
+      - Empty, malformed, wrong-length or uppercase attachment IDs
+      - Extra path segments, query or fragment suffixes
+      - Arbitrary relative paths and traversal attempts
+      - Protocol-relative URLs and non-https schemes
+    """
+    if not isinstance(url, str):
+        return False
+    u = url.strip()
+    if not u:
+        return False
+    if _CHAT_ATTACHMENT_URL_RE.fullmatch(u):
+        return True
+    if u.startswith("https://"):
+        for ch in u:
+            code = ord(ch)
+            if code <= 0x20 or code == 0x7F or code in (34, 39, 60, 62, 92, 96):
+                return False
+        return True
+    return False
+
+
 # --- B2-SEC-16: stored post-media URL hardening ---------------------------
 # posts.main_img / posts.pip_img are interpolated into raw <img src> HTML
 # attributes by the client, so only proven media origins may be persisted:
@@ -15618,11 +15648,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
                 moment_id = body.get("moment_id")
                 media_url = body.get("media_url")
-                # SECURITY B-04: Validate media_url scheme — only https:// allowed
+                # Validate media_url: permitted https:// URLs and verified /api/chat/attachments/att_<id> URLs
                 if media_url:
                     media_url = str(media_url).strip()
-                    if not media_url.startswith("https://"):
-                        return self.send_json(400, {"error": "Invalid media_url: only https:// URLs are permitted", "success": False})
+                    if not is_safe_chat_media_url(media_url):
+                        return self.send_json(400, {"error": "Invalid media_url: only https:// URLs and verified /api/chat/attachments/att_<id> URLs are permitted", "success": False})
                 reply_to_id = body.get("reply_to_id") or body.get("replyToId")
 
                 if not content and not moment_id and not media_url:
