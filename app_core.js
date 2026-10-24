@@ -1041,6 +1041,11 @@ function switchScreenView(screenName) {
   var prevScreen = state.activeScreen;
   state.activeScreen = screenName;
 
+  // Leaving Search abandons any search still in flight for that screen.
+  if (prevScreen === 'search' && screenName !== 'search') {
+    _invalidatePendingSearch();
+  }
+
   if (prevScreen === 'chat-conversation' && screenName !== 'chat-conversation') {
     if (typeof closeChatPhotoViewer === 'function') {
       closeChatPhotoViewer();
@@ -1139,6 +1144,9 @@ function switchScreenView(screenName) {
   if (screenName === 'search') {
     if (!state.searchQuery) {
       _searchShowView('idle');
+    } else if (prevScreen !== 'search' && state.lastSearchResultsQuery !== state.searchQuery) {
+      // A search cancelled by leaving the screen resumes on return.
+      performSearch(state.searchQuery, state.searchCategory);
     }
     loadSearchDiscovery();
   } else if (screenName === 'chat-home') {
@@ -5888,11 +5896,15 @@ state.searchQuery = '';
 state.searchCategory = 'people'; // Strict 4 categories: 'people' | 'moments' | 'places' | 'communities'
 state.searchFocused = false;
 state.lastSearchResults = null;
+state.lastSearchResultsQuery = '';
 state.selectedRadarNode = null;
 
 var searchDebounceTimer = null;
 var searchAbortCtrl = null;
 var _recentSearchesCache = null;
+// Monotonic identity of the newest search. A request captures this token and
+// may only touch the UI while it still owns the current value.
+var _searchRequestToken = 0;
 
 // ── View helpers ──────────────────────────────────────────────────────
 function _searchShowView(viewName) {
@@ -5922,6 +5934,24 @@ function _searchShowView(viewName) {
   }
 }
 window._searchShowView = _searchShowView;
+
+// Stale-response guard: a newer search, a cleared query, a discovery reset or
+// leaving the Search screen supersedes whatever is still in flight. Aborting is
+// best-effort (apiRequest owns its timeout signal); the token is what ensures a
+// late response can never render, show an error or switch the category view.
+function _invalidatePendingSearch() {
+  _searchRequestToken += 1;
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+  if (searchAbortCtrl) {
+    try { searchAbortCtrl.abort(); } catch (e) {}
+    searchAbortCtrl = null;
+  }
+  return _searchRequestToken;
+}
+window._invalidatePendingSearch = _invalidatePendingSearch;
 
 // ── Category Navigation Pills (People, Moments, Places, Communities) ──
 function selectSearchCategory(cat) {
@@ -5988,6 +6018,7 @@ function handleSearchInput(event) {
   }
 
   if (!val) {
+    _invalidatePendingSearch();
     if (state.searchFocused) {
       _searchShowView('focused');
       loadRecentSearches();
@@ -6036,6 +6067,7 @@ function onSearchBlur() {
 window.onSearchBlur = onSearchBlur;
 
 function clearSearchInput() {
+  _invalidatePendingSearch();
   var input = document.getElementById('main-search-input');
   if (input) input.value = '';
   state.searchQuery = '';
@@ -6387,21 +6419,29 @@ async function performSearch(query, category) {
   category = category || state.searchCategory || 'people';
 
   if (!query || !query.trim()) {
+    _invalidatePendingSearch();
     _searchShowView('idle');
     loadSearchDiscovery();
     return;
   }
 
+  query = query.trim();
+  // Supersede older searches before this one becomes the visible request.
+  var requestCategory = state.searchCategory || category;
+  var requestToken = _invalidatePendingSearch();
   closeSearchActivitySheet();
   _searchShowView('loading');
 
-  if (searchAbortCtrl) {
-    try { searchAbortCtrl.abort(); } catch(e) {}
-  }
   searchAbortCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
 
-  var endpoint = '/api/search?q=' + encodeURIComponent(query.trim()) + '&type=all';
+  var endpoint = '/api/search?q=' + encodeURIComponent(query) + '&type=all';
   var data = await apiRequest(endpoint);
+
+  // Dropped silently: superseded by a newer search or navigation, or the query
+  // in the search box changed while this request was in flight (debounce gap).
+  if (requestToken !== _searchRequestToken) return;
+  var currentQuery = (state.searchQuery || '').trim();
+  if (currentQuery && currentQuery !== query) return;
 
   if (!data || !data.success) {
     _searchShowView('error');
@@ -6409,6 +6449,7 @@ async function performSearch(query, category) {
   }
 
   state.lastSearchResults = data;
+  state.lastSearchResultsQuery = query;
 
   var people = data.people || [];
   var moments = data.moments || [];
@@ -6433,9 +6474,15 @@ async function performSearch(query, category) {
     'communities': communities.length
   };
 
-  if (counts[category] > 0) {
-    selectSearchCategory(category);
-    _searchShowView(category);
+  // Honour a category chosen while this request was in flight; otherwise keep
+  // the category this request was asked for.
+  var viewCategory = (state.searchCategory && state.searchCategory !== requestCategory)
+    ? state.searchCategory
+    : category;
+
+  if (counts[viewCategory] > 0) {
+    selectSearchCategory(viewCategory);
+    _searchShowView(viewCategory);
   } else {
     var firstCategoryWithResults = ['people', 'moments', 'places', 'communities'].find(function(c) {
       return counts[c] > 0;
