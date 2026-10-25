@@ -48,6 +48,35 @@ function jsAttr(value) {
   );
 }
 
+// =====================================================================
+// FEED IMAGE DELIVERY (Cloudinary)
+// Feed cards display photos much smaller than the stored originals. Rewrite
+// only plain unsigned Cloudinary image-delivery URLs so the CDN returns an
+// f_auto/q_auto, width-bounded copy. Stored originals, camera payloads and
+// already-transformed or signed URLs are never touched.
+// =====================================================================
+var KANDID_FEED_MAIN_MAX_WIDTH = 1080;
+var KANDID_FEED_PIP_MAX_WIDTH = 360;
+
+function kandidCloudinaryFeedUrl(url, maxWidth) {
+  if (typeof url !== 'string' || url === '') return url || '';
+  if (!(maxWidth > 0)) return url;
+  var match = /^https:\/\/res\.cloudinary\.com\/([A-Za-z0-9_-]+)\/image\/upload\/(.+)$/.exec(url);
+  if (!match) return url;
+  var rest = match[2];
+  // Signed delivery URLs break if parameters are added.
+  if (/^s--[^/]+--\//.test(rest)) return url;
+  var firstSegment = rest.split('/')[0] || '';
+  var isVersion = /^v\d+$/.test(firstSegment);
+  // Transformation components look like c_fill,w_800 or q_auto. Keep any
+  // existing transformation (and therefore its crop/orientation) untouched.
+  var looksTransformed = firstSegment.indexOf(',') !== -1 ||
+    /^(?:a|ac|af|ar|b|bo|c|cd|co|cs|d|dl|dn|dpr|du|e|eo|ep|f|fl|fn|fps|g|h|if|ki|l|o|p|pg|q|r|so|sp|t|vc|vs|w|x|y|z)_/i.test(firstSegment);
+  if (!isVersion && looksTransformed) return url;
+  return 'https://res.cloudinary.com/' + match[1] + '/image/upload/' +
+    'c_limit,w_' + Math.floor(maxWidth) + ',f_auto,q_auto/' + rest;
+}
+
 function showToast(msg) {
   var t = document.getElementById('toastBanner');
   if (!t) return;
@@ -985,8 +1014,8 @@ function renderGlobalCards(moments, container) {
       }
     }
 
-    var mainImgSrc = m.main_img || m.mainImg || '';
-    var pipImgSrc = m.pip_img || m.pipImg || '';
+    var mainImgSrc = kandidCloudinaryFeedUrl(m.main_img || m.mainImg || '', KANDID_FEED_MAIN_MAX_WIDTH);
+    var pipImgSrc = kandidCloudinaryFeedUrl(m.pip_img || m.pipImg || '', KANDID_FEED_PIP_MAX_WIDTH);
 
     card.innerHTML =
       '<div class="w-full aspect-[4/5] bg-black rounded-xl relative overflow-hidden border border-zinc-800 shadow-inner group select-none moment-viewport-stage cursor-pointer">' +
@@ -1563,8 +1592,8 @@ function renderCommunityCards(moments, container, mode) {
 
     var avatarLetter = (m.author_name || authorHandle).substring(0, 2).toUpperCase();
 
-    var mainImgSrc = m.main_img || m.mainImg || '';
-    var pipImgSrc = m.pip_img || m.pipImg || '';
+    var mainImgSrc = kandidCloudinaryFeedUrl(m.main_img || m.mainImg || '', KANDID_FEED_MAIN_MAX_WIDTH);
+    var pipImgSrc = kandidCloudinaryFeedUrl(m.pip_img || m.pipImg || '', KANDID_FEED_PIP_MAX_WIDTH);
 
     // Authoritative Community Moment Evaluation
     var isPrivatePost = Boolean(m.is_private);
@@ -3990,8 +4019,8 @@ function renderFeedCards(moments, container) {
       }
     }
 
-    var mainImgSrc = m.main_img || m.mainImg || '';
-    var pipImgSrc = m.pip_img || m.pipImg || '';
+    var mainImgSrc = kandidCloudinaryFeedUrl(m.main_img || m.mainImg || '', KANDID_FEED_MAIN_MAX_WIDTH);
+    var pipImgSrc = kandidCloudinaryFeedUrl(m.pip_img || m.pipImg || '', KANDID_FEED_PIP_MAX_WIDTH);
 
     var audioUrl = m.audio_url || m.audioData || '';
     var audioPlayerBarHtml = audioUrl ?
@@ -4123,11 +4152,17 @@ function attachCardInteractions(card, momentData) {
   }
 
   if (pip && mainImg && pipImg) {
+    // Delivery URLs are width-bounded per role, so swapping the two <img> src
+    // values directly would show the 360px PiP transform full-stage. Rebuild
+    // each role from the unmodified moment URLs instead.
+    var rawMainSrc = momentData.main_img || momentData.mainImg || '';
+    var rawPipSrc = momentData.pip_img || momentData.pipImg || '';
+    var opticsSwapped = false;
     pip.addEventListener('click', function(e) {
       e.stopPropagation();
-      var tmp = mainImg.src;
-      mainImg.src = pipImg.src;
-      pipImg.src = tmp;
+      opticsSwapped = !opticsSwapped;
+      mainImg.src = kandidCloudinaryFeedUrl(opticsSwapped ? rawPipSrc : rawMainSrc, KANDID_FEED_MAIN_MAX_WIDTH);
+      pipImg.src = kandidCloudinaryFeedUrl(opticsSwapped ? rawMainSrc : rawPipSrc, KANDID_FEED_PIP_MAX_WIDTH);
     });
   }
 
@@ -4672,6 +4707,49 @@ async function kandidSerializeCanvasJpeg(canvas, quality) {
   try { return canvas.toDataURL('image/jpeg', quality); } catch(e) { return ''; }
 }
 
+// ---------------------------------------------------------------------
+// BOUNDED DUAL-CAMERA CAPTURE FRAMES
+// The live preview requests up to 2560x1440, but feed cards never display
+// frames at that size. Bound every captured frame to 1080x1440 (a maximum box,
+// not a forced aspect ratio) before JPEG encoding, preserving source aspect,
+// orientation, mirroring and the existing 0.98 quality. Smaller sources are
+// never upscaled.
+// ---------------------------------------------------------------------
+var KANDID_CAPTURE_MAX_WIDTH = 1080;
+var KANDID_CAPTURE_MAX_HEIGHT = 1440;
+
+function kandidBoundCaptureSize(srcWidth, srcHeight, maxWidth, maxHeight) {
+  var w = Number(srcWidth) || 0;
+  var h = Number(srcHeight) || 0;
+  var limitW = Number(maxWidth) > 0 ? Number(maxWidth) : KANDID_CAPTURE_MAX_WIDTH;
+  var limitH = Number(maxHeight) > 0 ? Number(maxHeight) : KANDID_CAPTURE_MAX_HEIGHT;
+  if (w <= 0 || h <= 0) return { width: 0, height: 0 };
+  var scale = Math.min(1, limitW / w, limitH / h);
+  return {
+    width: Math.max(1, Math.round(w * scale)),
+    height: Math.max(1, Math.round(h * scale))
+  };
+}
+
+// Draw the current video frame into a bounded canvas. Mirrored selfies keep the
+// exact translate/scale(-1, 1) treatment the inline capture code used.
+function kandidDrawVideoFrame(video, mirrored, maxWidth, maxHeight) {
+  if (!video || !video.videoWidth || !video.videoHeight) return null;
+  var size = kandidBoundCaptureSize(video.videoWidth, video.videoHeight, maxWidth, maxHeight);
+  if (!size.width || !size.height) return null;
+  var canvas = document.createElement('canvas');
+  canvas.width = size.width;
+  canvas.height = size.height;
+  var ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  if (mirrored) {
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
 // =====================================================================
 // KANDID DUAL-CAMERA ARCHITECTURE ENGINE (SPECIFICATION V1.0)
 // =====================================================================
@@ -5007,18 +5085,13 @@ const KandidCameraEngine = {
     }
     if (navigator.vibrate) try { navigator.vibrate(45); } catch(e){}
 
-    var firstCanvas = document.createElement('canvas');
+    var firstCanvas = null;
     var firstFrameData = '';
     if (mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0) {
-      firstCanvas.width = mainVideo.videoWidth;
-      firstCanvas.height = mainVideo.videoHeight;
-      var fctx1 = firstCanvas.getContext('2d');
-      if (startFacing === 'user') {
-        fctx1.translate(firstCanvas.width, 0);
-        fctx1.scale(-1, 1);
+      firstCanvas = kandidDrawVideoFrame(mainVideo, startFacing === 'user');
+      if (firstCanvas) {
+        firstFrameData = await kandidSerializeCanvasJpeg(firstCanvas, 0.98);
       }
-      fctx1.drawImage(mainVideo, 0, 0, firstCanvas.width, firstCanvas.height);
-      firstFrameData = await kandidSerializeCanvasJpeg(firstCanvas, 0.98);
     }
 
     if (startFacing === 'user') {
@@ -5093,18 +5166,13 @@ const KandidCameraEngine = {
     }
     if (navigator.vibrate) try { navigator.vibrate(40); } catch(e){}
 
-    var secondCanvas = document.createElement('canvas');
+    var secondCanvas = null;
     var secondFrameData = '';
     if (mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0) {
-      secondCanvas.width = mainVideo.videoWidth;
-      secondCanvas.height = mainVideo.videoHeight;
-      var fctx2 = secondCanvas.getContext('2d');
-      if (nextFacing === 'user') {
-        fctx2.translate(secondCanvas.width, 0);
-        fctx2.scale(-1, 1);
+      secondCanvas = kandidDrawVideoFrame(mainVideo, nextFacing === 'user');
+      if (secondCanvas) {
+        secondFrameData = await kandidSerializeCanvasJpeg(secondCanvas, 0.98);
       }
-      fctx2.drawImage(mainVideo, 0, 0, secondCanvas.width, secondCanvas.height);
-      secondFrameData = await kandidSerializeCanvasJpeg(secondCanvas, 0.98);
     }
 
     if (nextFacing === 'user') {
