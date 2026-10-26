@@ -3631,6 +3631,7 @@ def init_db():
         sender_id TEXT NOT NULL,
         receiver_id TEXT NOT NULL,
         content TEXT NOT NULL,
+        random_id TEXT DEFAULT NULL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
@@ -3999,6 +4000,7 @@ def init_db():
         ("ciphertext", "TEXT DEFAULT NULL"),
         ("iv", "TEXT DEFAULT NULL"),
         ("reply_to_id", "TEXT DEFAULT NULL"),
+        ("random_id", "TEXT DEFAULT NULL"),
         ("is_encrypted", "INTEGER DEFAULT 1"),
         ("sender_state", "TEXT DEFAULT 'active'"),
         ("receiver_state", "TEXT DEFAULT 'active'"),
@@ -4011,6 +4013,12 @@ def init_db():
                 cursor.execute(f"ALTER TABLE messages ADD COLUMN {col} {col_type}")
             except Exception:
                 pass
+
+    # Client-assigned message idempotency key. The partial unique index makes
+    # concurrent retries collapse to one row; NULL remains allowed for legacy
+    # clients and for historical messages created before this migration.
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_random_id ON messages(random_id)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_sender_random_id ON messages(sender_id, random_id) WHERE random_id IS NOT NULL")
 
     # Seed Default Collective Memories
     cursor.execute("SELECT COUNT(*) FROM collective_memories")
@@ -10033,13 +10041,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(403, {"success": False, "error": "Blocked", "messages": []})
 
-            # Mark incoming messages sent by partner as read
-            now_iso = datetime.now().isoformat()
-            cursor.execute("""
-                UPDATE messages SET read_at = ?
-                WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
-            """, (now_iso, resolved_partner_id, user_id))
-            conn.commit()
+            # Read receipts are intentionally NOT written here. A history fetch
+            # can be triggered by a background poll while the conversation is not
+            # visible; marking read on GET made "seen" receipts inaccurate. The
+            # client calls POST /api/chat/read only while the thread is open,
+            # focused and visible.
 
             # Cursor pagination: `limit` (default 50) and optional `before_id` (older cursor).
             try:
@@ -15623,6 +15629,74 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True})
 
+        if path == "/api/chat/read":
+            conn = None
+            try:
+                user = get_current_user(self.headers, body, require_session=True)
+                if not user:
+                    return self.send_json(401, {"error": "Authentication required", "success": False})
+                user_id = user["id"]
+                raw_partner = body.get("partner_id") or body.get("chat_id") or body.get("receiver_id")
+                if not raw_partner:
+                    return self.send_json(400, {"error": "partner_id is required", "success": False})
+                max_message_id = str(body.get("max_message_id") or "").strip()
+
+                conn = get_db()
+                partner_id = resolve_user_id(str(raw_partner), conn) or str(raw_partner)
+                if partner_id == user_id:
+                    return self.send_json(400, {"error": "Cannot mark a conversation with yourself as read", "success": False})
+
+                blocked_row = conn.execute("""
+                    SELECT 1 FROM blocks
+                    WHERE (user_id = ? AND blocked_user_id = ?)
+                       OR (user_id = ? AND blocked_user_id = ?)
+                    LIMIT 1
+                """, (user_id, partner_id, partner_id, user_id)).fetchone()
+                if blocked_row:
+                    return self.send_json(403, {"error": "Blocked", "success": False})
+
+                now_iso = datetime.now().isoformat()
+                if max_message_id:
+                    # The cursor must belong to this exact inbound conversation.
+                    cursor_row = conn.execute("""
+                        SELECT created_at, id FROM messages
+                        WHERE id = ? AND sender_id = ? AND receiver_id = ?
+                    """, (max_message_id, partner_id, user_id)).fetchone()
+                    if not cursor_row:
+                        return self.send_json(400, {"error": "Invalid max_message_id for this conversation", "success": False})
+                    updated = conn.execute("""
+                        UPDATE messages SET read_at = ?
+                        WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
+                          AND (created_at < ? OR (created_at = ? AND id <= ?))
+                    """, (now_iso, partner_id, user_id, cursor_row["created_at"], cursor_row["created_at"], max_message_id)).rowcount
+                else:
+                    updated = conn.execute("""
+                        UPDATE messages SET read_at = ?
+                        WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
+                    """, (now_iso, partner_id, user_id)).rowcount
+
+                conn.commit()
+                return self.send_json(200, {
+                    "success": True,
+                    "partner_id": partner_id,
+                    "updated": int(updated or 0),
+                    "read_at": now_iso
+                })
+            except Exception as e:
+                print("Error marking chat read:", e)
+                if conn is not None:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                return self.send_json(500, {"error": "Internal server error while marking chat read", "success": False})
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
         if path == "/api/chat/send":
             try:
                 user = get_current_user(self.headers, body, require_session=True)
@@ -15654,6 +15728,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     if not is_safe_chat_media_url(media_url):
                         return self.send_json(400, {"error": "Invalid media_url: only https:// URLs and verified /api/chat/attachments/att_<id> URLs are permitted", "success": False})
                 reply_to_id = body.get("reply_to_id") or body.get("replyToId")
+                random_id = str(body.get("random_id") or "").strip() or None
+                if random_id and (len(random_id) > 128 or not re.match(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$", random_id)):
+                    return self.send_json(400, {"error": "Invalid random_id", "success": False})
 
                 if not content and not moment_id and not media_url:
                     return self.send_json(400, {"error": "Message content cannot be empty", "success": False})
@@ -15715,6 +15792,49 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (_pair_key,))
                     except Exception:
                         pass
+
+                # Client-assigned idempotency: a network retry must return the
+                # original row without consuming the non-connected 3-message
+                # allowance or creating a duplicate.
+                if random_id:
+                    _dup = conn.execute("""
+                        SELECT id, sender_id, receiver_id, content, created_at, read_at,
+                               message_type, moment_id, media_url, reply_to_id, random_id
+                        FROM messages
+                        WHERE random_id = ? AND sender_id = ?
+                        LIMIT 1
+                    """, (random_id, sender_id)).fetchone()
+                    if _dup:
+                        _dup_dict = dict(_dup)
+                        if str(_dup_dict.get("receiver_id")) != str(receiver_id):
+                            try:
+                                conn.execute("ROLLBACK")
+                            except Exception:
+                                pass
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+                            conn.close()
+                            return self.send_json(409, {
+                                "error": "random_id is already used for another conversation",
+                                "success": False,
+                                "code": "RANDOM_ID_CONFLICT"
+                            })
+                        try:
+                            conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        conn.close()
+                        return self.send_json(200, {
+                            "success": True,
+                            "deduplicated": True,
+                            "message": _dup_dict
+                        })
 
                 # Check blocks
                 blocked_row = conn.execute("""
@@ -15831,10 +15951,39 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
                 msg_id = "m_" + secrets.token_hex(6)
                 created = datetime.now().isoformat()
-                conn.execute("""
-                    INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id)
-                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
-                """, (msg_id, sender_id, receiver_id, content, created, msg_type, moment_id, media_url, reply_to_id))
+                try:
+                    conn.execute("""
+                        INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id, random_id)
+                        VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+                    """, (msg_id, sender_id, receiver_id, content, created, msg_type, moment_id, media_url, reply_to_id, random_id))
+                except Exception as _insert_err:
+                    # A concurrent retry can win the partial unique index race.
+                    # Roll back and return the row that won instead of a 500.
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    if random_id:
+                        _dup = conn.execute("""
+                            SELECT id, sender_id, receiver_id, content, created_at, read_at,
+                                   message_type, moment_id, media_url, reply_to_id, random_id
+                            FROM messages
+                            WHERE random_id = ? AND sender_id = ?
+                            LIMIT 1
+                        """, (random_id, sender_id)).fetchone()
+                        if _dup:
+                            _dup_dict = dict(_dup)
+                            conn.close()
+                            return self.send_json(200, {
+                                "success": True,
+                                "deduplicated": True,
+                                "message": _dup_dict
+                            })
+                    raise
                 
                 # Update last_active for sender
                 conn.execute("UPDATE users SET last_active = ? WHERE id = ?", (created, sender_id))
@@ -15867,7 +16016,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         "message_type": msg_type,
                         "moment_id": moment_id,
                         "media_url": media_url,
-                        "reply_to_id": reply_to_id
+                        "reply_to_id": reply_to_id,
+                        "random_id": random_id
                     }
                 })
             except Exception as e:
