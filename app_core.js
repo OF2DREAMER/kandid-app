@@ -11008,6 +11008,10 @@ function logoutUser() {
   localStorage.removeItem('kandid_user');
   localStorage.removeItem('kandid_active_uid');
   localStorage.removeItem('kandid_cached_chat_conversations');
+  clearChatCachesForUser();
+  state.chatPendingSends = {};
+  state.chatLastReadReceipt = null;
+  state.chatReadInFlight = null;
   state.token = null;
   state.currentUser = null;
   showToast('Logged out successfully. Redirecting...');
@@ -11503,6 +11507,186 @@ window.markAllNotificationsRead = markAllNotificationsRead;
 // =====================================================================
 state.activeChatUser = null;
 state.chatSyncInterval = null;
+state.chatPendingSends = state.chatPendingSends || {};
+state.chatReadInFlight = null;
+state.chatLastReadReceipt = null;
+state.chatLoadToken = 0;
+
+var CHAT_CACHE_PREFIX = 'kandid_chat_cache_v1_';
+var CHAT_CACHE_LIMIT = 50;
+
+function chatCacheKeyFor(myUid, partnerId) {
+  return CHAT_CACHE_PREFIX + encodeURIComponent(String(myUid || '').toLowerCase()) + '_' + encodeURIComponent(String(partnerId || '').toLowerCase());
+}
+
+function chatCacheStorageKey(partnerId) {
+  return chatCacheKeyFor(getActiveUserId(), partnerId);
+}
+
+function readChatCache(partnerId) {
+  try {
+    var raw = localStorage.getItem(chatCacheStorageKey(partnerId));
+    if (!raw) return [];
+    var parsed = JSON.parse(raw);
+    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.messages)) return [];
+    return parsed.messages.filter(function(m) {
+      return m && typeof m === 'object' && m.id;
+    }).slice(-CHAT_CACHE_LIMIT);
+  } catch(e) {
+    return [];
+  }
+}
+
+function writeChatCache(partnerId, messages) {
+  try {
+    var key = chatCacheStorageKey(partnerId);
+    if (!Array.isArray(messages) || !messages.length) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, JSON.stringify({
+      v: 1,
+      saved_at: new Date().toISOString(),
+      messages: messages.slice(-CHAT_CACHE_LIMIT)
+    }));
+  } catch(e) {}
+}
+
+function clearChatCachesForUser() {
+  try {
+    var keys = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf(CHAT_CACHE_PREFIX) === 0) keys.push(k);
+    }
+    keys.forEach(function(k) { localStorage.removeItem(k); });
+  } catch(e) {}
+}
+
+function normalizeChatTimestamp(createdAtStr) {
+  var v = createdAtStr || '';
+  if (v && !v.endsWith('Z') && v.indexOf('+') === -1 && v.lastIndexOf('-') <= 10) {
+    v += 'Z';
+  }
+  return v;
+}
+
+function getChatDateGroupLabel(createdAtStr) {
+  var dateStr = 'TODAY';
+  if (createdAtStr) {
+    var d = new Date(createdAtStr);
+    if (!isNaN(d.getTime())) {
+      var now = new Date();
+      if (d.toDateString() === now.toDateString()) {
+        dateStr = 'TODAY';
+      } else {
+        dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+      }
+    }
+  }
+  return dateStr;
+}
+
+function chatMessageVisualSignature(m) {
+  if (!m) return '';
+  var reactions = (m.reactions || []).map(function(r) {
+    return String(r.emoji || '') + ':' + String(r.user_id || '');
+  }).join(',');
+  var reply = m.reply_to ? String(m.reply_to.content || '') : '';
+  return [
+    String(m.id || ''),
+    String(m.created_at || ''),
+    m.read_at ? '1' : '0',
+    String(m.content || ''),
+    String(m.message_type || ''),
+    String(m.media_url || ''),
+    String(m.moment_id || ''),
+    String(m.reply_to_id || ''),
+    reply,
+    reactions
+  ].join('|');
+}
+
+function chatMessagesSignature(messages) {
+  return JSON.stringify((messages || []).map(function(m) {
+    return [String(m.id || ''), m.read_at ? '1' : '0', (m.reactions || []).length].join('_');
+  }));
+}
+
+// Returns the number of cached messages that fell out before a shared suffix
+// matches the start of the fresh page, or -1 when the two pages are not a
+// safe append-only overlap.
+function chatCacheOverlapLength(cached, fresh) {
+  if (!Array.isArray(cached) || !Array.isArray(fresh) || !cached.length || !fresh.length) return -1;
+  for (var start = 0; start < cached.length; start++) {
+    var count = cached.length - start;
+    if (count > fresh.length) continue;
+    var ok = true;
+    for (var j = 0; j < count; j++) {
+      if (String(cached[start + j].id || '') !== String(fresh[j].id || '') ||
+          chatMessageVisualSignature(cached[start + j]) !== chatMessageVisualSignature(fresh[j])) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return start;
+  }
+  return -1;
+}
+
+function scrollChatToBottom(container) {
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
+function restorePendingChatBubbles(container) {
+  if (!container || !state.chatPendingSends) return;
+  Object.keys(state.chatPendingSends).forEach(function(randomId) {
+    var pending = state.chatPendingSends[randomId];
+    if (!pending || String(pending.receiverId) !== String(state.activeChatUser)) return;
+    if (container.querySelector('[data-random-id="' + randomId + '"]')) return;
+    if (pending.bubble) container.appendChild(pending.bubble);
+  });
+}
+
+function pruneEmptyChatDateDividers(container) {
+  if (!container) return;
+  var children = Array.prototype.slice.call(container.children);
+  children.forEach(function(child) {
+    if (child.dataset && child.dataset.msgId) return;
+    if (!child.className || String(child.className).indexOf('text-center my-2.5') === -1) return;
+    var cursor = child.nextElementSibling;
+    var hasMessage = false;
+    while (cursor) {
+      if (cursor.dataset && cursor.dataset.msgId) { hasMessage = true; break; }
+      if (cursor.className && String(cursor.className).indexOf('text-center my-2.5') !== -1) break;
+      cursor = cursor.nextElementSibling;
+    }
+    if (!hasMessage) child.remove();
+  });
+}
+
+function appendFreshChatMessages(container, cached, fresh) {
+  if (!container || !Array.isArray(cached) || !cached.length || !Array.isArray(fresh) || !fresh.length) return false;
+  var dropped = chatCacheOverlapLength(cached, fresh);
+  if (dropped < 0) return false;
+
+  cached.slice(0, dropped).forEach(function(m) {
+    var node = container.querySelector('[data-msg-id="' + String(m.id).replace(/"/g, '\\"') + '"]');
+    if (node) node.remove();
+  });
+  pruneEmptyChatDateDividers(container);
+
+  var overlapCount = cached.length - dropped;
+  var added = fresh.slice(overlapCount).filter(function(m) {
+    return !container.querySelector('[data-msg-id="' + String(m.id).replace(/"/g, '\\"') + '"]');
+  });
+  if (added.length) {
+    var lastKept = cached[cached.length - 1];
+    var lastLabel = getChatDateGroupLabel(normalizeChatTimestamp(lastKept && lastKept.created_at));
+    renderChatMessages(container, added, { append: true, lastDateGroup: lastLabel });
+  }
+  return true;
+}
 
 function isUserOnline(lastActive) {
   if (!lastActive) return false;
@@ -12010,7 +12194,9 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
       img.removeAttribute('data-blob-url');
     });
     delete historyContainer.dataset.msgSig;
-    historyContainer.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+    // loadChatMessages() paints the local cache (or the loading state) in the
+    // same synchronous turn, so do not flash a spinner for cached threads.
+    historyContainer.innerHTML = '';
   }
   if (typeof ChatPhotoCache !== 'undefined') {
     ChatPhotoCache.clearAll(false);
@@ -12611,27 +12797,53 @@ async function loadChatMessages(userId, isSilent = false) {
   var container = document.getElementById('chatMessageHistoryV2');
   if (!container) return;
 
-  // Reset the older-history cache when opening a different conversation.
-  var isNewConversation = (state.chatOlderForUser !== userId);
+  var loadToken = (state.chatLoadToken || 0) + 1;
+  state.chatLoadToken = loadToken;
+
+  // Reset the older-history cache when opening a different conversation, or
+  // when the thread container was cleared before a re-open.
+  var needsCacheHydration = !isSilent && (!container.children.length || container.innerText.includes('LOADING'));
+  var isNewConversation = (state.chatOlderForUser !== userId) || needsCacheHydration;
+  var cachedMessages = [];
   if (isNewConversation) {
     state.chatOlderForUser = userId;
     state.chatOlderMessages = [];
     state.chatHasMore = true;
     state.chatOldestId = null;
     state.chatOlderLoading = false;
+    state.chatLastReadReceipt = null;
     delete container.dataset.msgSig;
+
+    cachedMessages = readChatCache(userId);
+    state.chatLoadedMessages = cachedMessages.length ? cachedMessages : [];
+    state.chatMyId = String(getActiveUserId() || '').toLowerCase();
+    state.chatPartnerId = String(userId || '').toLowerCase();
+
     if (!isSilent) {
-      container.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+      if (cachedMessages.length) {
+        // Local-first: paint the last known conversation synchronously, then
+        // reconcile with the server page without showing a loading spinner.
+        state.chatOldestId = cachedMessages[0].id;
+        state.chatHasMore = false;
+        container.innerHTML = '';
+        renderChatMessages(container, cachedMessages);
+        container.dataset.msgSig = chatMessagesSignature(cachedMessages);
+        scrollChatToBottom(container);
+      } else {
+        container.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+      }
     }
   } else if (!isSilent && (!container.children.length || container.innerText.includes('LOADING'))) {
       container.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
   }
 
+  var priorMessages = state.chatLoadedMessages || [];
   var myUid = getActiveUserId();
   var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid) + '&limit=50');
 
-  // Guard against race conditions when switching conversations quickly
-  if (state.activeChatUser !== userId) {
+  // Guard against race conditions when switching conversations or when a newer
+  // load (for example the 2.5s silent refresh) has already superseded this one.
+  if (state.activeChatUser !== userId || state.chatLoadToken !== loadToken) {
     return;
   }
 
@@ -12641,12 +12853,10 @@ async function loadChatMessages(userId, isSilent = false) {
     }
     state.chatLoadedMessages = data.messages;
 
-    // Build signature to check if DOM needs re-rendering
-    var msgSignature = JSON.stringify(data.messages.map(function(m){
-      var rxCnt = (m.reactions || []).length;
-      return m.id + '_' + (m.read_at ? '1' : '0') + '_' + rxCnt;
-    }));
+    var msgSignature = chatMessagesSignature(data.messages);
     if (isSilent && container.dataset.msgSig === msgSignature) {
+        restorePendingChatBubbles(container);
+        markActiveChatRead(userId, data.messages);
         return;
     }
     container.dataset.msgSig = msgSignature;
@@ -12659,6 +12869,8 @@ async function loadChatMessages(userId, isSilent = false) {
           '<p class="text-[10px] text-zinc-500 font-mono-tag">Messages are private & encrypted in transit.</p>' +
         '</div>';
       state.chatHasMore = false;
+      writeChatCache(userId, []);
+      markActiveChatRead(userId, data.messages);
       return;
     }
 
@@ -12678,57 +12890,125 @@ async function loadChatMessages(userId, isSilent = false) {
     var wasNearBottom = isNewConversation || ((container.scrollHeight - container.scrollTop - container.clientHeight) < 80);
     var prevScrollTop = container.scrollTop;
 
-    renderChatMessages(container, allMessages);
+    var appended = false;
+    if (priorMessages.length && container.children.length && !state.chatOlderMessages.length) {
+      appended = appendFreshChatMessages(container, priorMessages, data.messages);
+    }
+    if (!appended) {
+      renderChatMessages(container, allMessages);
+    }
+    restorePendingChatBubbles(container);
 
     if (wasNearBottom) {
       container.scrollTop = container.scrollHeight;
     } else {
       container.scrollTop = prevScrollTop;
     }
+
+    writeChatCache(userId, data.messages);
+    markActiveChatRead(userId, data.messages);
   }
 }
 window.loadChatMessages = loadChatMessages;
+
+// Read receipts are sent only while this exact thread is open, focused and
+// visible. The server no longer marks messages read as a side effect of GET.
+async function markActiveChatRead(partnerId, messages) {
+  if (!partnerId) return;
+  if (state.activeScreen !== 'chat-conversation') return;
+  if (String(state.activeChatUser) !== String(partnerId)) return;
+  if (document.hidden) return;
+  if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+
+  var myId = String(state.chatMyId || getActiveUserId() || '').toLowerCase();
+  var maxIncoming = null;
+  (messages || []).forEach(function(m) {
+    if (String(m.sender_id || '').toLowerCase() === myId) return;
+    if (m.read_at) return;
+    maxIncoming = m;
+  });
+  if (!maxIncoming) return;
+
+  var key = String(partnerId) + '|' + String(maxIncoming.id);
+  if (state.chatLastReadReceipt === key || state.chatReadInFlight === key) return;
+  state.chatReadInFlight = key;
+  try {
+    var res = await apiRequest('/api/chat/read', {
+      method: 'POST',
+      body: JSON.stringify({ partner_id: partnerId, max_message_id: maxIncoming.id })
+    });
+    if (!res || !res.success) return;
+    if (String(state.activeChatUser) !== String(partnerId)) return;
+
+    var readAt = res.read_at || new Date().toISOString();
+    var changed = false;
+    var loaded = state.chatLoadedMessages || [];
+    var cutoffIndex = -1;
+    for (var ri = 0; ri < loaded.length; ri++) {
+      if (String(loaded[ri].id) === String(maxIncoming.id)) { cutoffIndex = ri; break; }
+    }
+    if (cutoffIndex >= 0) {
+      for (var rj = 0; rj <= cutoffIndex; rj++) {
+        var rm = loaded[rj];
+        if (String(rm.sender_id || '').toLowerCase() !== myId && !rm.read_at) {
+          rm.read_at = readAt;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      writeChatCache(partnerId, state.chatLoadedMessages || []);
+      var container = document.getElementById('chatMessageHistoryV2');
+      if (container) container.dataset.msgSig = chatMessagesSignature(state.chatLoadedMessages || []);
+    }
+    state.chatLastReadReceipt = key;
+    if (typeof checkChatUnreadBadge === 'function') checkChatUnreadBadge();
+  } catch(e) {
+    console.warn('[Chat] read receipt failed', e);
+  } finally {
+    if (state.chatReadInFlight === key) state.chatReadInFlight = null;
+  }
+}
+
+function maybeMarkActiveChatRead() {
+  if (document.hidden || state.activeScreen !== 'chat-conversation' || !state.activeChatUser) return;
+  if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+  markActiveChatRead(state.activeChatUser, state.chatLoadedMessages || []);
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden) maybeMarkActiveChatRead();
+});
+window.addEventListener('focus', maybeMarkActiveChatRead);
 
 // Renders a chronological (oldest -> newest) list of chat messages into the container.
 function renderChatMessages(container, messages) {
     var myId = state.chatMyId;
     var activePartnerId = state.chatPartnerId;
+    var options = arguments[2] || {};
+    var appendMode = !!options.append;
 
-    // Detach and release outgoing attachment images
-    var outgoingImgs = container.querySelectorAll('img.chat-attachment-img[data-media-url]');
-    outgoingImgs.forEach(function(img) {
-      var rawUrl = img.dataset.mediaUrl;
-      if (rawUrl && typeof ChatPhotoCache !== 'undefined') {
-        ChatPhotoCache.releaseConsumer(rawUrl);
-      }
-      img.removeAttribute('src');
-      img.removeAttribute('data-blob-url');
-    });
+    if (!appendMode) {
+      // Detach and release outgoing attachment images
+      var outgoingImgs = container.querySelectorAll('img.chat-attachment-img[data-media-url]');
+      outgoingImgs.forEach(function(img) {
+        var rawUrl = img.dataset.mediaUrl;
+        if (rawUrl && typeof ChatPhotoCache !== 'undefined') {
+          ChatPhotoCache.releaseConsumer(rawUrl);
+        }
+        img.removeAttribute('src');
+        img.removeAttribute('data-blob-url');
+      });
 
-    container.innerHTML = '';
-    var lastDateGroup = null;
+      container.innerHTML = '';
+    }
+    var lastDateGroup = appendMode ? (options.lastDateGroup || null) : null;
     messages.forEach(function(m) {
       var senderId = String(m.sender_id || '').toLowerCase();
       var isMe = (senderId === myId) || (senderId !== activePartnerId);
 
-      var createdAtStr = m.created_at || '';
-      if (createdAtStr && !createdAtStr.endsWith('Z') && createdAtStr.indexOf('+') === -1 && createdAtStr.lastIndexOf('-') <= 10) {
-        createdAtStr += 'Z';
-      }
-
-      // Date divider
-      var dateStr = 'TODAY';
-      if (createdAtStr) {
-        var d = new Date(createdAtStr);
-        if (!isNaN(d.getTime())) {
-          var now = new Date();
-          if (d.toDateString() === now.toDateString()) {
-            dateStr = 'TODAY';
-          } else {
-            dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
-          }
-        }
-      }
+      var createdAtStr = normalizeChatTimestamp(m.created_at || '');
+      var dateStr = getChatDateGroupLabel(createdAtStr);
 
       if (dateStr !== lastDateGroup) {
         lastDateGroup = dateStr;
@@ -13196,6 +13476,136 @@ function openCameraForActiveChat() {
 }
 window.openCameraForActiveChat = openCameraForActiveChat;
 
+var _chatRandomSequence = 0;
+
+function createChatRandomId() {
+  _chatRandomSequence = (_chatRandomSequence + 1) % 1000000;
+  return 'msg_rand_' + Date.now() + '_' + _chatRandomSequence.toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+function buildChatSendPayload(randomId, receiverId, text, replyId) {
+  var myUid = getActiveUserId();
+  return {
+    senderId: myUid,
+    sender_id: myUid,
+    receiverId: receiverId,
+    receiver_id: receiverId,
+    content: text,
+    reply_to_id: replyId,
+    message_type: 'text',
+    random_id: randomId
+  };
+}
+
+function setChatBubbleStatus(bubble, status) {
+  if (!bubble) return;
+  var el = bubble.querySelector('[data-chat-status]');
+  if (!el) return;
+  if (status === 'sending') {
+    el.dataset.chatStatus = 'clock';
+    el.textContent = '⏱';
+    el.title = 'Sending';
+    el.className = 'text-[10px] text-black/60 font-bold ml-1 font-mono-tag';
+    el.onclick = null;
+  } else if (status === 'sent') {
+    el.dataset.chatStatus = 'sent';
+    el.textContent = '✓';
+    el.title = 'Sent';
+    el.className = 'text-[9px] text-black/60 font-bold ml-1 font-mono-tag';
+    el.onclick = null;
+  } else if (status === 'failed') {
+    el.dataset.chatStatus = 'failed';
+    el.textContent = '!';
+    el.title = 'Failed. Tap to retry.';
+    el.className = 'text-[10px] text-red-700 font-bold ml-1 font-mono-tag cursor-pointer';
+    el.onclick = function(e) {
+      if (e) e.stopPropagation();
+      retryChatSend(bubble.dataset.randomId);
+    };
+  }
+}
+
+function createOptimisticChatBubble(text, randomId) {
+  var bubble = document.createElement('div');
+  bubble.className = 'flex flex-col items-end space-y-1 transform translate-y-4 opacity-0 transition-all duration-300 ease-out';
+  bubble.dataset.msgId = 'temp_' + randomId;
+  bubble.dataset.randomId = randomId;
+  var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  bubble.innerHTML =
+    '<div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
+      '<p class="leading-relaxed">' + escapeHtml(text) + '</p>' +
+      '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
+        '<span class="text-[8px] font-mono-tag">' + timeNow + '</span>' +
+        '<span data-chat-status="clock" class="text-[10px] text-black/60 font-bold ml-1 font-mono-tag" title="Sending">⏱</span>' +
+      '</div>' +
+    '</div>';
+  return bubble;
+}
+
+async function deliverChatMessage(pending) {
+  if (!pending) return;
+  pending.status = 'sending';
+  setChatBubbleStatus(pending.bubble, 'sending');
+
+  var res = null;
+  try {
+    res = await apiRequest('/api/chat/send', {
+      method: 'POST',
+      body: JSON.stringify(buildChatSendPayload(pending.randomId, pending.receiverId, pending.text, pending.replyId))
+    });
+  } catch (err) {
+    console.error('Chat send error:', err);
+    res = null;
+  }
+
+  if (res && res.success) {
+    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+      window.KandidObservability.captureEvent('message_send_success', {
+        has_attachment: false,
+        deduplicated: Boolean(res.deduplicated)
+      });
+    }
+
+    var canonical = res.message || null;
+    if (pending.bubble && canonical && canonical.id) {
+      pending.bubble.dataset.msgId = canonical.id;
+      setChatBubbleStatus(pending.bubble, 'sent');
+    } else if (pending.bubble) {
+      setChatBubbleStatus(pending.bubble, 'sent');
+    }
+
+    var sameConversation = String(state.activeChatUser) === String(pending.receiverId);
+    if (sameConversation && canonical && canonical.id) {
+      if (!Array.isArray(canonical.reactions)) canonical.reactions = [];
+      if (typeof canonical.reply_to === 'undefined') canonical.reply_to = null;
+      if (typeof canonical.moment === 'undefined') canonical.moment = null;
+      var list = (state.chatLoadedMessages || []).slice();
+      var exists = list.some(function(m) { return String(m.id) === String(canonical.id); });
+      if (!exists) list.push(canonical);
+      state.chatLoadedMessages = list;
+      writeChatCache(pending.receiverId, list);
+    }
+
+    delete state.chatPendingSends[pending.randomId];
+    pending.status = 'sent';
+
+    if (sameConversation) {
+      loadChatMessages(pending.receiverId, true);
+    }
+    checkChatUnreadBadge();
+  } else {
+    pending.status = 'failed';
+    state.chatPendingSends[pending.randomId] = pending;
+    setChatBubbleStatus(pending.bubble, 'failed');
+    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+      window.KandidObservability.captureEvent('message_send_failed', {
+        error_category: (res && res.error) ? 'api_error' : 'network_or_exception'
+      });
+    }
+    showToast(res && res.error ? res.error : 'Failed to send message. Tap the red ! to retry.');
+  }
+}
+
 async function sendChatMessageV2() {
   var input = document.getElementById('chatComposerInput');
   if (!input) return;
@@ -13206,11 +13616,12 @@ async function sendChatMessageV2() {
     return;
   }
 
+  var receiverId = state.activeChatUser;
   var replyId = state.activeChatReplyTo ? state.activeChatReplyTo.id : null;
   clearChatReplyTo();
   input.value = '';
 
-  var myUid = getActiveUserId();
+  var randomId = createChatRandomId();
   var container = document.getElementById('chatMessageHistoryV2');
   var tempBubble = null;
   if (container) {
@@ -13218,17 +13629,7 @@ async function sendChatMessageV2() {
       container.innerHTML = '';
     }
 
-    tempBubble = document.createElement('div');
-    tempBubble.className = 'flex flex-col items-end space-y-1 transform translate-y-4 opacity-0 transition-all duration-300 ease-out';
-    var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    tempBubble.innerHTML =
-      '<div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
-        '<p class="leading-relaxed">' + escapeHtml(text) + '</p>' +
-        '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
-          '<span class="text-[8px] font-mono-tag">' + timeNow + '</span>' +
-          '<span class="text-[9px] text-black/60 font-bold ml-1 font-mono-tag">✓</span>' +
-        '</div>' +
-      '</div>';
+    tempBubble = createOptimisticChatBubble(text, randomId);
     container.appendChild(tempBubble);
 
     // Trigger animation
@@ -13245,51 +13646,32 @@ async function sendChatMessageV2() {
     }
   }
 
-  try {
-    var res = await apiRequest('/api/chat/send', {
-      method: 'POST',
-      body: JSON.stringify({
-        senderId: myUid,
-        sender_id: myUid,
-        receiverId: state.activeChatUser,
-        receiver_id: state.activeChatUser,
-        content: text,
-        reply_to_id: replyId,
-        message_type: 'text'
-      })
-    });
-
-    if (res && res.success) {
-      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
-        window.KandidObservability.captureEvent('message_send_success', {
-          has_attachment: false
-        });
-      }
-      if (tempBubble && res.message && res.message.id) {
-        tempBubble.dataset.msgId = res.message.id;
-      }
-      await loadChatMessages(state.activeChatUser, true);
-      checkChatUnreadBadge();
-    } else {
-      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
-        window.KandidObservability.captureEvent('message_send_failed', {
-          error_category: (res && res.error) ? 'api_error' : 'unknown'
-        });
-      }
-      showToast(res ? res.error : 'Message send failed. Please check connection.');
-      if (tempBubble) tempBubble.remove();
-    }
-  } catch (err) {
-    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
-      window.KandidObservability.captureEvent('message_send_failed', {
-        error_category: 'network_or_exception'
-      });
-    }
-    console.error('Chat send error:', err);
-    showToast('Failed to send message.');
-    if (tempBubble) tempBubble.remove();
-  }
+  var pending = {
+    randomId: randomId,
+    receiverId: receiverId,
+    text: text,
+    replyId: replyId,
+    bubble: tempBubble,
+    status: 'sending'
+  };
+  state.chatPendingSends[randomId] = pending;
+  await deliverChatMessage(pending);
 }
+
+function retryChatSend(randomId) {
+  var pending = state.chatPendingSends ? state.chatPendingSends[randomId] : null;
+  if (!pending || pending.status === 'sending') return;
+  if (String(state.activeChatUser) !== String(pending.receiverId)) {
+    showToast('Return to this conversation to retry.');
+    return;
+  }
+  var container = document.getElementById('chatMessageHistoryV2');
+  if (container && !container.querySelector('[data-random-id="' + randomId + '"]') && pending.bubble) {
+    container.appendChild(pending.bubble);
+  }
+  deliverChatMessage(pending);
+}
+window.retryChatSend = retryChatSend;
 window.sendChatMessageV2 = sendChatMessageV2;
 
 // Background Real-Time Poller for Chat & Notifications
