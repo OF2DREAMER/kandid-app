@@ -38,6 +38,8 @@ function sliceBetween(startMarker, endMarker) {
 const HELPERS = sliceBetween("function _feedApiCircle(circle) {", "async function loadFeedMoments(circle, isRefresh) {");
 const LOAD = sliceBetween("async function loadFeedMoments(circle, isRefresh) {", "function formatPostTime(createdStr) {");
 const RENDER = sliceBetween("function renderFeedCards(moments, container, options) {", "function attachCardInteractions(card, momentData) {");
+// Delivery URL builder + role width constants used by renderFeedCards.
+const DELIVERY = sliceBetween("var KANDID_FEED_MAIN_MAX_WIDTH = 1080;", "function showToast(msg) {");
 
 // ── Minimal DOM ─────────────────────────────────────────────────────────
 function makeElement(tag) {
@@ -230,6 +232,7 @@ function createEnv() {
     "var updateAllMomentTimestamps = env.updateAllMomentTimestamps;",
     "var attachCardInteractions = env.attachCardInteractions;",
     HELPERS,
+    DELIVERY,
     LOAD,
     RENDER,
     "return { renderFeedCards: renderFeedCards, loadFeedMoments: loadFeedMoments, loadMoreFeedMoments: loadMoreFeedMoments, setupFeedInfiniteScroll: setupFeedInfiniteScroll, _feedEnsureState: _feedEnsureState };",
