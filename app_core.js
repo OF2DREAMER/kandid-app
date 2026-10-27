@@ -1,5 +1,5 @@
 /**
- * Kandid Web Engine (v3.0.2)
+ * Kindid Web Engine (v3.0.2)
  * Authentic Campus Moments Discovery
  */
 
@@ -8,9 +8,23 @@ try {
   savedUser = JSON.parse(localStorage.getItem('kandid_user') || 'null');
 } catch(e) {}
 
+function getStoredAuthToken() {
+  try {
+    return localStorage.getItem('kindid_jwt_token') ||
+           localStorage.getItem('kandid_jwt_token') ||
+           localStorage.getItem('kandid_token') ||
+           sessionStorage.getItem('kindid_jwt_token') ||
+           sessionStorage.getItem('kandid_jwt_token') ||
+           sessionStorage.getItem('kandid_token') ||
+           '';
+  } catch(e) {
+    return '';
+  }
+}
+
 var state = {
   currentUser: savedUser,
-  token: localStorage.getItem('kandid_token') || null,
+  token: getStoredAuthToken() || null,
   activeCircle: 'foryou',
   activeScreen: 'feed'
 };
@@ -116,7 +130,7 @@ function playTactileFeedback(type) {
       osc.start(now);
       osc.stop(now + 0.06);
     } else if (type === 'pop') {
-      // RealMoji Bubble Pop
+      // KindMoji Bubble Pop
       var osc = ctx.createOscillator();
       var gain = ctx.createGain();
       osc.type = 'sine';
@@ -191,7 +205,7 @@ async function apiRequest(endpoint, options) {
   options = options || {};
   var headers = options.headers || {};
   headers['Content-Type'] = 'application/json';
-  var tok = state.token || (typeof localStorage !== 'undefined' ? localStorage.getItem('kandid_token') : null);
+  var tok = state.token || getStoredAuthToken();
   if (tok && tok !== 'null' && tok !== 'undefined') {
     var cleanTok = sanitizeHeaderValue(tok);
     if (cleanTok) headers['Authorization'] = 'Bearer ' + cleanTok;
@@ -467,7 +481,7 @@ var ChatPhotoCache = (function() {
       try {
         var token = '';
         try {
-          token = localStorage.getItem('kandid_token') || sessionStorage.getItem('kandid_token') || '';
+          token = getStoredAuthToken();
         } catch(e) {}
 
         var headers = {};
@@ -4046,7 +4060,7 @@ function renderFeedCards(moments, container, options) {
     card.className = 'bg-[#0b0b0d] border border-zinc-800/80 rounded-3xl p-3.5 flex flex-col gap-3 shadow-2xl relative kandid-card';
     card.dataset.postId = m.id;
 
-    var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'kandid.creator');
+    var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'kindid.creator');
     var rawComm = m.community_name || m.primary_community_name || m.campus || 'CENTRAL CAMPUS';
     if (rawComm.toUpperCase() === 'INDEPENDENT CREATOR / CITY') {
       rawComm = m.location_city || 'AROUND YOU';
@@ -4358,7 +4372,7 @@ function attachCardInteractions(card, momentData) {
       var selfieBtn = document.createElement('button');
       selfieBtn.className = 'reaction-popover-emoji text-sm bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-center';
       selfieBtn.textContent = '🤳';
-      selfieBtn.title = 'Snap Selfie Realmoji';
+      selfieBtn.title = 'Snap KindMoji Reaction';
       selfieBtn.addEventListener('click', function(ev) {
         ev.stopPropagation();
         pop.remove();
@@ -4385,7 +4399,7 @@ async function triggerReaction(postId, emoji, btnEl) {
 
 
 // =====================================================================
-// KANDID DUAL SEQUENTIAL CAMERA & UNIVERSAL 3.0S WAV AUDIO ENGINE
+// KINDID DUAL SEQUENTIAL CAMERA & UNIVERSAL 3.0S WAV AUDIO ENGINE
 // =====================================================================
 state.capturedMomentData = null;
 state.cameraCircle = 'campus';
@@ -4815,7 +4829,7 @@ function record3SecAmbientAudio() {
 }
 
 // ---------------------------------------------------------------------
-// KANDID CAMERA - ASYNC FRAME SERIALIZATION (PERF PHASE 1)
+// KINDID CAMERA - ASYNC FRAME SERIALIZATION (PERF PHASE 1)
 // ---------------------------------------------------------------------
 // Converts a canvas to a JPEG Blob asynchronously via HTMLCanvasElement.toBlob
 // instead of blocking the main thread with the synchronous canvas.toDataURL().
@@ -4858,7 +4872,7 @@ async function kandidSerializeCanvasJpeg(canvas, quality) {
 }
 
 // =====================================================================
-// KANDID DUAL-CAMERA ARCHITECTURE ENGINE (SPECIFICATION V1.0)
+// KINDID DUAL-CAMERA ARCHITECTURE ENGINE (SPECIFICATION V1.0)
 // =====================================================================
 const KandidCameraEngine = {
   state: 'IDLE',
@@ -5344,7 +5358,7 @@ const KandidCameraEngine = {
       shutter: '1/250s'
     };
 
-    showToast('Kandid Dual Moment Captured! 📸🤳');
+    showToast('Kindid Dual Moment Captured! 📸🤳');
     // PHASE 1.1: preserve the active camera context for the Review/Publish flow.
     // closeCameraStudio() resets the live camera state, so snapshot the context
     // (e.g. PERSPECTIVE + exact clusterId) BEFORE that reset happens. Review and
@@ -7401,7 +7415,7 @@ async function submitChangePassword(e) {
 window.submitChangePassword = submitChangePassword;
 
 async function confirmDeleteAccount() {
-  var conf = confirm('⚠️ Are you sure you want to permanently delete your Kandid account?\n\nThis will permanently erase your profile, authentic moments, messages, and memberships. This action cannot be undone.');
+  var conf = confirm('⚠️ Are you sure you want to permanently delete your Kindid account?\n\nThis will permanently erase your profile, authentic moments, messages, and memberships. This action cannot be undone.');
   if (!conf) return;
   var secondConf = prompt('Type DELETE to confirm permanent account deletion:');
   if (secondConf !== 'DELETE') {
@@ -8100,7 +8114,7 @@ function renderMomentsHorizontal(moments, container) {
       card.className = 'w-28 h-36 flex-shrink-0 bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden relative shadow-lg group cursor-pointer active:scale-95 transition-all select-none';
 
       var timeAgoText = escapeHtml(m.timeAgo || m.time_ago || (m.created_at ? formatTimeAgoClean(m.created_at) : 'RECENT')).toUpperCase();
-      var locText = escapeHtml((m.campus || m.community_name || m.location_city || 'KANDID')).toUpperCase();
+      var locText = escapeHtml((m.campus || m.community_name || m.location_city || 'KINDID')).toUpperCase();
       var imgSrc = escapeHtml(m.mediaUrl || m.mainImg || m.main_img || '');
 
       var imgHtml = imgSrc
@@ -8423,10 +8437,10 @@ window.shareCurrentModalToWhatsAppStatus = shareCurrentModalToWhatsAppStatus;
 
 // Dynamic Anti-Filter Vibe Quotes Array
 var antiFilterVibes = [
-  "Instagram par highlight reel, Kandid par asli zindagi. ✨",
+  "Instagram par highlight reel, Kindid par asli zindagi. ✨",
   "Filters se face badalna aasan hai, par real life flex karna alag level hai.™",
-  "Perfection is fake. Kandid is real. Choose your side.",
-  "Duniya filters ke peeche chhupi hai, main Kandid par asli history likh raha hoon.",
+  "Perfection is fake. Kindid is real. Choose your side.",
+  "Duniya filters ke peeche chhupi hai, main Kindid par asli history likh raha hoon.",
   "No likes, no follower counts, bas main, meri memories aur mera world."
 ];
 
@@ -8493,7 +8507,7 @@ async function triggerStoryShare(platform) {
 
   var shareUrl = window.location.origin + (m.id ? ('/?moment=' + m.id) : '');
   var vibeText = document.getElementById('storyModalVibe') ? document.getElementById('storyModalVibe').textContent.replace(/"/g, '') : 'No filters. Just real life.';
-  var viralCaption = 'No filter · Just real moments ✨\n"' + vibeText + '"\nCheck this on Kandid: ' + shareUrl + '\nJoin unscripted → ' + window.location.origin;
+  var viralCaption = 'No filter · Just real moments ✨\n"' + vibeText + '"\nCheck this on Kindid: ' + shareUrl + '\nJoin unscripted → ' + window.location.origin;
 
   if (platform === 'whatsapp') {
     var waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(viralCaption);
@@ -8909,7 +8923,7 @@ window.closeSettings = function() {
 
 
 // =====================================================================
-// KANDID V4.2 PRODUCTION ONBOARDING & AUTHENTICATION CONTROLLER
+// KINDID V4.2 PRODUCTION ONBOARDING & AUTHENTICATION CONTROLLER
 // =====================================================================
 state.onboardPlaces = {
     campus: '',
@@ -8922,8 +8936,8 @@ state.currentPlaceModalType = '';
 
 const privacyText = `
     <p class="italic text-zinc-400">Last Updated: October 7, 2026</p>
-    <p>Kandid (“Kandid”, “we”, “us”, or “our”) is operated at <a href="/privacy" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/privacy</a>.</p>
-    <p>Kandid is a social network designed around real people, real places, real relationships, and authentic moments without artificial vanity metrics.</p>
+    <p>Kindid (“Kindid”, “we”, “us”, or “our”) is operated at <a href="/privacy" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/privacy</a>.</p>
+    <p>Kindid is a social network designed around real people, real places, real relationships, and authentic moments without artificial vanity metrics.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">1. Information We Collect</h4>
     <p>We collect account credentials (username, email, password hash or Google OAuth ID token metadata), profile information (display name, bio, campus/city tag, avatar photo), user-created content (dual-camera photos, optional 3-second audio clips, captions, reactions, moments, community posts, direct messages), coarse location context (campus/city tag attached to posts; no continuous GPS tracking), and basic technical request logs.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">2. What We Do NOT Collect</h4>
@@ -8938,9 +8952,9 @@ const privacyText = `
 
 const termsText = `
     <p class="italic text-zinc-400">Last Updated: October 7, 2026</p>
-    <p>Welcome to Kandid (“Kandid”, “we”, “us”, or “our”). These Terms of Service govern your access to and use of <a href="/terms" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/terms</a>.</p>
-    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">1. What Kandid Is</h4>
-    <p>Kandid is a social platform built around real communities, real relationships, real places, and authentic moments.</p>
+    <p>Welcome to Kindid (“Kindid”, “we”, “us”, or “our”). These Terms of Service govern your access to and use of <a href="/terms" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/terms</a>.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">1. What Kindid Is</h4>
+    <p>Kindid is a social platform built around real communities, real relationships, real places, and authentic moments.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">2. Eligibility & Account Security</h4>
     <p>You must be at least 13 years of age (or legal digital consent age in your jurisdiction) to use Kindid. You are responsible for keeping your login credentials confidential.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">3. User Content & Ownership</h4>
@@ -8981,14 +8995,14 @@ window.switchScreen = function(screenId) {
         var handle = (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : (usernameInput ? usernameInput.value.trim().replace('@', '') : 'you');
         var inviteDisplay = document.getElementById('inviteLinkDisplay');
         if (inviteDisplay) {
-            inviteDisplay.textContent = 'kandid.network/invite/@' + (handle || 'you');
+            inviteDisplay.textContent = 'kindid.network/invite/@' + (handle || 'you');
         }
     }
 };
 
 const aboutText = `
-    <p class="italic text-amber-400 font-mono-tag">Kandid 2.0 — Unfiltered Social Network</p>
-    <p>Kandid is designed around real life, authentic dual-camera moments, real campus & place communities, and genuine connection.</p>
+    <p class="italic text-amber-400 font-mono-tag">Kindid 2.0 — Unfiltered Social Network</p>
+    <p>Kindid is designed around real life, authentic dual-camera moments, real campus & place communities, and genuine connection.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">Our Core Principles</h4>
     <p>• <strong>Zero Vanity Metrics:</strong> No follower counts, no public like counts, no popularity rankings.</p>
     <p>• <strong>Authentic Moments:</strong> Unfiltered dual-camera photo captures with 3-second ambient audio.</p>
@@ -9013,16 +9027,16 @@ window.openLegalModal = function(type) {
     var modal = document.getElementById('legal-modal');
 
     if (type === 'privacy') {
-        if (heading) heading.innerText = "KANDID PRIVACY POLICY";
+        if (heading) heading.innerText = "KINDID PRIVACY POLICY";
         if (body) body.innerHTML = privacyText;
     } else if (type === 'about') {
-        if (heading) heading.innerText = "ABOUT KANDID";
+        if (heading) heading.innerText = "ABOUT KINDID";
         if (body) body.innerHTML = aboutText;
     } else if (type === 'guidelines') {
         if (heading) heading.innerText = "COMMUNITY GUIDELINES";
         if (body) body.innerHTML = guidelinesText;
     } else {
-        if (heading) heading.innerText = "KANDID TERMS OF SERVICE";
+        if (heading) heading.innerText = "KINDID TERMS OF SERVICE";
         if (body) body.innerHTML = termsText;
     }
     if (modal) modal.style.display = 'flex';
@@ -10018,7 +10032,7 @@ window.submitFinalOnboarding = async function() {
     var btn = document.getElementById('finalJoinKandidBtn');
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="animate-pulse">Activating Kandid Account...</span>';
+        btn.innerHTML = '<span class="animate-pulse">Activating Kindid Account...</span>';
     }
 
     var nameInput = document.getElementById('final-name');
@@ -10085,7 +10099,7 @@ window.submitFinalOnboarding = async function() {
             var obFlow = document.getElementById('onboardingFlow');
             if (obFlow) obFlow.style.display = 'none';
 
-            showToast('Welcome to Kandid, @' + res.user.handle + '! 📷 Your world is active.');
+            showToast('Welcome to Kindid, @' + res.user.handle + '! 📷 Your world is active.');
 
             switchScreenView('feed');
             await loadFeedMoments('foryou');
@@ -10100,7 +10114,7 @@ window.submitFinalOnboarding = async function() {
             showToast('Activation error: ' + (res ? (res.error || res.message) : 'Please try again'));
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = 'Join Kandid →';
+                btn.innerHTML = 'Join Kindid →';
             }
         }
     } catch(e) {
@@ -10108,7 +10122,7 @@ window.submitFinalOnboarding = async function() {
         showToast('Error during activation. Please try again.');
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = 'Join Kandid →';
+            btn.innerHTML = 'Join Kindid →';
         }
     }
 };
@@ -10116,7 +10130,7 @@ window.submitFinalOnboarding = async function() {
 window.copyInviteLink = function() {
     var usernameInput = document.getElementById('final-username');
     var handle = (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : (usernameInput ? usernameInput.value.trim().replace('@', '') : 'you');
-    var link = 'https://kandid.network/invite/@' + (handle || 'you');
+    var link = 'https://kindid.network/invite/@' + (handle || 'you');
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(link).then(function() {
@@ -10130,7 +10144,7 @@ window.copyInviteLink = function() {
 };
 
 async function checkOnboarding() {
-    var token = localStorage.getItem('kandid_token');
+    var token = getStoredAuthToken();
     var obFlow = document.getElementById('onboardingFlow');
 
     if (!token) {
@@ -10155,6 +10169,8 @@ async function checkOnboarding() {
                 }
             } else {
                 // If token invalid, force login
+                localStorage.removeItem('kindid_jwt_token');
+                localStorage.removeItem('kandid_jwt_token');
                 localStorage.removeItem('kandid_token');
                 localStorage.removeItem('kandid_user');
                 localStorage.removeItem('kandid_active_uid');
@@ -10402,7 +10418,7 @@ window.submitResetPassword = async function() {
 // =====================================================================
 function checkAndShowFounderModal() {
     var seen = localStorage.getItem('kandid_founder_note_seen');
-    var token = localStorage.getItem('kandid_token');
+    var token = getStoredAuthToken();
     var onboarded = localStorage.getItem('kandid_onboarded');
 
     if (token && onboarded && !seen) {
@@ -10424,7 +10440,7 @@ function dismissFounderModal() {
             modal.style.opacity = '1';
         }, 250);
     }
-    showToast("Let's keep it real! Welcome to Kandid. 🚀");
+    showToast("Let's keep it real! Welcome to Kindid. 🚀");
 }
 window.dismissFounderModal = dismissFounderModal;
 
@@ -10571,7 +10587,7 @@ async function submitReportUser() {
         reason_category: 'guidelines'
       });
     }
-    showToast('Report submitted. Thank you for keeping Kandid safe 🛡️');
+    showToast('Report submitted. Thank you for keeping Kindid safe 🛡️');
   }
   switchScreenView('report-confirm');
 }
@@ -10919,7 +10935,7 @@ function openAboutKandidModal() {
   if (typeof openLegalModal === 'function') {
     openLegalModal('about');
   } else {
-    showToast('Kandid 2.0 — Authentic Social without Vanity');
+    showToast('Kindid 2.0 — Authentic Social without Vanity');
   }
 }
 window.openAboutKandidModal = openAboutKandidModal;
@@ -10928,7 +10944,7 @@ function openCommunityGuidelinesModal() {
   if (typeof openLegalModal === 'function') {
     openLegalModal('guidelines');
   } else {
-    showToast('Kandid Community Guidelines: Be Real, Respect Privacy.');
+    showToast('Kindid Community Guidelines: Be Real, Respect Privacy.');
   }
 }
 window.openCommunityGuidelinesModal = openCommunityGuidelinesModal;
@@ -11188,6 +11204,8 @@ function logoutUser() {
     });
     historyContainer.innerHTML = '';
   }
+  localStorage.removeItem('kindid_jwt_token');
+  localStorage.removeItem('kandid_jwt_token');
   localStorage.removeItem('kandid_token');
   localStorage.removeItem('kandid_onboarded');
   localStorage.removeItem('kandid_user');
@@ -11586,7 +11604,7 @@ async function loadNotifications() {
       item.className = 'bg-zinc-950 border border-zinc-800/80 ' + borderHighlight + ' rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-lg transition-colors cursor-pointer hover:bg-zinc-900/50 active:scale-[0.99]';
 
       var avatarSrc = (n.avatar_url && !n.avatar_url.includes('api.dicebear.com')) ? n.avatar_url : '';
-      var title = escapeHtml(n.title || n.message || 'New activity on Kandid');
+      var title = escapeHtml(n.title || n.message || 'New activity on Kindid');
       var timeAgo = escapeHtml(n.time_ago || n.timeAgo || 'Recent');
 
       item.innerHTML =
@@ -14301,7 +14319,7 @@ async function connectWithUser(userId, btnEl) {
 window.connectWithUser = connectWithUser;
 
 // =====================================================================
-// FEATURE 2: SELFIE REALMOJI REACTION CAPTURE ENGINE
+// FEATURE 2: SELFIE KINDMOJI REACTION CAPTURE ENGINE
 // =====================================================================
 var realmojiMediaStream = null;
 
@@ -14322,8 +14340,8 @@ async function openRealmojiCapture(postId) {
       video.play().catch(function(e){ console.warn(e); });
     }
   } catch(e) {
-    console.warn('Realmoji camera error:', e);
-    showToast('Front camera permission needed for selfie Realmoji');
+    console.warn('KindMoji camera error:', e);
+    showToast('Front camera permission needed for selfie KindMoji');
   }
 }
 window.openRealmojiCapture = openRealmojiCapture;
@@ -14349,7 +14367,7 @@ async function snapAndSendRealmoji() {
   ctx.drawImage(video, 0, 0, 200, 200);
   var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
-  showToast('Sending your Selfie Realmoji... 🤳');
+  showToast('Sending your Selfie KindMoji... 🤳');
   closeRealmojiCapture();
 
   var res = await apiRequest('/api/react', {
@@ -14362,7 +14380,7 @@ async function snapAndSendRealmoji() {
   });
 
   if (res && res.success) {
-    showToast('Selfie Realmoji posted! 🔥 +15 XP');
+    showToast('Selfie KindMoji posted! 🔥 +15 XP');
     if (typeof loadFeedMoments === 'function') loadFeedMoments(state.activeCircle || 'foryou');
   } else {
     showToast('Reaction failed: ' + (res ? res.error : 'Network error'));
@@ -14371,7 +14389,7 @@ async function snapAndSendRealmoji() {
 window.snapAndSendRealmoji = snapAndSendRealmoji;
 
 // =====================================================================
-// FEATURE 3: SPONTANEOUS DAILY ALERT ENGINE ("⚠️ TIME TO KANDID")
+// FEATURE 3: SPONTANEOUS DAILY ALERT ENGINE ("⚠️ TIME TO KINDID")
 // =====================================================================
 var dailyPrompts = [
   'POV: Your current view',
@@ -14474,12 +14492,12 @@ window.dismissDailyAlert = dismissDailyAlert;
 // =====================================================================
 function shareCampusInvite() {
   var handle = state.currentUser ? state.currentUser.handle : 'student';
-  var inviteUrl = 'https://kandid.network/invite/@' + handle.replace('@', '');
-  var text = 'Join me on Kandid! Raw, unedited moments with 3-second ambient audio from our campus: ' + inviteUrl;
+  var inviteUrl = 'https://kindid.network/invite/@' + handle.replace('@', '');
+  var text = 'Join me on Kindid! Raw, unedited moments with 3-second ambient audio from our campus: ' + inviteUrl;
 
   if (navigator.share) {
     navigator.share({
-      title: 'Join me on Kandid',
+      title: 'Join me on Kindid',
       text: text,
       url: inviteUrl
     }).then(function() {
@@ -14508,7 +14526,7 @@ window.copyInviteToClipboard = copyInviteToClipboard;
 // =====================================================================
 // Functions filterMemoriesByMonth and renderMemoriesFeed are implemented above in Section 5.
 
-// Start Daily Kandid Alert after 5 minutes of app usage
+// Start Daily Kindid Alert after 5 minutes of app usage
 setTimeout(function() {
   initDailyKandidAlert();
 }, 5 * 60 * 1000); // 5 Minutes (300,000 ms)
@@ -14870,7 +14888,7 @@ async function connectWithClusterMember(targetUserId, targetHandle) {
       method: 'POST',
       body: JSON.stringify({
         recipientId: targetUserId,
-        content: 'Hey @' + targetHandle + '! We shared a moment together on Kandid.'
+        content: 'Hey @' + targetHandle + '! We shared a moment together on Kindid.'
       })
     });
     if (res && res.success) {
