@@ -108,7 +108,7 @@ const viewportMeta = (html.match(/<meta\s+name="viewport"\s+content="([^"]+)"/i)
 check("viewport includes viewport-fit=cover", /viewport-fit=cover/.test(viewportMeta));
 check("viewport disables user scaling", /maximum-scale=1\.0/.test(viewportMeta) && /user-scalable=no/.test(viewportMeta));
 check("stylesheet cache bust is 3.3.0", /<link\s+rel="stylesheet"\s+href="\/style\.css\?v=3\.3\.0"/.test(html));
-check("app cache bust is 3.3.4", /<script\s+src="\/app_core\.js\?v=3\.3\.4"><\/script>/.test(html));
+check("app cache bust is 3.3.5", /<script\s+src="\/app_core\.js\?v=3\.3\.5"><\/script>/.test(html));
 
 check("manifest display is standalone", manifest.display === "standalone");
 check("manifest orientation is portrait", manifest.orientation === "portrait");
