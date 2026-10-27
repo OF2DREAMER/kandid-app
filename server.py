@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Kandid Production Server (v5.1.0)
+Kindid Production Server (v5.1.0)
 Scalable Campus Social Platform
 """
 
@@ -124,7 +124,7 @@ if CLOUDINARY_URL and (not CLOUDINARY_CLOUD_NAME or not CLOUDINARY_API_KEY or no
         CLOUDINARY_API_SECRET = CLOUDINARY_API_SECRET or _c_s
         CLOUDINARY_CLOUD_NAME = CLOUDINARY_CLOUD_NAME or _c_n
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", os.environ.get("RESEND_API_KEY", "")).strip().strip("'\"")
-BREVO_FROM_EMAIL = os.environ.get("BREVO_FROM_EMAIL", os.environ.get("RESEND_FROM_EMAIL", os.environ.get("FROM_EMAIL", "onboarding@kandid.app"))).strip().strip("'\"")
+BREVO_FROM_EMAIL = os.environ.get("BREVO_FROM_EMAIL", os.environ.get("RESEND_FROM_EMAIL", os.environ.get("FROM_EMAIL", "onboarding@kindid.app"))).strip().strip("'\"")
 RESEND_API_KEY = BREVO_API_KEY
 RESEND_FROM_EMAIL = BREVO_FROM_EMAIL
 FROM_EMAIL = BREVO_FROM_EMAIL
@@ -664,7 +664,7 @@ def send_drop_reminder(user_dict, drop_dict, reminder_dict):
     """
     user_email = (user_dict.get("email") or "").strip()
     drop_title = drop_dict.get("title", "Community Experience")
-    comm_name = drop_dict.get("community_name", "Kandid Community")
+    comm_name = drop_dict.get("community_name", "Kindid Community")
     date_str = drop_dict.get("date_str", "Today")
     time_str = drop_dict.get("time_str", "6:00 PM")
 
@@ -676,9 +676,9 @@ def send_drop_reminder(user_dict, drop_dict, reminder_dict):
             <p>Hey @{user_dict.get('handle', 'there')},</p>
             <p>Your confirmed pass for <strong>{drop_title}</strong> in <strong>{comm_name}</strong> is starting soon ({date_str} at {time_str}).</p>
             <div style="background: #18181b; padding: 12px; border-radius: 8px; border: 1px solid #27272a; margin: 16px 0;">
-                <p style="margin: 0; font-size: 12px; color: #a1a1aa;">Check-in will open at scheduled start. Open Kandid to view your pass.</p>
+                <p style="margin: 0; font-size: 12px; color: #a1a1aa;">Check-in will open at scheduled start. Open Kindid to view your pass.</p>
             </div>
-            <p style="font-size: 11px; color: #71717a;">Kandid — Real moments with real people.</p>
+            <p style="font-size: 11px; color: #71717a;">Kindid — Real moments with real people.</p>
         </div>
         """
         res = send_email_brevo(user_email, subject, html)
@@ -1083,7 +1083,7 @@ def archive_drop_to_memory(drop_id, actor_user_id=None):
             mem_id, comm_name, drop_id, drop.get("community_id", ""), comm_name,
             drop.get("title", "Community Experience"), drop.get("date_str", "Recent"),
             checked_in_count, story, cover_img, drop.get("creator_id", "u_system"),
-            drop.get("creator_handle", "kandid"), checked_in_count, now_iso
+            drop.get("creator_handle", "kindid"), checked_in_count, now_iso
         ))
 
         cursor.execute("""
@@ -1221,7 +1221,7 @@ os.makedirs(os.path.join(STATIC_DIR, "uploads", "covers"), exist_ok=True)
 
 def validate_environment():
     print(f"\n=======================================================")
-    print(f"🚀 KANDID SERVER INITIALIZING [MODE: {ENVIRONMENT.upper()}]")
+    print(f"🚀 KINDID SERVER INITIALIZING [MODE: {ENVIRONMENT.upper()}]")
     print(f"=======================================================")
     key_exists = bool(BREVO_API_KEY)
     key_len = len(BREVO_API_KEY)
@@ -1332,10 +1332,10 @@ def send_email_brevo(to_email, subject, html_content, text_content=""):
             
     try:
         url = "https://api.brevo.com/v3/smtp/email"
-        sender_email = from_email or "onboarding@kandid.app"
+        sender_email = from_email or "onboarding@kindid.app"
         payload = {
             "sender": {
-                "name": "Kandid",
+                "name": "Kindid",
                 "email": sender_email
             },
             "to": [
@@ -1729,7 +1729,7 @@ def generate_secure_otp(email, ip_address="", async_dispatch=False):
                     "status": 500
                 }
 
-        # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email (Kandid Rate Limiter)
+        # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email (Kindid Rate Limiter)
         fifteen_mins_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
         cursor.execute("SELECT created_at FROM email_otps WHERE email = ? AND created_at > ? ORDER BY created_at ASC", (clean_email, fifteen_mins_ago))
         rows = cursor.fetchall()
@@ -1789,11 +1789,11 @@ def generate_secure_otp(email, ip_address="", async_dispatch=False):
         conn.close()
     
     # 5. Email Template & Dispatch
-    subject = "Your Kandid verification code"
+    subject = "Your Kindid verification code"
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b; color: #f4f4f5; padding: 32px 20px; text-align: center; border-radius: 16px; max-width: 480px; margin: 0 auto; border: 1px solid #27272a;">
         <div style="margin-bottom: 24px;">
-            <span style="font-size: 24px; font-weight: 900; letter-spacing: 0.25em; color: #f59e0b; text-transform: uppercase;">KANDID</span>
+            <span style="font-size: 24px; font-weight: 900; letter-spacing: 0.25em; color: #f59e0b; text-transform: uppercase;">KINDID</span>
             <p style="font-size: 11px; letter-spacing: 0.15em; color: #71717a; text-transform: uppercase; margin-top: 4px;">No Filter · Just Real Moments</p>
         </div>
         <div style="background-color: #18181b; border-radius: 12px; padding: 24px; border: 1px solid #27272a; margin-bottom: 24px;">
@@ -1804,7 +1804,7 @@ def generate_secure_otp(email, ip_address="", async_dispatch=False):
         <p style="font-size: 11px; color: #52525b;">If you didn't request this code, you can safely ignore this email.</p>
     </div>
     """
-    text = f"Your Kandid verification code is: {code} (Valid for 10 minutes)."
+    text = f"Your Kindid verification code is: {code} (Valid for 10 minutes)."
     
     # Asynchronous background dispatch for flows requiring decoupled provider latency (e.g. forgot password)
     if async_dispatch:
@@ -2037,7 +2037,7 @@ MAX_DROP_VIDEO_PAYLOAD_BYTES = 25 * 1024 * 1024  # 25 MB payload limit for 3s dr
 # reaction popover in app.js (fire, bolt, wow, heart, clap, coffee), the
 # moment modal buttons in index.html (heart, laugh, fire, clap, wow), the
 # chat message reaction sheet in index.html (heart, fire, laugh, wow, clap,
-# hundred), and the selfie Realmoji capture in app.js ('\U0001F933').
+# hundred), and the selfie KindMoji capture in app.js ('\U0001F933').
 REACTION_ALLOWLIST = frozenset([
     "\U0001F525",  # fire
     "\u26A1",      # bolt
@@ -2047,7 +2047,7 @@ REACTION_ALLOWLIST = frozenset([
     "\u2615",      # coffee
     "\U0001F602",  # laugh
     "\U0001F4AF",  # hundred
-    "\U0001F933",  # selfie (selfie Realmoji)
+    "\U0001F933",  # selfie (selfie KindMoji)
 ])
 MAX_EMOJI_LEN = 16
 
@@ -2638,7 +2638,7 @@ def verify_google_id_token(token_str: str) -> dict:
         return {
             "sub": sub,
             "email": email,
-            "name": str(claims.get("name") or "Kandid User").strip(),
+            "name": str(claims.get("name") or "Kindid User").strip(),
             "picture": str(claims.get("picture") or "").strip()
         }
     except Exception:
@@ -2648,7 +2648,7 @@ def verify_google_id_token(token_str: str) -> dict:
             import urllib.parse
             import time
             url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + urllib.parse.quote(token_str)
-            req = urllib.request.Request(url, headers={"User-Agent": "Kandid-Server/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Kindid-Server/1.0"})
             with urllib.request.urlopen(req, timeout=5) as response:
                 if response.status != 200:
                     return None
@@ -2678,7 +2678,7 @@ def verify_google_id_token(token_str: str) -> dict:
             return {
                 "sub": sub,
                 "email": email,
-                "name": str(data.get("name") or "Kandid User").strip(),
+                "name": str(data.get("name") or "Kindid User").strip(),
                 "picture": str(data.get("picture") or "").strip()
             }
         except Exception:
@@ -3631,6 +3631,7 @@ def init_db():
         sender_id TEXT NOT NULL,
         receiver_id TEXT NOT NULL,
         content TEXT NOT NULL,
+        random_id TEXT DEFAULT NULL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
@@ -3760,6 +3761,7 @@ def init_db():
         cursor.execute("ALTER TABLE posts ADD COLUMN motion_url TEXT DEFAULT ''")
 
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_posts_search ON posts(is_private, created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_posts_feed_cursor ON posts(created_at, id)")
 
     cursor.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cursor.fetchall()]
@@ -3897,20 +3899,20 @@ def init_db():
 
     # Seed Default Communities across Interests, Places, Cities, and Campuses
     cursor.executemany("INSERT OR IGNORE INTO communities (id, name, type, description, city, creator_id, creator_handle, icon, visibility, members_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
-        ('comm_1', 'North City University', 'Campus', 'Academic & student community life across campus.', 'New Delhi', 'u_system', 'kandid', '🎓', 'public', 142),
-        ('comm_2', 'Indiranagar Coffee & Tech', 'Place', 'Shared physical space for tech builders & late night espresso.', 'Bengaluru, KA', 'u_system', 'kandid', '☕', 'public', 86),
-        ('comm_3', 'Bandra Street Photography', 'Interest', 'Capturing raw street & 35mm candid moments across the coast.', 'Mumbai, MH', 'u_system', 'kandid', '📸', 'public', 64),
-        ('comm_4', 'Sunday Basketball Court', 'Place', 'Physical court context for pickup games & drills.', 'Delhi NCR', 'u_system', 'kandid', '🏀', 'public', 38),
-        ('comm_5', 'Indie Hackers & Builders', 'Interest', 'Building prototypes, open source code, and daily build logs.', 'Bengaluru, KA', 'u_system', 'kandid', '💻', 'public', 95),
-        ('comm_6', 'Campus Library Wing', 'Place', 'Quiet study, longform reading, and architectural drafts.', 'Supaul, Bihar', 'u_system', 'kandid', '📚', 'public', 48),
-        ('comm_7', 'Guru Kashi University', 'Campus', 'Student life, workshops, engineering labs & campus events.', 'Talwandi Sabo, Bathinda', 'u_system', 'kandid', '🎓', 'public', 128),
-        ('comm_8', 'Bhupendra Narayan Mandal University (BNMU)', 'Campus', 'Regional university network across Madhepura & Supaul.', 'Madhepura / Supaul', 'u_system', 'kandid', '🎓', 'public', 110),
-        ('comm_9', 'Supaul Community Circle', 'City', 'Local creators, town gatherings, street moments & neighborhood stories.', 'Supaul, Bihar', 'u_system', 'kandid', '📍', 'public', 75),
-        ('comm_10', 'Analog Film & 35mm Club', 'Interest', 'Film photography, developing logs, golden hour strolls.', 'Delhi NCR', 'u_system', 'kandid', '🎞️', 'public', 52),
-        ('comm_11', 'Hauz Khas Social & Art Hub', 'Place', 'Creative arts, music sessions, and sunset rooftop moments.', 'New Delhi', 'u_system', 'kandid', '🎨', 'public', 89),
-        ('comm_12', 'Delhi University (DU)', 'Campus', 'North & South campus student circles and festival logs.', 'New Delhi', 'u_system', 'kandid', '🎓', 'public', 210),
-        ('comm_13', 'Patna University', 'Campus', 'Ganga ghat strolls, historic campus life & debates.', 'Patna, Bihar', 'u_system', 'kandid', '🎓', 'public', 94),
-        ('comm_14', 'Running & Calisthenics Crew', 'Interest', 'Early morning trail runs, park workouts & active lifestyle.', 'Mumbai, MH', 'u_system', 'kandid', '🏃', 'public', 44)
+        ('comm_1', 'North City University', 'Campus', 'Academic & student community life across campus.', 'New Delhi', 'u_system', 'kindid', '🎓', 'public', 142),
+        ('comm_2', 'Indiranagar Coffee & Tech', 'Place', 'Shared physical space for tech builders & late night espresso.', 'Bengaluru, KA', 'u_system', 'kindid', '☕', 'public', 86),
+        ('comm_3', 'Bandra Street Photography', 'Interest', 'Capturing raw street & 35mm candid moments across the coast.', 'Mumbai, MH', 'u_system', 'kindid', '📸', 'public', 64),
+        ('comm_4', 'Sunday Basketball Court', 'Place', 'Physical court context for pickup games & drills.', 'Delhi NCR', 'u_system', 'kindid', '🏀', 'public', 38),
+        ('comm_5', 'Indie Hackers & Builders', 'Interest', 'Building prototypes, open source code, and daily build logs.', 'Bengaluru, KA', 'u_system', 'kindid', '💻', 'public', 95),
+        ('comm_6', 'Campus Library Wing', 'Place', 'Quiet study, longform reading, and architectural drafts.', 'Supaul, Bihar', 'u_system', 'kindid', '📚', 'public', 48),
+        ('comm_7', 'Guru Kashi University', 'Campus', 'Student life, workshops, engineering labs & campus events.', 'Talwandi Sabo, Bathinda', 'u_system', 'kindid', '🎓', 'public', 128),
+        ('comm_8', 'Bhupendra Narayan Mandal University (BNMU)', 'Campus', 'Regional university network across Madhepura & Supaul.', 'Madhepura / Supaul', 'u_system', 'kindid', '🎓', 'public', 110),
+        ('comm_9', 'Supaul Community Circle', 'City', 'Local creators, town gatherings, street moments & neighborhood stories.', 'Supaul, Bihar', 'u_system', 'kindid', '📍', 'public', 75),
+        ('comm_10', 'Analog Film & 35mm Club', 'Interest', 'Film photography, developing logs, golden hour strolls.', 'Delhi NCR', 'u_system', 'kindid', '🎞️', 'public', 52),
+        ('comm_11', 'Hauz Khas Social & Art Hub', 'Place', 'Creative arts, music sessions, and sunset rooftop moments.', 'New Delhi', 'u_system', 'kindid', '🎨', 'public', 89),
+        ('comm_12', 'Delhi University (DU)', 'Campus', 'North & South campus student circles and festival logs.', 'New Delhi', 'u_system', 'kindid', '🎓', 'public', 210),
+        ('comm_13', 'Patna University', 'Campus', 'Ganga ghat strolls, historic campus life & debates.', 'Patna, Bihar', 'u_system', 'kindid', '🎓', 'public', 94),
+        ('comm_14', 'Running & Calisthenics Crew', 'Interest', 'Early morning trail runs, park workouts & active lifestyle.', 'Mumbai, MH', 'u_system', 'kindid', '🏃', 'public', 44)
     ])
 
     # Drops/Ticketing/Financial schema removed — Drops feature not in V1 (B-10a)
@@ -3999,6 +4001,7 @@ def init_db():
         ("ciphertext", "TEXT DEFAULT NULL"),
         ("iv", "TEXT DEFAULT NULL"),
         ("reply_to_id", "TEXT DEFAULT NULL"),
+        ("random_id", "TEXT DEFAULT NULL"),
         ("is_encrypted", "INTEGER DEFAULT 1"),
         ("sender_state", "TEXT DEFAULT 'active'"),
         ("receiver_state", "TEXT DEFAULT 'active'"),
@@ -4011,6 +4014,12 @@ def init_db():
                 cursor.execute(f"ALTER TABLE messages ADD COLUMN {col} {col_type}")
             except Exception:
                 pass
+
+    # Client-assigned message idempotency key. The partial unique index makes
+    # concurrent retries collapse to one row; NULL remains allowed for legacy
+    # clients and for historical messages created before this migration.
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_random_id ON messages(random_id)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_sender_random_id ON messages(sender_id, random_id) WHERE random_id IS NOT NULL")
 
     # Seed Default Collective Memories
     cursor.execute("SELECT COUNT(*) FROM collective_memories")
@@ -5744,6 +5753,59 @@ def decode_global_cursor(cursor_str):
         return None
 
 
+FEED_CURSOR_MAX_LEN = 512
+
+
+def encode_feed_cursor(created_at, post_id, circle):
+    """Opaque keyset cursor for /api/feed encoding (created_at, id) plus the
+    circle context it was generated for, so a cursor is only meaningful for
+    the same feed view request."""
+    payload = {
+        "created_at": str(created_at or ""),
+        "id": str(post_id or ""),
+        "circle": str(circle or ""),
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _is_legacy_feed_cursor(cursor_str):
+    """Legacy /api/feed clients sent a plain ISO timestamp as the cursor."""
+    if not cursor_str or len(cursor_str) < 10 or len(cursor_str) > 64:
+        return False
+    try:
+        datetime.fromisoformat(cursor_str.replace("Z", "+00:00"))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def decode_feed_cursor(cursor_str):
+    """Decode an /api/feed cursor. Returns None for malformed, oversized or
+    invalid cursors so the caller safely falls back to the first page. Plain
+    ISO timestamps remain supported as (created_at, no tie-breaker) cursors."""
+    if not cursor_str or not isinstance(cursor_str, str):
+        return None
+    value = cursor_str.strip()
+    if not value or len(value) > FEED_CURSOR_MAX_LEN:
+        return None
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        data = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        if not isinstance(data, dict):
+            return None
+        created_at = str(data.get("created_at") or data.get("t") or "")
+        post_id = str(data.get("id") or data.get("i") or "")
+        circle = str(data.get("circle") or data.get("c") or "")
+        if not created_at:
+            return None
+        return {"created_at": created_at, "id": post_id, "circle": circle}
+    except Exception:
+        if _is_legacy_feed_cursor(value):
+            return {"created_at": value, "id": "", "circle": ""}
+        return None
+
+
 def get_current_user(headers, body=None, query=None, require_session=False):
     auth = headers.get("Authorization", "")
     token = None
@@ -5945,6 +6007,33 @@ def is_blocked_static_path(norm_path):
     if norm_path in BLOCKED_STATIC_NAMES:
         return True
     return any(norm_path == blocked or norm_path.startswith(blocked + "/") for blocked in BLOCKED_STATIC_DIRS)
+
+
+INVITE_LINK_PREFIXES = (
+    "kindid://invite/",
+    "kandid://invite/",
+    "https://kindid.in/invite/",
+    "https://www.kindid.in/invite/",
+    "https://kandid.in/invite/",
+    "https://www.kandid.in/invite/",
+    "https://kandid.app/invite/",
+    "/invite/",
+)
+
+
+def normalize_invite_code(raw_code):
+    """Accept a plain code or a legacy/new deep-link URL for the same invite."""
+    value = str(raw_code or "").strip()
+    if not value:
+        return ""
+    lower = value.lower()
+    for prefix in INVITE_LINK_PREFIXES:
+        if lower.startswith(prefix):
+            value = value[len(prefix):]
+            break
+    for separator in ("?", "#"):
+        value = value.split(separator, 1)[0]
+    return value.strip().rstrip("/")
 
 
 class KandidThreadingServer(socketserver.ThreadingMixIn, HTTPServer):
@@ -6977,7 +7066,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     
                     if post:
                         img_url = post["image_url"] or ""
-                        caption = post["caption"] or "A Kandid moment"
+                        caption = post["caption"] or "A Kindid moment"
                         handle = post["handle"] or "someone"
                         
                         if img_url and img_url.startswith("/"):
@@ -6988,7 +7077,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         safe_handle = html.escape(handle)
                         
                         og_tags = f'''
-  <meta property="og:title" content="Moment by @{safe_handle} on Kandid" />
+  <meta property="og:title" content="Moment by @{safe_handle} on Kindid" />
   <meta property="og:description" content="{safe_caption}" />
   <meta property="og:image" content="{img_url}" />
   <meta property="og:type" content="website" />
@@ -7201,42 +7290,65 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 where_clauses.append("circle = ?")
                 params.append(circle)
 
-            if cursor_param:
-                where_clauses.append("created_at < ?")
-                params.append(cursor_param)
-
-            blocked_user_ids = set()
             if user_id:
-                cursor.execute("""
-                    SELECT blocked_user_id FROM blocks WHERE user_id = ?
-                    UNION
-                    SELECT user_id FROM blocks WHERE blocked_user_id = ?
-                """, (user_id, user_id))
-                blocked_user_ids = {r[0] for r in cursor.fetchall()}
+                # Block filtering INSIDE the SQL so it happens BEFORE the
+                # LIMIT+1 fetch: pages stay full and has_more stays correct.
+                where_clauses.append(
+                    "user_id NOT IN ("
+                    "SELECT blocked_user_id FROM blocks WHERE user_id = ? "
+                    "UNION "
+                    "SELECT user_id FROM blocks WHERE blocked_user_id = ?)"
+                )
+                params.append(user_id)
+                params.append(user_id)
 
-            sql = "SELECT * FROM posts WHERE " + " AND ".join(where_clauses) + " ORDER BY created_at DESC LIMIT ?"
+            if cursor_param:
+                cursor_page = decode_feed_cursor(cursor_param)
+                if cursor_page and cursor_page.get("circle") and cursor_page["circle"] != circle:
+                    cursor_page = None
+                if cursor_page:
+                    if cursor_page.get("id"):
+                        where_clauses.append("(created_at < ? OR (created_at = ? AND id < ?))")
+                        params.append(cursor_page["created_at"])
+                        params.append(cursor_page["created_at"])
+                        params.append(cursor_page["id"])
+                    else:
+                        # Legacy timestamp-only cursors have no tie-breaker.
+                        where_clauses.append("created_at < ?")
+                        params.append(cursor_page["created_at"])
+
+            sql = "SELECT * FROM posts WHERE " + " AND ".join(where_clauses) + " ORDER BY created_at DESC, id DESC LIMIT ?"
             params.append(limit_val + 1)
 
             cursor.execute(sql, tuple(params))
             raw_posts = [dict(r) for r in cursor.fetchall()]
-
-            if blocked_user_ids:
-                raw_posts = [p for p in raw_posts if p.get("user_id") not in blocked_user_ids]
 
             has_more = len(raw_posts) > limit_val
             posts = raw_posts[:limit_val]
 
             next_cursor = ""
             if has_more and posts:
-                next_cursor = posts[-1].get("created_at", "")
+                next_cursor = encode_feed_cursor(posts[-1].get("created_at", ""), posts[-1].get("id", ""), circle)
 
             cursor.execute("SELECT id, name FROM communities")
             comm_map = {r["id"]: r["name"] for r in cursor.fetchall()}
 
-            # Realmoji aggregation & community resolution
+            # One grouped reaction query (constant statement count). Skipped
+            # entirely for an empty page: `IN ()` is invalid SQL.
+            realmoji_map = {}
+            if posts:
+                post_ids = [p["id"] for p in posts]
+                placeholders = ",".join("?" for _ in post_ids)
+                cursor.execute(
+                    "SELECT post_id, emoji, COUNT(*) as cnt FROM reactions "
+                    "WHERE post_id IN (%s) GROUP BY post_id, emoji" % placeholders,
+                    tuple(post_ids),
+                )
+                for r in cursor.fetchall():
+                    realmoji_map.setdefault(r["post_id"], {})[r["emoji"]] = r["cnt"]
+
             for p in posts:
-                cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
-                p["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
+                p["realmojis"] = realmoji_map.get(p["id"], {})
                 p["timeAgo"] = format_time_ago(p.get("created_at", ""))
 
                 # Feed posts are strictly Open Journal moments with no community attachment
@@ -8746,7 +8858,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 comm_city = comm_row["city"] or ""
                 comm_desc = comm_row["description"] or "Authentic moments and shared daily life."
                 comm_icon = comm_row["icon"] or "🎓"
-                creator_handle = comm_row["creator_handle"] or "kandid"
+                creator_handle = comm_row["creator_handle"] or "kindid"
                 members_count = comm_row["members_count"] or 1
             else:
                 comm_id = target_campus
@@ -8755,7 +8867,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 comm_city = ""
                 comm_desc = "Authentic moments and shared daily life."
                 comm_icon = "📍"
-                creator_handle = "kandid"
+                creator_handle = "kindid"
                 members_count = 1
 
             # Check if user is joined & authoritative role
@@ -10033,13 +10145,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(403, {"success": False, "error": "Blocked", "messages": []})
 
-            # Mark incoming messages sent by partner as read
-            now_iso = datetime.now().isoformat()
-            cursor.execute("""
-                UPDATE messages SET read_at = ?
-                WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
-            """, (now_iso, resolved_partner_id, user_id))
-            conn.commit()
+            # Read receipts are intentionally NOT written here. A history fetch
+            # can be triggered by a background poll while the conversation is not
+            # visible; marking read on GET made "seen" receipts inaccurate. The
+            # client calls POST /api/chat/read only while the thread is open,
+            # focused and visible.
 
             # Cursor pagination: `limit` (default 50) and optional `before_id` (older cursor).
             try:
@@ -10932,9 +11042,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
         # =========================================================================
 
         if path == "/api/invite/preview" or path.startswith("/api/invite/preview/"):
-            invite_code = query.get("code", [""])[0].strip()
+            invite_code = normalize_invite_code(query.get("code", [""])[0])
             if not invite_code and path.startswith("/api/invite/preview/"):
-                invite_code = path[len("/api/invite/preview/"):].strip()
+                invite_code = normalize_invite_code(path[len("/api/invite/preview/"):])
             
             if not invite_code:
                 return self.send_json(400, {"success": False, "error": "Invite code is required"})
@@ -12572,7 +12682,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(200, {
                     "success": True,
-                    "message": "Report already submitted. Thank you for keeping Kandid safe.",
+                    "message": "Report already submitted. Thank you for keeping Kindid safe.",
                     "report_id": existing_rep[0],
                     "duplicate": True
                 })
@@ -14240,7 +14350,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 })
 
             # Create new onboarding session (24 hour expiry)
-            email_for_handle = email if email else f"user_{secrets.token_hex(4)}@kandid.app"
+            email_for_handle = email if email else f"user_{secrets.token_hex(4)}@kindid.app"
             base_handle = email_for_handle.split("@")[0].lower()
             base_handle = "".join(c for c in base_handle if c.isalnum() or c == "_")
             if not base_handle or len(base_handle) < 3:
@@ -14341,7 +14451,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             s = dict(session_row)
             email = s["email"]
             provider_subject = s["provider_subject"]
-            name = (body.get("name") or s.get("google_name") or "Kandid Creator").strip()
+            name = (body.get("name") or s.get("google_name") or "Kindid Creator").strip()
             handle = (body.get("handle") or s.get("chosen_handle") or email.split("@")[0]).strip().lower().replace("@", "")
             campus_name = (body.get("campus_name") or s.get("chosen_campus_name") or "").strip()
             campus_id = (body.get("campus_id") or s.get("chosen_campus_id") or "").strip()
@@ -14877,13 +14987,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not quest:
                 cursor.execute("INSERT INTO quest_progress (user_id, quest_date, moment_captured, daily_mission) VALUES (?, ?, ?, ?)", 
                                (user["id"], today, 1, 1 if is_daily_mission else 0))
-                award_xp(conn, user["id"], 50, "Kandid Moment captured")
+                award_xp(conn, user["id"], 50, "Kindid Moment captured")
                 if is_daily_mission:
                     award_xp(conn, user["id"], 100, "Daily Mission completed")
             else:
                 if quest["moment_captured"] == 0:
                     cursor.execute("UPDATE quest_progress SET moment_captured = 1 WHERE user_id = ? AND quest_date = ?", (user["id"], today))
-                    award_xp(conn, user["id"], 50, "Kandid Moment captured")
+                    award_xp(conn, user["id"], 50, "Kindid Moment captured")
                 if is_daily_mission and quest["daily_mission"] == 0:
                     cursor.execute("UPDATE quest_progress SET daily_mission = 1 WHERE user_id = ? AND quest_date = ?", (user["id"], today))
                     award_xp(conn, user["id"], 100, "Daily Mission completed")
@@ -15112,7 +15222,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     actor_name = user.get("name", "Student") if user else "A student"
                     actor_handle = user.get("handle", "user") if user else "user"
                     actor_avatar = photo_url or user.get("avatar_url", "") if user else ""
-                    action_msg = "sent a selfie Realmoji reaction 🤳" if photo_url else f"reacted {emoji} to your moment"
+                    action_msg = "sent a selfie KindMoji reaction 🤳" if photo_url else f"reacted {emoji} to your moment"
                     conn.execute("""
                         INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar)
                         VALUES (?, ?, ?, ?, 'reaction', 0, ?, ?, ?, ?)
@@ -15138,7 +15248,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(400, {"error": "Password must be at least 8 characters long"})
             
             user_id = "u_" + secrets.token_hex(4)
-            email = (body.get("email") or "").strip().lower() or (handle.lower() + "@kandid.app")
+            email = (body.get("email") or "").strip().lower() or (handle.lower() + "@kindid.app")
             
             pw, salt = hash_password(password)
             avatar_letter = (name[0].upper() if name else "K")
@@ -15623,6 +15733,74 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
             return self.send_json(200, {"success": True})
 
+        if path == "/api/chat/read":
+            conn = None
+            try:
+                user = get_current_user(self.headers, body, require_session=True)
+                if not user:
+                    return self.send_json(401, {"error": "Authentication required", "success": False})
+                user_id = user["id"]
+                raw_partner = body.get("partner_id") or body.get("chat_id") or body.get("receiver_id")
+                if not raw_partner:
+                    return self.send_json(400, {"error": "partner_id is required", "success": False})
+                max_message_id = str(body.get("max_message_id") or "").strip()
+
+                conn = get_db()
+                partner_id = resolve_user_id(str(raw_partner), conn) or str(raw_partner)
+                if partner_id == user_id:
+                    return self.send_json(400, {"error": "Cannot mark a conversation with yourself as read", "success": False})
+
+                blocked_row = conn.execute("""
+                    SELECT 1 FROM blocks
+                    WHERE (user_id = ? AND blocked_user_id = ?)
+                       OR (user_id = ? AND blocked_user_id = ?)
+                    LIMIT 1
+                """, (user_id, partner_id, partner_id, user_id)).fetchone()
+                if blocked_row:
+                    return self.send_json(403, {"error": "Blocked", "success": False})
+
+                now_iso = datetime.now().isoformat()
+                if max_message_id:
+                    # The cursor must belong to this exact inbound conversation.
+                    cursor_row = conn.execute("""
+                        SELECT created_at, id FROM messages
+                        WHERE id = ? AND sender_id = ? AND receiver_id = ?
+                    """, (max_message_id, partner_id, user_id)).fetchone()
+                    if not cursor_row:
+                        return self.send_json(400, {"error": "Invalid max_message_id for this conversation", "success": False})
+                    updated = conn.execute("""
+                        UPDATE messages SET read_at = ?
+                        WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
+                          AND (created_at < ? OR (created_at = ? AND id <= ?))
+                    """, (now_iso, partner_id, user_id, cursor_row["created_at"], cursor_row["created_at"], max_message_id)).rowcount
+                else:
+                    updated = conn.execute("""
+                        UPDATE messages SET read_at = ?
+                        WHERE sender_id = ? AND receiver_id = ? AND read_at IS NULL
+                    """, (now_iso, partner_id, user_id)).rowcount
+
+                conn.commit()
+                return self.send_json(200, {
+                    "success": True,
+                    "partner_id": partner_id,
+                    "updated": int(updated or 0),
+                    "read_at": now_iso
+                })
+            except Exception as e:
+                print("Error marking chat read:", e)
+                if conn is not None:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                return self.send_json(500, {"error": "Internal server error while marking chat read", "success": False})
+            finally:
+                if conn is not None:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
         if path == "/api/chat/send":
             try:
                 user = get_current_user(self.headers, body, require_session=True)
@@ -15654,6 +15832,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     if not is_safe_chat_media_url(media_url):
                         return self.send_json(400, {"error": "Invalid media_url: only https:// URLs and verified /api/chat/attachments/att_<id> URLs are permitted", "success": False})
                 reply_to_id = body.get("reply_to_id") or body.get("replyToId")
+                random_id = str(body.get("random_id") or "").strip() or None
+                if random_id and (len(random_id) > 128 or not re.match(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$", random_id)):
+                    return self.send_json(400, {"error": "Invalid random_id", "success": False})
 
                 if not content and not moment_id and not media_url:
                     return self.send_json(400, {"error": "Message content cannot be empty", "success": False})
@@ -15715,6 +15896,49 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         conn.execute("SELECT pg_advisory_xact_lock(hashtext(?))", (_pair_key,))
                     except Exception:
                         pass
+
+                # Client-assigned idempotency: a network retry must return the
+                # original row without consuming the non-connected 3-message
+                # allowance or creating a duplicate.
+                if random_id:
+                    _dup = conn.execute("""
+                        SELECT id, sender_id, receiver_id, content, created_at, read_at,
+                               message_type, moment_id, media_url, reply_to_id, random_id
+                        FROM messages
+                        WHERE random_id = ? AND sender_id = ?
+                        LIMIT 1
+                    """, (random_id, sender_id)).fetchone()
+                    if _dup:
+                        _dup_dict = dict(_dup)
+                        if str(_dup_dict.get("receiver_id")) != str(receiver_id):
+                            try:
+                                conn.execute("ROLLBACK")
+                            except Exception:
+                                pass
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+                            conn.close()
+                            return self.send_json(409, {
+                                "error": "random_id is already used for another conversation",
+                                "success": False,
+                                "code": "RANDOM_ID_CONFLICT"
+                            })
+                        try:
+                            conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        conn.close()
+                        return self.send_json(200, {
+                            "success": True,
+                            "deduplicated": True,
+                            "message": _dup_dict
+                        })
 
                 # Check blocks
                 blocked_row = conn.execute("""
@@ -15831,10 +16055,39 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
                 msg_id = "m_" + secrets.token_hex(6)
                 created = datetime.now().isoformat()
-                conn.execute("""
-                    INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id)
-                    VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)
-                """, (msg_id, sender_id, receiver_id, content, created, msg_type, moment_id, media_url, reply_to_id))
+                try:
+                    conn.execute("""
+                        INSERT INTO messages (id, sender_id, receiver_id, content, created_at, read_at, message_type, moment_id, media_url, reply_to_id, random_id)
+                        VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+                    """, (msg_id, sender_id, receiver_id, content, created, msg_type, moment_id, media_url, reply_to_id, random_id))
+                except Exception as _insert_err:
+                    # A concurrent retry can win the partial unique index race.
+                    # Roll back and return the row that won instead of a 500.
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    if random_id:
+                        _dup = conn.execute("""
+                            SELECT id, sender_id, receiver_id, content, created_at, read_at,
+                                   message_type, moment_id, media_url, reply_to_id, random_id
+                            FROM messages
+                            WHERE random_id = ? AND sender_id = ?
+                            LIMIT 1
+                        """, (random_id, sender_id)).fetchone()
+                        if _dup:
+                            _dup_dict = dict(_dup)
+                            conn.close()
+                            return self.send_json(200, {
+                                "success": True,
+                                "deduplicated": True,
+                                "message": _dup_dict
+                            })
+                    raise
                 
                 # Update last_active for sender
                 conn.execute("UPDATE users SET last_active = ? WHERE id = ?", (created, sender_id))
@@ -15867,7 +16120,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         "message_type": msg_type,
                         "moment_id": moment_id,
                         "media_url": media_url,
-                        "reply_to_id": reply_to_id
+                        "reply_to_id": reply_to_id,
+                        "random_id": random_id
                     }
                 })
             except Exception as e:
@@ -16367,7 +16621,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "invite_code": invite_code,
                 "invite_url": f"/invite/{invite_code}",
                 "full_invite_url": full_invite_url,
-                "deep_link": f"kandid://invite/{invite_code}",
+                "deep_link": f"kindid://invite/{invite_code}",
                 "invite": {
                     "id": invite_id,
                     "invite_code": invite_code,
@@ -16393,7 +16647,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not user:
                 return self.send_json(401, {"success": False, "error": "Authentication required"})
 
-            invite_code = (body.get("invite_code") or "").strip()
+            invite_code = normalize_invite_code(body.get("invite_code") or "")
             if not invite_code:
                 return self.send_json(400, {"success": False, "error": "invite_code is required"})
 
@@ -16603,7 +16857,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True})
 
         if path == "/api/cron/trigger-kandid-time":
-            # Dual-Persona 'Time to Kandid' Trigger Engine (Core Gen Z vs Older Gen Z)
+            # Dual-Persona 'Time to Kindid' Trigger Engine (Core Gen Z vs Older Gen Z)
             conn = get_db()
             cursor = conn.cursor()
             
@@ -16624,12 +16878,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 # The Persona-Split Logic we discussed
                 if campus_val and campus_val.lower() != "independent creator / city":
                     # Persona A: Campus Gen Z
-                    title = "Time to Kandid! 🎓"
+                    title = "Time to Kindid! 🎓"
                     body = f"Class, canteen, or quad at {campus_val}? Show your campus view!"
                     campus_count += 1
                 else:
                     # Persona B: City/Work Gen Z
-                    title = "Time to Kandid! 🏢"
+                    title = "Time to Kindid! 🏢"
                     body = "Desk setup, commute, or cafe? Show your workspace view!"
                     city_count += 1
                     
@@ -16643,7 +16897,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             return self.send_json(200, {
                 "success": True, 
-                "message": "Persona-based Kandid Time triggered",
+                "message": "Persona-based Kindid Time triggered",
                 "stats": {
                     "campus_users_notified": campus_count,
                     "city_users_notified": city_count
@@ -16677,6 +16931,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         return self.send_json(404, {"error": "Not Found"})
 
+KindidHandler = KandidHandler
+
+
 if __name__ == "__main__":
     validate_environment()
     try:
@@ -16692,9 +16949,9 @@ if __name__ == "__main__":
     
     server = KandidThreadingServer(("0.0.0.0", PORT), KandidHandler)
     log_operational_event("server_startup", category="lifecycle", properties={"port": PORT, "environment": ENVIRONMENT, "db_engine": "postgresql" if DATABASE_URL else "sqlite"})
-    print(f"🚀 Kandid production server running at http://localhost:{PORT}")
+    print(f"🚀 Kindid production server running at http://localhost:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping Kandid server.")
+        print("\nStopping Kindid server.")
         server.server_close()

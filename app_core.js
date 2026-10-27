@@ -1,5 +1,5 @@
 /**
- * Kandid Web Engine (v3.0.2)
+ * Kindid Web Engine (v3.0.2)
  * Authentic Campus Moments Discovery
  */
 
@@ -8,9 +8,23 @@ try {
   savedUser = JSON.parse(localStorage.getItem('kandid_user') || 'null');
 } catch(e) {}
 
+function getStoredAuthToken() {
+  try {
+    return localStorage.getItem('kindid_jwt_token') ||
+           localStorage.getItem('kandid_jwt_token') ||
+           localStorage.getItem('kandid_token') ||
+           sessionStorage.getItem('kindid_jwt_token') ||
+           sessionStorage.getItem('kandid_jwt_token') ||
+           sessionStorage.getItem('kandid_token') ||
+           '';
+  } catch(e) {
+    return '';
+  }
+}
+
 var state = {
   currentUser: savedUser,
-  token: localStorage.getItem('kandid_token') || null,
+  token: getStoredAuthToken() || null,
   activeCircle: 'foryou',
   activeScreen: 'feed'
 };
@@ -145,7 +159,7 @@ function playTactileFeedback(type) {
       osc.start(now);
       osc.stop(now + 0.06);
     } else if (type === 'pop') {
-      // RealMoji Bubble Pop
+      // KindMoji Bubble Pop
       var osc = ctx.createOscillator();
       var gain = ctx.createGain();
       osc.type = 'sine';
@@ -220,7 +234,7 @@ async function apiRequest(endpoint, options) {
   options = options || {};
   var headers = options.headers || {};
   headers['Content-Type'] = 'application/json';
-  var tok = state.token || (typeof localStorage !== 'undefined' ? localStorage.getItem('kandid_token') : null);
+  var tok = state.token || getStoredAuthToken();
   if (tok && tok !== 'null' && tok !== 'undefined') {
     var cleanTok = sanitizeHeaderValue(tok);
     if (cleanTok) headers['Authorization'] = 'Bearer ' + cleanTok;
@@ -496,7 +510,7 @@ var ChatPhotoCache = (function() {
       try {
         var token = '';
         try {
-          token = localStorage.getItem('kandid_token') || sessionStorage.getItem('kandid_token') || '';
+          token = getStoredAuthToken();
         } catch(e) {}
 
         var headers = {};
@@ -3765,26 +3779,78 @@ function closeCampusOptions() {
 }
 window.closeCampusOptions = closeCampusOptions;
 
-async function loadFeedMoments(circle) {
+// =====================================================================
+// FEED KEYSET PAGINATION STATE & SENTINEL
+// =====================================================================
+function _feedApiCircle(circle) {
+  return (circle === 'foryou') ? 'all' : (circle || 'all');
+}
+
+function _feedEnsureState(circle) {
+  state.feedState = state.feedState || {};
+  var key = circle || state.activeCircle || 'foryou';
+  if (!state.feedState[key]) {
+    state.feedState[key] = {
+      nextCursor: '',
+      hasMore: true,
+      isLoading: false,
+      loadedIds: new Set()
+    };
+  }
+  return state.feedState[key];
+}
+
+function _feedSentinelHtml(status) {
+  if (status === 'loading') {
+    return '<div class="flex items-center gap-2 text-zinc-500 font-mono-tag text-xs tracking-wider animate-pulse">' +
+      '<span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> LOADING MORE MOMENTS...' +
+    '</div>';
+  }
+  if (status === 'end') {
+    return '<div class="py-8 text-center text-zinc-600 font-mono-tag text-[11px] uppercase tracking-widest">' +
+      '✦ YOU\'RE ALL CAUGHT UP ✦' +
+    '</div>';
+  }
+  if (status === 'error') {
+    return '<div class="text-center text-zinc-500 font-mono-tag text-[10px] uppercase tracking-widest">' +
+      'COULDN\'T LOAD MORE · SCROLL TO RETRY' +
+    '</div>';
+  }
+  return '<div class="text-center text-zinc-600 font-mono-tag text-[10px] uppercase tracking-widest">SCROLL FOR MORE MOMENTS</div>';
+}
+
+function _feedSetSentinelStatus(container, status) {
+  if (!container || !container.querySelector) return;
+  var sentinel = container.querySelector('#feedScrollSentinel');
+  if (!sentinel) return;
+  sentinel.innerHTML = _feedSentinelHtml(status);
+}
+
+async function loadFeedMoments(circle, isRefresh) {
   var container = document.getElementById('feedStreamContainer');
   if (!container) return;
 
   circle = circle || state.activeCircle || 'foryou';
-  var endpoint = (circle === 'foryou') ? '/api/feed?circle=all' : ('/api/feed?circle=' + circle);
+  var feedState = _feedEnsureState(circle);
+  var endpoint = '/api/feed?circle=' + encodeURIComponent(_feedApiCircle(circle)) + '&limit=20';
 
   var cacheKey = 'kandid_feed_cache_' + circle;
   var cachedDataStr = localStorage.getItem(cacheKey);
   var hasCache = false;
 
-  if (cachedDataStr) {
+  if (!isRefresh && cachedDataStr) {
     try {
       var parsedCache = JSON.parse(cachedDataStr);
       if (parsedCache && Array.isArray(parsedCache.feed) && parsedCache.feed.length > 0) {
-        renderFeedCards(parsedCache.feed, container);
+        renderFeedCards(parsedCache.feed, container, { append: false, circle: circle });
         hasCache = true;
       }
     } catch(e) {}
   }
+
+  feedState.nextCursor = '';
+  feedState.hasMore = false;
+  feedState.isLoading = false;
 
   if (!hasCache) {
     // Show Skeleton Loaders ONLY if no cache is available
@@ -3826,9 +3892,17 @@ async function loadFeedMoments(circle) {
         window.KandidObservability.captureEvent('feed_loaded', { circle: circle, count: data.feed.length });
       }
       // ── STATE A: SUCCESS WITH POSTS ──────────────────────────────────
-      var newDataStr = JSON.stringify(data);
+      var cachePayload = {
+        success: true,
+        feed: data.feed.slice(0, 20),
+        next_cursor: data.next_cursor || '',
+        has_more: Boolean(data.has_more)
+      };
+      var newDataStr = JSON.stringify(cachePayload);
       localStorage.setItem(cacheKey, newDataStr);
       if (data.feed.length === 0) {
+        feedState.nextCursor = '';
+        feedState.hasMore = false;
         // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
         container.innerHTML = `
           <div class="flex flex-col items-center justify-center py-20 space-y-5 text-center px-6 mt-8">
@@ -3846,9 +3920,12 @@ async function loadFeedMoments(circle) {
           </div>
         `;
       } else {
+        feedState.nextCursor = data.next_cursor || '';
+        feedState.hasMore = Boolean(data.has_more && feedState.nextCursor);
         if (!hasCache || newDataStr !== cachedDataStr) {
-          renderFeedCards(data.feed, container);
+          renderFeedCards(data.feed, container, { append: false, circle: circle });
         }
+        setupFeedInfiniteScroll(container, circle);
       }
     } else {
       if (window.KandidObservability) {
@@ -3985,14 +4062,34 @@ function captureCurrentGeoLocation() {
     }, { timeout: 3500, maximumAge: 60000 });
 }
 
-function renderFeedCards(moments, container) {
-  container.innerHTML = '';
+function renderFeedCards(moments, container, options) {
+  options = options || {};
+  var append = options.append === true;
+  var circle = options.circle || state.activeCircle || 'foryou';
+  var feedState = _feedEnsureState(circle);
+  var knownIds = new Set();
+
+  if (append) {
+    if (container.querySelectorAll) {
+      var existingCards = container.querySelectorAll('[data-post-id]');
+      for (var ei = 0; ei < existingCards.length; ei++) {
+        var eid = existingCards[ei].dataset ? existingCards[ei].dataset.postId : '';
+        if (eid) knownIds.add(String(eid));
+      }
+    }
+  } else {
+    container.innerHTML = '';
+    feedState.loadedIds = new Set();
+  }
+
   moments.forEach(function(m) {
+    var postId = m && m.id ? String(m.id) : '';
+    if (postId && (feedState.loadedIds.has(postId) || knownIds.has(postId))) return;
     var card = document.createElement('article');
     card.className = 'bg-[#0b0b0d] border border-zinc-800/80 rounded-3xl p-3.5 flex flex-col gap-3 shadow-2xl relative kandid-card';
     card.dataset.postId = m.id;
 
-    var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'kandid.creator');
+    var authorHandle = escapeHtml(m.author_handle || m.user_handle || 'kindid.creator');
     var rawComm = m.community_name || m.primary_community_name || m.campus || 'CENTRAL CAMPUS';
     if (rawComm.toUpperCase() === 'INDEPENDENT CREATOR / CITY') {
       rawComm = m.location_city || 'AROUND YOU';
@@ -4112,10 +4209,112 @@ function renderFeedCards(moments, container) {
         '</div>' +
       '</div>';
 
+    if (postId) {
+      feedState.loadedIds.add(postId);
+      knownIds.add(postId);
+    }
     container.appendChild(card);
     attachCardInteractions(card, m);
   });
+
+  var sentinel = container.querySelector ? container.querySelector('#feedScrollSentinel') : null;
+  if (sentinel && sentinel.parentNode === container) {
+    container.appendChild(sentinel);
+  }
   updateAllMomentTimestamps();
+}
+
+function setupFeedInfiniteScroll(container, circle) {
+  if (!container) return;
+  circle = circle || state.activeCircle || 'foryou';
+  var feedState = _feedEnsureState(circle);
+
+  var sentinel = container.querySelector ? container.querySelector('#feedScrollSentinel') : null;
+  if (!sentinel) {
+    sentinel = document.createElement('div');
+    sentinel.id = 'feedScrollSentinel';
+    sentinel.className = 'w-full py-6 flex items-center justify-center min-h-[60px]';
+    sentinel.innerHTML = _feedSentinelHtml('ready');
+  }
+  // The sentinel must stay below the newest appended card.
+  container.appendChild(sentinel);
+  _feedSetSentinelStatus(container, feedState.hasMore ? 'ready' : 'end');
+
+  if (typeof IntersectionObserver !== 'undefined') {
+    if (container._feedObserver && container._feedObserver.disconnect) {
+      container._feedObserver.disconnect();
+    }
+    container._feedObserver = new IntersectionObserver(function(entries) {
+      var visible = false;
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) visible = true;
+      }
+      if (!visible) return;
+      if (state.activeScreen !== 'feed') return;
+      if ((state.activeCircle || 'foryou') !== circle) return;
+      loadMoreFeedMoments(circle);
+    }, { root: null, rootMargin: '400px', threshold: 0.1 });
+    container._feedObserver.observe(sentinel);
+  }
+
+  container._feedScrollCircle = circle;
+  if (!container._feedScrollFallbackBound) {
+    container._feedScrollFallbackBound = true;
+    var scrollHost = document.getElementById('mainViewport') || window;
+    if (scrollHost && scrollHost.addEventListener) {
+      scrollHost.addEventListener('scroll', function() {
+        var activeCircle = container._feedScrollCircle || (state.activeCircle || 'foryou');
+        if (state.activeScreen !== 'feed') return;
+        if ((state.activeCircle || 'foryou') !== activeCircle) return;
+        clearTimeout(container._feedScrollTimer);
+        container._feedScrollTimer = setTimeout(function() {
+          loadMoreFeedMoments(activeCircle);
+        }, 140);
+      }, { passive: true });
+    }
+  }
+}
+
+async function loadMoreFeedMoments(circle) {
+  circle = circle || state.activeCircle || 'foryou';
+  var feedState = _feedEnsureState(circle);
+  if (!feedState || feedState.isLoading || !feedState.hasMore || !feedState.nextCursor) return;
+
+  var container = document.getElementById('feedStreamContainer');
+  if (!container) return;
+  if (state.activeScreen !== 'feed') return;
+  if ((state.activeCircle || 'foryou') !== circle) return;
+
+  var requestedCursor = feedState.nextCursor;
+  feedState.isLoading = true;
+  _feedSetSentinelStatus(container, 'loading');
+
+  var endpoint = '/api/feed?circle=' + encodeURIComponent(_feedApiCircle(circle)) +
+    '&limit=20&cursor=' + encodeURIComponent(requestedCursor);
+
+  var data = null;
+  try {
+    data = await apiRequest(endpoint);
+  } catch(e) {
+    data = { success: false, error: e && e.message ? e.message : 'Network error', _network: true };
+  } finally {
+    feedState.isLoading = false;
+  }
+
+  if (state.feedState[circle] !== feedState || feedState.nextCursor !== requestedCursor) return;
+  if (state.activeScreen !== 'feed' || (state.activeCircle || 'foryou') !== circle) return;
+
+  if (data && data.success && Array.isArray(data.feed)) {
+    if (data.feed.length > 0) {
+      renderFeedCards(data.feed, container, { append: true, circle: circle });
+    }
+    feedState.nextCursor = data.next_cursor || '';
+    feedState.hasMore = Boolean(data.has_more && feedState.nextCursor && data.feed.length > 0);
+    setupFeedInfiniteScroll(container, circle);
+    _feedSetSentinelStatus(container, feedState.hasMore ? 'ready' : 'end');
+  } else {
+    _feedSetSentinelStatus(container, 'error');
+  }
 }
 
 function attachCardInteractions(card, momentData) {
@@ -4208,7 +4407,7 @@ function attachCardInteractions(card, momentData) {
       var selfieBtn = document.createElement('button');
       selfieBtn.className = 'reaction-popover-emoji text-sm bg-amber-500/20 border border-amber-500/40 rounded-lg flex items-center justify-center';
       selfieBtn.textContent = '🤳';
-      selfieBtn.title = 'Snap Selfie Realmoji';
+      selfieBtn.title = 'Snap KindMoji Reaction';
       selfieBtn.addEventListener('click', function(ev) {
         ev.stopPropagation();
         pop.remove();
@@ -4235,7 +4434,7 @@ async function triggerReaction(postId, emoji, btnEl) {
 
 
 // =====================================================================
-// KANDID DUAL SEQUENTIAL CAMERA & UNIVERSAL 3.0S WAV AUDIO ENGINE
+// KINDID DUAL SEQUENTIAL CAMERA & UNIVERSAL 3.0S WAV AUDIO ENGINE
 // =====================================================================
 state.capturedMomentData = null;
 state.cameraCircle = 'campus';
@@ -4665,7 +4864,7 @@ function record3SecAmbientAudio() {
 }
 
 // ---------------------------------------------------------------------
-// KANDID CAMERA - ASYNC FRAME SERIALIZATION (PERF PHASE 1)
+// KINDID CAMERA - ASYNC FRAME SERIALIZATION (PERF PHASE 1)
 // ---------------------------------------------------------------------
 // Converts a canvas to a JPEG Blob asynchronously via HTMLCanvasElement.toBlob
 // instead of blocking the main thread with the synchronous canvas.toDataURL().
@@ -4751,7 +4950,7 @@ function kandidDrawVideoFrame(video, mirrored, maxWidth, maxHeight) {
 }
 
 // =====================================================================
-// KANDID DUAL-CAMERA ARCHITECTURE ENGINE (SPECIFICATION V1.0)
+// KINDID DUAL-CAMERA ARCHITECTURE ENGINE (SPECIFICATION V1.0)
 // =====================================================================
 const KandidCameraEngine = {
   state: 'IDLE',
@@ -5227,7 +5426,7 @@ const KandidCameraEngine = {
       shutter: '1/250s'
     };
 
-    showToast('Kandid Dual Moment Captured! 📸🤳');
+    showToast('Kindid Dual Moment Captured! 📸🤳');
     // PHASE 1.1: preserve the active camera context for the Review/Publish flow.
     // closeCameraStudio() resets the live camera state, so snapshot the context
     // (e.g. PERSPECTIVE + exact clusterId) BEFORE that reset happens. Review and
@@ -7284,7 +7483,7 @@ async function submitChangePassword(e) {
 window.submitChangePassword = submitChangePassword;
 
 async function confirmDeleteAccount() {
-  var conf = confirm('⚠️ Are you sure you want to permanently delete your Kandid account?\n\nThis will permanently erase your profile, authentic moments, messages, and memberships. This action cannot be undone.');
+  var conf = confirm('⚠️ Are you sure you want to permanently delete your Kindid account?\n\nThis will permanently erase your profile, authentic moments, messages, and memberships. This action cannot be undone.');
   if (!conf) return;
   var secondConf = prompt('Type DELETE to confirm permanent account deletion:');
   if (secondConf !== 'DELETE') {
@@ -7983,7 +8182,7 @@ function renderMomentsHorizontal(moments, container) {
       card.className = 'w-28 h-36 flex-shrink-0 bg-zinc-950 border border-zinc-800/80 rounded-2xl overflow-hidden relative shadow-lg group cursor-pointer active:scale-95 transition-all select-none';
 
       var timeAgoText = escapeHtml(m.timeAgo || m.time_ago || (m.created_at ? formatTimeAgoClean(m.created_at) : 'RECENT')).toUpperCase();
-      var locText = escapeHtml((m.campus || m.community_name || m.location_city || 'KANDID')).toUpperCase();
+      var locText = escapeHtml((m.campus || m.community_name || m.location_city || 'KINDID')).toUpperCase();
       var imgSrc = escapeHtml(m.mediaUrl || m.mainImg || m.main_img || '');
 
       var imgHtml = imgSrc
@@ -8306,10 +8505,10 @@ window.shareCurrentModalToWhatsAppStatus = shareCurrentModalToWhatsAppStatus;
 
 // Dynamic Anti-Filter Vibe Quotes Array
 var antiFilterVibes = [
-  "Instagram par highlight reel, Kandid par asli zindagi. ✨",
+  "Instagram par highlight reel, Kindid par asli zindagi. ✨",
   "Filters se face badalna aasan hai, par real life flex karna alag level hai.™",
-  "Perfection is fake. Kandid is real. Choose your side.",
-  "Duniya filters ke peeche chhupi hai, main Kandid par asli history likh raha hoon.",
+  "Perfection is fake. Kindid is real. Choose your side.",
+  "Duniya filters ke peeche chhupi hai, main Kindid par asli history likh raha hoon.",
   "No likes, no follower counts, bas main, meri memories aur mera world."
 ];
 
@@ -8376,7 +8575,7 @@ async function triggerStoryShare(platform) {
 
   var shareUrl = window.location.origin + (m.id ? ('/?moment=' + m.id) : '');
   var vibeText = document.getElementById('storyModalVibe') ? document.getElementById('storyModalVibe').textContent.replace(/"/g, '') : 'No filters. Just real life.';
-  var viralCaption = 'No filter · Just real moments ✨\n"' + vibeText + '"\nCheck this on Kandid: ' + shareUrl + '\nJoin unscripted → ' + window.location.origin;
+  var viralCaption = 'No filter · Just real moments ✨\n"' + vibeText + '"\nCheck this on Kindid: ' + shareUrl + '\nJoin unscripted → ' + window.location.origin;
 
   if (platform === 'whatsapp') {
     var waUrl = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(viralCaption);
@@ -8792,7 +8991,7 @@ window.closeSettings = function() {
 
 
 // =====================================================================
-// KANDID V4.2 PRODUCTION ONBOARDING & AUTHENTICATION CONTROLLER
+// KINDID V4.2 PRODUCTION ONBOARDING & AUTHENTICATION CONTROLLER
 // =====================================================================
 state.onboardPlaces = {
     campus: '',
@@ -8805,8 +9004,8 @@ state.currentPlaceModalType = '';
 
 const privacyText = `
     <p class="italic text-zinc-400">Last Updated: October 7, 2026</p>
-    <p>Kandid (“Kandid”, “we”, “us”, or “our”) is operated at <a href="/privacy" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/privacy</a>.</p>
-    <p>Kandid is a social network designed around real people, real places, real relationships, and authentic moments without artificial vanity metrics.</p>
+    <p>Kindid (“Kindid”, “we”, “us”, or “our”) is operated at <a href="/privacy" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/privacy</a>.</p>
+    <p>Kindid is a social network designed around real people, real places, real relationships, and authentic moments without artificial vanity metrics.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">1. Information We Collect</h4>
     <p>We collect account credentials (username, email, password hash or Google OAuth ID token metadata), profile information (display name, bio, campus/city tag, avatar photo), user-created content (dual-camera photos, optional 3-second audio clips, captions, reactions, moments, community posts, direct messages), coarse location context (campus/city tag attached to posts; no continuous GPS tracking), and basic technical request logs.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">2. What We Do NOT Collect</h4>
@@ -8821,9 +9020,9 @@ const privacyText = `
 
 const termsText = `
     <p class="italic text-zinc-400">Last Updated: October 7, 2026</p>
-    <p>Welcome to Kandid (“Kandid”, “we”, “us”, or “our”). These Terms of Service govern your access to and use of <a href="/terms" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/terms</a>.</p>
-    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">1. What Kandid Is</h4>
-    <p>Kandid is a social platform built around real communities, real relationships, real places, and authentic moments.</p>
+    <p>Welcome to Kindid (“Kindid”, “we”, “us”, or “our”). These Terms of Service govern your access to and use of <a href="/terms" target="_blank" class="text-amber-400 underline font-semibold">kindid.in/terms</a>.</p>
+    <h4 class="font-bold text-white uppercase font-mono-tag pt-2">1. What Kindid Is</h4>
+    <p>Kindid is a social platform built around real communities, real relationships, real places, and authentic moments.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">2. Eligibility & Account Security</h4>
     <p>You must be at least 13 years of age (or legal digital consent age in your jurisdiction) to use Kindid. You are responsible for keeping your login credentials confidential.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">3. User Content & Ownership</h4>
@@ -8864,14 +9063,14 @@ window.switchScreen = function(screenId) {
         var handle = (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : (usernameInput ? usernameInput.value.trim().replace('@', '') : 'you');
         var inviteDisplay = document.getElementById('inviteLinkDisplay');
         if (inviteDisplay) {
-            inviteDisplay.textContent = 'kandid.network/invite/@' + (handle || 'you');
+            inviteDisplay.textContent = 'kindid.network/invite/@' + (handle || 'you');
         }
     }
 };
 
 const aboutText = `
-    <p class="italic text-amber-400 font-mono-tag">Kandid 2.0 — Unfiltered Social Network</p>
-    <p>Kandid is designed around real life, authentic dual-camera moments, real campus & place communities, and genuine connection.</p>
+    <p class="italic text-amber-400 font-mono-tag">Kindid 2.0 — Unfiltered Social Network</p>
+    <p>Kindid is designed around real life, authentic dual-camera moments, real campus & place communities, and genuine connection.</p>
     <h4 class="font-bold text-white uppercase font-mono-tag pt-2">Our Core Principles</h4>
     <p>• <strong>Zero Vanity Metrics:</strong> No follower counts, no public like counts, no popularity rankings.</p>
     <p>• <strong>Authentic Moments:</strong> Unfiltered dual-camera photo captures with 3-second ambient audio.</p>
@@ -8896,16 +9095,16 @@ window.openLegalModal = function(type) {
     var modal = document.getElementById('legal-modal');
 
     if (type === 'privacy') {
-        if (heading) heading.innerText = "KANDID PRIVACY POLICY";
+        if (heading) heading.innerText = "KINDID PRIVACY POLICY";
         if (body) body.innerHTML = privacyText;
     } else if (type === 'about') {
-        if (heading) heading.innerText = "ABOUT KANDID";
+        if (heading) heading.innerText = "ABOUT KINDID";
         if (body) body.innerHTML = aboutText;
     } else if (type === 'guidelines') {
         if (heading) heading.innerText = "COMMUNITY GUIDELINES";
         if (body) body.innerHTML = guidelinesText;
     } else {
-        if (heading) heading.innerText = "KANDID TERMS OF SERVICE";
+        if (heading) heading.innerText = "KINDID TERMS OF SERVICE";
         if (body) body.innerHTML = termsText;
     }
     if (modal) modal.style.display = 'flex';
@@ -9901,7 +10100,7 @@ window.submitFinalOnboarding = async function() {
     var btn = document.getElementById('finalJoinKandidBtn');
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="animate-pulse">Activating Kandid Account...</span>';
+        btn.innerHTML = '<span class="animate-pulse">Activating Kindid Account...</span>';
     }
 
     var nameInput = document.getElementById('final-name');
@@ -9968,7 +10167,7 @@ window.submitFinalOnboarding = async function() {
             var obFlow = document.getElementById('onboardingFlow');
             if (obFlow) obFlow.style.display = 'none';
 
-            showToast('Welcome to Kandid, @' + res.user.handle + '! 📷 Your world is active.');
+            showToast('Welcome to Kindid, @' + res.user.handle + '! 📷 Your world is active.');
 
             switchScreenView('feed');
             await loadFeedMoments('foryou');
@@ -9983,7 +10182,7 @@ window.submitFinalOnboarding = async function() {
             showToast('Activation error: ' + (res ? (res.error || res.message) : 'Please try again'));
             if (btn) {
                 btn.disabled = false;
-                btn.innerHTML = 'Join Kandid →';
+                btn.innerHTML = 'Join Kindid →';
             }
         }
     } catch(e) {
@@ -9991,7 +10190,7 @@ window.submitFinalOnboarding = async function() {
         showToast('Error during activation. Please try again.');
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = 'Join Kandid →';
+            btn.innerHTML = 'Join Kindid →';
         }
     }
 };
@@ -9999,7 +10198,7 @@ window.submitFinalOnboarding = async function() {
 window.copyInviteLink = function() {
     var usernameInput = document.getElementById('final-username');
     var handle = (state.currentUser && state.currentUser.handle) ? state.currentUser.handle : (usernameInput ? usernameInput.value.trim().replace('@', '') : 'you');
-    var link = 'https://kandid.network/invite/@' + (handle || 'you');
+    var link = 'https://kindid.network/invite/@' + (handle || 'you');
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(link).then(function() {
@@ -10013,7 +10212,7 @@ window.copyInviteLink = function() {
 };
 
 async function checkOnboarding() {
-    var token = localStorage.getItem('kandid_token');
+    var token = getStoredAuthToken();
     var obFlow = document.getElementById('onboardingFlow');
 
     if (!token) {
@@ -10038,6 +10237,8 @@ async function checkOnboarding() {
                 }
             } else {
                 // If token invalid, force login
+                localStorage.removeItem('kindid_jwt_token');
+                localStorage.removeItem('kandid_jwt_token');
                 localStorage.removeItem('kandid_token');
                 localStorage.removeItem('kandid_user');
                 localStorage.removeItem('kandid_active_uid');
@@ -10285,7 +10486,7 @@ window.submitResetPassword = async function() {
 // =====================================================================
 function checkAndShowFounderModal() {
     var seen = localStorage.getItem('kandid_founder_note_seen');
-    var token = localStorage.getItem('kandid_token');
+    var token = getStoredAuthToken();
     var onboarded = localStorage.getItem('kandid_onboarded');
 
     if (token && onboarded && !seen) {
@@ -10307,7 +10508,7 @@ function dismissFounderModal() {
             modal.style.opacity = '1';
         }, 250);
     }
-    showToast("Let's keep it real! Welcome to Kandid. 🚀");
+    showToast("Let's keep it real! Welcome to Kindid. 🚀");
 }
 window.dismissFounderModal = dismissFounderModal;
 
@@ -10454,7 +10655,7 @@ async function submitReportUser() {
         reason_category: 'guidelines'
       });
     }
-    showToast('Report submitted. Thank you for keeping Kandid safe 🛡️');
+    showToast('Report submitted. Thank you for keeping Kindid safe 🛡️');
   }
   switchScreenView('report-confirm');
 }
@@ -10802,7 +11003,7 @@ function openAboutKandidModal() {
   if (typeof openLegalModal === 'function') {
     openLegalModal('about');
   } else {
-    showToast('Kandid 2.0 — Authentic Social without Vanity');
+    showToast('Kindid 2.0 — Authentic Social without Vanity');
   }
 }
 window.openAboutKandidModal = openAboutKandidModal;
@@ -10811,7 +11012,7 @@ function openCommunityGuidelinesModal() {
   if (typeof openLegalModal === 'function') {
     openLegalModal('guidelines');
   } else {
-    showToast('Kandid Community Guidelines: Be Real, Respect Privacy.');
+    showToast('Kindid Community Guidelines: Be Real, Respect Privacy.');
   }
 }
 window.openCommunityGuidelinesModal = openCommunityGuidelinesModal;
@@ -11071,11 +11272,17 @@ function logoutUser() {
     });
     historyContainer.innerHTML = '';
   }
+  localStorage.removeItem('kindid_jwt_token');
+  localStorage.removeItem('kandid_jwt_token');
   localStorage.removeItem('kandid_token');
   localStorage.removeItem('kandid_onboarded');
   localStorage.removeItem('kandid_user');
   localStorage.removeItem('kandid_active_uid');
   localStorage.removeItem('kandid_cached_chat_conversations');
+  clearChatCachesForUser();
+  state.chatPendingSends = {};
+  state.chatLastReadReceipt = null;
+  state.chatReadInFlight = null;
   state.token = null;
   state.currentUser = null;
   showToast('Logged out successfully. Redirecting...');
@@ -11465,7 +11672,7 @@ async function loadNotifications() {
       item.className = 'bg-zinc-950 border border-zinc-800/80 ' + borderHighlight + ' rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-lg transition-colors cursor-pointer hover:bg-zinc-900/50 active:scale-[0.99]';
 
       var avatarSrc = (n.avatar_url && !n.avatar_url.includes('api.dicebear.com')) ? n.avatar_url : '';
-      var title = escapeHtml(n.title || n.message || 'New activity on Kandid');
+      var title = escapeHtml(n.title || n.message || 'New activity on Kindid');
       var timeAgo = escapeHtml(n.time_ago || n.timeAgo || 'Recent');
 
       item.innerHTML =
@@ -11571,6 +11778,186 @@ window.markAllNotificationsRead = markAllNotificationsRead;
 // =====================================================================
 state.activeChatUser = null;
 state.chatSyncInterval = null;
+state.chatPendingSends = state.chatPendingSends || {};
+state.chatReadInFlight = null;
+state.chatLastReadReceipt = null;
+state.chatLoadToken = 0;
+
+var CHAT_CACHE_PREFIX = 'kandid_chat_cache_v1_';
+var CHAT_CACHE_LIMIT = 50;
+
+function chatCacheKeyFor(myUid, partnerId) {
+  return CHAT_CACHE_PREFIX + encodeURIComponent(String(myUid || '').toLowerCase()) + '_' + encodeURIComponent(String(partnerId || '').toLowerCase());
+}
+
+function chatCacheStorageKey(partnerId) {
+  return chatCacheKeyFor(getActiveUserId(), partnerId);
+}
+
+function readChatCache(partnerId) {
+  try {
+    var raw = localStorage.getItem(chatCacheStorageKey(partnerId));
+    if (!raw) return [];
+    var parsed = JSON.parse(raw);
+    if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.messages)) return [];
+    return parsed.messages.filter(function(m) {
+      return m && typeof m === 'object' && m.id;
+    }).slice(-CHAT_CACHE_LIMIT);
+  } catch(e) {
+    return [];
+  }
+}
+
+function writeChatCache(partnerId, messages) {
+  try {
+    var key = chatCacheStorageKey(partnerId);
+    if (!Array.isArray(messages) || !messages.length) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, JSON.stringify({
+      v: 1,
+      saved_at: new Date().toISOString(),
+      messages: messages.slice(-CHAT_CACHE_LIMIT)
+    }));
+  } catch(e) {}
+}
+
+function clearChatCachesForUser() {
+  try {
+    var keys = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf(CHAT_CACHE_PREFIX) === 0) keys.push(k);
+    }
+    keys.forEach(function(k) { localStorage.removeItem(k); });
+  } catch(e) {}
+}
+
+function normalizeChatTimestamp(createdAtStr) {
+  var v = createdAtStr || '';
+  if (v && !v.endsWith('Z') && v.indexOf('+') === -1 && v.lastIndexOf('-') <= 10) {
+    v += 'Z';
+  }
+  return v;
+}
+
+function getChatDateGroupLabel(createdAtStr) {
+  var dateStr = 'TODAY';
+  if (createdAtStr) {
+    var d = new Date(createdAtStr);
+    if (!isNaN(d.getTime())) {
+      var now = new Date();
+      if (d.toDateString() === now.toDateString()) {
+        dateStr = 'TODAY';
+      } else {
+        dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+      }
+    }
+  }
+  return dateStr;
+}
+
+function chatMessageVisualSignature(m) {
+  if (!m) return '';
+  var reactions = (m.reactions || []).map(function(r) {
+    return String(r.emoji || '') + ':' + String(r.user_id || '');
+  }).join(',');
+  var reply = m.reply_to ? String(m.reply_to.content || '') : '';
+  return [
+    String(m.id || ''),
+    String(m.created_at || ''),
+    m.read_at ? '1' : '0',
+    String(m.content || ''),
+    String(m.message_type || ''),
+    String(m.media_url || ''),
+    String(m.moment_id || ''),
+    String(m.reply_to_id || ''),
+    reply,
+    reactions
+  ].join('|');
+}
+
+function chatMessagesSignature(messages) {
+  return JSON.stringify((messages || []).map(function(m) {
+    return [String(m.id || ''), m.read_at ? '1' : '0', (m.reactions || []).length].join('_');
+  }));
+}
+
+// Returns the number of cached messages that fell out before a shared suffix
+// matches the start of the fresh page, or -1 when the two pages are not a
+// safe append-only overlap.
+function chatCacheOverlapLength(cached, fresh) {
+  if (!Array.isArray(cached) || !Array.isArray(fresh) || !cached.length || !fresh.length) return -1;
+  for (var start = 0; start < cached.length; start++) {
+    var count = cached.length - start;
+    if (count > fresh.length) continue;
+    var ok = true;
+    for (var j = 0; j < count; j++) {
+      if (String(cached[start + j].id || '') !== String(fresh[j].id || '') ||
+          chatMessageVisualSignature(cached[start + j]) !== chatMessageVisualSignature(fresh[j])) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return start;
+  }
+  return -1;
+}
+
+function scrollChatToBottom(container) {
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
+function restorePendingChatBubbles(container) {
+  if (!container || !state.chatPendingSends) return;
+  Object.keys(state.chatPendingSends).forEach(function(randomId) {
+    var pending = state.chatPendingSends[randomId];
+    if (!pending || String(pending.receiverId) !== String(state.activeChatUser)) return;
+    if (container.querySelector('[data-random-id="' + randomId + '"]')) return;
+    if (pending.bubble) container.appendChild(pending.bubble);
+  });
+}
+
+function pruneEmptyChatDateDividers(container) {
+  if (!container) return;
+  var children = Array.prototype.slice.call(container.children);
+  children.forEach(function(child) {
+    if (child.dataset && child.dataset.msgId) return;
+    if (!child.className || String(child.className).indexOf('text-center my-2.5') === -1) return;
+    var cursor = child.nextElementSibling;
+    var hasMessage = false;
+    while (cursor) {
+      if (cursor.dataset && cursor.dataset.msgId) { hasMessage = true; break; }
+      if (cursor.className && String(cursor.className).indexOf('text-center my-2.5') !== -1) break;
+      cursor = cursor.nextElementSibling;
+    }
+    if (!hasMessage) child.remove();
+  });
+}
+
+function appendFreshChatMessages(container, cached, fresh) {
+  if (!container || !Array.isArray(cached) || !cached.length || !Array.isArray(fresh) || !fresh.length) return false;
+  var dropped = chatCacheOverlapLength(cached, fresh);
+  if (dropped < 0) return false;
+
+  cached.slice(0, dropped).forEach(function(m) {
+    var node = container.querySelector('[data-msg-id="' + String(m.id).replace(/"/g, '\\"') + '"]');
+    if (node) node.remove();
+  });
+  pruneEmptyChatDateDividers(container);
+
+  var overlapCount = cached.length - dropped;
+  var added = fresh.slice(overlapCount).filter(function(m) {
+    return !container.querySelector('[data-msg-id="' + String(m.id).replace(/"/g, '\\"') + '"]');
+  });
+  if (added.length) {
+    var lastKept = cached[cached.length - 1];
+    var lastLabel = getChatDateGroupLabel(normalizeChatTimestamp(lastKept && lastKept.created_at));
+    renderChatMessages(container, added, { append: true, lastDateGroup: lastLabel });
+  }
+  return true;
+}
 
 function isUserOnline(lastActive) {
   if (!lastActive) return false;
@@ -12078,7 +12465,9 @@ function openChatThread(userId, name, handle, avatarUrl, isOnline, campus) {
       img.removeAttribute('data-blob-url');
     });
     delete historyContainer.dataset.msgSig;
-    historyContainer.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+    // loadChatMessages() paints the local cache (or the loading state) in the
+    // same synchronous turn, so do not flash a spinner for cached threads.
+    historyContainer.innerHTML = '';
   }
   if (typeof ChatPhotoCache !== 'undefined') {
     ChatPhotoCache.clearAll(false);
@@ -12679,27 +13068,53 @@ async function loadChatMessages(userId, isSilent = false) {
   var container = document.getElementById('chatMessageHistoryV2');
   if (!container) return;
 
-  // Reset the older-history cache when opening a different conversation.
-  var isNewConversation = (state.chatOlderForUser !== userId);
+  var loadToken = (state.chatLoadToken || 0) + 1;
+  state.chatLoadToken = loadToken;
+
+  // Reset the older-history cache when opening a different conversation, or
+  // when the thread container was cleared before a re-open.
+  var needsCacheHydration = !isSilent && (!container.children.length || container.innerText.includes('LOADING'));
+  var isNewConversation = (state.chatOlderForUser !== userId) || needsCacheHydration;
+  var cachedMessages = [];
   if (isNewConversation) {
     state.chatOlderForUser = userId;
     state.chatOlderMessages = [];
     state.chatHasMore = true;
     state.chatOldestId = null;
     state.chatOlderLoading = false;
+    state.chatLastReadReceipt = null;
     delete container.dataset.msgSig;
+
+    cachedMessages = readChatCache(userId);
+    state.chatLoadedMessages = cachedMessages.length ? cachedMessages : [];
+    state.chatMyId = String(getActiveUserId() || '').toLowerCase();
+    state.chatPartnerId = String(userId || '').toLowerCase();
+
     if (!isSilent) {
-      container.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+      if (cachedMessages.length) {
+        // Local-first: paint the last known conversation synchronously, then
+        // reconcile with the server page without showing a loading spinner.
+        state.chatOldestId = cachedMessages[0].id;
+        state.chatHasMore = false;
+        container.innerHTML = '';
+        renderChatMessages(container, cachedMessages);
+        container.dataset.msgSig = chatMessagesSignature(cachedMessages);
+        scrollChatToBottom(container);
+      } else {
+        container.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
+      }
     }
   } else if (!isSilent && (!container.children.length || container.innerText.includes('LOADING'))) {
       container.innerHTML = '<div class="text-center py-8 text-[10px] text-zinc-500 font-mono-tag tracking-wider animate-pulse flex items-center justify-center gap-2"><span>🔒 PRIVATE CONVERSATION</span><span>•</span><span>LOADING...</span></div>';
   }
 
+  var priorMessages = state.chatLoadedMessages || [];
   var myUid = getActiveUserId();
   var data = await apiRequest('/api/chat/messages?chat_id=' + encodeURIComponent(userId) + '&user_id=' + encodeURIComponent(myUid) + '&limit=50');
 
-  // Guard against race conditions when switching conversations quickly
-  if (state.activeChatUser !== userId) {
+  // Guard against race conditions when switching conversations or when a newer
+  // load (for example the 2.5s silent refresh) has already superseded this one.
+  if (state.activeChatUser !== userId || state.chatLoadToken !== loadToken) {
     return;
   }
 
@@ -12709,12 +13124,10 @@ async function loadChatMessages(userId, isSilent = false) {
     }
     state.chatLoadedMessages = data.messages;
 
-    // Build signature to check if DOM needs re-rendering
-    var msgSignature = JSON.stringify(data.messages.map(function(m){
-      var rxCnt = (m.reactions || []).length;
-      return m.id + '_' + (m.read_at ? '1' : '0') + '_' + rxCnt;
-    }));
+    var msgSignature = chatMessagesSignature(data.messages);
     if (isSilent && container.dataset.msgSig === msgSignature) {
+        restorePendingChatBubbles(container);
+        markActiveChatRead(userId, data.messages);
         return;
     }
     container.dataset.msgSig = msgSignature;
@@ -12727,6 +13140,8 @@ async function loadChatMessages(userId, isSilent = false) {
           '<p class="text-[10px] text-zinc-500 font-mono-tag">Messages are private & encrypted in transit.</p>' +
         '</div>';
       state.chatHasMore = false;
+      writeChatCache(userId, []);
+      markActiveChatRead(userId, data.messages);
       return;
     }
 
@@ -12746,57 +13161,125 @@ async function loadChatMessages(userId, isSilent = false) {
     var wasNearBottom = isNewConversation || ((container.scrollHeight - container.scrollTop - container.clientHeight) < 80);
     var prevScrollTop = container.scrollTop;
 
-    renderChatMessages(container, allMessages);
+    var appended = false;
+    if (priorMessages.length && container.children.length && !state.chatOlderMessages.length) {
+      appended = appendFreshChatMessages(container, priorMessages, data.messages);
+    }
+    if (!appended) {
+      renderChatMessages(container, allMessages);
+    }
+    restorePendingChatBubbles(container);
 
     if (wasNearBottom) {
       container.scrollTop = container.scrollHeight;
     } else {
       container.scrollTop = prevScrollTop;
     }
+
+    writeChatCache(userId, data.messages);
+    markActiveChatRead(userId, data.messages);
   }
 }
 window.loadChatMessages = loadChatMessages;
+
+// Read receipts are sent only while this exact thread is open, focused and
+// visible. The server no longer marks messages read as a side effect of GET.
+async function markActiveChatRead(partnerId, messages) {
+  if (!partnerId) return;
+  if (state.activeScreen !== 'chat-conversation') return;
+  if (String(state.activeChatUser) !== String(partnerId)) return;
+  if (document.hidden) return;
+  if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+
+  var myId = String(state.chatMyId || getActiveUserId() || '').toLowerCase();
+  var maxIncoming = null;
+  (messages || []).forEach(function(m) {
+    if (String(m.sender_id || '').toLowerCase() === myId) return;
+    if (m.read_at) return;
+    maxIncoming = m;
+  });
+  if (!maxIncoming) return;
+
+  var key = String(partnerId) + '|' + String(maxIncoming.id);
+  if (state.chatLastReadReceipt === key || state.chatReadInFlight === key) return;
+  state.chatReadInFlight = key;
+  try {
+    var res = await apiRequest('/api/chat/read', {
+      method: 'POST',
+      body: JSON.stringify({ partner_id: partnerId, max_message_id: maxIncoming.id })
+    });
+    if (!res || !res.success) return;
+    if (String(state.activeChatUser) !== String(partnerId)) return;
+
+    var readAt = res.read_at || new Date().toISOString();
+    var changed = false;
+    var loaded = state.chatLoadedMessages || [];
+    var cutoffIndex = -1;
+    for (var ri = 0; ri < loaded.length; ri++) {
+      if (String(loaded[ri].id) === String(maxIncoming.id)) { cutoffIndex = ri; break; }
+    }
+    if (cutoffIndex >= 0) {
+      for (var rj = 0; rj <= cutoffIndex; rj++) {
+        var rm = loaded[rj];
+        if (String(rm.sender_id || '').toLowerCase() !== myId && !rm.read_at) {
+          rm.read_at = readAt;
+          changed = true;
+        }
+      }
+    }
+    if (changed) {
+      writeChatCache(partnerId, state.chatLoadedMessages || []);
+      var container = document.getElementById('chatMessageHistoryV2');
+      if (container) container.dataset.msgSig = chatMessagesSignature(state.chatLoadedMessages || []);
+    }
+    state.chatLastReadReceipt = key;
+    if (typeof checkChatUnreadBadge === 'function') checkChatUnreadBadge();
+  } catch(e) {
+    console.warn('[Chat] read receipt failed', e);
+  } finally {
+    if (state.chatReadInFlight === key) state.chatReadInFlight = null;
+  }
+}
+
+function maybeMarkActiveChatRead() {
+  if (document.hidden || state.activeScreen !== 'chat-conversation' || !state.activeChatUser) return;
+  if (typeof document.hasFocus === 'function' && !document.hasFocus()) return;
+  markActiveChatRead(state.activeChatUser, state.chatLoadedMessages || []);
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (!document.hidden) maybeMarkActiveChatRead();
+});
+window.addEventListener('focus', maybeMarkActiveChatRead);
 
 // Renders a chronological (oldest -> newest) list of chat messages into the container.
 function renderChatMessages(container, messages) {
     var myId = state.chatMyId;
     var activePartnerId = state.chatPartnerId;
+    var options = arguments[2] || {};
+    var appendMode = !!options.append;
 
-    // Detach and release outgoing attachment images
-    var outgoingImgs = container.querySelectorAll('img.chat-attachment-img[data-media-url]');
-    outgoingImgs.forEach(function(img) {
-      var rawUrl = img.dataset.mediaUrl;
-      if (rawUrl && typeof ChatPhotoCache !== 'undefined') {
-        ChatPhotoCache.releaseConsumer(rawUrl);
-      }
-      img.removeAttribute('src');
-      img.removeAttribute('data-blob-url');
-    });
+    if (!appendMode) {
+      // Detach and release outgoing attachment images
+      var outgoingImgs = container.querySelectorAll('img.chat-attachment-img[data-media-url]');
+      outgoingImgs.forEach(function(img) {
+        var rawUrl = img.dataset.mediaUrl;
+        if (rawUrl && typeof ChatPhotoCache !== 'undefined') {
+          ChatPhotoCache.releaseConsumer(rawUrl);
+        }
+        img.removeAttribute('src');
+        img.removeAttribute('data-blob-url');
+      });
 
-    container.innerHTML = '';
-    var lastDateGroup = null;
+      container.innerHTML = '';
+    }
+    var lastDateGroup = appendMode ? (options.lastDateGroup || null) : null;
     messages.forEach(function(m) {
       var senderId = String(m.sender_id || '').toLowerCase();
       var isMe = (senderId === myId) || (senderId !== activePartnerId);
 
-      var createdAtStr = m.created_at || '';
-      if (createdAtStr && !createdAtStr.endsWith('Z') && createdAtStr.indexOf('+') === -1 && createdAtStr.lastIndexOf('-') <= 10) {
-        createdAtStr += 'Z';
-      }
-
-      // Date divider
-      var dateStr = 'TODAY';
-      if (createdAtStr) {
-        var d = new Date(createdAtStr);
-        if (!isNaN(d.getTime())) {
-          var now = new Date();
-          if (d.toDateString() === now.toDateString()) {
-            dateStr = 'TODAY';
-          } else {
-            dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
-          }
-        }
-      }
+      var createdAtStr = normalizeChatTimestamp(m.created_at || '');
+      var dateStr = getChatDateGroupLabel(createdAtStr);
 
       if (dateStr !== lastDateGroup) {
         lastDateGroup = dateStr;
@@ -13264,6 +13747,136 @@ function openCameraForActiveChat() {
 }
 window.openCameraForActiveChat = openCameraForActiveChat;
 
+var _chatRandomSequence = 0;
+
+function createChatRandomId() {
+  _chatRandomSequence = (_chatRandomSequence + 1) % 1000000;
+  return 'msg_rand_' + Date.now() + '_' + _chatRandomSequence.toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+function buildChatSendPayload(randomId, receiverId, text, replyId) {
+  var myUid = getActiveUserId();
+  return {
+    senderId: myUid,
+    sender_id: myUid,
+    receiverId: receiverId,
+    receiver_id: receiverId,
+    content: text,
+    reply_to_id: replyId,
+    message_type: 'text',
+    random_id: randomId
+  };
+}
+
+function setChatBubbleStatus(bubble, status) {
+  if (!bubble) return;
+  var el = bubble.querySelector('[data-chat-status]');
+  if (!el) return;
+  if (status === 'sending') {
+    el.dataset.chatStatus = 'clock';
+    el.textContent = '⏱';
+    el.title = 'Sending';
+    el.className = 'text-[10px] text-black/60 font-bold ml-1 font-mono-tag';
+    el.onclick = null;
+  } else if (status === 'sent') {
+    el.dataset.chatStatus = 'sent';
+    el.textContent = '✓';
+    el.title = 'Sent';
+    el.className = 'text-[9px] text-black/60 font-bold ml-1 font-mono-tag';
+    el.onclick = null;
+  } else if (status === 'failed') {
+    el.dataset.chatStatus = 'failed';
+    el.textContent = '!';
+    el.title = 'Failed. Tap to retry.';
+    el.className = 'text-[10px] text-red-700 font-bold ml-1 font-mono-tag cursor-pointer';
+    el.onclick = function(e) {
+      if (e) e.stopPropagation();
+      retryChatSend(bubble.dataset.randomId);
+    };
+  }
+}
+
+function createOptimisticChatBubble(text, randomId) {
+  var bubble = document.createElement('div');
+  bubble.className = 'flex flex-col items-end space-y-1 transform translate-y-4 opacity-0 transition-all duration-300 ease-out';
+  bubble.dataset.msgId = 'temp_' + randomId;
+  bubble.dataset.randomId = randomId;
+  var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  bubble.innerHTML =
+    '<div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
+      '<p class="leading-relaxed">' + escapeHtml(text) + '</p>' +
+      '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
+        '<span class="text-[8px] font-mono-tag">' + timeNow + '</span>' +
+        '<span data-chat-status="clock" class="text-[10px] text-black/60 font-bold ml-1 font-mono-tag" title="Sending">⏱</span>' +
+      '</div>' +
+    '</div>';
+  return bubble;
+}
+
+async function deliverChatMessage(pending) {
+  if (!pending) return;
+  pending.status = 'sending';
+  setChatBubbleStatus(pending.bubble, 'sending');
+
+  var res = null;
+  try {
+    res = await apiRequest('/api/chat/send', {
+      method: 'POST',
+      body: JSON.stringify(buildChatSendPayload(pending.randomId, pending.receiverId, pending.text, pending.replyId))
+    });
+  } catch (err) {
+    console.error('Chat send error:', err);
+    res = null;
+  }
+
+  if (res && res.success) {
+    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+      window.KandidObservability.captureEvent('message_send_success', {
+        has_attachment: false,
+        deduplicated: Boolean(res.deduplicated)
+      });
+    }
+
+    var canonical = res.message || null;
+    if (pending.bubble && canonical && canonical.id) {
+      pending.bubble.dataset.msgId = canonical.id;
+      setChatBubbleStatus(pending.bubble, 'sent');
+    } else if (pending.bubble) {
+      setChatBubbleStatus(pending.bubble, 'sent');
+    }
+
+    var sameConversation = String(state.activeChatUser) === String(pending.receiverId);
+    if (sameConversation && canonical && canonical.id) {
+      if (!Array.isArray(canonical.reactions)) canonical.reactions = [];
+      if (typeof canonical.reply_to === 'undefined') canonical.reply_to = null;
+      if (typeof canonical.moment === 'undefined') canonical.moment = null;
+      var list = (state.chatLoadedMessages || []).slice();
+      var exists = list.some(function(m) { return String(m.id) === String(canonical.id); });
+      if (!exists) list.push(canonical);
+      state.chatLoadedMessages = list;
+      writeChatCache(pending.receiverId, list);
+    }
+
+    delete state.chatPendingSends[pending.randomId];
+    pending.status = 'sent';
+
+    if (sameConversation) {
+      loadChatMessages(pending.receiverId, true);
+    }
+    checkChatUnreadBadge();
+  } else {
+    pending.status = 'failed';
+    state.chatPendingSends[pending.randomId] = pending;
+    setChatBubbleStatus(pending.bubble, 'failed');
+    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
+      window.KandidObservability.captureEvent('message_send_failed', {
+        error_category: (res && res.error) ? 'api_error' : 'network_or_exception'
+      });
+    }
+    showToast(res && res.error ? res.error : 'Failed to send message. Tap the red ! to retry.');
+  }
+}
+
 async function sendChatMessageV2() {
   var input = document.getElementById('chatComposerInput');
   if (!input) return;
@@ -13274,11 +13887,12 @@ async function sendChatMessageV2() {
     return;
   }
 
+  var receiverId = state.activeChatUser;
   var replyId = state.activeChatReplyTo ? state.activeChatReplyTo.id : null;
   clearChatReplyTo();
   input.value = '';
 
-  var myUid = getActiveUserId();
+  var randomId = createChatRandomId();
   var container = document.getElementById('chatMessageHistoryV2');
   var tempBubble = null;
   if (container) {
@@ -13286,17 +13900,7 @@ async function sendChatMessageV2() {
       container.innerHTML = '';
     }
 
-    tempBubble = document.createElement('div');
-    tempBubble.className = 'flex flex-col items-end space-y-1 transform translate-y-4 opacity-0 transition-all duration-300 ease-out';
-    var timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    tempBubble.innerHTML =
-      '<div class="max-w-[78%] rounded-2xl px-3.5 py-2 text-xs bg-amber-500 text-black font-medium shadow-sm space-y-0.5">' +
-        '<p class="leading-relaxed">' + escapeHtml(text) + '</p>' +
-        '<div class="flex items-center justify-end gap-1 opacity-80 pt-0.5">' +
-          '<span class="text-[8px] font-mono-tag">' + timeNow + '</span>' +
-          '<span class="text-[9px] text-black/60 font-bold ml-1 font-mono-tag">✓</span>' +
-        '</div>' +
-      '</div>';
+    tempBubble = createOptimisticChatBubble(text, randomId);
     container.appendChild(tempBubble);
 
     // Trigger animation
@@ -13313,51 +13917,32 @@ async function sendChatMessageV2() {
     }
   }
 
-  try {
-    var res = await apiRequest('/api/chat/send', {
-      method: 'POST',
-      body: JSON.stringify({
-        senderId: myUid,
-        sender_id: myUid,
-        receiverId: state.activeChatUser,
-        receiver_id: state.activeChatUser,
-        content: text,
-        reply_to_id: replyId,
-        message_type: 'text'
-      })
-    });
-
-    if (res && res.success) {
-      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
-        window.KandidObservability.captureEvent('message_send_success', {
-          has_attachment: false
-        });
-      }
-      if (tempBubble && res.message && res.message.id) {
-        tempBubble.dataset.msgId = res.message.id;
-      }
-      await loadChatMessages(state.activeChatUser, true);
-      checkChatUnreadBadge();
-    } else {
-      if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
-        window.KandidObservability.captureEvent('message_send_failed', {
-          error_category: (res && res.error) ? 'api_error' : 'unknown'
-        });
-      }
-      showToast(res ? res.error : 'Message send failed. Please check connection.');
-      if (tempBubble) tempBubble.remove();
-    }
-  } catch (err) {
-    if (window.KandidObservability && typeof window.KandidObservability.captureEvent === 'function') {
-      window.KandidObservability.captureEvent('message_send_failed', {
-        error_category: 'network_or_exception'
-      });
-    }
-    console.error('Chat send error:', err);
-    showToast('Failed to send message.');
-    if (tempBubble) tempBubble.remove();
-  }
+  var pending = {
+    randomId: randomId,
+    receiverId: receiverId,
+    text: text,
+    replyId: replyId,
+    bubble: tempBubble,
+    status: 'sending'
+  };
+  state.chatPendingSends[randomId] = pending;
+  await deliverChatMessage(pending);
 }
+
+function retryChatSend(randomId) {
+  var pending = state.chatPendingSends ? state.chatPendingSends[randomId] : null;
+  if (!pending || pending.status === 'sending') return;
+  if (String(state.activeChatUser) !== String(pending.receiverId)) {
+    showToast('Return to this conversation to retry.');
+    return;
+  }
+  var container = document.getElementById('chatMessageHistoryV2');
+  if (container && !container.querySelector('[data-random-id="' + randomId + '"]') && pending.bubble) {
+    container.appendChild(pending.bubble);
+  }
+  deliverChatMessage(pending);
+}
+window.retryChatSend = retryChatSend;
 window.sendChatMessageV2 = sendChatMessageV2;
 
 // Background Real-Time Poller for Chat & Notifications
@@ -13802,7 +14387,7 @@ async function connectWithUser(userId, btnEl) {
 window.connectWithUser = connectWithUser;
 
 // =====================================================================
-// FEATURE 2: SELFIE REALMOJI REACTION CAPTURE ENGINE
+// FEATURE 2: SELFIE KINDMOJI REACTION CAPTURE ENGINE
 // =====================================================================
 var realmojiMediaStream = null;
 
@@ -13823,8 +14408,8 @@ async function openRealmojiCapture(postId) {
       video.play().catch(function(e){ console.warn(e); });
     }
   } catch(e) {
-    console.warn('Realmoji camera error:', e);
-    showToast('Front camera permission needed for selfie Realmoji');
+    console.warn('KindMoji camera error:', e);
+    showToast('Front camera permission needed for selfie KindMoji');
   }
 }
 window.openRealmojiCapture = openRealmojiCapture;
@@ -13850,7 +14435,7 @@ async function snapAndSendRealmoji() {
   ctx.drawImage(video, 0, 0, 200, 200);
   var dataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
-  showToast('Sending your Selfie Realmoji... 🤳');
+  showToast('Sending your Selfie KindMoji... 🤳');
   closeRealmojiCapture();
 
   var res = await apiRequest('/api/react', {
@@ -13863,7 +14448,7 @@ async function snapAndSendRealmoji() {
   });
 
   if (res && res.success) {
-    showToast('Selfie Realmoji posted! 🔥 +15 XP');
+    showToast('Selfie KindMoji posted! 🔥 +15 XP');
     if (typeof loadFeedMoments === 'function') loadFeedMoments(state.activeCircle || 'foryou');
   } else {
     showToast('Reaction failed: ' + (res ? res.error : 'Network error'));
@@ -13872,7 +14457,7 @@ async function snapAndSendRealmoji() {
 window.snapAndSendRealmoji = snapAndSendRealmoji;
 
 // =====================================================================
-// FEATURE 3: SPONTANEOUS DAILY ALERT ENGINE ("⚠️ TIME TO KANDID")
+// FEATURE 3: SPONTANEOUS DAILY ALERT ENGINE ("⚠️ TIME TO KINDID")
 // =====================================================================
 var dailyPrompts = [
   'POV: Your current view',
@@ -13975,12 +14560,12 @@ window.dismissDailyAlert = dismissDailyAlert;
 // =====================================================================
 function shareCampusInvite() {
   var handle = state.currentUser ? state.currentUser.handle : 'student';
-  var inviteUrl = 'https://kandid.network/invite/@' + handle.replace('@', '');
-  var text = 'Join me on Kandid! Raw, unedited moments with 3-second ambient audio from our campus: ' + inviteUrl;
+  var inviteUrl = 'https://kindid.network/invite/@' + handle.replace('@', '');
+  var text = 'Join me on Kindid! Raw, unedited moments with 3-second ambient audio from our campus: ' + inviteUrl;
 
   if (navigator.share) {
     navigator.share({
-      title: 'Join me on Kandid',
+      title: 'Join me on Kindid',
       text: text,
       url: inviteUrl
     }).then(function() {
@@ -14009,7 +14594,7 @@ window.copyInviteToClipboard = copyInviteToClipboard;
 // =====================================================================
 // Functions filterMemoriesByMonth and renderMemoriesFeed are implemented above in Section 5.
 
-// Start Daily Kandid Alert after 5 minutes of app usage
+// Start Daily Kindid Alert after 5 minutes of app usage
 setTimeout(function() {
   initDailyKandidAlert();
 }, 5 * 60 * 1000); // 5 Minutes (300,000 ms)
@@ -14371,7 +14956,7 @@ async function connectWithClusterMember(targetUserId, targetHandle) {
       method: 'POST',
       body: JSON.stringify({
         recipientId: targetUserId,
-        content: 'Hey @' + targetHandle + '! We shared a moment together on Kandid.'
+        content: 'Hey @' + targetHandle + '! We shared a moment together on Kindid.'
       })
     });
     if (res && res.success) {
