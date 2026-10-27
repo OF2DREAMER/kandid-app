@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Kandid Production Server (v5.1.0)
+Kindid Production Server (v5.1.0)
 Scalable Campus Social Platform
 """
 
@@ -124,7 +124,7 @@ if CLOUDINARY_URL and (not CLOUDINARY_CLOUD_NAME or not CLOUDINARY_API_KEY or no
         CLOUDINARY_API_SECRET = CLOUDINARY_API_SECRET or _c_s
         CLOUDINARY_CLOUD_NAME = CLOUDINARY_CLOUD_NAME or _c_n
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", os.environ.get("RESEND_API_KEY", "")).strip().strip("'\"")
-BREVO_FROM_EMAIL = os.environ.get("BREVO_FROM_EMAIL", os.environ.get("RESEND_FROM_EMAIL", os.environ.get("FROM_EMAIL", "onboarding@kandid.app"))).strip().strip("'\"")
+BREVO_FROM_EMAIL = os.environ.get("BREVO_FROM_EMAIL", os.environ.get("RESEND_FROM_EMAIL", os.environ.get("FROM_EMAIL", "onboarding@kindid.app"))).strip().strip("'\"")
 RESEND_API_KEY = BREVO_API_KEY
 RESEND_FROM_EMAIL = BREVO_FROM_EMAIL
 FROM_EMAIL = BREVO_FROM_EMAIL
@@ -664,7 +664,7 @@ def send_drop_reminder(user_dict, drop_dict, reminder_dict):
     """
     user_email = (user_dict.get("email") or "").strip()
     drop_title = drop_dict.get("title", "Community Experience")
-    comm_name = drop_dict.get("community_name", "Kandid Community")
+    comm_name = drop_dict.get("community_name", "Kindid Community")
     date_str = drop_dict.get("date_str", "Today")
     time_str = drop_dict.get("time_str", "6:00 PM")
 
@@ -676,9 +676,9 @@ def send_drop_reminder(user_dict, drop_dict, reminder_dict):
             <p>Hey @{user_dict.get('handle', 'there')},</p>
             <p>Your confirmed pass for <strong>{drop_title}</strong> in <strong>{comm_name}</strong> is starting soon ({date_str} at {time_str}).</p>
             <div style="background: #18181b; padding: 12px; border-radius: 8px; border: 1px solid #27272a; margin: 16px 0;">
-                <p style="margin: 0; font-size: 12px; color: #a1a1aa;">Check-in will open at scheduled start. Open Kandid to view your pass.</p>
+                <p style="margin: 0; font-size: 12px; color: #a1a1aa;">Check-in will open at scheduled start. Open Kindid to view your pass.</p>
             </div>
-            <p style="font-size: 11px; color: #71717a;">Kandid — Real moments with real people.</p>
+            <p style="font-size: 11px; color: #71717a;">Kindid — Real moments with real people.</p>
         </div>
         """
         res = send_email_brevo(user_email, subject, html)
@@ -1083,7 +1083,7 @@ def archive_drop_to_memory(drop_id, actor_user_id=None):
             mem_id, comm_name, drop_id, drop.get("community_id", ""), comm_name,
             drop.get("title", "Community Experience"), drop.get("date_str", "Recent"),
             checked_in_count, story, cover_img, drop.get("creator_id", "u_system"),
-            drop.get("creator_handle", "kandid"), checked_in_count, now_iso
+            drop.get("creator_handle", "kindid"), checked_in_count, now_iso
         ))
 
         cursor.execute("""
@@ -1221,7 +1221,7 @@ os.makedirs(os.path.join(STATIC_DIR, "uploads", "covers"), exist_ok=True)
 
 def validate_environment():
     print(f"\n=======================================================")
-    print(f"🚀 KANDID SERVER INITIALIZING [MODE: {ENVIRONMENT.upper()}]")
+    print(f"🚀 KINDID SERVER INITIALIZING [MODE: {ENVIRONMENT.upper()}]")
     print(f"=======================================================")
     key_exists = bool(BREVO_API_KEY)
     key_len = len(BREVO_API_KEY)
@@ -1332,10 +1332,10 @@ def send_email_brevo(to_email, subject, html_content, text_content=""):
             
     try:
         url = "https://api.brevo.com/v3/smtp/email"
-        sender_email = from_email or "onboarding@kandid.app"
+        sender_email = from_email or "onboarding@kindid.app"
         payload = {
             "sender": {
-                "name": "Kandid",
+                "name": "Kindid",
                 "email": sender_email
             },
             "to": [
@@ -1729,7 +1729,7 @@ def generate_secure_otp(email, ip_address="", async_dispatch=False):
                     "status": 500
                 }
 
-        # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email (Kandid Rate Limiter)
+        # 1. Rate Limit: Max 3 OTP requests in 15 minutes per email (Kindid Rate Limiter)
         fifteen_mins_ago = (datetime.now() - timedelta(minutes=15)).isoformat()
         cursor.execute("SELECT created_at FROM email_otps WHERE email = ? AND created_at > ? ORDER BY created_at ASC", (clean_email, fifteen_mins_ago))
         rows = cursor.fetchall()
@@ -1789,11 +1789,11 @@ def generate_secure_otp(email, ip_address="", async_dispatch=False):
         conn.close()
     
     # 5. Email Template & Dispatch
-    subject = "Your Kandid verification code"
+    subject = "Your Kindid verification code"
     html = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #09090b; color: #f4f4f5; padding: 32px 20px; text-align: center; border-radius: 16px; max-width: 480px; margin: 0 auto; border: 1px solid #27272a;">
         <div style="margin-bottom: 24px;">
-            <span style="font-size: 24px; font-weight: 900; letter-spacing: 0.25em; color: #f59e0b; text-transform: uppercase;">KANDID</span>
+            <span style="font-size: 24px; font-weight: 900; letter-spacing: 0.25em; color: #f59e0b; text-transform: uppercase;">KINDID</span>
             <p style="font-size: 11px; letter-spacing: 0.15em; color: #71717a; text-transform: uppercase; margin-top: 4px;">No Filter · Just Real Moments</p>
         </div>
         <div style="background-color: #18181b; border-radius: 12px; padding: 24px; border: 1px solid #27272a; margin-bottom: 24px;">
@@ -1804,7 +1804,7 @@ def generate_secure_otp(email, ip_address="", async_dispatch=False):
         <p style="font-size: 11px; color: #52525b;">If you didn't request this code, you can safely ignore this email.</p>
     </div>
     """
-    text = f"Your Kandid verification code is: {code} (Valid for 10 minutes)."
+    text = f"Your Kindid verification code is: {code} (Valid for 10 minutes)."
     
     # Asynchronous background dispatch for flows requiring decoupled provider latency (e.g. forgot password)
     if async_dispatch:
@@ -2037,7 +2037,7 @@ MAX_DROP_VIDEO_PAYLOAD_BYTES = 25 * 1024 * 1024  # 25 MB payload limit for 3s dr
 # reaction popover in app.js (fire, bolt, wow, heart, clap, coffee), the
 # moment modal buttons in index.html (heart, laugh, fire, clap, wow), the
 # chat message reaction sheet in index.html (heart, fire, laugh, wow, clap,
-# hundred), and the selfie Realmoji capture in app.js ('\U0001F933').
+# hundred), and the selfie KindMoji capture in app.js ('\U0001F933').
 REACTION_ALLOWLIST = frozenset([
     "\U0001F525",  # fire
     "\u26A1",      # bolt
@@ -2047,7 +2047,7 @@ REACTION_ALLOWLIST = frozenset([
     "\u2615",      # coffee
     "\U0001F602",  # laugh
     "\U0001F4AF",  # hundred
-    "\U0001F933",  # selfie (selfie Realmoji)
+    "\U0001F933",  # selfie (selfie KindMoji)
 ])
 MAX_EMOJI_LEN = 16
 
@@ -2638,7 +2638,7 @@ def verify_google_id_token(token_str: str) -> dict:
         return {
             "sub": sub,
             "email": email,
-            "name": str(claims.get("name") or "Kandid User").strip(),
+            "name": str(claims.get("name") or "Kindid User").strip(),
             "picture": str(claims.get("picture") or "").strip()
         }
     except Exception:
@@ -2648,7 +2648,7 @@ def verify_google_id_token(token_str: str) -> dict:
             import urllib.parse
             import time
             url = "https://oauth2.googleapis.com/tokeninfo?id_token=" + urllib.parse.quote(token_str)
-            req = urllib.request.Request(url, headers={"User-Agent": "Kandid-Server/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Kindid-Server/1.0"})
             with urllib.request.urlopen(req, timeout=5) as response:
                 if response.status != 200:
                     return None
@@ -2678,7 +2678,7 @@ def verify_google_id_token(token_str: str) -> dict:
             return {
                 "sub": sub,
                 "email": email,
-                "name": str(data.get("name") or "Kandid User").strip(),
+                "name": str(data.get("name") or "Kindid User").strip(),
                 "picture": str(data.get("picture") or "").strip()
             }
         except Exception:
@@ -3899,20 +3899,20 @@ def init_db():
 
     # Seed Default Communities across Interests, Places, Cities, and Campuses
     cursor.executemany("INSERT OR IGNORE INTO communities (id, name, type, description, city, creator_id, creator_handle, icon, visibility, members_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
-        ('comm_1', 'North City University', 'Campus', 'Academic & student community life across campus.', 'New Delhi', 'u_system', 'kandid', '🎓', 'public', 142),
-        ('comm_2', 'Indiranagar Coffee & Tech', 'Place', 'Shared physical space for tech builders & late night espresso.', 'Bengaluru, KA', 'u_system', 'kandid', '☕', 'public', 86),
-        ('comm_3', 'Bandra Street Photography', 'Interest', 'Capturing raw street & 35mm candid moments across the coast.', 'Mumbai, MH', 'u_system', 'kandid', '📸', 'public', 64),
-        ('comm_4', 'Sunday Basketball Court', 'Place', 'Physical court context for pickup games & drills.', 'Delhi NCR', 'u_system', 'kandid', '🏀', 'public', 38),
-        ('comm_5', 'Indie Hackers & Builders', 'Interest', 'Building prototypes, open source code, and daily build logs.', 'Bengaluru, KA', 'u_system', 'kandid', '💻', 'public', 95),
-        ('comm_6', 'Campus Library Wing', 'Place', 'Quiet study, longform reading, and architectural drafts.', 'Supaul, Bihar', 'u_system', 'kandid', '📚', 'public', 48),
-        ('comm_7', 'Guru Kashi University', 'Campus', 'Student life, workshops, engineering labs & campus events.', 'Talwandi Sabo, Bathinda', 'u_system', 'kandid', '🎓', 'public', 128),
-        ('comm_8', 'Bhupendra Narayan Mandal University (BNMU)', 'Campus', 'Regional university network across Madhepura & Supaul.', 'Madhepura / Supaul', 'u_system', 'kandid', '🎓', 'public', 110),
-        ('comm_9', 'Supaul Community Circle', 'City', 'Local creators, town gatherings, street moments & neighborhood stories.', 'Supaul, Bihar', 'u_system', 'kandid', '📍', 'public', 75),
-        ('comm_10', 'Analog Film & 35mm Club', 'Interest', 'Film photography, developing logs, golden hour strolls.', 'Delhi NCR', 'u_system', 'kandid', '🎞️', 'public', 52),
-        ('comm_11', 'Hauz Khas Social & Art Hub', 'Place', 'Creative arts, music sessions, and sunset rooftop moments.', 'New Delhi', 'u_system', 'kandid', '🎨', 'public', 89),
-        ('comm_12', 'Delhi University (DU)', 'Campus', 'North & South campus student circles and festival logs.', 'New Delhi', 'u_system', 'kandid', '🎓', 'public', 210),
-        ('comm_13', 'Patna University', 'Campus', 'Ganga ghat strolls, historic campus life & debates.', 'Patna, Bihar', 'u_system', 'kandid', '🎓', 'public', 94),
-        ('comm_14', 'Running & Calisthenics Crew', 'Interest', 'Early morning trail runs, park workouts & active lifestyle.', 'Mumbai, MH', 'u_system', 'kandid', '🏃', 'public', 44)
+        ('comm_1', 'North City University', 'Campus', 'Academic & student community life across campus.', 'New Delhi', 'u_system', 'kindid', '🎓', 'public', 142),
+        ('comm_2', 'Indiranagar Coffee & Tech', 'Place', 'Shared physical space for tech builders & late night espresso.', 'Bengaluru, KA', 'u_system', 'kindid', '☕', 'public', 86),
+        ('comm_3', 'Bandra Street Photography', 'Interest', 'Capturing raw street & 35mm candid moments across the coast.', 'Mumbai, MH', 'u_system', 'kindid', '📸', 'public', 64),
+        ('comm_4', 'Sunday Basketball Court', 'Place', 'Physical court context for pickup games & drills.', 'Delhi NCR', 'u_system', 'kindid', '🏀', 'public', 38),
+        ('comm_5', 'Indie Hackers & Builders', 'Interest', 'Building prototypes, open source code, and daily build logs.', 'Bengaluru, KA', 'u_system', 'kindid', '💻', 'public', 95),
+        ('comm_6', 'Campus Library Wing', 'Place', 'Quiet study, longform reading, and architectural drafts.', 'Supaul, Bihar', 'u_system', 'kindid', '📚', 'public', 48),
+        ('comm_7', 'Guru Kashi University', 'Campus', 'Student life, workshops, engineering labs & campus events.', 'Talwandi Sabo, Bathinda', 'u_system', 'kindid', '🎓', 'public', 128),
+        ('comm_8', 'Bhupendra Narayan Mandal University (BNMU)', 'Campus', 'Regional university network across Madhepura & Supaul.', 'Madhepura / Supaul', 'u_system', 'kindid', '🎓', 'public', 110),
+        ('comm_9', 'Supaul Community Circle', 'City', 'Local creators, town gatherings, street moments & neighborhood stories.', 'Supaul, Bihar', 'u_system', 'kindid', '📍', 'public', 75),
+        ('comm_10', 'Analog Film & 35mm Club', 'Interest', 'Film photography, developing logs, golden hour strolls.', 'Delhi NCR', 'u_system', 'kindid', '🎞️', 'public', 52),
+        ('comm_11', 'Hauz Khas Social & Art Hub', 'Place', 'Creative arts, music sessions, and sunset rooftop moments.', 'New Delhi', 'u_system', 'kindid', '🎨', 'public', 89),
+        ('comm_12', 'Delhi University (DU)', 'Campus', 'North & South campus student circles and festival logs.', 'New Delhi', 'u_system', 'kindid', '🎓', 'public', 210),
+        ('comm_13', 'Patna University', 'Campus', 'Ganga ghat strolls, historic campus life & debates.', 'Patna, Bihar', 'u_system', 'kindid', '🎓', 'public', 94),
+        ('comm_14', 'Running & Calisthenics Crew', 'Interest', 'Early morning trail runs, park workouts & active lifestyle.', 'Mumbai, MH', 'u_system', 'kindid', '🏃', 'public', 44)
     ])
 
     # Drops/Ticketing/Financial schema removed — Drops feature not in V1 (B-10a)
@@ -6009,6 +6009,33 @@ def is_blocked_static_path(norm_path):
     return any(norm_path == blocked or norm_path.startswith(blocked + "/") for blocked in BLOCKED_STATIC_DIRS)
 
 
+INVITE_LINK_PREFIXES = (
+    "kindid://invite/",
+    "kandid://invite/",
+    "https://kindid.in/invite/",
+    "https://www.kindid.in/invite/",
+    "https://kandid.in/invite/",
+    "https://www.kandid.in/invite/",
+    "https://kandid.app/invite/",
+    "/invite/",
+)
+
+
+def normalize_invite_code(raw_code):
+    """Accept a plain code or a legacy/new deep-link URL for the same invite."""
+    value = str(raw_code or "").strip()
+    if not value:
+        return ""
+    lower = value.lower()
+    for prefix in INVITE_LINK_PREFIXES:
+        if lower.startswith(prefix):
+            value = value[len(prefix):]
+            break
+    for separator in ("?", "#"):
+        value = value.split(separator, 1)[0]
+    return value.strip().rstrip("/")
+
+
 class KandidThreadingServer(socketserver.ThreadingMixIn, HTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -7039,7 +7066,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     
                     if post:
                         img_url = post["image_url"] or ""
-                        caption = post["caption"] or "A Kandid moment"
+                        caption = post["caption"] or "A Kindid moment"
                         handle = post["handle"] or "someone"
                         
                         if img_url and img_url.startswith("/"):
@@ -7050,7 +7077,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         safe_handle = html.escape(handle)
                         
                         og_tags = f'''
-  <meta property="og:title" content="Moment by @{safe_handle} on Kandid" />
+  <meta property="og:title" content="Moment by @{safe_handle} on Kindid" />
   <meta property="og:description" content="{safe_caption}" />
   <meta property="og:image" content="{img_url}" />
   <meta property="og:type" content="website" />
@@ -8831,7 +8858,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 comm_city = comm_row["city"] or ""
                 comm_desc = comm_row["description"] or "Authentic moments and shared daily life."
                 comm_icon = comm_row["icon"] or "🎓"
-                creator_handle = comm_row["creator_handle"] or "kandid"
+                creator_handle = comm_row["creator_handle"] or "kindid"
                 members_count = comm_row["members_count"] or 1
             else:
                 comm_id = target_campus
@@ -8840,7 +8867,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 comm_city = ""
                 comm_desc = "Authentic moments and shared daily life."
                 comm_icon = "📍"
-                creator_handle = "kandid"
+                creator_handle = "kindid"
                 members_count = 1
 
             # Check if user is joined & authoritative role
@@ -11015,9 +11042,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
         # =========================================================================
 
         if path == "/api/invite/preview" or path.startswith("/api/invite/preview/"):
-            invite_code = query.get("code", [""])[0].strip()
+            invite_code = normalize_invite_code(query.get("code", [""])[0])
             if not invite_code and path.startswith("/api/invite/preview/"):
-                invite_code = path[len("/api/invite/preview/"):].strip()
+                invite_code = normalize_invite_code(path[len("/api/invite/preview/"):])
             
             if not invite_code:
                 return self.send_json(400, {"success": False, "error": "Invite code is required"})
@@ -12655,7 +12682,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 conn.close()
                 return self.send_json(200, {
                     "success": True,
-                    "message": "Report already submitted. Thank you for keeping Kandid safe.",
+                    "message": "Report already submitted. Thank you for keeping Kindid safe.",
                     "report_id": existing_rep[0],
                     "duplicate": True
                 })
@@ -14323,7 +14350,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 })
 
             # Create new onboarding session (24 hour expiry)
-            email_for_handle = email if email else f"user_{secrets.token_hex(4)}@kandid.app"
+            email_for_handle = email if email else f"user_{secrets.token_hex(4)}@kindid.app"
             base_handle = email_for_handle.split("@")[0].lower()
             base_handle = "".join(c for c in base_handle if c.isalnum() or c == "_")
             if not base_handle or len(base_handle) < 3:
@@ -14424,7 +14451,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             s = dict(session_row)
             email = s["email"]
             provider_subject = s["provider_subject"]
-            name = (body.get("name") or s.get("google_name") or "Kandid Creator").strip()
+            name = (body.get("name") or s.get("google_name") or "Kindid Creator").strip()
             handle = (body.get("handle") or s.get("chosen_handle") or email.split("@")[0]).strip().lower().replace("@", "")
             campus_name = (body.get("campus_name") or s.get("chosen_campus_name") or "").strip()
             campus_id = (body.get("campus_id") or s.get("chosen_campus_id") or "").strip()
@@ -14960,13 +14987,13 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not quest:
                 cursor.execute("INSERT INTO quest_progress (user_id, quest_date, moment_captured, daily_mission) VALUES (?, ?, ?, ?)", 
                                (user["id"], today, 1, 1 if is_daily_mission else 0))
-                award_xp(conn, user["id"], 50, "Kandid Moment captured")
+                award_xp(conn, user["id"], 50, "Kindid Moment captured")
                 if is_daily_mission:
                     award_xp(conn, user["id"], 100, "Daily Mission completed")
             else:
                 if quest["moment_captured"] == 0:
                     cursor.execute("UPDATE quest_progress SET moment_captured = 1 WHERE user_id = ? AND quest_date = ?", (user["id"], today))
-                    award_xp(conn, user["id"], 50, "Kandid Moment captured")
+                    award_xp(conn, user["id"], 50, "Kindid Moment captured")
                 if is_daily_mission and quest["daily_mission"] == 0:
                     cursor.execute("UPDATE quest_progress SET daily_mission = 1 WHERE user_id = ? AND quest_date = ?", (user["id"], today))
                     award_xp(conn, user["id"], 100, "Daily Mission completed")
@@ -15195,7 +15222,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     actor_name = user.get("name", "Student") if user else "A student"
                     actor_handle = user.get("handle", "user") if user else "user"
                     actor_avatar = photo_url or user.get("avatar_url", "") if user else ""
-                    action_msg = "sent a selfie Realmoji reaction 🤳" if photo_url else f"reacted {emoji} to your moment"
+                    action_msg = "sent a selfie KindMoji reaction 🤳" if photo_url else f"reacted {emoji} to your moment"
                     conn.execute("""
                         INSERT INTO notifications (id, user_id, title, body, type, is_read, sender_id, actor_name, actor_handle, actor_avatar)
                         VALUES (?, ?, ?, ?, 'reaction', 0, ?, ?, ?, ?)
@@ -15221,7 +15248,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(400, {"error": "Password must be at least 8 characters long"})
             
             user_id = "u_" + secrets.token_hex(4)
-            email = (body.get("email") or "").strip().lower() or (handle.lower() + "@kandid.app")
+            email = (body.get("email") or "").strip().lower() or (handle.lower() + "@kindid.app")
             
             pw, salt = hash_password(password)
             avatar_letter = (name[0].upper() if name else "K")
@@ -16594,7 +16621,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "invite_code": invite_code,
                 "invite_url": f"/invite/{invite_code}",
                 "full_invite_url": full_invite_url,
-                "deep_link": f"kandid://invite/{invite_code}",
+                "deep_link": f"kindid://invite/{invite_code}",
                 "invite": {
                     "id": invite_id,
                     "invite_code": invite_code,
@@ -16620,7 +16647,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not user:
                 return self.send_json(401, {"success": False, "error": "Authentication required"})
 
-            invite_code = (body.get("invite_code") or "").strip()
+            invite_code = normalize_invite_code(body.get("invite_code") or "")
             if not invite_code:
                 return self.send_json(400, {"success": False, "error": "invite_code is required"})
 
@@ -16830,7 +16857,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"success": True})
 
         if path == "/api/cron/trigger-kandid-time":
-            # Dual-Persona 'Time to Kandid' Trigger Engine (Core Gen Z vs Older Gen Z)
+            # Dual-Persona 'Time to Kindid' Trigger Engine (Core Gen Z vs Older Gen Z)
             conn = get_db()
             cursor = conn.cursor()
             
@@ -16851,12 +16878,12 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 # The Persona-Split Logic we discussed
                 if campus_val and campus_val.lower() != "independent creator / city":
                     # Persona A: Campus Gen Z
-                    title = "Time to Kandid! 🎓"
+                    title = "Time to Kindid! 🎓"
                     body = f"Class, canteen, or quad at {campus_val}? Show your campus view!"
                     campus_count += 1
                 else:
                     # Persona B: City/Work Gen Z
-                    title = "Time to Kandid! 🏢"
+                    title = "Time to Kindid! 🏢"
                     body = "Desk setup, commute, or cafe? Show your workspace view!"
                     city_count += 1
                     
@@ -16870,7 +16897,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             
             return self.send_json(200, {
                 "success": True, 
-                "message": "Persona-based Kandid Time triggered",
+                "message": "Persona-based Kindid Time triggered",
                 "stats": {
                     "campus_users_notified": campus_count,
                     "city_users_notified": city_count
@@ -16904,6 +16931,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         return self.send_json(404, {"error": "Not Found"})
 
+KindidHandler = KandidHandler
+
+
 if __name__ == "__main__":
     validate_environment()
     try:
@@ -16919,9 +16949,9 @@ if __name__ == "__main__":
     
     server = KandidThreadingServer(("0.0.0.0", PORT), KandidHandler)
     log_operational_event("server_startup", category="lifecycle", properties={"port": PORT, "environment": ENVIRONMENT, "db_engine": "postgresql" if DATABASE_URL else "sqlite"})
-    print(f"🚀 Kandid production server running at http://localhost:{PORT}")
+    print(f"🚀 Kindid production server running at http://localhost:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping Kandid server.")
+        print("\nStopping Kindid server.")
         server.server_close()
