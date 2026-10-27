@@ -3736,26 +3736,78 @@ function closeCampusOptions() {
 }
 window.closeCampusOptions = closeCampusOptions;
 
-async function loadFeedMoments(circle) {
+// =====================================================================
+// FEED KEYSET PAGINATION STATE & SENTINEL
+// =====================================================================
+function _feedApiCircle(circle) {
+  return (circle === 'foryou') ? 'all' : (circle || 'all');
+}
+
+function _feedEnsureState(circle) {
+  state.feedState = state.feedState || {};
+  var key = circle || state.activeCircle || 'foryou';
+  if (!state.feedState[key]) {
+    state.feedState[key] = {
+      nextCursor: '',
+      hasMore: true,
+      isLoading: false,
+      loadedIds: new Set()
+    };
+  }
+  return state.feedState[key];
+}
+
+function _feedSentinelHtml(status) {
+  if (status === 'loading') {
+    return '<div class="flex items-center gap-2 text-zinc-500 font-mono-tag text-xs tracking-wider animate-pulse">' +
+      '<span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> LOADING MORE MOMENTS...' +
+    '</div>';
+  }
+  if (status === 'end') {
+    return '<div class="py-8 text-center text-zinc-600 font-mono-tag text-[11px] uppercase tracking-widest">' +
+      '✦ YOU\'RE ALL CAUGHT UP ✦' +
+    '</div>';
+  }
+  if (status === 'error') {
+    return '<div class="text-center text-zinc-500 font-mono-tag text-[10px] uppercase tracking-widest">' +
+      'COULDN\'T LOAD MORE · SCROLL TO RETRY' +
+    '</div>';
+  }
+  return '<div class="text-center text-zinc-600 font-mono-tag text-[10px] uppercase tracking-widest">SCROLL FOR MORE MOMENTS</div>';
+}
+
+function _feedSetSentinelStatus(container, status) {
+  if (!container || !container.querySelector) return;
+  var sentinel = container.querySelector('#feedScrollSentinel');
+  if (!sentinel) return;
+  sentinel.innerHTML = _feedSentinelHtml(status);
+}
+
+async function loadFeedMoments(circle, isRefresh) {
   var container = document.getElementById('feedStreamContainer');
   if (!container) return;
 
   circle = circle || state.activeCircle || 'foryou';
-  var endpoint = (circle === 'foryou') ? '/api/feed?circle=all' : ('/api/feed?circle=' + circle);
+  var feedState = _feedEnsureState(circle);
+  var endpoint = '/api/feed?circle=' + encodeURIComponent(_feedApiCircle(circle)) + '&limit=20';
 
   var cacheKey = 'kandid_feed_cache_' + circle;
   var cachedDataStr = localStorage.getItem(cacheKey);
   var hasCache = false;
 
-  if (cachedDataStr) {
+  if (!isRefresh && cachedDataStr) {
     try {
       var parsedCache = JSON.parse(cachedDataStr);
       if (parsedCache && Array.isArray(parsedCache.feed) && parsedCache.feed.length > 0) {
-        renderFeedCards(parsedCache.feed, container);
+        renderFeedCards(parsedCache.feed, container, { append: false, circle: circle });
         hasCache = true;
       }
     } catch(e) {}
   }
+
+  feedState.nextCursor = '';
+  feedState.hasMore = false;
+  feedState.isLoading = false;
 
   if (!hasCache) {
     // Show Skeleton Loaders ONLY if no cache is available
@@ -3797,9 +3849,17 @@ async function loadFeedMoments(circle) {
         window.KandidObservability.captureEvent('feed_loaded', { circle: circle, count: data.feed.length });
       }
       // ── STATE A: SUCCESS WITH POSTS ──────────────────────────────────
-      var newDataStr = JSON.stringify(data);
+      var cachePayload = {
+        success: true,
+        feed: data.feed.slice(0, 20),
+        next_cursor: data.next_cursor || '',
+        has_more: Boolean(data.has_more)
+      };
+      var newDataStr = JSON.stringify(cachePayload);
       localStorage.setItem(cacheKey, newDataStr);
       if (data.feed.length === 0) {
+        feedState.nextCursor = '';
+        feedState.hasMore = false;
         // ── STATE B: SUCCESS + ZERO POSTS ────────────────────────────
         container.innerHTML = `
           <div class="flex flex-col items-center justify-center py-20 space-y-5 text-center px-6 mt-8">
@@ -3817,9 +3877,12 @@ async function loadFeedMoments(circle) {
           </div>
         `;
       } else {
+        feedState.nextCursor = data.next_cursor || '';
+        feedState.hasMore = Boolean(data.has_more && feedState.nextCursor);
         if (!hasCache || newDataStr !== cachedDataStr) {
-          renderFeedCards(data.feed, container);
+          renderFeedCards(data.feed, container, { append: false, circle: circle });
         }
+        setupFeedInfiniteScroll(container, circle);
       }
     } else {
       if (window.KandidObservability) {
@@ -3956,9 +4019,29 @@ function captureCurrentGeoLocation() {
     }, { timeout: 3500, maximumAge: 60000 });
 }
 
-function renderFeedCards(moments, container) {
-  container.innerHTML = '';
+function renderFeedCards(moments, container, options) {
+  options = options || {};
+  var append = options.append === true;
+  var circle = options.circle || state.activeCircle || 'foryou';
+  var feedState = _feedEnsureState(circle);
+  var knownIds = new Set();
+
+  if (append) {
+    if (container.querySelectorAll) {
+      var existingCards = container.querySelectorAll('[data-post-id]');
+      for (var ei = 0; ei < existingCards.length; ei++) {
+        var eid = existingCards[ei].dataset ? existingCards[ei].dataset.postId : '';
+        if (eid) knownIds.add(String(eid));
+      }
+    }
+  } else {
+    container.innerHTML = '';
+    feedState.loadedIds = new Set();
+  }
+
   moments.forEach(function(m) {
+    var postId = m && m.id ? String(m.id) : '';
+    if (postId && (feedState.loadedIds.has(postId) || knownIds.has(postId))) return;
     var card = document.createElement('article');
     card.className = 'bg-[#0b0b0d] border border-zinc-800/80 rounded-3xl p-3.5 flex flex-col gap-3 shadow-2xl relative kandid-card';
     card.dataset.postId = m.id;
@@ -4083,10 +4166,112 @@ function renderFeedCards(moments, container) {
         '</div>' +
       '</div>';
 
+    if (postId) {
+      feedState.loadedIds.add(postId);
+      knownIds.add(postId);
+    }
     container.appendChild(card);
     attachCardInteractions(card, m);
   });
+
+  var sentinel = container.querySelector ? container.querySelector('#feedScrollSentinel') : null;
+  if (sentinel && sentinel.parentNode === container) {
+    container.appendChild(sentinel);
+  }
   updateAllMomentTimestamps();
+}
+
+function setupFeedInfiniteScroll(container, circle) {
+  if (!container) return;
+  circle = circle || state.activeCircle || 'foryou';
+  var feedState = _feedEnsureState(circle);
+
+  var sentinel = container.querySelector ? container.querySelector('#feedScrollSentinel') : null;
+  if (!sentinel) {
+    sentinel = document.createElement('div');
+    sentinel.id = 'feedScrollSentinel';
+    sentinel.className = 'w-full py-6 flex items-center justify-center min-h-[60px]';
+    sentinel.innerHTML = _feedSentinelHtml('ready');
+  }
+  // The sentinel must stay below the newest appended card.
+  container.appendChild(sentinel);
+  _feedSetSentinelStatus(container, feedState.hasMore ? 'ready' : 'end');
+
+  if (typeof IntersectionObserver !== 'undefined') {
+    if (container._feedObserver && container._feedObserver.disconnect) {
+      container._feedObserver.disconnect();
+    }
+    container._feedObserver = new IntersectionObserver(function(entries) {
+      var visible = false;
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) visible = true;
+      }
+      if (!visible) return;
+      if (state.activeScreen !== 'feed') return;
+      if ((state.activeCircle || 'foryou') !== circle) return;
+      loadMoreFeedMoments(circle);
+    }, { root: null, rootMargin: '400px', threshold: 0.1 });
+    container._feedObserver.observe(sentinel);
+  }
+
+  container._feedScrollCircle = circle;
+  if (!container._feedScrollFallbackBound) {
+    container._feedScrollFallbackBound = true;
+    var scrollHost = document.getElementById('mainViewport') || window;
+    if (scrollHost && scrollHost.addEventListener) {
+      scrollHost.addEventListener('scroll', function() {
+        var activeCircle = container._feedScrollCircle || (state.activeCircle || 'foryou');
+        if (state.activeScreen !== 'feed') return;
+        if ((state.activeCircle || 'foryou') !== activeCircle) return;
+        clearTimeout(container._feedScrollTimer);
+        container._feedScrollTimer = setTimeout(function() {
+          loadMoreFeedMoments(activeCircle);
+        }, 140);
+      }, { passive: true });
+    }
+  }
+}
+
+async function loadMoreFeedMoments(circle) {
+  circle = circle || state.activeCircle || 'foryou';
+  var feedState = _feedEnsureState(circle);
+  if (!feedState || feedState.isLoading || !feedState.hasMore || !feedState.nextCursor) return;
+
+  var container = document.getElementById('feedStreamContainer');
+  if (!container) return;
+  if (state.activeScreen !== 'feed') return;
+  if ((state.activeCircle || 'foryou') !== circle) return;
+
+  var requestedCursor = feedState.nextCursor;
+  feedState.isLoading = true;
+  _feedSetSentinelStatus(container, 'loading');
+
+  var endpoint = '/api/feed?circle=' + encodeURIComponent(_feedApiCircle(circle)) +
+    '&limit=20&cursor=' + encodeURIComponent(requestedCursor);
+
+  var data = null;
+  try {
+    data = await apiRequest(endpoint);
+  } catch(e) {
+    data = { success: false, error: e && e.message ? e.message : 'Network error', _network: true };
+  } finally {
+    feedState.isLoading = false;
+  }
+
+  if (state.feedState[circle] !== feedState || feedState.nextCursor !== requestedCursor) return;
+  if (state.activeScreen !== 'feed' || (state.activeCircle || 'foryou') !== circle) return;
+
+  if (data && data.success && Array.isArray(data.feed)) {
+    if (data.feed.length > 0) {
+      renderFeedCards(data.feed, container, { append: true, circle: circle });
+    }
+    feedState.nextCursor = data.next_cursor || '';
+    feedState.hasMore = Boolean(data.has_more && feedState.nextCursor && data.feed.length > 0);
+    setupFeedInfiniteScroll(container, circle);
+    _feedSetSentinelStatus(container, feedState.hasMore ? 'ready' : 'end');
+  } else {
+    _feedSetSentinelStatus(container, 'error');
+  }
 }
 
 function attachCardInteractions(card, momentData) {

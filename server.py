@@ -3761,6 +3761,7 @@ def init_db():
         cursor.execute("ALTER TABLE posts ADD COLUMN motion_url TEXT DEFAULT ''")
 
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_posts_search ON posts(is_private, created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_posts_feed_cursor ON posts(created_at, id)")
 
     cursor.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cursor.fetchall()]
@@ -5752,6 +5753,59 @@ def decode_global_cursor(cursor_str):
         return None
 
 
+FEED_CURSOR_MAX_LEN = 512
+
+
+def encode_feed_cursor(created_at, post_id, circle):
+    """Opaque keyset cursor for /api/feed encoding (created_at, id) plus the
+    circle context it was generated for, so a cursor is only meaningful for
+    the same feed view request."""
+    payload = {
+        "created_at": str(created_at or ""),
+        "id": str(post_id or ""),
+        "circle": str(circle or ""),
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _is_legacy_feed_cursor(cursor_str):
+    """Legacy /api/feed clients sent a plain ISO timestamp as the cursor."""
+    if not cursor_str or len(cursor_str) < 10 or len(cursor_str) > 64:
+        return False
+    try:
+        datetime.fromisoformat(cursor_str.replace("Z", "+00:00"))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def decode_feed_cursor(cursor_str):
+    """Decode an /api/feed cursor. Returns None for malformed, oversized or
+    invalid cursors so the caller safely falls back to the first page. Plain
+    ISO timestamps remain supported as (created_at, no tie-breaker) cursors."""
+    if not cursor_str or not isinstance(cursor_str, str):
+        return None
+    value = cursor_str.strip()
+    if not value or len(value) > FEED_CURSOR_MAX_LEN:
+        return None
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        data = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        if not isinstance(data, dict):
+            return None
+        created_at = str(data.get("created_at") or data.get("t") or "")
+        post_id = str(data.get("id") or data.get("i") or "")
+        circle = str(data.get("circle") or data.get("c") or "")
+        if not created_at:
+            return None
+        return {"created_at": created_at, "id": post_id, "circle": circle}
+    except Exception:
+        if _is_legacy_feed_cursor(value):
+            return {"created_at": value, "id": "", "circle": ""}
+        return None
+
+
 def get_current_user(headers, body=None, query=None, require_session=False):
     auth = headers.get("Authorization", "")
     token = None
@@ -7209,42 +7263,65 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 where_clauses.append("circle = ?")
                 params.append(circle)
 
-            if cursor_param:
-                where_clauses.append("created_at < ?")
-                params.append(cursor_param)
-
-            blocked_user_ids = set()
             if user_id:
-                cursor.execute("""
-                    SELECT blocked_user_id FROM blocks WHERE user_id = ?
-                    UNION
-                    SELECT user_id FROM blocks WHERE blocked_user_id = ?
-                """, (user_id, user_id))
-                blocked_user_ids = {r[0] for r in cursor.fetchall()}
+                # Block filtering INSIDE the SQL so it happens BEFORE the
+                # LIMIT+1 fetch: pages stay full and has_more stays correct.
+                where_clauses.append(
+                    "user_id NOT IN ("
+                    "SELECT blocked_user_id FROM blocks WHERE user_id = ? "
+                    "UNION "
+                    "SELECT user_id FROM blocks WHERE blocked_user_id = ?)"
+                )
+                params.append(user_id)
+                params.append(user_id)
 
-            sql = "SELECT * FROM posts WHERE " + " AND ".join(where_clauses) + " ORDER BY created_at DESC LIMIT ?"
+            if cursor_param:
+                cursor_page = decode_feed_cursor(cursor_param)
+                if cursor_page and cursor_page.get("circle") and cursor_page["circle"] != circle:
+                    cursor_page = None
+                if cursor_page:
+                    if cursor_page.get("id"):
+                        where_clauses.append("(created_at < ? OR (created_at = ? AND id < ?))")
+                        params.append(cursor_page["created_at"])
+                        params.append(cursor_page["created_at"])
+                        params.append(cursor_page["id"])
+                    else:
+                        # Legacy timestamp-only cursors have no tie-breaker.
+                        where_clauses.append("created_at < ?")
+                        params.append(cursor_page["created_at"])
+
+            sql = "SELECT * FROM posts WHERE " + " AND ".join(where_clauses) + " ORDER BY created_at DESC, id DESC LIMIT ?"
             params.append(limit_val + 1)
 
             cursor.execute(sql, tuple(params))
             raw_posts = [dict(r) for r in cursor.fetchall()]
-
-            if blocked_user_ids:
-                raw_posts = [p for p in raw_posts if p.get("user_id") not in blocked_user_ids]
 
             has_more = len(raw_posts) > limit_val
             posts = raw_posts[:limit_val]
 
             next_cursor = ""
             if has_more and posts:
-                next_cursor = posts[-1].get("created_at", "")
+                next_cursor = encode_feed_cursor(posts[-1].get("created_at", ""), posts[-1].get("id", ""), circle)
 
             cursor.execute("SELECT id, name FROM communities")
             comm_map = {r["id"]: r["name"] for r in cursor.fetchall()}
 
-            # Realmoji aggregation & community resolution
+            # One grouped reaction query (constant statement count). Skipped
+            # entirely for an empty page: `IN ()` is invalid SQL.
+            realmoji_map = {}
+            if posts:
+                post_ids = [p["id"] for p in posts]
+                placeholders = ",".join("?" for _ in post_ids)
+                cursor.execute(
+                    "SELECT post_id, emoji, COUNT(*) as cnt FROM reactions "
+                    "WHERE post_id IN (%s) GROUP BY post_id, emoji" % placeholders,
+                    tuple(post_ids),
+                )
+                for r in cursor.fetchall():
+                    realmoji_map.setdefault(r["post_id"], {})[r["emoji"]] = r["cnt"]
+
             for p in posts:
-                cursor.execute("SELECT emoji, COUNT(*) as cnt FROM reactions WHERE post_id = ? GROUP BY emoji", (p["id"],))
-                p["realmojis"] = {r["emoji"]: r["cnt"] for r in cursor.fetchall()}
+                p["realmojis"] = realmoji_map.get(p["id"], {})
                 p["timeAgo"] = format_time_ago(p.get("created_at", ""))
 
                 # Feed posts are strictly Open Journal moments with no community attachment
