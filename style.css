@@ -319,3 +319,70 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* ==========================================================================
+   MOBILE WEB SHELL LOCKDOWN
+   Keeps the PWA feeling native by containing scroll momentum, removing touch
+   latency/highlights, suppressing media callouts, and respecting device safe
+   areas. This block changes touch/scroll behavior only, not the visual layout.
+   ========================================================================== */
+
+html, body {
+  overscroll-behavior: none !important;
+  overscroll-behavior-y: none !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+#mainViewport,
+.overflow-y-auto,
+.overflow-y-scroll {
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+[role="button"],
+.action-btn,
+.sub-tab-btn,
+.singularity-btn,
+.nav-item,
+.moment-viewport-stage,
+.sub-camera-pip,
+.realmoji-btn,
+.unified-dock,
+.selectable-chip {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+img,
+video,
+.moment-viewport-stage,
+.sub-camera-pip,
+.live-moment-video {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+@media screen and (max-width: 640px) {
+  #mainGlobalHeader {
+    padding-top: max(14px, env(safe-area-inset-top, 14px)) !important;
+  }
+
+  #unifiedDock {
+    bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px)) !important;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  textarea {
+    font-size: 16px !important;
+  }
+}
