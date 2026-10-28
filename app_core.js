@@ -4710,30 +4710,121 @@ function audioBufferToWav(buffer) {
 function record3SecAmbientAudio() {
   return new Promise(async function(resolve) {
     var micStream = null;
+    var activeAudioCtx = null;
+    var settled = false;
+    var watchdogTimer = null;
+    var pendingTimers = [];
+
+    function stopStreamTracks(stream) {
+      try {
+        if (stream && typeof stream.getTracks === 'function') {
+          stream.getTracks().forEach(function(t) {
+            try { t.stop(); } catch(e) {}
+          });
+        }
+      } catch(e) {}
+    }
+
+    function stopMicTracks() {
+      stopStreamTracks(micStream);
+      micStream = null;
+    }
+
+    // Idempotent: closes at most once and swallows the rejection a second
+    // close() (or a close of an already-closed context) would otherwise raise.
+    function closeAudioCtx() {
+      var ctx = activeAudioCtx;
+      activeAudioCtx = null;
+      if (!ctx || typeof ctx.close !== 'function') return;
+      try {
+        var closing = ctx.close();
+        if (closing && typeof closing.catch === 'function') {
+          closing.catch(function() {});
+        }
+      } catch(e) {}
+    }
+
+    // Every delayed capture step is tracked so finish() can clear it: a settled
+    // run must not leave a timer that could later touch a closed context.
+    function schedule(fn, ms) {
+      var entry = { id: null, fn: fn };
+      entry.id = setTimeout(function() {
+        pendingTimers = pendingTimers.filter(function(t) { return t !== entry; });
+        if (settled) return;
+        fn();
+      }, ms);
+      pendingTimers.push(entry);
+      return entry.id;
+    }
+
+    function clearPendingTimers() {
+      pendingTimers.forEach(function(t) {
+        try { clearTimeout(t.id); } catch(e) {}
+      });
+      pendingTimers = [];
+    }
+
+    // Single exit funnel: success, empty capture, codec error and watchdog all
+    // land here, so the promise resolves exactly once and no microphone track
+    // can be left live.
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
+      }
+      stopMicTracks();
+      closeAudioCtx();
+      clearPendingTimers();
+      resolve(value || '');
+    }
+
+    // WebKit can leave MediaRecorder reporting 'recording' with onstop never
+    // firing; publishing awaits this promise, so a hard deadline guarantees a
+    // moment can never hang on ambient audio.
+    watchdogTimer = setTimeout(function() {
+      console.warn('Ambient audio capture timed out; continuing without audio');
+      finish('');
+    }, 6000);
 
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        micStream = await navigator.mediaDevices.getUserMedia({
+        var acquiredStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: false,
             autoGainControl: true
           }
         });
+        // The watchdog may have already resolved while the permission prompt
+        // was open. A stream that arrives after settlement must be stopped at
+        // once: starting a recorder here would leave the mic live and could
+        // never deliver audio to an already-settled promise.
+        if (settled) {
+          stopStreamTracks(acquiredStream);
+          return;
+        }
+        micStream = acquiredStream;
       }
     } catch(e) {
       console.warn('Microphone permission or capture error:', e);
       try {
-        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        var fallbackStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (settled) {
+          stopStreamTracks(fallbackStream);
+          return;
+        }
+        micStream = fallbackStream;
       } catch(e2) {
         console.warn('Standard mic access failed:', e2);
-        resolve('');
+        finish('');
         return;
       }
     }
 
     if (!micStream || micStream.getAudioTracks().length === 0) {
-      resolve('');
+      finish('');
       return;
     }
 
@@ -4767,25 +4858,44 @@ function record3SecAmbientAudio() {
 
         recorder.onstop = function() {
           try {
-            micStream.getTracks().forEach(function(t) { t.stop(); });
-            var blobType = mimeType || 'audio/webm';
-            var audioBlob = new Blob(audioChunks, { type: blobType });
+            stopMicTracks();
+            if (settled) return;
+            // The negotiated container is authoritative: Safari rewrites or
+            // ignores the requested mime type, and a data: URL whose declared
+            // type disagrees with its bytes is refused by the media pipeline.
+            var actualType = (recorder && recorder.mimeType) || mimeType || '';
+            var audioBlob = actualType ? new Blob(audioChunks, { type: actualType }) : new Blob(audioChunks);
+            if (!audioBlob.size) {
+              console.warn('Ambient audio recorder produced an empty clip; continuing without audio');
+              finish('');
+              return;
+            }
             var reader = new FileReader();
             reader.onloadend = function() {
-              resolve(reader.result || '');
+              finish(reader.result || '');
+            };
+            reader.onerror = function() {
+              console.warn('Ambient audio serialization failed');
+              finish('');
             };
             reader.readAsDataURL(audioBlob);
           } catch(err) {
             console.warn('MediaRecorder blob parse error:', err);
-            resolve('');
+            finish('');
           }
         };
 
         recorder.start(100);
 
-        setTimeout(function() {
+        schedule(function() {
+          if (settled) return;
           if (recorder && recorder.state !== 'inactive') {
-            recorder.stop();
+            try {
+              recorder.stop();
+            } catch(stopErr) {
+              console.warn('MediaRecorder stop failed:', stopErr);
+              finish('');
+            }
           }
         }, 3000);
         return;
@@ -4798,14 +4908,22 @@ function record3SecAmbientAudio() {
     try {
       var AudioCtxClass = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtxClass) {
-        micStream.getTracks().forEach(function(t) { t.stop(); });
-        resolve('');
+        finish('');
         return;
       }
 
       var audioCtx = new AudioCtxClass();
+      activeAudioCtx = audioCtx;
       if (audioCtx.state === 'suspended') {
         await audioCtx.resume();
+        // resume() is asynchronous: the watchdog can settle the run while the
+        // audio hardware is still starting. Never build the capture pipeline
+        // afterwards - release the context and the mic instead.
+        if (settled) {
+          stopMicTracks();
+          closeAudioCtx();
+          return;
+        }
       }
 
       var source = audioCtx.createMediaStreamSource(micStream);
@@ -4825,13 +4943,20 @@ function record3SecAmbientAudio() {
       source.connect(recorderNode);
       recorderNode.connect(audioCtx.destination);
 
-      setTimeout(function() {
+      schedule(function() {
         try {
           source.disconnect();
           recorderNode.disconnect();
-          micStream.getTracks().forEach(function(t) { t.stop(); });
+          stopMicTracks();
 
-          var fullBuffer = audioCtx.createBuffer(1, Math.max(1, currentSamplesCount), audioCtx.sampleRate);
+          if (currentSamplesCount <= 0) {
+            console.warn('WebAudio fallback captured no samples; continuing without audio');
+            closeAudioCtx();
+            finish('');
+            return;
+          }
+
+          var fullBuffer = audioCtx.createBuffer(1, currentSamplesCount, audioCtx.sampleRate);
           var channelData = fullBuffer.getChannelData(0);
           var offset = 0;
           for (var j = 0; j < recordedSamples.length; j++) {
@@ -4840,25 +4965,31 @@ function record3SecAmbientAudio() {
           }
 
           var wavBlob = audioBufferToWav(fullBuffer);
-          audioCtx.close().catch(function(){});
-
           var reader = new FileReader();
           reader.onloadend = function() {
-            resolve(reader.result || '');
+            closeAudioCtx();
+            finish(reader.result || '');
+          };
+          reader.onerror = function() {
+            closeAudioCtx();
+            console.warn('Ambient audio serialization failed');
+            finish('');
           };
           reader.readAsDataURL(wavBlob);
         } catch(bufErr) {
           console.warn('WAV encoding error:', bufErr);
-          resolve('');
+          closeAudioCtx();
+          finish('');
         }
       }, 3000);
 
     } catch(acErr) {
       console.warn('AudioContext fallback error:', acErr);
-      if (micStream) {
-        micStream.getTracks().forEach(function(t) { t.stop(); });
-      }
-      resolve('');
+      // The context may already exist when a later setup step throws; close it
+      // so a failed fallback cannot leave an AudioContext (and its mic route)
+      // alive. finish() is idempotent, so this cannot double-settle.
+      closeAudioCtx();
+      finish('');
     }
   });
 }
@@ -5993,6 +6124,10 @@ async function playReviewAudio() {
       activeAudioInstance.pause();
     }
     activeAudioInstance = new Audio(state.capturedMomentData.audioData);
+    activeAudioInstance.onerror = function() {
+      console.warn('Ambient audio could not be loaded (unsupported format or blocked by content policy)');
+      showToast('Ambient audio could not be played on this device');
+    };
     activeAudioInstance.play().catch(function(e) { console.warn('Playback error', e); });
     showToast('Playing 3.0s Ambient Sound 🔊');
   } else {
@@ -6010,6 +6145,10 @@ function playFeedAudio(audioUrl) {
     activeAudioInstance.pause();
   }
   activeAudioInstance = new Audio(audioUrl);
+  activeAudioInstance.onerror = function() {
+    console.warn('Ambient audio could not be loaded (unsupported format or blocked by content policy)');
+    showToast('Ambient audio could not be played on this device');
+  };
   activeAudioInstance.play().catch(function(e) { console.warn('Audio play error', e); });
   showToast('Playing 3.0s Ambient Sound 🔊');
 }
