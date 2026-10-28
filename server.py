@@ -2222,6 +2222,15 @@ def save_base64_audio(data_str, prefix="audio"):
         return data_str
     if not (data_str.startswith("data:audio") or data_str.startswith("data:video/webm")):
         return ""
+    # Reject empty captures before they reach Cloudinary or local storage: a
+    # "data:audio/mp4;base64," record would otherwise create a zero-byte file
+    # and mark the moment as having audio that can never play.
+    try:
+        _audio_header, _audio_payload = data_str.split(",", 1)
+    except ValueError:
+        return ""
+    if not _audio_payload.strip():
+        return ""
         
     cloud_url = upload_to_cloudinary(data_str, resource_type="video", folder="kandid/audio")
     if cloud_url:
@@ -6313,6 +6322,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             "img-src 'self' data: blob: https://res.cloudinary.com https://api.dicebear.com https://images.unsplash.com https://lh3.googleusercontent.com https://accounts.google.com; "
             "connect-src 'self' https://accounts.google.com https://us.i.posthog.com https://eu.i.posthog.com https://api.razorpay.com https://api.dicebear.com https://res.cloudinary.com; "
             "frame-src 'self' https://accounts.google.com https://api.razorpay.com; "
+            "media-src 'self' data: blob: https://res.cloudinary.com; "
             "object-src 'none'; "
             "base-uri 'self';"
         )
