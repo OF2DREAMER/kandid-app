@@ -393,14 +393,14 @@ video,
    The clearance is derived from the dock's own box instead of a one-off
    utility: 56px shutter + 2 x 10px vertical padding + 2 x 1px border = 78px
    tall (measured in Chromium at 360/390/desktop widths), plus its resting
-   offset from the viewport edge, plus 14px of breathing room for the last card.
+   offset from the viewport edge, plus 6px of breathing room for the last card.
    On phones the dock sits 12px up (or safe-area + 8px, whichever is larger),
    so the variable follows env(safe-area-inset-bottom) automatically.
    ========================================================================== */
 :root {
   --dock-height: 78px;
   --dock-offset: max(0px, env(safe-area-inset-bottom, 0px));
-  --dock-end-gap: 14px;
+  --dock-end-gap: 6px;
   --dock-clearance: calc(var(--dock-offset) + var(--dock-height) + var(--dock-end-gap));
 }
 
