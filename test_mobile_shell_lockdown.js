@@ -107,7 +107,7 @@ check("mobile input selector includes email search password",
 const viewportMeta = (html.match(/<meta\s+name="viewport"\s+content="([^"]+)"/i) || [])[1] || "";
 check("viewport includes viewport-fit=cover", /viewport-fit=cover/.test(viewportMeta));
 check("viewport disables user scaling", /maximum-scale=1\.0/.test(viewportMeta) && /user-scalable=no/.test(viewportMeta));
-check("stylesheet cache bust is 3.3.1", /<link\s+rel="stylesheet"\s+href="\/style\.css\?v=3\.3\.1"/.test(html));
+check("stylesheet cache bust is 3.3.2", /<link\s+rel="stylesheet"\s+href="\/style\.css\?v=3\.3\.2"/.test(html));
 check("app cache bust is 3.3.6", /<script\s+src="\/app_core\.js\?v=3\.3\.6"><\/script>/.test(html));
 
 check("manifest display is standalone", manifest.display === "standalone");
