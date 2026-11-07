@@ -10393,7 +10393,7 @@ window.submitUserLogin = async function() {
 
     if (errBox) errBox.classList.add('hidden');
 
-    var identifier = identifierInput ? identifierInput.value.trim().replace('@', '') : '';
+    var identifier = identifierInput ? identifierInput.value.trim().replace(/^@+/, '') : '';
     var password = passwordInput ? passwordInput.value.trim() : '';
 
     if (!identifier) {
