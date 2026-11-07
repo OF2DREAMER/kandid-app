@@ -1626,14 +1626,7 @@ function renderCommunityCards(moments, container, mode) {
     // Eligible for community actions: not a personal private post, AND (confirmed-public community OR authorized private community member)
     var isEligibleCommunityMoment = !isPrivatePost && (isConfirmedPublic || isAuthorizedMember);
 
-    var clusterBadgeHtml = '';
-    if (isEligibleCommunityMoment && (m.cluster_id || (m.perspectives_count && m.perspectives_count > 0))) {
-      var pCount = m.perspectives_count || 1;
-      clusterBadgeHtml = '<button type="button" onclick="event.stopPropagation(); openMomentClusterModal(\'' + jsAttr(m.cluster_id || '') + '\', \'' + m.id + '\')" class="inline-flex items-center gap-0.5 ' + (isSequence ? 'px-1.5 py-0.5 text-[7.5px] bg-black/60 backdrop-blur-md border border-amber-500/30' : 'px-2.5 py-0.5 text-[9px] bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40') + ' rounded-full font-mono-tag font-bold text-amber-400 transition cursor-pointer active:scale-95 shadow-sm" title="View perspectives">' +
-        '<span>✦</span> <span>' + (isSequence ? pCount : (pCount + ' perspective' + (pCount === 1 ? '' : 's'))) + '</span>' +
-      '</button>';
-    }
-
+    // Perspectives action button strictly in the bottom action bar (not duplicated on the top photo overlay)
     var iWasThereHtml = '';
     var perspectiveBtnHtml = '';
     if (isEligibleCommunityMoment) {
@@ -1661,16 +1654,15 @@ function renderCommunityCards(moments, container, mode) {
       card.className = 'moment-article w-[155px] shrink-0 space-y-1.5 select-none';
       card.innerHTML =
         '<div class="moment-image aspect-[4/5] rounded-2xl overflow-hidden relative border border-white/10 shadow-lg moment-viewport-stage cursor-pointer select-none bg-zinc-950">' +
-          '<img class="w-full h-full object-cover main-stage-img" src="' + escapeHtml(mainImgSrc) + '" alt="Real moment">' +
+          '<img class="w-full h-full object-cover main-stage-img" src="' + escapeHtml(mainImgSrc) + '" alt="" onerror="this.style.opacity=\'0\';">' +
           '<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-black/35 pointer-events-none"></div>' +
           '<div class="absolute top-2 right-2 z-10 flex items-center gap-1">' +
-            clusterBadgeHtml +
             '<span class="font-mono-tag text-[7.5px] text-white/90 bg-black/50 backdrop-blur-md px-1.5 py-0.5 rounded-full border border-white/10 moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' +
               timeAgo +
             '</span>' +
           '</div>' +
           '<div class="sub-camera-pip absolute top-2 left-2 w-10 h-14 rounded-xl overflow-hidden border border-white/25 shadow-lg bg-black cursor-pointer z-20 active:scale-95 transition-transform" title="Tap to Swap Views">' +
-            '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
+            '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="" onerror="this.style.opacity=\'0\';">' +
           '</div>' +
           '<div class="absolute bottom-2 inset-x-2 z-10 space-y-1">' +
             '<div class="flex items-center gap-1 flex-wrap">' +
@@ -1706,17 +1698,16 @@ function renderCommunityCards(moments, container, mode) {
     } else {
       card.className = 'moment-article space-y-2.5 pb-2 border-b border-white/[.05]';
       card.innerHTML =
-        '<div class="moment-image aspect-[4/5] rounded-[28px] overflow-hidden relative border border-white/[.08] shadow-2xl moment-viewport-stage cursor-pointer select-none">' +
-          '<img class="w-full h-full object-cover main-stage-img" src="' + escapeHtml(mainImgSrc) + '" alt="Real moment">' +
+        '<div class="moment-image aspect-[4/5] rounded-[28px] overflow-hidden relative border border-white/[.08] shadow-2xl moment-viewport-stage cursor-pointer select-none bg-zinc-950">' +
+          '<img class="w-full h-full object-cover main-stage-img" src="' + escapeHtml(mainImgSrc) + '" alt="" onerror="this.style.opacity=\'0\';">' +
           '<div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/35 pointer-events-none"></div>' +
           '<div class="absolute top-4 right-4 z-10 flex items-center gap-1.5">' +
-            clusterBadgeHtml +
             '<span class="font-mono-tag text-[9px] text-white/90 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/15 moment-live-timestamp" data-created-at="' + escapeHtml(m.created_at || '') + '">' +
               timeAgo +
             '</span>' +
           '</div>' +
           '<div class="sub-camera-pip absolute top-4 left-4 w-20 h-28 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-20 active:scale-95 transition-transform" title="Tap to Swap Views">' +
-            '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
+            '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="" onerror="this.style.opacity=\'0\';">' +
           '</div>' +
           '<div class="absolute bottom-4 inset-x-4 z-10 space-y-2.5">' +
             '<div class="flex items-center gap-1.5 flex-wrap">' +
@@ -14854,7 +14845,7 @@ async function openMomentClusterModal(clusterId, momentId) {
           '<span class="text-zinc-500">@' + escapeHtml(pm.author_handle || 'creator') + '</span>' +
         '</div>' +
         '<div class="aspect-[16/10] bg-black rounded-xl overflow-hidden relative">' +
-          '<img src="' + escapeHtml(pm.main_img || '') + '" class="w-full h-full object-cover">' +
+          '<img src="' + escapeHtml(pm.main_img || '') + '" class="w-full h-full object-cover" alt="" onerror="this.style.opacity=\'0\';">' +
         '</div>' +
         '<p class="text-xs text-zinc-200 font-normal leading-relaxed">"' + escapeHtml(pm.caption || 'Unfiltered moment.') + '"</p>' +
       '</div>';
@@ -14872,6 +14863,13 @@ async function openMomentClusterModal(clusterId, momentId) {
             '</div>'
           : '<span class="text-zinc-500">' + escapeHtml(persp.location_city || 'Campus') + '</span>';
 
+        var perspImgSrc = persp.main_img || persp.pip_img || '';
+        var perspImgHtml = perspImgSrc
+          ? '<div class="aspect-[16/10] bg-black rounded-xl overflow-hidden relative">' +
+              '<img src="' + escapeHtml(perspImgSrc) + '" class="w-full h-full object-cover" alt="" onerror="this.style.opacity=\'0\';">' +
+            '</div>'
+          : '';
+
         var card = document.createElement('div');
         card.className = 'p-3 rounded-2xl bg-zinc-900/50 border border-zinc-800/80 space-y-2';
         card.innerHTML =
@@ -14882,9 +14880,7 @@ async function openMomentClusterModal(clusterId, momentId) {
             '</div>' +
             rightActionHtml +
           '</div>' +
-          '<div class="aspect-[16/10] bg-black rounded-xl overflow-hidden relative">' +
-            '<img src="' + escapeHtml(persp.main_img || '') + '" class="w-full h-full object-cover">' +
-          '</div>' +
+          perspImgHtml +
           '<p class="text-xs text-zinc-300 font-normal leading-relaxed">"' + escapeHtml(persp.caption || 'Perspective.') + '"</p>';
         listEl.appendChild(card);
       });
