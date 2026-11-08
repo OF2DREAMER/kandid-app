@@ -10,7 +10,32 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+# Hermetic test configuration: set these values before importing server so a
+# developer's .env file or an ambient production environment cannot select a
+# real database or email provider.
+TEST_ENV = {
+    "ENVIRONMENT": "test",
+    "DATABASE_URL": "",
+    "BREVO_API_KEY": "",
+    "RESEND_API_KEY": "",
+    "BREVO_FROM_EMAIL": "test@example.invalid",
+    "RENDER": "",
+    "RENDER_SERVICE_ID": "",
+    "PORT": "8080",
+    "APP_URL": "http://localhost",
+    "SESSION_SECRET": "0123456789abcdef" * 4,
+}
+_ORIGINAL_ENV = {key: os.environ.get(key) for key in TEST_ENV}
+os.environ.update(TEST_ENV)
+
 import server
+
+# is_production_env() gives a process ENVIRONMENT value precedence over
+# server.ENVIRONMENT, and email helpers give process provider keys precedence
+# over their module globals. Remove those import-time overrides so individual
+# tests can explicitly exercise production paths and set server globals.
+for _env_key in ("ENVIRONMENT", "BREVO_API_KEY", "RESEND_API_KEY"):
+    os.environ.pop(_env_key, None)
 
 # D4-07: pristine globals captured at import time and restored after cleanup
 _ORIGINAL_DB_FILE = server.DB_FILE
@@ -26,6 +51,14 @@ def _restore_server_globals():
     server.ENVIRONMENT = _ORIGINAL_ENVIRONMENT
     server.BREVO_API_KEY = _ORIGINAL_BREVO_API_KEY
     server.RESEND_API_KEY = _ORIGINAL_RESEND_API_KEY
+
+
+def tearDownModule():
+    for key, value in _ORIGINAL_ENV.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 
 class TestForgotPasswordSafeCleanup(unittest.TestCase):
