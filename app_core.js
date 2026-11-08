@@ -7830,8 +7830,8 @@ async function submitChangePassword(e) {
     showToast('Please enter both current and new password.');
     return;
   }
-  if (nw.length < 6) {
-    showToast('New password must be at least 6 characters.');
+  if (nw.length < 8) {
+    showToast('New password must be at least 8 characters.');
     return;
   }
   if (nw !== conf) {
@@ -7850,11 +7850,13 @@ async function submitChangePassword(e) {
   if (btn) btn.disabled = false;
 
   if (res && res.success) {
-    showToast('Password updated successfully! 🔑');
     closeChangePasswordModal();
     if (document.getElementById('inputCurrentPassword')) document.getElementById('inputCurrentPassword').value = '';
     if (document.getElementById('inputNewPassword')) document.getElementById('inputNewPassword').value = '';
     if (document.getElementById('inputConfirmNewPassword')) document.getElementById('inputConfirmNewPassword').value = '';
+    // The server revoked every bearer session. Clear local credentials and
+    // force a fresh sign-in instead of leaving a dead token in the UI.
+    logoutUser();
   } else {
     showToast(res && res.error ? res.error : 'Could not change password.');
   }

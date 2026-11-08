@@ -16357,22 +16357,58 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user = get_current_user(self.headers)
             if not user:
                 return self.send_json(401, {"error": "Unauthenticated"})
-            current_pw = body.get("current_password", "")
-            new_pw = body.get("new_password", "")
+
+            # Five attempts per minute per authenticated user. Keeping the window
+            # at 60 seconds preserves RateLimiter's existing sweep guarantee.
+            if not rate_limiter.check_rate_limit(f"change_pw:{user['id']}", max_requests=5, window_seconds=60):
+                return self.send_json(429, {
+                    "success": False,
+                    "error_code": "KANDID_RATE_LIMITED",
+                    "error": "Too many password change attempts. Please wait 1 minute before trying again."
+                })
+
+            # Login, registration, and password reset already trim passwords.
+            # Change-password must follow the same semantics so it cannot store a
+            # password that the login form can never reproduce.
+            current_pw = str(body.get("current_password") or "").strip()
+            new_pw = str(body.get("new_password") or "").strip()
             if not current_pw or not new_pw or len(new_pw) < 8:
                 return self.send_json(400, {"error": "New password must be at least 8 characters."})
+
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("SELECT password_hash, salt FROM users WHERE id = ?", (user["id"],))
             row = cursor.fetchone()
-            if not row or not verify_password(current_pw, row["password_hash"], row["salt"]):
+            if not row or not verify_password(current_pw, row["salt"], row["password_hash"]):
                 conn.close()
                 return self.send_json(400, {"error": "Current password is incorrect."})
-            new_hash, new_salt = hash_password(new_pw)
-            conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?", (new_hash, new_salt, user["id"]))
-            conn.commit()
+
+            try:
+                new_hash, new_salt = hash_password(new_pw)
+                update_cursor = conn.execute(
+                    "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+                    (new_hash, new_salt, user["id"]),
+                )
+                if update_cursor.rowcount == 0:
+                    raise RuntimeError("password update matched no user")
+
+                # Password changes invalidate every existing bearer session. No new
+                # token is issued here, so the caller must sign in again.
+                conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                return self.send_json(500, {"success": False, "error": "Failed to change password. Please try again."})
+
             conn.close()
-            return self.send_json(200, {"success": True, "message": "Password changed successfully."})
+            return self.send_json(200, {"success": True, "message": "Password changed successfully. Please sign in again."})
 
         if path == "/api/user/delete-account":
             user = get_current_user(self.headers, body, require_session=True)
