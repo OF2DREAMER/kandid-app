@@ -14894,9 +14894,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if cluster_id and not re.match(r"^[A-Za-z0-9_-]+$", cluster_id):
                 return self.send_json(400, {"error": "Invalid cluster id", "success": False})
 
-            context_comm = body.get("context_community_id") or ""
-            if not primary_comm and not cluster_id:
-                context_comm = ""
+            # A capture has exactly one authoritative destination. Never persist a
+            # client-supplied second community context: legacy context IDs grant
+            # feed visibility and could otherwise bypass membership checks for a
+            # community the user did not select or join.
+            context_comm = ""
 
             raw_audio = body.get("audioData") or body.get("audio_data") or ""
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""

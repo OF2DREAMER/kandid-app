@@ -1121,6 +1121,7 @@ function switchScreenView(screenName) {
       state.activeClusterContext = null;
       state.activeClusterCommunityId = null;
       state.activeClusterContextName = null;
+      resetReviewDestinationState();
     }
     var cameraModal = document.getElementById('cameraStudioModal');
     if (cameraModal && cameraModal.style.display !== 'none' && typeof closeCameraStudio === 'function') {
@@ -4435,6 +4436,13 @@ state.pipMediaStream = null;
 state.audioStream = null;
 state.recordedAudioDataUrl = '';
 state.reviewCameraContext = null;
+state.reviewJoinedCommunities = [];
+state.reviewDestinationMode = 'personal';
+state.reviewCommunitiesLoading = false;
+state.reviewCommunitiesError = '';
+state.reviewContextRequestId = 0;
+state.reviewCommunityPickerQuery = '';
+state.reviewCommunityPickerLimit = 20;
 
 function setupCameraStudio() {
   // PHASE 1.2: #mainShutterTrigger opens the Feed camera through its inline
@@ -5944,30 +5952,245 @@ function openMomentReview() {
 }
 window.openMomentReview = openMomentReview;
 
+var REVIEW_COMMUNITY_PAGE_SIZE = 20;
+
+function resetReviewDestinationState() {
+  state.reviewJoinedCommunities = [];
+  state.reviewDestinationMode = 'personal';
+  state.reviewCommunitiesLoading = false;
+  state.reviewCommunitiesError = '';
+  state.reviewContextRequestId = (state.reviewContextRequestId || 0) + 1;
+  state.reviewCommunityPickerQuery = '';
+  state.reviewCommunityPickerLimit = REVIEW_COMMUNITY_PAGE_SIZE;
+  closeReviewCommunityPicker();
+}
+
+function getReviewSelectedCommunity() {
+  if (!state.activeCommunityId) return null;
+  for (var i = 0; i < state.reviewJoinedCommunities.length; i++) {
+    if (String(state.reviewJoinedCommunities[i].id) === String(state.activeCommunityId)) {
+      return state.reviewJoinedCommunities[i];
+    }
+  }
+  return null;
+}
+
+function renderReviewDestinationOptions() {
+  var listEl = document.getElementById('reviewCommunityOptionsList');
+  if (!listEl) return;
+
+  var selected = getReviewSelectedCommunity();
+  var isCommunitySelected = state.reviewDestinationMode === 'community' && Boolean(selected);
+  if (state.reviewDestinationMode === 'community' && !selected) {
+    state.reviewDestinationMode = 'personal';
+    state.activeCommunityId = '';
+    state.selectedReviewCommunity = 'Personal (Feed)';
+  }
+
+  var personalBadgeClass = isCommunitySelected
+    ? 'font-mono-tag text-[8px] text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded'
+    : 'font-mono-tag text-[8px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded';
+  var personalRowClass = isCommunitySelected
+    ? 'border-white/[.04] bg-zinc-900/90'
+    : 'border-amber-500/40 bg-amber-500/10';
+
+  var html = '<label id="reviewDestinationPersonalRow" class="flex items-center justify-between p-2.5 rounded-xl border ' + personalRowClass + ' hover:border-amber-500/40 cursor-pointer transition active:scale-[0.99]">' +
+    '<div class="flex items-center gap-2">' +
+      '<input type="radio" name="reviewCommunityDest" value="Personal (Feed)" data-comm-id="" data-comm-type="Feed" ' + (isCommunitySelected ? '' : 'checked') + ' onchange="onReviewCommunityChange(this)" class="accent-amber-500 w-3.5 h-3.5">' +
+      '<span class="text-xs">✨</span>' +
+      '<span class="text-xs font-bold text-white">Personal (Feed)</span>' +
+    '</div>' +
+    '<span class="' + personalBadgeClass + '">' + (isCommunitySelected ? 'FEED' : 'SELECTED') + '</span>' +
+  '</label>';
+
+  if (state.reviewCommunitiesLoading) {
+    html += '<div class="py-2 text-center text-[10px] text-zinc-500 font-mono-tag animate-pulse">Loading your communities...</div>';
+  } else if (state.reviewCommunitiesError) {
+    html += '<button type="button" onclick="setupReviewContextUI()" class="w-full p-2.5 rounded-xl bg-zinc-900/90 border border-white/[.04] flex items-center justify-between text-left cursor-pointer hover:border-amber-500/40 transition active:scale-[0.99]">' +
+      '<span class="text-[10px] text-zinc-400 font-mono-tag">Communities unavailable</span>' +
+      '<span class="font-mono-tag text-[8px] text-amber-400 font-bold">RETRY</span>' +
+    '</button>';
+  } else if (state.reviewJoinedCommunities.length > 0) {
+    var commRowClass = isCommunitySelected
+      ? 'border-amber-500/40 bg-amber-500/10'
+      : 'border-white/[.04] bg-zinc-900/90';
+    var commBadgeClass = isCommunitySelected
+      ? 'font-mono-tag text-[8px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded'
+      : 'font-mono-tag text-[8px] text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded';
+    html += '<button type="button" id="reviewDestinationCommunityBtn" onclick="openReviewCommunityPicker()" class="w-full flex items-center justify-between p-2.5 rounded-xl border ' + commRowClass + ' hover:border-amber-500/40 cursor-pointer transition active:scale-[0.99] text-left">' +
+      '<span class="flex items-center gap-2 min-w-0">' +
+        '<span class="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xs shrink-0">' + escapeHtml(selected ? (selected.icon || '📍') : '📍') + '</span>' +
+        '<span class="min-w-0">' +
+          '<span class="block font-mono-tag text-[8px] text-amber-500 font-bold uppercase tracking-widest">COMMUNITY</span>' +
+          '<span id="reviewDestinationCommunityName" class="block text-xs font-bold text-white truncate">' + escapeHtml(selected ? selected.name : 'Choose a community') + '</span>' +
+        '</span>' +
+      '</span>' +
+      '<span class="' + commBadgeClass + '">' + (isCommunitySelected ? 'SELECTED' : 'CHOOSE ⌄') + '</span>' +
+    '</button>';
+  }
+
+  listEl.innerHTML = html;
+}
+window.renderReviewDestinationOptions = renderReviewDestinationOptions;
+
 function onReviewCommunityChange(inputEl) {
   if (!inputEl) return;
-  state.selectedReviewCommunity = inputEl.value;
-  state.activeCommunityId = inputEl.getAttribute('data-comm-id') || '';
-
-  var listEl = document.getElementById('reviewCommunityOptionsList');
-  if (listEl) {
-    var labels = listEl.querySelectorAll('label');
-    labels.forEach(function(lbl) {
-      var inp = lbl.querySelector('input[name="reviewCommunityDest"]');
-      var badge = lbl.querySelector('.font-mono-tag');
-      if (inp && badge) {
-        if (inp.checked) {
-          badge.className = 'font-mono-tag text-[8px] text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded';
-          badge.textContent = 'SELECTED';
-        } else {
-          badge.className = 'font-mono-tag text-[8px] text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded';
-          badge.textContent = inp.getAttribute('data-comm-type') || 'Community';
-        }
+  var commId = inputEl.getAttribute('data-comm-id') || '';
+  if (commId) {
+    var found = null;
+    for (var i = 0; i < state.reviewJoinedCommunities.length; i++) {
+      if (String(state.reviewJoinedCommunities[i].id) === String(commId)) {
+        found = state.reviewJoinedCommunities[i];
+        break;
       }
-    });
+    }
+    if (!found) {
+      renderReviewDestinationOptions();
+      return;
+    }
+    state.reviewDestinationMode = 'community';
+    state.activeCommunityId = found.id;
+    state.selectedReviewCommunity = found.name;
+  } else {
+    state.reviewDestinationMode = 'personal';
+    state.activeCommunityId = '';
+    state.selectedReviewCommunity = 'Personal (Feed)';
   }
+  renderReviewDestinationOptions();
 }
 window.onReviewCommunityChange = onReviewCommunityChange;
+
+function selectReviewDestinationCommunity(commId) {
+  var selected = null;
+  for (var i = 0; i < state.reviewJoinedCommunities.length; i++) {
+    if (String(state.reviewJoinedCommunities[i].id) === String(commId)) {
+      selected = state.reviewJoinedCommunities[i];
+      break;
+    }
+  }
+  if (!selected) {
+    showToast('That community is no longer available.');
+    return;
+  }
+  state.reviewDestinationMode = 'community';
+  state.activeCommunityId = selected.id;
+  state.selectedReviewCommunity = selected.name;
+  closeReviewCommunityPicker();
+  renderReviewDestinationOptions();
+}
+window.selectReviewDestinationCommunity = selectReviewDestinationCommunity;
+
+function selectReviewDestinationPersonal() {
+  state.reviewDestinationMode = 'personal';
+  state.activeCommunityId = '';
+  state.selectedReviewCommunity = 'Personal (Feed)';
+  closeReviewCommunityPicker();
+  renderReviewDestinationOptions();
+}
+window.selectReviewDestinationPersonal = selectReviewDestinationPersonal;
+
+function openReviewCommunityPicker() {
+  if (!state.reviewJoinedCommunities.length) return;
+  var modal = document.getElementById('reviewCommunityPickerModal');
+  if (!modal) return;
+  state.reviewCommunityPickerQuery = '';
+  state.reviewCommunityPickerLimit = REVIEW_COMMUNITY_PAGE_SIZE;
+  modal.style.display = 'flex';
+  modal.setAttribute('aria-hidden', 'false');
+  var searchEl = document.getElementById('reviewCommunitySearchInput');
+  if (searchEl) searchEl.value = '';
+  renderReviewCommunityPicker();
+  var listEl = document.getElementById('reviewCommunityPickerList');
+  if (listEl) listEl.scrollTop = 0;
+  if (searchEl) setTimeout(function() { try { searchEl.focus(); } catch(e) {} }, 0);
+}
+window.openReviewCommunityPicker = openReviewCommunityPicker;
+
+function closeReviewCommunityPicker() {
+  var modal = document.getElementById('reviewCommunityPickerModal');
+  if (!modal || modal.style.display === 'none') return;
+  modal.style.display = 'none';
+  modal.setAttribute('aria-hidden', 'true');
+  var trigger = document.getElementById('reviewDestinationCommunityBtn');
+  if (trigger && typeof trigger.focus === 'function') trigger.focus();
+}
+window.closeReviewCommunityPicker = closeReviewCommunityPicker;
+
+function handleReviewCommunityPickerKeydown(event) {
+  if (event && event.key === 'Escape') {
+    event.preventDefault();
+    closeReviewCommunityPicker();
+  }
+}
+window.handleReviewCommunityPickerKeydown = handleReviewCommunityPickerKeydown;
+
+function filterReviewCommunityPicker(value) {
+  state.reviewCommunityPickerQuery = value || '';
+  state.reviewCommunityPickerLimit = REVIEW_COMMUNITY_PAGE_SIZE;
+  renderReviewCommunityPicker();
+  var listEl = document.getElementById('reviewCommunityPickerList');
+  if (listEl) listEl.scrollTop = 0;
+}
+window.filterReviewCommunityPicker = filterReviewCommunityPicker;
+
+function loadMoreReviewCommunities() {
+  var listEl = document.getElementById('reviewCommunityPickerList');
+  var previousScroll = listEl ? listEl.scrollTop : 0;
+  state.reviewCommunityPickerLimit = (state.reviewCommunityPickerLimit || REVIEW_COMMUNITY_PAGE_SIZE) + REVIEW_COMMUNITY_PAGE_SIZE;
+  renderReviewCommunityPicker();
+  if (listEl) listEl.scrollTop = previousScroll;
+}
+window.loadMoreReviewCommunities = loadMoreReviewCommunities;
+
+function renderReviewCommunityPicker() {
+  var listEl = document.getElementById('reviewCommunityPickerList');
+  if (!listEl) return;
+
+  // /api/community/my currently has no reliable recent-activity field, so preserve
+  // the server's membership order rather than inventing a recency ranking.
+  var query = (state.reviewCommunityPickerQuery || '').trim().toLowerCase();
+  var filtered = [];
+  for (var i = 0; i < state.reviewJoinedCommunities.length; i++) {
+    var c = state.reviewJoinedCommunities[i];
+    var haystack = [c.name, c.type, c.city].filter(Boolean).join(' ').toLowerCase();
+    if (!query || haystack.indexOf(query) !== -1) filtered.push(c);
+  }
+
+  var limit = state.reviewCommunityPickerLimit || REVIEW_COMMUNITY_PAGE_SIZE;
+  var shown = filtered.slice(0, limit);
+  if (!shown.length) {
+    listEl.innerHTML = '<div class="py-8 text-center text-[11px] text-zinc-500 font-mono-tag">' +
+      (query ? 'No joined communities match that search.' : 'No communities available to select.') +
+    '</div>';
+    return;
+  }
+
+  var html = shown.map(function(c) {
+    var isSelected = state.reviewDestinationMode === 'community' && String(c.id) === String(state.activeCommunityId);
+    var rowClass = isSelected
+      ? 'border-amber-500/50 bg-amber-500/10'
+      : 'border-white/[.06] bg-zinc-950 hover:border-zinc-700';
+    var badgeClass = isSelected
+      ? 'font-mono-tag text-[8px] text-amber-400 font-bold bg-amber-500/20 px-2 py-0.5 rounded'
+      : 'font-mono-tag text-[8px] text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded border border-zinc-800';
+    return '<button type="button" onclick="selectReviewDestinationCommunity(\'' + jsAttr(c.id) + '\')" class="w-full p-3 rounded-xl border ' + rowClass + ' flex items-center justify-between gap-2 text-left cursor-pointer active:scale-[0.99] transition">' +
+      '<span class="flex items-center gap-2.5 min-w-0">' +
+        '<span class="w-7 h-7 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xs shrink-0">' + escapeHtml(c.icon || '📍') + '</span>' +
+        '<span class="min-w-0">' +
+          '<span class="block text-xs font-bold text-white truncate">' + escapeHtml(c.name) + '</span>' +
+          '<span class="block text-[9px] text-zinc-400 font-mono-tag">' + escapeHtml(c.type || 'Community') + (c.city ? ' · ' + escapeHtml(c.city) : '') + '</span>' +
+        '</span>' +
+      '</span>' +
+      '<span class="' + badgeClass + '">' + (isSelected ? 'SELECTED' : 'CHOOSE') + '</span>' +
+    '</button>';
+  }).join('');
+
+  if (filtered.length > shown.length) {
+    html += '<button type="button" onclick="loadMoreReviewCommunities()" class="w-full py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white font-mono-tag text-[9px] font-bold uppercase tracking-wider cursor-pointer transition active:scale-[0.99]">Load ' + Math.min(REVIEW_COMMUNITY_PAGE_SIZE, filtered.length - shown.length) + ' more</button>';
+  }
+  listEl.innerHTML = html;
+}
+window.renderReviewCommunityPicker = renderReviewCommunityPicker;
 
 async function setupReviewContextUI() {
   var locEl = document.getElementById('reviewApproxLocation');
@@ -5983,8 +6206,15 @@ async function setupReviewContextUI() {
 
   var reviewCtx = state.reviewCameraContext || state.cameraContext;
   var isPerspective = Boolean(reviewCtx && reviewCtx.mode === 'PERSPECTIVE' && reviewCtx.clusterId);
+  state.reviewContextRequestId = (state.reviewContextRequestId || 0) + 1;
+  var requestId = state.reviewContextRequestId;
+  closeReviewCommunityPicker();
 
   if (isPerspective) {
+    state.reviewJoinedCommunities = [];
+    state.reviewDestinationMode = 'personal';
+    state.reviewCommunitiesLoading = false;
+    state.reviewCommunitiesError = '';
     var clusterName = (reviewCtx && reviewCtx.clusterName) || 'Shared Event';
     listEl.innerHTML =
       '<div class="p-3 rounded-2xl bg-zinc-900 border border-amber-500/30 flex items-center justify-between">' +
@@ -6000,52 +6230,64 @@ async function setupReviewContextUI() {
     return;
   }
 
-  listEl.innerHTML = '<div class="py-2 text-center text-[10px] text-zinc-500 font-mono-tag">Loading options...</div>';
+  var targetCommId = (state.cameraContext && state.cameraContext.communityId) || state.activeCommunityId || '';
+  state.reviewJoinedCommunities = [];
+  state.reviewDestinationMode = 'personal';
+  state.activeCommunityId = '';
+  state.selectedReviewCommunity = 'Personal (Feed)';
+  state.reviewCommunitiesLoading = true;
+  state.reviewCommunitiesError = '';
+  renderReviewDestinationOptions();
 
   var res = await apiRequest('/api/community/my');
-  var joinedCommunities = (res && res.success && Array.isArray(res.communities)) ? res.communities : [];
+  if (requestId !== state.reviewContextRequestId) return;
+  state.reviewCommunitiesLoading = false;
 
-  // Option 1: Personal (Feed) is ALWAYS the default top option
-  var options = [{ id: '', name: 'Personal (Feed)', type: 'Feed', icon: '✨' }];
-
-  // Option 2+: Only communities where the user is ACTUALLY a joined member or creator
-  joinedCommunities.forEach(function(c) {
-    if (c && c.name && c.name.toLowerCase() !== 'personal (feed)') {
-      options.push({
-        id: c.id || '',
-        name: c.name,
-        type: c.type || 'Community',
-        icon: c.icon || '📍'
-      });
-    }
-  });
-
-  // Default selection is ALWAYS Personal (Feed) (index 0) unless explicitly provided in cameraContext
-  var matchedIdx = 0;
-  var targetCommId = (state.cameraContext && state.cameraContext.communityId) || state.activeCommunityId;
-  if (targetCommId) {
-    var foundIdx = options.findIndex(function(c) { return c.id === targetCommId; });
-    if (foundIdx !== -1) {
-      matchedIdx = foundIdx;
-    }
+  if (!res || !res.success || !Array.isArray(res.communities)) {
+    state.reviewCommunitiesError = 'Communities unavailable';
+    renderReviewDestinationOptions();
+    return;
   }
 
-  state.selectedReviewCommunity = options[matchedIdx].name;
-  state.activeCommunityId = options[matchedIdx].id || '';
+  var seen = {};
+  var joined = [];
+  res.communities.forEach(function(c) {
+    if (!c || !c.id || !c.name) return;
+    var id = String(c.id);
+    if (seen[id]) return;
+    if (String(c.name).toLowerCase() === 'personal (feed)') return;
+    seen[id] = true;
+    joined.push({
+      id: c.id,
+      name: c.name,
+      type: c.type || 'Community',
+      icon: c.icon || '📍',
+      city: c.city || ''
+    });
+  });
+  state.reviewJoinedCommunities = joined;
 
-  listEl.innerHTML = options.map(function(c, idx) {
-    var isChecked = (idx === matchedIdx);
-    return '<label class="flex items-center justify-between p-2.5 rounded-xl bg-zinc-900/90 border border-white/[.04] hover:border-amber-500/40 cursor-pointer transition active:scale-[0.99]">' +
-      '<div class="flex items-center gap-2">' +
-        '<input type="radio" name="reviewCommunityDest" value="' + escapeHtml(c.name).replace(/"/g, '&quot;') + '" data-comm-id="' + (c.id || '') + '" data-comm-type="' + escapeHtml(c.type || 'Community') + '" ' + (isChecked ? 'checked' : '') + ' onchange="onReviewCommunityChange(this)" class="accent-amber-500 w-3.5 h-3.5">' +
-        '<span class="text-xs">' + (c.icon || '📍') + '</span>' +
-        '<span class="text-xs font-bold text-white">' + escapeHtml(c.name) + '</span>' +
-      '</div>' +
-      '<span class="font-mono-tag text-[8px] ' + (isChecked ? 'text-amber-400 font-bold bg-amber-500/10 border border-amber-500/30' : 'text-zinc-500 bg-zinc-800') + ' px-1.5 py-0.5 rounded">' +
-        (isChecked ? 'SELECTED' : escapeHtml(c.type || 'Community')) +
-      '</span>' +
-    '</label>';
-  }).join('');
+  // Default is ALWAYS Personal (Feed) unless this capture was opened with a valid
+  // joined-community context. A stale/removed community falls back to Personal.
+  var target = null;
+  if (targetCommId) {
+    for (var i = 0; i < joined.length; i++) {
+      if (String(joined[i].id) === String(targetCommId)) {
+        target = joined[i];
+        break;
+      }
+    }
+  }
+  if (target) {
+    state.reviewDestinationMode = 'community';
+    state.activeCommunityId = target.id;
+    state.selectedReviewCommunity = target.name;
+  } else {
+    state.reviewDestinationMode = 'personal';
+    state.activeCommunityId = '';
+    state.selectedReviewCommunity = 'Personal (Feed)';
+  }
+  renderReviewDestinationOptions();
 }
 window.setupReviewContextUI = setupReviewContextUI;
 
@@ -6065,6 +6307,7 @@ function closeMomentReview() {
   state.activeClusterContext = null;
   state.activeClusterCommunityId = null;
   state.activeClusterContextName = null;
+  resetReviewDestinationState();
   selectSubTab(state.activeCircle || 'foryou');
 }
 window.closeMomentReview = closeMomentReview;
@@ -6078,6 +6321,7 @@ async function retakeMomentFromReview() {
   // Preserve user's intended community/destination across retakes
   var savedComm = state.selectedReviewCommunity;
   var savedCommId = state.activeCommunityId;
+  var savedCommMode = state.reviewDestinationMode;
   var savedCtx = state.reviewCameraContext || state.cameraContext;
 
   var reviewStream = document.getElementById('reviewContentStream');
@@ -6096,6 +6340,7 @@ async function retakeMomentFromReview() {
   // Restore destination context for subsequent review
   state.selectedReviewCommunity = savedComm;
   state.activeCommunityId = savedCommId;
+  state.reviewDestinationMode = savedCommMode || (savedCommId ? 'community' : 'personal');
   if (savedCtx) state.cameraContext = Object.assign({}, savedCtx);
 
   await openCameraStudio();
@@ -6193,23 +6438,27 @@ async function publishCapturedMoment() {
       cluster_id: perspClusterId
     };
   } else {
-    var selectedRadio = document.querySelector('input[name="reviewCommunityDest"]:checked');
-    var chosenCommunity = selectedRadio ? selectedRadio.value : (state.selectedReviewCommunity || state.activeCommunity || '');
-    var chosenCommId = selectedRadio ? selectedRadio.getAttribute('data-comm-id') : (state.activeCommunityId || '');
+    var selectedJoinedCommunity = state.reviewDestinationMode === 'community' ? getReviewSelectedCommunity() : null;
+    if (state.reviewDestinationMode === 'community' && !selectedJoinedCommunity) {
+      showToast('That community is no longer available. Choose a destination.');
+      return;
+    }
 
-    var isPersonalFeed = (!chosenCommId && (!chosenCommunity || chosenCommunity.toLowerCase() === 'personal (feed)' || chosenCommunity.toLowerCase() === 'feed'));
-    var finalCommId = isPersonalFeed ? '' : (chosenCommId || '');
-    var finalPrimaryComm = isPersonalFeed ? '' : (chosenCommId || chosenCommunity || '');
+    var isPersonalFeed = !selectedJoinedCommunity;
+    var chosenCommunity = isPersonalFeed ? 'Personal (Feed)' : selectedJoinedCommunity.name;
+    var chosenCommId = isPersonalFeed ? '' : selectedJoinedCommunity.id;
+    var finalCommId = isPersonalFeed ? '' : chosenCommId;
+    var finalPrimaryComm = isPersonalFeed ? '' : chosenCommId;
 
     payload = {
       caption: caption,
       circle: state.activeCircle || 'campus',
       region: 'all',
       locationCity: approxLocName,
-      community: isPersonalFeed ? 'Personal (Feed)' : chosenCommunity,
+      community: chosenCommunity,
       community_id: finalCommId,
       primary_community_id: finalPrimaryComm,
-      context_community_id: state.activeCommunity || (state.currentUser ? state.currentUser.campus : ''),
+      context_community_id: '',
       context_location: approxLocName,
       mainImg: state.capturedMomentData ? state.capturedMomentData.mainImg : '',
       pipImg: state.capturedMomentData ? state.capturedMomentData.pipImg : '',
