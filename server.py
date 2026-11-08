@@ -81,6 +81,45 @@ def is_production_env(env: str = None) -> bool:
         return True
     return ENVIRONMENT in ("production", "prod")
 
+
+SESSION_SECRET_REQUIRED_ENVIRONMENTS = frozenset(("production", "prod", "staging"))
+SESSION_SECRET_LOCAL_ENVIRONMENTS = frozenset(("development", "dev", "test", "testing", "local"))
+
+
+def is_session_secret_required(env: str = None) -> bool:
+    """Return whether SESSION_SECRET must be explicit and strong.
+
+    Render overrides ENVIRONMENT. Outside Render, only an explicit local
+    development value may use the fallback; unknown values fail closed.
+    """
+    if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID"):
+        return True
+
+    candidate = env
+    if candidate is None:
+        candidate = os.environ.get("ENVIRONMENT", "").strip().lower()
+        if not candidate:
+            candidate = globals().get("ENVIRONMENT", "")
+    value = str(candidate).strip().lower()
+
+    if value in SESSION_SECRET_REQUIRED_ENVIRONMENTS:
+        return True
+    if value in SESSION_SECRET_LOCAL_ENVIRONMENTS:
+        return False
+    return True
+
+
+def resolve_session_secret(secret: str = None, env: str = None):
+    """Return the effective secret and whether explicit strong configuration is required."""
+    required = is_session_secret_required(env)
+    if secret is None:
+        secret = os.environ.get("SESSION_SECRET", "").strip()
+    else:
+        secret = str(secret).strip()
+    if not required and not secret:
+        secret = DEV_SESSION_SECRET_FALLBACK
+    return secret, required
+
 RAW_ENV = os.environ.get("ENVIRONMENT", "").strip().lower()
 if not RAW_ENV:
     if os.environ.get("RENDER") or os.environ.get("RENDER_SERVICE_ID") or os.environ.get("PORT", "8080") != "8080":
@@ -238,15 +277,12 @@ def validate_session_secret(secret: str = None, env: str = None) -> bool:
     - Defensible minimum length (>= 32 chars; >= 64 for hex) and maximum length (<= 512 chars)
     - Rejects documented samples, placeholders, and predictable human-readable strings
     - Requires cryptographically generated secret material
-    Fails closed with descriptive RuntimeError in production / prod.
+    Fails closed in staging, production/prod, any Render process, and unknown
+    environments. Only explicitly allowed local development may use the fallback.
     """
-    in_prod = is_production_env(env)
-    if secret is None:
-        secret = os.environ.get("SESSION_SECRET", "").strip()
-        if not in_prod and not secret:
-            secret = DEV_SESSION_SECRET_FALLBACK
+    secret, required = resolve_session_secret(secret, env)
 
-    if in_prod:
+    if required:
         if not secret:
             raise RuntimeError("CRITICAL: SESSION_SECRET must be explicitly configured in production environment.")
         if len(secret) < MIN_SESSION_SECRET_LENGTH:
@@ -257,10 +293,7 @@ def validate_session_secret(secret: str = None, env: str = None) -> bool:
             raise RuntimeError("CRITICAL: SESSION_SECRET must be a cryptographically generated high-entropy secret (e.g. 64-char hex or 32+ char base64/urlsafe token) and cannot be a sample, placeholder, or human-readable string in production.")
     return True
 
-if is_production_env():
-    SESSION_SECRET = os.environ.get("SESSION_SECRET", "").strip()
-else:
-    SESSION_SECRET = os.environ.get("SESSION_SECRET", DEV_SESSION_SECRET_FALLBACK).strip()
+SESSION_SECRET, _ = resolve_session_secret(env=ENVIRONMENT)
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 INTERNAL_OPS_SECRET = os.environ.get("INTERNAL_OPS_SECRET", "").strip()
@@ -1237,7 +1270,7 @@ def validate_environment():
         if not DATABASE_URL:
             print("⚠️  [PRODUCTION DB] DATABASE_URL not configured. Embedded SQLite active.")
         else:
-            print(f"✅ [PRODUCTION DB] PostgreSQL Configured: {DATABASE_URL[:20]}...")
+            print("✅ [PRODUCTION DB] PostgreSQL configured.")
             
         if not (CLOUDINARY_URL or (CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)):
             print("⚠️  [PRODUCTION MEDIA] Cloudinary keys missing. Storing media on local disk.")
@@ -1560,13 +1593,14 @@ def hash_reset_token(raw_token: str) -> str:
     """
     Derives a secure one-way HMAC-SHA256 verifier for high-entropy reset tokens (192 bits of entropy).
     Uses SESSION_SECRET as the key so the verifier cannot be generated or checked without server credentials.
-    In production / prod, fails closed if SESSION_SECRET is missing or invalid.
+    In any environment where a session secret is required, fails closed if
+    SESSION_SECRET is missing or invalid.
     """
-    in_prod = is_production_env()
+    secret_required = is_session_secret_required()
     active_secret = (SESSION_SECRET or os.environ.get("SESSION_SECRET", "")).strip()
-    if in_prod:
+    if secret_required:
         if not active_secret or not is_cryptographically_generated(active_secret):
-            raise RuntimeError("CRITICAL: Cannot derive reset token verifier without valid production SESSION_SECRET.")
+            raise RuntimeError("CRITICAL: Cannot derive reset token verifier without a valid required SESSION_SECRET.")
         key = active_secret.encode("utf-8")
     else:
         key = (active_secret or DEV_SESSION_SECRET_FALLBACK).encode("utf-8")
@@ -1590,10 +1624,10 @@ def verify_reset_token_hash(raw_token: str, stored_verifier: str) -> bool:
             return hmac.compare_digest(expected, stored_verifier)
         return False
     elif stored_verifier.startswith("prt_"):
-        # In production/prod, legacy plaintext reset tokens are strictly rejected.
-        if is_production_env():
+        # In secret-required environments, legacy plaintext reset tokens are strictly rejected.
+        if is_session_secret_required():
             return False
-        # Legacy fallback for in-flight/test tokens in development/test only (constant-time)
+        # Legacy fallback for in-flight/test tokens in permitted local development only (constant-time)
         return hmac.compare_digest(raw_token, stored_verifier)
     return False
 
@@ -14133,7 +14167,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if reset_token:
                 now_str = datetime.now().isoformat()
                 token_verifier = hash_reset_token(reset_token)
-                if is_production_env():
+                if is_session_secret_required():
                     cursor.execute(
                         "SELECT id, email, token, expires_at FROM password_resets WHERE token = ? AND expires_at > ?",
                         (token_verifier, now_str)
@@ -14860,9 +14894,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if cluster_id and not re.match(r"^[A-Za-z0-9_-]+$", cluster_id):
                 return self.send_json(400, {"error": "Invalid cluster id", "success": False})
 
-            context_comm = body.get("context_community_id") or ""
-            if not primary_comm and not cluster_id:
-                context_comm = ""
+            # A capture has exactly one authoritative destination. Never persist a
+            # client-supplied second community context: legacy context IDs grant
+            # feed visibility and could otherwise bypass membership checks for a
+            # community the user did not select or join.
+            context_comm = ""
 
             raw_audio = body.get("audioData") or body.get("audio_data") or ""
             audio_url = save_base64_audio(raw_audio, "ambient") if raw_audio else ""
@@ -16321,22 +16357,58 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user = get_current_user(self.headers)
             if not user:
                 return self.send_json(401, {"error": "Unauthenticated"})
-            current_pw = body.get("current_password", "")
-            new_pw = body.get("new_password", "")
+
+            # Five attempts per minute per authenticated user. Keeping the window
+            # at 60 seconds preserves RateLimiter's existing sweep guarantee.
+            if not rate_limiter.check_rate_limit(f"change_pw:{user['id']}", max_requests=5, window_seconds=60):
+                return self.send_json(429, {
+                    "success": False,
+                    "error_code": "KANDID_RATE_LIMITED",
+                    "error": "Too many password change attempts. Please wait 1 minute before trying again."
+                })
+
+            # Login, registration, and password reset already trim passwords.
+            # Change-password must follow the same semantics so it cannot store a
+            # password that the login form can never reproduce.
+            current_pw = str(body.get("current_password") or "").strip()
+            new_pw = str(body.get("new_password") or "").strip()
             if not current_pw or not new_pw or len(new_pw) < 8:
                 return self.send_json(400, {"error": "New password must be at least 8 characters."})
+
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("SELECT password_hash, salt FROM users WHERE id = ?", (user["id"],))
             row = cursor.fetchone()
-            if not row or not verify_password(current_pw, row["password_hash"], row["salt"]):
+            if not row or not verify_password(current_pw, row["salt"], row["password_hash"]):
                 conn.close()
                 return self.send_json(400, {"error": "Current password is incorrect."})
-            new_hash, new_salt = hash_password(new_pw)
-            conn.execute("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?", (new_hash, new_salt, user["id"]))
-            conn.commit()
+
+            try:
+                new_hash, new_salt = hash_password(new_pw)
+                update_cursor = conn.execute(
+                    "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+                    (new_hash, new_salt, user["id"]),
+                )
+                if update_cursor.rowcount == 0:
+                    raise RuntimeError("password update matched no user")
+
+                # Password changes invalidate every existing bearer session. No new
+                # token is issued here, so the caller must sign in again.
+                conn.execute("DELETE FROM sessions WHERE user_id = ?", (user["id"],))
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                return self.send_json(500, {"success": False, "error": "Failed to change password. Please try again."})
+
             conn.close()
-            return self.send_json(200, {"success": True, "message": "Password changed successfully."})
+            return self.send_json(200, {"success": True, "message": "Password changed successfully. Please sign in again."})
 
         if path == "/api/user/delete-account":
             user = get_current_user(self.headers, body, require_session=True)
