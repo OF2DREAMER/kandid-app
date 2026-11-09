@@ -1,0 +1,63 @@
+name: P0-3 reset-token PostgreSQL regression
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-3-reset-token-pg-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reset-token-real-postgres:
+    name: Reset token race against real PostgreSQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install production requirements plus CI-only pgserver
+        run: python -m pip install -r requirements.txt "pgserver==0.1.4"
+
+      - name: Verify PostgreSQL test dependencies are importable
+        run: |
+          python -c 'import importlib.metadata as m, pgserver, psycopg2; assert m.version("pgserver") == "0.1.4", m.version("pgserver"); print("pgserver", m.version("pgserver"), pgserver.__file__); print("psycopg2", psycopg2.__version__)'
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest -v \
+            test_p0_3_reset_token_real_postgres \
+            test_environment_secret_matrix 2>&1 | tee unittest.log
+
+      - name: Require PostgreSQL regression to execute, not skip
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s unittest.log ]; then
+            echo "::error::unittest.log is missing or empty; the test command did not run."
+            exit 1
+          fi
+          if grep -Eq "skipped=[1-9]|skipped '" unittest.log; then
+            echo "::error::A test was skipped. The PostgreSQL regression must execute against a real cluster."
+            grep -nE "skipped=[1-9]|skipped '" unittest.log
+            exit 1
+          fi
+          expected='test_p0_3_reset_token_real_postgres.ResetTokenRealPostgresTests.test_concurrent_redemption_claims_the_token_exactly_once) ... ok'
+          if ! grep -Fq -- "$expected" unittest.log; then
+            echo "::error::The PostgreSQL concurrency test did not execute and pass."
+            grep -n "ResetTokenRealPostgresTests" unittest.log || true
+            exit 1
+          fi
+          echo "PostgreSQL regression executed and passed; no tests were skipped."
