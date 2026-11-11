@@ -40,13 +40,13 @@ jobs:
             test_p0_3_reset_token_real_postgres \
             test_environment_secret_matrix 2>&1 | tee unittest.log
 
-      - name: Reject skipped tests
+      - name: Require PostgreSQL regression to execute, not skip
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -f unittest.log ]; then
-            echo "::error::unittest.log was not produced; the test command did not run."
+          if [ ! -s unittest.log ]; then
+            echo "::error::unittest.log is missing or empty; the test command did not run."
             exit 1
           fi
           if grep -Eq "skipped=[1-9]|skipped '" unittest.log; then
@@ -54,4 +54,10 @@ jobs:
             grep -nE "skipped=[1-9]|skipped '" unittest.log
             exit 1
           fi
-          echo "No tests were skipped."
+          expected='test_p0_3_reset_token_real_postgres.ResetTokenRealPostgresTests.test_concurrent_redemption_claims_the_token_exactly_once) ... ok'
+          if ! grep -Fq -- "$expected" unittest.log; then
+            echo "::error::The PostgreSQL concurrency test did not execute and pass."
+            grep -n "ResetTokenRealPostgresTests" unittest.log || true
+            exit 1
+          fi
+          echo "PostgreSQL regression executed and passed; no tests were skipped."
