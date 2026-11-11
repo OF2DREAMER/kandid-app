@@ -4979,12 +4979,12 @@
                     <input type="password" id="inputCurrentPassword" required placeholder="••••••••" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-amber-500 transition">
                 </div>
                 <div>
-                    <label class="text-[9px] text-zinc-400 font-mono-tag uppercase tracking-wider block mb-1">New Password (min 6 chars)</label>
-                    <input type="password" id="inputNewPassword" required minlength="6" placeholder="••••••••" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-amber-500 transition">
+                    <label class="text-[9px] text-zinc-400 font-mono-tag uppercase tracking-wider block mb-1">New Password (min 8 chars)</label>
+                    <input type="password" id="inputNewPassword" required minlength="8" placeholder="••••••••" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-amber-500 transition">
                 </div>
                 <div>
                     <label class="text-[9px] text-zinc-400 font-mono-tag uppercase tracking-wider block mb-1">Confirm New Password</label>
-                    <input type="password" id="inputConfirmNewPassword" required minlength="6" placeholder="••••••••" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-amber-500 transition">
+                    <input type="password" id="inputConfirmNewPassword" required minlength="8" placeholder="••••••••" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2.5 text-white text-xs outline-none focus:border-amber-500 transition">
                 </div>
                 <div class="pt-2">
                     <button type="submit" id="btnSubmitChangePassword" class="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl tracking-widest transition-all uppercase cursor-pointer font-mono-tag shadow-lg shadow-amber-500/20">
@@ -5063,6 +5063,25 @@
             <button onclick="closeLivePulse(); openCommunityMomentCapture(state.activeCommunityId, state.activeCommunity);" class="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-2xl uppercase font-mono-tag tracking-widest cursor-pointer shadow-lg active:scale-95 transition">
                 Capture into Pulse 📸
             </button>
+        </div>
+    </div>
+
+    <!-- CAPTURE CONTEXT COMMUNITY DESTINATION PICKER -->
+    <div id="reviewCommunityPickerModal" class="fixed inset-0 z-[160] bg-black/75 backdrop-blur-md flex items-end justify-center" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="reviewCommunityPickerTitle" aria-hidden="true" onclick="if(event.target === this) closeReviewCommunityPicker()" onkeydown="handleReviewCommunityPickerKeydown(event)">
+        <div class="w-full max-w-sm rounded-t-[30px] bg-[#0d0d0f] border-t border-white/[.08] p-5 pb-8 space-y-3 animate-in slide-in-from-bottom duration-200 shadow-2xl max-h-[82vh] flex flex-col">
+            <div class="w-10 h-1 rounded-full bg-zinc-700 mx-auto mb-1 shrink-0"></div>
+            <div class="flex items-center justify-between shrink-0">
+                <div>
+                    <p class="font-mono-tag text-[8px] text-amber-500 font-bold uppercase tracking-widest">CAPTURE CONTEXT</p>
+                    <h3 id="reviewCommunityPickerTitle" class="text-sm font-bold text-white">Choose a community</h3>
+                </div>
+                <button type="button" onclick="closeReviewCommunityPicker()" class="text-zinc-500 hover:text-white text-base cursor-pointer p-1" aria-label="Close community picker">✕</button>
+            </div>
+            <input id="reviewCommunitySearchInput" type="search" autocomplete="off" placeholder="Search your communities..." oninput="filterReviewCommunityPicker(this.value)" class="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500/50 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 outline-none font-sans transition-colors shrink-0">
+            <div id="reviewCommunityPickerList" class="space-y-2 overflow-y-auto no-scroll pr-1 flex-1 min-h-0">
+                <div class="py-4 text-center text-[10px] text-zinc-500 font-mono-tag">Loading your communities...</div>
+            </div>
+            <button type="button" onclick="closeReviewCommunityPicker()" class="w-full py-2.5 bg-transparent text-zinc-500 text-xs cursor-pointer shrink-0">Cancel</button>
         </div>
     </div>
 

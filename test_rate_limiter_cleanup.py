@@ -25,20 +25,22 @@ statically against the real server.py source.
 """
 
 import inspect
+import os
 import re
+import sys
 import threading
 import types
 import unittest
 from unittest import mock
 
-PROJECT_DIR = "/home/daytona/codebase"
-import sys
-sys.path.insert(0, PROJECT_DIR)
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
 
 import server  # noqa: E402
 from server import RateLimiter  # noqa: E402
 
-SERVER_PY = PROJECT_DIR + "/server.py"
+SERVER_PY = os.path.join(PROJECT_DIR, "server.py")
 
 
 class FakeClock:
