@@ -5103,6 +5103,469 @@ const KandidCameraEngine = {
     console.log('[KandidCameraEngine] State -> ' + newState + (detail ? ' : ' + detail : ''));
   },
 
+  // -----------------------------------------------------------------
+  // C1 HARDENING: startup failure surfacing + bounded readiness wait.
+  // A camera that did not produce decoded frames must never be reported
+  // as READY, and every failure must leave a retryable state.
+  // -----------------------------------------------------------------
+  _lastError: null,
+  _readyInfo: null,
+  readinessTimeoutMs: 6000,
+
+  // -----------------------------------------------------------------
+  // C2 HARDENING: lifecycle-aware recovery.
+  // A session interrupted by backgrounding or a dead/muted track may be
+  // reacquired automatically at most once per interruption cycle, and
+  // never after the user closed the studio.
+  // -----------------------------------------------------------------
+  _lifecycleBound: false,
+  _lifecycleHandlers: null,
+  _studioActiveAtHide: false,
+  _releasedOnPageHide: false,
+  _pageHideInvalidated: false,
+  _recoveryInFlight: false,
+  _recoveredThisCycle: false,
+  _autoRecoveryCount: 0,
+  maxAutoRecoveries: 2,
+  _muteGraceTimer: null,
+  muteGraceMs: 1200,
+  _interruptionTrack: null,
+  _interruptionHandlers: null,
+
+  // Idempotent: every studio open calls this, but listeners are attached once.
+  bindLifecycle() {
+    if (this._lifecycleBound) return;
+    this._lifecycleBound = true;
+    var self = this;
+    this._lifecycleHandlers = {
+      visibilitychange: function() { self._onVisibilityChange(); },
+      pageshow: function() { self._onPageShow(); },
+      pagehide: function() { self._onPageHide(); }
+    };
+    try {
+      document.addEventListener('visibilitychange', this._lifecycleHandlers.visibilitychange);
+    } catch (e) {}
+    try {
+      if (window.addEventListener) {
+        window.addEventListener('pageshow', this._lifecycleHandlers.pageshow);
+        window.addEventListener('pagehide', this._lifecycleHandlers.pagehide);
+      }
+    } catch (e) {}
+    this._diag('lifecycle-bound', { visibilityState: document.visibilityState || 'visible' });
+  },
+
+  // Is the camera UI still on screen? (independent of engine state, so an
+  // interrupted startup that was normalized back to IDLE still counts as open.)
+  _isStudioOpen() {
+    var modal = document.getElementById('cameraStudioModal');
+    if (modal && modal.style && modal.style.display === 'none') return false;
+    return true;
+  },
+
+  _isStudioActive() {
+    if (!this.state || this.state === 'IDLE') return false;
+    return this._isStudioOpen();
+  },
+
+  _onVisibilityChange() {
+    if (document.visibilityState === 'hidden') this._onHidden();
+    else this._onVisible();
+  },
+
+  _onHidden() {
+    var active = this._isStudioActive();
+    this._studioActiveAtHide = active;
+    this._recoveredThisCycle = false;
+    this._releasedOnPageHide = false;
+    this._clearMuteGrace();
+    if (active) this._diag('lifecycle-hidden', { state: this.state });
+  },
+
+  _onPageHide() {
+    this._onHidden();
+    // C2.1: bump the generation BEFORE anything else. A getUserMedia() that is
+    // still pending keeps matching its token otherwise, and would adopt a live
+    // stream and reach READY while the page is hidden. This makes the late
+    // resolution take the existing "stale stream" path (tracks stopped, false).
+    this._gen++;
+    if (this._isStudioActive()) {
+      this._detachTrackHandlers();
+      this._stopStreamsQuietly();
+      this._releasedOnPageHide = true;
+      this._pageHideInvalidated = true;
+      this._diag('lifecycle-pagehide', { released: true });
+    }
+    // A startup interrupted mid-flight must not stay INITIALIZING (which would
+    // also block a later foreground resume).
+    if (this.state === 'INITIALIZING' || this.state === 'REQUESTING_PERMISSION') {
+      this.setState('IDLE', 'pagehide');
+      this._pageHideInvalidated = true;
+    }
+  },
+
+  _onPageShow() {
+    if (document.visibilityState === 'hidden') return;
+    this._onVisible();
+  },
+
+  _onVisible() {
+    if (!this._studioActiveAtHide) return;   // nothing was active before hiding
+    this._studioActiveAtHide = false;        // consume this cycle
+    if (!this._isStudioOpen()) {             // user closed it while hidden
+      this._pageHideInvalidated = false;
+      return;
+    }
+    if (!this._isStudioActive()) {
+      // C2.1: an interrupted startup was normalized to IDLE by pagehide; resume
+      // it through the normal path instead of leaving a dead viewfinder.
+      if (this._pageHideInvalidated) {
+        this._pageHideInvalidated = false;
+        this._recoverOrSurface('foreground-resume', true);
+      }
+      return;
+    }
+    var video = document.getElementById('cameraMainVideo');
+    var track = (this.mainStream && this.mainStream.getVideoTracks) ? this.mainStream.getVideoTracks()[0] : null;
+    var healthy = !!(track && track.readyState === 'live' && !track.muted && this._previewReady(video));
+    if (healthy) {
+      this._diag('lifecycle-visible', { resumed: 'retained' });
+      return;
+    }
+    this._diag('lifecycle-visible', { resumed: 'recover', trackState: track ? track.readyState : 'none' });
+    this._recoverOrSurface('foreground');
+  },
+
+  // Attempts one recovery, or surfaces the existing retry UI once the budget is
+  // spent (a dead preview must never be left looking alive).
+  _recoverOrSurface(reason, allowIdle) {
+    if (this._recoveryInFlight) return false;
+    // C2.1 audit: never touch camera state or show UI while the page is hidden -
+    // a queue of track/visibility events must not produce a visible mutation.
+    if (document.visibilityState === 'hidden') return false;
+    if (this._autoRecoveryCount >= this.maxAutoRecoveries) {
+      this._diag('auto-recovery-exhausted', { count: this._autoRecoveryCount, reason: reason });
+      this.failStartup(this._lastError, 'timeout');
+      return false;
+    }
+    this._attemptRecovery(reason, allowIdle);
+    return true;
+  },
+
+  // One bounded automatic reacquisition per interruption cycle, hard-capped per
+  // studio session. Never runs while hidden or after close. Falls back to ERROR.
+  async _attemptRecovery(reason, allowIdle) {
+    if (this._recoveryInFlight) return false;
+    if (document.visibilityState === 'hidden') return false;
+    if (!this._isStudioOpen()) return false;
+    if (!allowIdle && !this._isStudioActive()) return false;
+    if (allowIdle) {
+      if (this.state !== 'IDLE' && this.state !== 'READY' && this.state !== 'ERROR') return false;
+    } else if (this.state !== 'READY' && this.state !== 'ERROR') return false;
+    if (this._recoveredThisCycle) return false;
+    if (this._autoRecoveryCount >= this.maxAutoRecoveries) return false;
+
+    this._recoveredThisCycle = true;
+    this._autoRecoveryCount++;
+    this._recoveryInFlight = true;
+    this._diag('auto-recovery', { reason: reason, attempt: this._autoRecoveryCount, state: this.state });
+    try {
+      this._detachTrackHandlers();
+      this._clearMuteGrace();
+      this._gen++;                 // cancel any stale in-flight acquisition
+      this._stopStreamsQuietly();  // release hardware without re-entering handlers
+      this.clearCameraError();
+      this.setState('IDLE', 'auto-recovery');
+      await this.initialize();
+    } catch (e) {
+      this._diag('auto-recovery-failed', { errorName: (e && e.name) ? String(e.name) : 'unknown' });
+    } finally {
+      this._recoveryInFlight = false;
+      // One attempt per interruption: this attempt is spent, so the next distinct
+      // interruption starts a fresh cycle. Loops stay bounded by the session cap.
+      this._recoveredThisCycle = false;
+    }
+    return this.state === 'READY';
+  },
+
+  // Stops streams without letting intentional teardown look like a track failure.
+  _stopStreamsQuietly() {
+    this._releaseStreams();
+  },
+
+  _clearMuteGrace() {
+    if (this._muteGraceTimer) {
+      clearTimeout(this._muteGraceTimer);
+      this._muteGraceTimer = null;
+    }
+  },
+
+  _attachTrackHandlers(stream) {
+    this._detachTrackHandlers();
+    var track = (stream && stream.getVideoTracks) ? stream.getVideoTracks()[0] : null;
+    if (!track) return;
+    var self = this;
+    var handlers = {
+      mute: function() { if (self._interruptionTrack === track) self._onTrackMute(); },
+      unmute: function() { if (self._interruptionTrack === track) self._onTrackUnmute(); },
+      ended: function() { if (self._interruptionTrack === track) self._onTrackEnded(); }
+    };
+    Object.keys(handlers).forEach(function(ev) {
+      try { track.addEventListener(ev, handlers[ev]); } catch (e) {}
+    });
+    this._interruptionTrack = track;
+    this._interruptionHandlers = handlers;
+  },
+
+  _detachTrackHandlers() {
+    var track = this._interruptionTrack;
+    var handlers = this._interruptionHandlers;
+    if (track && handlers) {
+      Object.keys(handlers).forEach(function(ev) {
+        try { track.removeEventListener(ev, handlers[ev]); } catch (e) {}
+      });
+    }
+    this._interruptionTrack = null;
+    this._interruptionHandlers = null;
+  },
+
+  // mute can be temporary (OS handover, another app briefly taking the sensor):
+  // wait out a bounded grace period before treating it as a failure.
+  _onTrackMute() {
+    if (!this._isStudioActive()) return;
+    this._clearMuteGrace();
+    var self = this;
+    this._muteGraceTimer = setTimeout(function() {
+      self._muteGraceTimer = null;
+      if (!self._isStudioActive()) return;
+      var track = self._interruptionTrack;
+      var video = document.getElementById('cameraMainVideo');
+      if (track && track.readyState === 'ended') { self._onTrackEnded(); return; }
+      if (self._previewReady(video) && track && track.muted === false) return;
+      self._diag('track-muted-persistent', { readyState: track ? track.readyState : 'none' });
+      self._attemptRecovery('mute-stalled');
+    }, Number(this.muteGraceMs) > 0 ? Number(this.muteGraceMs) : 1200);
+  },
+
+  _onTrackUnmute() {
+    this._clearMuteGrace();
+    if (!this._isStudioActive()) return;
+    var video = document.getElementById('cameraMainVideo');
+    if (this._previewReady(video)) return;  // resumed by itself - retain the stream
+    this._attemptRecovery('unmute-not-ready');
+  },
+
+  _onTrackEnded() {
+    this._clearMuteGrace();
+    if (!this._isStudioActive()) return;
+    this._recoverOrSurface('track-ended');
+  },
+
+  // Privacy-safe diagnostics: never logs device ids, labels, group ids or media.
+  _diag(stage, detail) {
+    try {
+      var safe = {};
+      if (detail) {
+        Object.keys(detail).forEach(function(k) {
+          if (k === 'deviceId' || k === 'groupId' || k === 'label') return;
+          safe[k] = detail[k];
+        });
+      }
+      console.warn('[CameraEngine] ' + stage, safe);
+    } catch (e) {}
+  },
+
+  _safeTrackSettings(track) {
+    if (!track || typeof track.getSettings !== 'function') return null;
+    try {
+      var s = track.getSettings() || {};
+      return {
+        width: s.width || null,
+        height: s.height || null,
+        frameRate: s.frameRate || null,
+        facingMode: s.facingMode || null,
+        readyState: track.readyState || null
+      };
+    } catch (e) { return null; }
+  },
+
+  _classifyCameraError(err, reason) {
+    if (reason === 'track-ended') {
+      return { code: 'track-ended', title: 'CAMERA STOPPED', message: 'The camera was interrupted. Tap try again to restart the preview.' };
+    }
+    if (reason === 'timeout' || reason === 'media-error' || reason === 'no-video-element') {
+      return { code: 'preview', title: 'PREVIEW DID NOT START', message: 'The camera was found but no picture appeared. Tap try again, or restart Kindid if this keeps happening.' };
+    }
+    var name = (err && err.name) ? String(err.name) : '';
+    switch (name) {
+      case 'NotAllowedError':
+      case 'SecurityError':
+        return { code: 'permission', title: 'CAMERA ACCESS BLOCKED', message: 'Allow camera access for Kindid in your browser settings, then tap try again.' };
+      case 'NotFoundError':
+      case 'DevicesNotFoundError':
+        return { code: 'unavailable', title: 'NO CAMERA FOUND', message: 'This device did not report a usable camera.' };
+      case 'NotReadableError':
+      case 'TrackStartError':
+        return { code: 'busy', title: 'CAMERA UNAVAILABLE', message: 'Another app may be using the camera. Close it and tap try again.' };
+      case 'OverconstrainedError':
+      case 'ConstraintNotSatisfiedError':
+        return { code: 'constraints', title: 'CAMERA SETTINGS UNSUPPORTED', message: 'This camera did not accept the requested settings.' };
+      default:
+        return { code: 'unknown', title: 'CAMERA COULD NOT START', message: 'Tap try again. If this keeps happening, restart Kindid.' };
+    }
+  },
+
+  // Releases every stream this engine owns, without touching UI state.
+  _releaseStreams() {
+    if (this.mainStream) {
+      try { this.mainStream.getTracks().forEach(function(t) { t.stop(); }); } catch(e){}
+      this.mainStream = null;
+    }
+    var mainVideo = document.getElementById('cameraMainVideo');
+    if (mainVideo && mainVideo.srcObject) {
+      try { mainVideo.srcObject.getTracks().forEach(function(t) { t.stop(); }); } catch(e){}
+      try { mainVideo.srcObject = null; } catch(e){}
+    }
+    state.mainMediaStream = null;
+  },
+
+  // Builds the recoverable error card inside the existing viewfinder container
+  // (no markup or layout changes elsewhere).
+  showCameraError(info) {
+    var mainVideo = document.getElementById('cameraMainVideo');
+    var host = mainVideo && mainVideo.parentElement;
+    if (!host) return;
+    var el = document.getElementById('cameraErrorOverlay');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'cameraErrorOverlay';
+      el.setAttribute('role', 'alert');
+      el.style.cssText = 'position:absolute;inset:0;z-index:45;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;text-align:center;background:rgba(0,0,0,0.72);';
+      var title = document.createElement('p');
+      title.id = 'cameraErrorTitle';
+      title.style.cssText = 'margin:0;font-size:13px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;color:#f59e0b;font-family:"JetBrains Mono",monospace;';
+      var msg = document.createElement('p');
+      msg.id = 'cameraErrorMessage';
+      msg.style.cssText = 'margin:0;font-size:11px;line-height:1.5;color:#d4d4d8;max-width:240px;';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = 'cameraErrorRetryBtn';
+      btn.textContent = 'TRY AGAIN';
+      btn.style.cssText = 'margin-top:6px;padding:10px 18px;border-radius:12px;background:#f59e0b;color:#000;font-size:10px;font-weight:800;letter-spacing:0.08em;border:0;cursor:pointer;';
+      btn.addEventListener('click', function() {
+        if (window.retryCameraStudio) window.retryCameraStudio();
+      });
+      el.appendChild(title);
+      el.appendChild(msg);
+      el.appendChild(btn);
+      host.appendChild(el);
+    }
+    var titleEl = el.querySelector('#cameraErrorTitle');
+    var msgEl = el.querySelector('#cameraErrorMessage');
+    if (titleEl) titleEl.textContent = info.title;
+    if (msgEl) msgEl.textContent = info.message;
+    el.style.display = 'flex';
+  },
+
+  clearCameraError() {
+    var el = document.getElementById('cameraErrorOverlay');
+    if (el) el.style.display = 'none';
+  },
+
+  // Transitions to ERROR, releases hardware and surfaces a recoverable card.
+  failStartup(err, reason) {
+    var info = this._classifyCameraError(err, reason);
+    this._lastError = { code: info.code, errorName: (err && err.name) ? String(err.name) : '', reason: reason || 'acquire' };
+    this._diag('startup-failed', {
+      code: info.code,
+      errorName: this._lastError.errorName,
+      reason: this._lastError.reason,
+      readiness: this._readyInfo || null
+    });
+    this.setState('ERROR', info.code);
+    this._releaseStreams();
+    this.showCameraError(info);
+    return false;
+  },
+
+  _previewReady(mainVideo) {
+    return !!(mainVideo && mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0 && mainVideo.readyState >= 2);
+  },
+
+  // Bounded, event-driven readiness wait. Never rejects, always cleans up its
+  // listeners and timers, and returns a diagnostic record.
+  waitForPreview(mainVideo, stream) {
+    var self = this;
+    var timeoutMs = Number(this.readinessTimeoutMs) > 0 ? Number(this.readinessTimeoutMs) : 6000;
+    var startedAt = Date.now();
+
+    return new Promise(function(resolve) {
+      var track = (stream && stream.getVideoTracks) ? stream.getVideoTracks()[0] : null;
+      if (!mainVideo) {
+        resolve({ ok: false, reason: 'no-video-element', elapsedMs: 0, width: 0, height: 0, readyState: 0 });
+        return;
+      }
+      // A track that already ended (camera revoked or grabbed by another app
+      // during the cooldown) can never produce frames - fail fast.
+      if (track && track.readyState === 'ended') {
+        resolve({ ok: false, reason: 'track-ended', elapsedMs: 0, width: 0, height: 0, readyState: 0 });
+        return;
+      }
+      if (self._previewReady(mainVideo)) {
+        resolve({ ok: true, reason: 'already-ready', elapsedMs: 0, width: mainVideo.videoWidth, height: mainVideo.videoHeight, readyState: mainVideo.readyState });
+        return;
+      }
+
+      var settled = false;
+      var pollId = null;
+      var deadlineId = null;
+
+      function snapshot(ok, reason) {
+        return {
+          ok: ok,
+          reason: reason,
+          elapsedMs: Date.now() - startedAt,
+          width: mainVideo.videoWidth || 0,
+          height: mainVideo.videoHeight || 0,
+          readyState: mainVideo.readyState || 0
+        };
+      }
+      function finish(ok, reason) {
+        if (settled) return;
+        settled = true;
+        if (pollId) clearInterval(pollId);
+        if (deadlineId) clearTimeout(deadlineId);
+        Object.keys(mediaHandlers).forEach(function(ev) {
+          try { mainVideo.removeEventListener(ev, mediaHandlers[ev]); } catch(e) {}
+        });
+        if (track) { try { track.removeEventListener('ended', onEnded); } catch(e) {} }
+        resolve(snapshot(ok, reason));
+      }
+      function onMediaEvent() {
+        if (self._previewReady(mainVideo)) finish(true, 'event');
+      }
+      function onMediaError() { finish(false, 'media-error'); }
+      function onEnded() { finish(false, 'track-ended'); }
+
+      var mediaHandlers = {
+        loadedmetadata: onMediaEvent,
+        canplay: onMediaEvent,
+        playing: onMediaEvent,
+        resize: onMediaEvent,
+        error: onMediaError
+      };
+      Object.keys(mediaHandlers).forEach(function(ev) {
+        try { mainVideo.addEventListener(ev, mediaHandlers[ev]); } catch(e) {}
+      });
+      if (track) { try { track.addEventListener('ended', onEnded); } catch(e) {} }
+
+      // Poll only as a fallback for engines that deliver frames without events.
+      pollId = setInterval(function() {
+        if (self._previewReady(mainVideo)) finish(true, 'poll');
+      }, 100);
+      deadlineId = setTimeout(function() { finish(false, 'timeout'); }, timeoutMs);
+    });
+  },
+
   updateShutterUI(step) {
     var instr = document.getElementById('cameraShutterInstruction');
     var hud = document.getElementById('cameraDualCaptureHUD');
@@ -5216,10 +5679,17 @@ const KandidCameraEngine = {
     // not start a competing getUserMedia flow. Every legitimate (re)open path
     // passes through stop()/closeCameraStudio() -> IDLE first (fresh open,
     // close -> reopen, retake after review), so those remain allowed.
-    if (this.state !== 'IDLE') {
+    // C1: ERROR is retryable (failed startup) - only an in-flight or capture
+    // state blocks a fresh initialization.
+    if (this.state !== 'IDLE' && this.state !== 'ERROR') {
       console.log('[KandidCameraEngine] initialize() skipped - already ' + this.state);
       return;
     }
+    this.bindLifecycle();
+    this._pageHideInvalidated = false;
+    this.clearCameraError();
+    this._readyInfo = null;
+    var initGen = this._gen; // C2: a close() during init must not resurrect READY
     this.setState('REQUESTING_PERMISSION');
     this.step = 1;
     this.rearFrame = null;
@@ -5245,17 +5715,25 @@ const KandidCameraEngine = {
     captureCurrentGeoLocation();
 
     this.setState('INITIALIZING');
-    await this.startMainPreview('environment');
-    if (this.state === 'IDLE') {
-      // PHASE 1.2: stop() ran while opening (camera closed mid-init) - do not
-      // resurrect READY over a closed modal.
+    var previewOk = await this.startMainPreview('environment');
+    if (this.state === 'IDLE' || initGen !== this._gen) {
+      // PHASE 1.2 / C2: stop() ran while opening (camera closed mid-init or
+      // recovery) - do not resurrect READY over a closed modal or stale session.
+      return;
+    }
+    // C1: READY only after the preview really produced frames. Previously this
+    // returned false and the engine still reported READY over a black viewfinder.
+    if (!previewOk) {
+      this.failStartup(this._lastError, (this._readyInfo && this._readyInfo.reason) || 'acquire');
       return;
     }
     await this.discoverHardwareDevices();
+    if (this.state === 'IDLE' || initGen !== this._gen) return;
     this.setState('READY');
   },
 
   async startMainPreview(facing) {
+    var engine = this;
     this.activeFacing = facing || 'environment';
     state.cameraFacingMode = this.activeFacing;
 
@@ -5264,6 +5742,7 @@ const KandidCameraEngine = {
     var gen = this._gen; // PHASE 1.2: ownership token for this acquisition
 
     // 1. Fully stop and release previous camera hardware streams
+    this._detachTrackHandlers();
     if (this.mainStream) {
       try {
         this.mainStream.getTracks().forEach(function(t) { t.stop(); });
@@ -5306,17 +5785,26 @@ const KandidCameraEngine = {
     // 5. Ultimate fallback
     constraintsList.push({ video: true, audio: false });
 
+    var lastAcquireError = null;
     for (var i = 0; i < constraintsList.length; i++) {
       try {
         stream = await navigator.mediaDevices.getUserMedia(constraintsList[i]);
         if (stream) break;
       } catch (e) {
-        // Try next constraint
+        // Keep the first failure category: a permission/user-media error is more
+        // informative than a later OverconstrainedError from a looser fallback.
+        if (!lastAcquireError) lastAcquireError = e;
       }
     }
 
     if (!stream) {
-      console.warn('[CameraEngine] Could not get stream for ' + this.activeFacing);
+      // C1: the failure category is preserved so the UI can distinguish blocked
+      // permission from a missing or busy camera.
+      this._lastError = lastAcquireError;
+      this._diag('getUserMedia-failed', {
+        facing: this.activeFacing,
+        errorName: (lastAcquireError && lastAcquireError.name) ? String(lastAcquireError.name) : 'unknown'
+      });
       return false;
     }
 
@@ -5342,32 +5830,40 @@ const KandidCameraEngine = {
       mainVideo.style.willChange = 'transform';
       mainVideo.classList.remove('hidden');
 
+      var playRejected = false;
       try {
         var p = mainVideo.play();
-        if (p && p.catch) p.catch(function(){});
-      } catch(playErr){}
-
-      // Poll until video is actively producing live frames
-      var pollStart = Date.now();
-      var ready = false;
-      while ((Date.now() - pollStart) < 2500) {
-        if (mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0 && mainVideo.readyState >= 2) {
-          ready = true;
-          break;
+        if (p && p.catch) {
+          p.catch(function(playErr) {
+            playRejected = true;
+            engine._diag('play-rejected', { facing: engine.activeFacing, errorName: (playErr && playErr.name) ? String(playErr.name) : 'unknown' });
+          });
         }
-        await new Promise(function(r) { setTimeout(r, 40); });
+      } catch (playErr) {
+        playRejected = true;
+        this._diag('play-threw', { facing: this.activeFacing, errorName: (playErr && playErr.name) ? String(playErr.name) : 'unknown' });
       }
 
-      // PHASE 1.2 readiness safety: only reveal the live video once the stream has
-      // actually produced valid frames. On timeout, release the stalled stream and
-      // report failure so the frozen rear frame stays visible and the caller can
-      // recover the UI instead of exposing a blank video.
-      if (!ready) {
-        console.warn('[CameraEngine] Stream never became ready for ' + this.activeFacing);
-        try { stream.getTracks().forEach(function(t) { t.stop(); }); } catch(e) {}
-        if (this.mainStream === stream) this.mainStream = null;
-        if (state.mainMediaStream === stream) state.mainMediaStream = null;
-        try { mainVideo.srcObject = null; } catch(e) {}
+      // C1: readiness is driven by loadedmetadata/canplay/playing/resize (with a
+      // dimension poll as fallback) inside a bounded 6s deadline, instead of a
+      // fixed 2.5s poll. Merely late metadata no longer tears down a healthy
+      // stream: a stream that never decodes a frame returns false and the caller
+      // surfaces a recoverable error instead of a black viewfinder.
+      var ready = await this.waitForPreview(mainVideo, stream);
+      this._readyInfo = {
+        ok: ready.ok,
+        reason: ready.reason,
+        elapsedMs: ready.elapsedMs,
+        width: ready.width,
+        height: ready.height,
+        readyState: ready.readyState,
+        facing: this.activeFacing,
+        playRejected: playRejected,
+        track: this._safeTrackSettings(stream.getVideoTracks ? stream.getVideoTracks()[0] : null)
+      };
+      this._diag('preview-readiness', this._readyInfo);
+
+      if (!ready.ok) {
         return false;
       }
 
@@ -5376,6 +5872,8 @@ const KandidCameraEngine = {
         return false;
       }
 
+      // C2: watch this specific track for interruption while it is the live one.
+      if (gen === this._gen) this._attachTrackHandlers(stream);
       if (mainImg) mainImg.classList.add('hidden');
       return true;
     }
@@ -5383,7 +5881,9 @@ const KandidCameraEngine = {
   },
 
   async capture() {
-    if (this._isBusy()) return;
+    // C1: never capture from a failed startup (blank preview) - retry instead.
+    // C2: an automatic recovery must not run over an in-progress capture.
+    if (this._isBusy() || this.state === 'ERROR' || this._recoveryInFlight) return;
     // P0 FIX: snapshot _gen at entry so stale-operation checks throughout this
     // async method have a stable reference. Without this, `gen` was undefined in
     // the entire function body, making `gen !== this._gen` always true and
@@ -5673,14 +6173,33 @@ const KandidCameraEngine = {
     if (!ok) {
       // PHASE 1.2: flip failed - restore the previous lens instead of leaving
       // a dead preview (the "flip gets stuck" symptom).
-      await this.startMainPreview(prevFacing);
-      showToast('Camera switch failed. Please try again.');
+      var restored = await this.startMainPreview(prevFacing);
+      if (restored) {
+        showToast('Camera switch failed. Please try again.');
+      } else {
+        // C1: both lenses are unusable - surface a recoverable error state
+        // instead of a black preview with live-looking controls.
+        this.failStartup(this._lastError, (this._readyInfo && this._readyInfo.reason) || 'acquire');
+      }
     }
   },
 
 
   stop() {
     this._gen++; // PHASE 1.2: invalidate any in-flight stream acquisition
+    // C1: closing the studio always returns to a clean, retryable state.
+    // C2: a manual close cancels pending recovery and resets its budget.
+    this.clearCameraError();
+    this._lastError = null;
+    this._readyInfo = null;
+    this._detachTrackHandlers();
+    this._clearMuteGrace();
+    this._studioActiveAtHide = false;
+    this._releasedOnPageHide = false;
+    this._pageHideInvalidated = false;
+    this._recoveryInFlight = false;
+    this._recoveredThisCycle = false;
+    this._autoRecoveryCount = 0;
     if (this.mainStream) {
       try {
         this.mainStream.getTracks().forEach(function(t) { t.stop(); });
@@ -5803,6 +6322,17 @@ async function takeSnapshot() {
   await KandidCameraEngine.capture();
 }
 window.takeSnapshot = takeSnapshot;
+
+// C1: user-initiated retry after a failed camera startup. Bounded to one attempt
+// per tap (no automatic loops); initialize() is single-flight.
+window.retryCameraStudio = async function () {
+  var engine = window.KandidCameraEngine;
+  if (!engine) return;
+  engine.clearCameraError();
+  engine._gen++;            // invalidate any in-flight acquisition
+  engine.setState('IDLE');  // explicit, recoverable reset before re-acquiring
+  await engine.initialize();
+};
 
 var isFlashEnabled = false;
 async function triggerFlashSimulation() {

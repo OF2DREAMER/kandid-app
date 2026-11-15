@@ -98,8 +98,8 @@
       outline-offset: 2px;
     }
     .kandid-input {
-      background-color: #0b0b0d;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background-color: #111114;
+      border: 1px solid rgba(255, 255, 255, 0.34);
       transition: border-color 0.15s ease, background-color 0.15s ease;
     }
     @media (prefers-reduced-motion: reduce) {
@@ -117,7 +117,11 @@
     }
     .kandid-input:focus {
       border-color: rgba(245, 158, 11, 0.5);
-      background-color: #0d0d10;
+      background-color: #16161a;
+    }
+
+    .kandid-input::placeholder {
+      color: #9f9fa9;
     }
     .selectable-chip {
       transition: all 0.15s ease;
@@ -4008,7 +4012,7 @@
 
                     <!-- Profile Photo -->
                     <div class="space-y-1.5">
-                        <label class="text-[9px] text-zinc-600 uppercase tracking-wider block font-medium mono select-none">Profile Photo</label>
+                        <label class="text-[9px] text-zinc-400 uppercase tracking-wider block font-medium mono select-none">Profile Photo</label>
                         <input type="file" id="final-avatar-input" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
                         <div onclick="triggerPhotoUpload()" class="kandid-input rounded-2xl p-3 flex items-center gap-3.5 cursor-pointer hover:border-zinc-700 transition group">
                             <div class="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-700/80 flex items-center justify-center text-xs font-bold text-amber-400 mono shadow-inner overflow-hidden" id="final-initials-box">
@@ -4020,18 +4024,18 @@
 
                     <!-- Name Field -->
                     <div class="space-y-1.5">
-                        <label class="text-[9px] text-zinc-600 uppercase tracking-wider block font-medium mono select-none">Name</label>
-                        <input type="text" id="final-name" placeholder="e.g. Alex Morgan" oninput="updateFinalInitials()" class="kandid-input w-full rounded-2xl px-4 py-3.5 text-xs text-white placeholder-zinc-600 outline-none mono">
+                        <label class="text-[9px] text-zinc-400 uppercase tracking-wider block font-medium mono select-none">Name</label>
+                        <input type="text" id="final-name" placeholder="e.g. Alex Morgan" oninput="updateFinalInitials()" class="kandid-input w-full rounded-2xl px-4 py-3.5 text-xs text-white placeholder-zinc-400 outline-none mono">
                     </div>
 
                     <!-- Username Field -->
                     <div class="space-y-1.5">
                         <div class="flex items-center justify-between">
-                            <label class="text-[9px] text-zinc-600 uppercase tracking-wider block font-medium mono select-none">Username</label>
+                            <label class="text-[9px] text-zinc-400 uppercase tracking-wider block font-medium mono select-none">Username</label>
                             <span id="handleAvailabilityBadge" class="text-[9px] font-mono-tag font-bold hidden"></span>
                         </div>
                         <div class="relative">
-                            <input type="text" id="final-username" placeholder="@yourusername" oninput="handleUsernameInput(this)" class="kandid-input w-full rounded-2xl px-4 py-3.5 text-xs text-amber-400 font-bold placeholder-zinc-600 outline-none mono">
+                            <input type="text" id="final-username" placeholder="@yourusername" oninput="handleUsernameInput(this)" class="kandid-input w-full rounded-2xl px-4 py-3.5 text-xs text-amber-400 font-bold placeholder-zinc-400 outline-none mono">
                         </div>
                     </div>
                 </div>
@@ -4044,15 +4048,15 @@
 
                     <!-- Email Address Field (REQUIRED) -->
                     <div class="space-y-1.5">
-                        <label class="text-[9px] text-zinc-600 uppercase tracking-wider block font-medium mono select-none">Email</label>
-                        <input type="email" id="final-email" placeholder="you@example.com" class="kandid-input w-full rounded-2xl px-4 py-3.5 text-xs text-white placeholder-zinc-600 outline-none mono">
+                        <label class="text-[9px] text-zinc-400 uppercase tracking-wider block font-medium mono select-none">Email</label>
+                        <input type="email" id="final-email" placeholder="you@example.com" class="kandid-input w-full rounded-2xl px-4 py-3.5 text-xs text-white placeholder-zinc-400 outline-none mono">
                     </div>
 
                     <!-- Password Field (REQUIRED for Create Account flow) -->
                     <div class="space-y-1.5">
-                        <label class="text-[9px] text-zinc-600 uppercase tracking-wider block font-medium mono select-none">Password</label>
+                        <label class="text-[9px] text-zinc-400 uppercase tracking-wider block font-medium mono select-none">Password</label>
                         <div class="relative">
-                            <input type="password" id="final-password" placeholder="Create a password" class="kandid-input w-full rounded-2xl px-4 py-3.5 text-xs text-white placeholder-zinc-600 outline-none mono pr-10">
+                            <input type="password" id="final-password" placeholder="Create a password" class="kandid-input w-full rounded-2xl px-4 py-3.5 text-xs text-white placeholder-zinc-400 outline-none mono pr-10">
                             <button type="button" onclick="togglePasswordVisibility('final-password', 'signupPassToggleIcon')" aria-label="Toggle password visibility" class="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white cursor-pointer transition-colors text-xs">
                                 <span id="signupPassToggleIcon">
                                     <svg aria-hidden="true" focusable="false" id="eyeIcon" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
