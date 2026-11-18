@@ -2240,7 +2240,7 @@ def serialize_user(u_dict):
     if not u_dict:
         return None
     d = dict(u_dict)
-    for field in ["password_hash", "salt", "session_secret", "reset_token", "otp_hash"]:
+    for field in ["password_hash", "salt", "session_secret", "reset_token", "otp_hash", "admin_totp_secret"]:
         d.pop(field, None)
     return d
 
@@ -4500,6 +4500,37 @@ def init_db():
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created ON admin_audit_log(created_at DESC);")
 
+    # Phase Admin Security Hardening: Dedicated Admin Sessions & 2FA
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS admin_sessions (
+        id TEXT PRIMARY KEY,
+        admin_id TEXT NOT NULL,
+        admin_handle TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        ip_address TEXT DEFAULT '',
+        user_agent TEXT DEFAULT '',
+        sudo_expires_at TEXT,
+        expires_at TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(token);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expiry ON admin_sessions(expires_at);")
+
+    # Auto-migrations for users table (admin_totp_secret, admin_totp_enabled)
+    cursor.execute("PRAGMA table_info(users)")
+    u_cols_admin = [row[1] for row in cursor.fetchall()]
+    for col, col_def in [
+        ("admin_totp_secret", "TEXT DEFAULT ''"),
+        ("admin_totp_enabled", "INTEGER DEFAULT 0")
+    ]:
+        if col not in u_cols_admin:
+            try:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {col_def}")
+            except Exception:
+                pass
+
     # Phase A: Auto-migrations for reports table (status, reviewed_by, reviewed_at, action_taken)
     cursor.execute("PRAGMA table_info(reports)")
     rep_cols = [row[1] for row in cursor.fetchall()]
@@ -5858,7 +5889,9 @@ def get_current_user(headers, body=None, query=None, require_session=False):
         cookie = headers.get("Cookie", "")
         for item in cookie.split(";"):
             item_s = item.strip()
-            if item_s.startswith("kandid_token="):
+            if item_s.startswith("kindid_admin_session="):
+                token = item_s.split("=")[1].strip()
+            elif item_s.startswith("kandid_token="):
                 token = item_s.split("=")[1].strip()
             elif item_s.startswith("kandid_session="):
                 token = item_s.split("=")[1].strip()
@@ -5876,13 +5909,23 @@ def get_current_user(headers, body=None, query=None, require_session=False):
     now_iso = datetime.now().isoformat()
 
     if token and token not in ["null", "undefined", ""]:
-        cursor.execute("""
-            SELECT u.* FROM users u
-            JOIN sessions s ON u.id = s.user_id
-            WHERE s.token = ? AND (s.expires_at IS NULL OR s.expires_at > ?)
-            ORDER BY s.created_at DESC LIMIT 1
-        """, (token, now_iso))
-        row = cursor.fetchone()
+        if token.startswith("adm_"):
+            cursor.execute("""
+                SELECT u.*, a.id as admin_session_id, a.sudo_expires_at, a.token as admin_session_token
+                FROM users u
+                JOIN admin_sessions a ON u.id = a.admin_id
+                WHERE a.token = ? AND a.expires_at > ?
+                ORDER BY a.created_at DESC LIMIT 1
+            """, (token, now_iso))
+            row = cursor.fetchone()
+        else:
+            cursor.execute("""
+                SELECT u.* FROM users u
+                JOIN sessions s ON u.id = s.user_id
+                WHERE s.token = ? AND (s.expires_at IS NULL OR s.expires_at > ?)
+                ORDER BY s.created_at DESC LIMIT 1
+            """, (token, now_iso))
+            row = cursor.fetchone()
 
     # SECURITY: X-User-Id header fallback removed — Bearer token is required for all authenticated requests.
 
@@ -5898,7 +5941,17 @@ def get_current_user(headers, body=None, query=None, require_session=False):
         except Exception:
             pass
         conn.close()
-        return serialize_user(user_dict)
+        admin_session_id = user_dict.get("admin_session_id")
+        sudo_expires_at = user_dict.get("sudo_expires_at")
+        admin_totp_enabled = user_dict.get("admin_totp_enabled", 0)
+        serialized = serialize_user(user_dict)
+        if admin_session_id is not None:
+            serialized["admin_session_id"] = admin_session_id
+        if sudo_expires_at is not None:
+            serialized["sudo_expires_at"] = sudo_expires_at
+        if admin_totp_enabled is not None:
+            serialized["admin_totp_enabled"] = admin_totp_enabled
+        return serialized
 
     conn.close()
     return None
@@ -5985,6 +6038,76 @@ def record_admin_audit_event(admin_user, action: str, target_type: str, target_i
         conn.close()
     except Exception as e:
         log_operational_event("admin_audit_log_failed", category="audit", properties={"error": str(e)[:100]}, level="ERROR")
+
+
+_admin_login_rate_limiter = RateLimiter()
+
+
+def generate_totp_secret() -> str:
+    """Generates standard Base32 encoded 160-bit random secret for RFC 6238 TOTP."""
+    raw = secrets.token_bytes(20)
+    return base64.b32encode(raw).decode("utf-8").replace("=", "")
+
+
+def compute_totp(secret: str, interval: int = 30, digits: int = 6, for_time: int = None) -> str:
+    """Computes standard RFC 6238 TOTP HMAC-SHA1 code."""
+    if for_time is None:
+        for_time = int(time.time())
+    counter = int(for_time // interval)
+    secret_cleaned = secret.strip().replace(" ", "").upper()
+    missing_padding = len(secret_cleaned) % 8
+    if missing_padding:
+        secret_cleaned += "=" * (8 - missing_padding)
+    key = base64.b32decode(secret_cleaned, casefold=True)
+    counter_bytes = struct.pack(">Q", counter)
+    mac = hmac.new(key, counter_bytes, hashlib.sha1).digest()
+    offset = mac[-1] & 0x0F
+    code_int = struct.unpack(">I", mac[offset:offset+4])[0] & 0x7FFFFFFF
+    return str(code_int % (10 ** digits)).zfill(digits)
+
+
+def verify_totp(secret: str, code: str, interval: int = 30, window: int = 1) -> bool:
+    """Verifies a 6-digit TOTP code within a time window (+/- 30s) against secret."""
+    if not secret or not code:
+        return False
+    code = str(code).strip()
+    if len(code) != 6 or not code.isdigit():
+        return False
+    now = int(time.time())
+    for w in range(-window, window + 1):
+        step_time = now + w * interval
+        expected = compute_totp(secret, interval=interval, digits=6, for_time=step_time)
+        if hmac.compare_digest(expected, code):
+            return True
+    return False
+
+
+def verify_admin_sudo(user, headers=None):
+    """
+    Step-up authorization check for destructive administrative operations.
+    If 2FA is enabled on the admin account:
+      - Sudo elevation must be active (sudo_expires_at > now).
+      - If sudo expired or absent, returns (False, (403, {
+            "error": "Sudo step-up authentication required for destructive action",
+            "requires_sudo": True,
+            "success": False
+        }))
+    If 2FA is not enabled on this account:
+      - Allows action (backwards-compatible with tests and initial setup).
+    """
+    if not user:
+        return False, (401, {"error": "Authentication required", "success": False})
+
+    if user.get("admin_totp_enabled"):
+        sudo_expires_at = user.get("sudo_expires_at")
+        now_iso = datetime.now().isoformat()
+        if not sudo_expires_at or sudo_expires_at <= now_iso:
+            return False, (403, {
+                "error": "Sudo elevation required. Please confirm your 2FA code or password.",
+                "requires_sudo": True,
+                "success": False
+            })
+    return True, None
 
 
 def resolve_user_id(raw_val, conn=None):
@@ -6540,6 +6663,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
             user, err = require_admin(self, self.headers)
             if err:
                 return self.send_json(*err)
+            now_iso = datetime.now().isoformat()
+            sudo_active = bool(user.get("sudo_expires_at") and user["sudo_expires_at"] > now_iso)
             return self.send_json(200, {
                 "success": True,
                 "user": {
@@ -6547,8 +6672,24 @@ class KandidHandler(SimpleHTTPRequestHandler):
                     "handle": user["handle"],
                     "name": user["name"],
                     "role": user["role"],
-                    "avatar_url": user.get("avatar_url", "")
+                    "avatar_url": user.get("avatar_url", ""),
+                    "admin_totp_enabled": bool(user.get("admin_totp_enabled", 0)),
+                    "sudo_active": sudo_active
                 }
+            })
+
+        if path == "/api/admin/auth/2fa-setup":
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+            secret = generate_totp_secret()
+            issuer = "Kindid"
+            handle = user.get("handle", "admin")
+            otpauth_url = f"otpauth://totp/{issuer}:{handle}?secret={secret}&issuer={issuer}&algorithm=SHA1&digits=6&period=30"
+            return self.send_json(200, {
+                "success": True,
+                "secret": secret,
+                "otpauth_url": otpauth_url
             })
 
         if path == "/api/admin/overview":
@@ -12023,12 +12164,231 @@ class KandidHandler(SimpleHTTPRequestHandler):
         if body is None:
             return
 
+        # Phase Admin Security Hardening: Dedicated Admin Authentication APIs
+        if path == "/api/admin/auth/login":
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            handle_or_email = (body.get("handle") or body.get("email") or "").strip().lower()
+            key = f"admin_login_{client_ip}_{handle_or_email}"
+            if not _admin_login_rate_limiter.check_rate_limit(key, max_requests=5, window_seconds=900):
+                record_admin_audit_event(
+                    {"id": "unknown", "handle": handle_or_email},
+                    "admin_login_rate_limited",
+                    "admin_auth",
+                    handle_or_email,
+                    "Too many failed login attempts",
+                    client_ip
+                )
+                return self.send_json(429, {"error": "Too many admin login attempts. Please wait 15 minutes.", "success": False})
+
+            password = body.get("password", "")
+            code = (body.get("code") or "").strip()
+
+            if not handle_or_email or not password:
+                return self.send_json(400, {"error": "Username/email and password are required", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM users
+                WHERE (LOWER(handle) = ? OR LOWER(email) = ?)
+            """, (handle_or_email, handle_or_email))
+            user_row = cursor.fetchone()
+
+            if not user_row:
+                conn.close()
+                return self.send_json(401, {"error": "Invalid admin credentials", "success": False})
+
+            user = dict(user_row)
+            if user.get("role") not in ("admin", "founder"):
+                conn.close()
+                return self.send_json(403, {"error": "Access denied: Admin credentials required", "success": False})
+
+            if user.get("account_status") in ("suspended", "banned") or user.get("role") == "banned":
+                conn.close()
+                return self.send_json(403, {"error": "Account is suspended or banned", "success": False})
+
+            if not verify_password(password, user["salt"], user["password_hash"]):
+                conn.close()
+                record_admin_audit_event(user, "admin_login_failed_password", "admin_auth", user["id"], "Incorrect password", client_ip)
+                return self.send_json(401, {"error": "Invalid admin credentials", "success": False})
+
+            totp_enabled = bool(user.get("admin_totp_enabled", 0))
+            totp_secret = user.get("admin_totp_secret", "")
+            sudo_active = False
+
+            if totp_enabled:
+                if not code:
+                    conn.close()
+                    return self.send_json(401, {
+                        "error": "Two-factor authentication code required",
+                        "totp_required": True,
+                        "success": False
+                    })
+                if not verify_totp(totp_secret, code):
+                    conn.close()
+                    record_admin_audit_event(user, "admin_login_failed_2fa", "admin_auth", user["id"], "Invalid 2FA code", client_ip)
+                    return self.send_json(401, {
+                        "error": "Invalid two-factor authentication code",
+                        "totp_required": True,
+                        "success": False
+                    })
+                sudo_active = True
+
+            admin_session_id = f"as_{secrets.token_hex(16)}"
+            admin_token = f"adm_{secrets.token_hex(24)}"
+            now = datetime.now()
+            expires_at = (now + timedelta(hours=2)).isoformat()
+            sudo_expires_at = (now + timedelta(minutes=15)).isoformat() if sudo_active else None
+            user_agent = self.headers.get("User-Agent", "")[:256]
+
+            cursor.execute("""
+                INSERT INTO admin_sessions (id, admin_id, admin_handle, token, ip_address, user_agent, sudo_expires_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (admin_session_id, user["id"], user["handle"], admin_token, client_ip, user_agent, sudo_expires_at, expires_at))
+            conn.commit()
+            conn.close()
+
+            record_admin_audit_event(user, "admin_login_success", "admin_auth", user["id"], f"Session {admin_session_id} created", client_ip)
+
+            cookie_header = f"kindid_admin_session={admin_token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=7200"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie", cookie_header)
+            self.end_headers()
+            resp_data = {
+                "success": True,
+                "token": admin_token,
+                "user": {
+                    "id": user["id"],
+                    "handle": user["handle"],
+                    "name": user["name"],
+                    "role": user["role"],
+                    "avatar_url": user.get("avatar_url", ""),
+                    "admin_totp_enabled": totp_enabled,
+                    "sudo_active": sudo_active
+                },
+                "totp_enabled": totp_enabled,
+                "sudo_active": sudo_active
+            }
+            self.wfile.write(json.dumps(resp_data).encode("utf-8"))
+            return
+
+        if path == "/api/admin/auth/logout":
+            auth = self.headers.get("Authorization", "")
+            token = auth[7:].strip() if auth.startswith("Bearer ") else None
+            if not token:
+                cookie = self.headers.get("Cookie", "")
+                for item in cookie.split(";"):
+                    item_s = item.strip()
+                    if item_s.startswith("kindid_admin_session="):
+                        token = item_s.split("=")[1].strip()
+            if token and token.startswith("adm_"):
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM admin_sessions WHERE token = ?", (token,))
+                conn.commit()
+                conn.close()
+
+            cookie_header = "kindid_admin_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Set-Cookie", cookie_header)
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "message": "Admin logged out successfully"}).encode("utf-8"))
+            return
+
+        if path == "/api/admin/auth/2fa-verify-enable":
+            user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
+            if err:
+                return self.send_json(*err)
+
+            secret = (body.get("secret") or "").strip()
+            code = (body.get("code") or "").strip()
+
+            if not secret or not code:
+                return self.send_json(400, {"error": "Secret and verification code are required", "success": False})
+
+            if not verify_totp(secret, code):
+                return self.send_json(400, {"error": "Invalid 2FA verification code. Please check your authenticator app.", "success": False})
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET admin_totp_secret = ?, admin_totp_enabled = 1 WHERE id = ?", (secret, user["id"]))
+
+            now = datetime.now()
+            sudo_expires_at = (now + timedelta(minutes=15)).isoformat()
+            if user.get("admin_session_id"):
+                cursor.execute("UPDATE admin_sessions SET sudo_expires_at = ? WHERE id = ?", (sudo_expires_at, user["admin_session_id"]))
+            conn.commit()
+            conn.close()
+
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            record_admin_audit_event(user, "admin_2fa_enabled", "admin_auth", user["id"], "2FA enabled with TOTP", client_ip)
+
+            return self.send_json(200, {
+                "success": True,
+                "message": "Two-factor authentication successfully enabled",
+                "sudo_active": True,
+                "sudo_expires_at": sudo_expires_at
+            })
+
+        if path == "/api/admin/auth/sudo-verify":
+            user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
+            if err:
+                return self.send_json(*err)
+
+            code = (body.get("code") or "").strip()
+            password = (body.get("password") or "").strip()
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT password_hash, salt, admin_totp_secret, admin_totp_enabled FROM users WHERE id = ?", (user["id"],))
+            u_row = cursor.fetchone()
+            if not u_row:
+                conn.close()
+                return self.send_json(404, {"error": "User not found", "success": False})
+
+            db_user = dict(u_row)
+            verified = False
+
+            if db_user.get("admin_totp_enabled") and db_user.get("admin_totp_secret"):
+                if code and verify_totp(db_user["admin_totp_secret"], code):
+                    verified = True
+            elif password:
+                if verify_password(password, db_user["salt"], db_user["password_hash"]):
+                    verified = True
+
+            if not verified:
+                conn.close()
+                client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+                record_admin_audit_event(user, "admin_sudo_verification_failed", "admin_auth", user["id"], "Invalid code or password", client_ip)
+                return self.send_json(401, {"error": "Invalid verification code or password", "success": False})
+
+            now = datetime.now()
+            sudo_expires_at = (now + timedelta(minutes=15)).isoformat()
+            if user.get("admin_session_id"):
+                cursor.execute("UPDATE admin_sessions SET sudo_expires_at = ? WHERE id = ?", (sudo_expires_at, user["admin_session_id"]))
+                conn.commit()
+            conn.close()
+
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            record_admin_audit_event(user, "admin_sudo_elevated", "admin_auth", user["id"], "Sudo mode granted for 15 minutes", client_ip)
+
+            return self.send_json(200, {
+                "success": True,
+                "sudo_active": True,
+                "sudo_expires_at": sudo_expires_at
+            })
+
         # Admin Phase C User Management POST APIs
         if path.startswith("/api/admin/users/") and path.endswith("/status"):
             target_raw = path[len("/api/admin/users/"): -len("/status")].strip()
             admin_user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
             if err:
                 return self.send_json(*err)
+            sudo_ok, sudo_err = verify_admin_sudo(admin_user, headers=self.headers)
+            if not sudo_ok:
+                return self.send_json(*sudo_err)
 
             status_val = (body.get("status") or "").strip().lower()
             reason_val = (body.get("reason") or "").strip()
@@ -12090,6 +12450,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             admin_user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
             if err:
                 return self.send_json(*err)
+            sudo_ok, sudo_err = verify_admin_sudo(admin_user, headers=self.headers)
+            if not sudo_ok:
+                return self.send_json(*sudo_err)
 
             conn = get_db()
             target_id = resolve_user_id(target_raw, conn=conn)
@@ -12123,6 +12486,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             founder_user, err = require_founder(self, self.headers, body=body, strict_bearer=True)
             if err:
                 return self.send_json(*err)
+            sudo_ok, sudo_err = verify_admin_sudo(founder_user, headers=self.headers)
+            if not sudo_ok:
+                return self.send_json(*sudo_err)
 
             new_role = (body.get("role") or "").strip().lower()
             reason_val = (body.get("reason") or "").strip()
@@ -12178,6 +12544,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             admin_user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
             if err:
                 return self.send_json(*err)
+            sudo_ok, sudo_err = verify_admin_sudo(admin_user, headers=self.headers)
+            if not sudo_ok:
+                return self.send_json(*sudo_err)
 
             status_val = (body.get("status") or "").strip().lower()
             reason_val = (body.get("reason") or "").strip()[:512]
@@ -12232,6 +12601,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             admin_user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
             if err:
                 return self.send_json(*err)
+            sudo_ok, sudo_err = verify_admin_sudo(admin_user, headers=self.headers)
+            if not sudo_ok:
+                return self.send_json(*sudo_err)
 
             status_val = (body.get("status") or "").strip().lower()
             reason_val = (body.get("reason") or "").strip()[:512]
