@@ -8,12 +8,16 @@ var adminState = {
   me: null,
   activeTab: 'overview',
   overview: null,
-  health: null
+  health: null,
+  pendingSudoRequest: null,
+  temp2FaSecret: null
 };
 
 function getAuthToken() {
   try {
-    return localStorage.getItem('kandid_token') || localStorage.getItem('token') || '';
+    return sessionStorage.getItem('kindid_admin_token') ||
+           localStorage.getItem('kandid_token') ||
+           localStorage.getItem('token') || '';
   } catch (e) {
     return '';
   }
@@ -33,9 +37,15 @@ async function adminApiRequest(endpoint, options) {
     var response = await fetch(endpoint, options);
     var data = await response.json().catch(function() { return {}; });
 
+    // Step-Up Sudo Mode Interception
+    if (data && data.requires_sudo === true) {
+      return await handleSudoElevation(endpoint, options);
+    }
+
     if (response.status === 401 || response.status === 403) {
       if (endpoint === '/api/admin/me') {
-        renderAccessDenied(data.error || 'Admin authorization required');
+        showAdminLoginGateway(data.error || 'Admin authentication required');
+        return data;
       }
     }
 
@@ -61,30 +71,324 @@ async function verifyAdminIdentity() {
   var res = await adminApiRequest('/api/admin/me');
   if (res && res.success && res.user) {
     adminState.me = res.user;
-    var badge = document.getElementById('adminIdentityBadge');
-    if (badge) {
-      badge.innerHTML = 'Logged in as <span class="font-bold text-white">@' + escapeHtml(res.user.handle) + '</span> <span class="text-amber-400">(' + escapeHtml(res.user.role) + ')</span>';
-    }
+    hideAdminLoginGateway();
+    updateAdminHeaderIdentity(res.user);
     loadAdminOverview();
   } else {
-    renderAccessDenied(res ? res.error : 'Unauthorized');
+    showAdminLoginGateway(res ? res.error : '');
+  }
+}
+
+function updateAdminHeaderIdentity(user) {
+  var badge = document.getElementById('adminIdentityBadge');
+  if (badge) {
+    badge.innerHTML = 'Logged in as <span class="font-bold text-white">@' + escapeHtml(user.handle) + '</span> <span class="text-amber-400">(' + escapeHtml(user.role) + ')</span>';
+  }
+
+  var btn2FaHeader = document.getElementById('btnAdmin2FaHeader');
+  var badge2FaStatus = document.getElementById('badge2FaHeaderStatus');
+  if (btn2FaHeader) {
+    btn2FaHeader.classList.remove('hidden');
+    if (user.admin_totp_enabled) {
+      badge2FaStatus.className = 'w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-emerald-500/30';
+      btn2FaHeader.title = 'Two-Factor Authentication: Active & Protected';
+    } else {
+      badge2FaStatus.className = 'w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-500/30 animate-pulse';
+      btn2FaHeader.title = 'Two-Factor Authentication: Disabled (Click to Setup)';
+    }
+  }
+}
+
+function showAdminLoginGateway(message) {
+  var modal = document.getElementById('adminLoginGatewayModal');
+  var alertEl = document.getElementById('adminLoginAlert');
+  if (modal) {
+    modal.classList.remove('hidden');
+  }
+  if (alertEl) {
+    if (message) {
+      alertEl.textContent = message;
+      alertEl.classList.remove('hidden');
+    } else {
+      alertEl.classList.add('hidden');
+    }
+  }
+}
+
+function hideAdminLoginGateway() {
+  var modal = document.getElementById('adminLoginGatewayModal');
+  if (modal) {
+    modal.classList.add('hidden');
+  }
+}
+
+async function submitAdminLogin(event) {
+  if (event) event.preventDefault();
+
+  var handleInput = document.getElementById('adminLoginHandle');
+  var passInput = document.getElementById('adminLoginPassword');
+  var totpInput = document.getElementById('adminLoginTotpCode');
+  var alertEl = document.getElementById('adminLoginAlert');
+  var totpContainer = document.getElementById('adminLoginTotpContainer');
+  var submitBtn = document.getElementById('btnAdminLoginSubmit');
+
+  var handle = handleInput ? handleInput.value.trim() : '';
+  var password = passInput ? passInput.value : '';
+  var code = totpInput ? totpInput.value.trim() : '';
+
+  if (!handle || !password) {
+    if (alertEl) {
+      alertEl.textContent = 'Please enter your username/email and password';
+      alertEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verifying...';
+  }
+
+  try {
+    var response = await fetch('/api/admin/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handle: handle, password: password, code: code })
+    });
+    var data = await response.json().catch(function() { return {}; });
+
+    if (response.ok && data.success && data.token) {
+      sessionStorage.setItem('kindid_admin_token', data.token);
+      hideAdminLoginGateway();
+      if (passInput) passInput.value = '';
+      if (totpInput) totpInput.value = '';
+      if (totpContainer) totpContainer.classList.add('hidden');
+      await verifyAdminIdentity();
+    } else if (data.totp_required) {
+      if (totpContainer) totpContainer.classList.remove('hidden');
+      if (totpInput) {
+        totpInput.focus();
+        totpInput.required = true;
+      }
+      if (alertEl) {
+        alertEl.textContent = data.error || 'Please enter your 6-digit authenticator code.';
+        alertEl.classList.remove('hidden');
+      }
+    } else {
+      if (alertEl) {
+        alertEl.textContent = data.error || 'Login failed. Invalid admin credentials.';
+        alertEl.classList.remove('hidden');
+      }
+    }
+  } catch (e) {
+    if (alertEl) {
+      alertEl.textContent = 'Network error connecting to login service.';
+      alertEl.classList.remove('hidden');
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Sign In to Control Panel';
+    }
+  }
+}
+
+function handleSudoElevation(endpoint, options) {
+  return new Promise(function(resolve, reject) {
+    adminState.pendingSudoRequest = {
+      endpoint: endpoint,
+      options: options,
+      resolve: resolve,
+      reject: reject
+    };
+    var modal = document.getElementById('adminSudoModal');
+    var codeInput = document.getElementById('adminSudoCodeInput');
+    var alertEl = document.getElementById('adminSudoAlert');
+    if (alertEl) alertEl.classList.add('hidden');
+    if (codeInput) {
+      codeInput.value = '';
+      setTimeout(function() { codeInput.focus(); }, 100);
+    }
+    if (modal) modal.classList.remove('hidden');
+  });
+}
+
+async function submitAdminSudo(event) {
+  if (event) event.preventDefault();
+
+  var codeInput = document.getElementById('adminSudoCodeInput');
+  var alertEl = document.getElementById('adminSudoAlert');
+  var confirmBtn = document.getElementById('btnAdminSudoConfirm');
+  var inputVal = codeInput ? codeInput.value.trim() : '';
+
+  if (!inputVal) {
+    if (alertEl) {
+      alertEl.textContent = 'Please enter your 2FA code or password';
+      alertEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Verifying...';
+  }
+
+  var body = {};
+  if (/^\d{6}$/.test(inputVal)) {
+    body.code = inputVal;
+  } else {
+    body.password = inputVal;
+  }
+
+  var token = getAuthToken();
+  var headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+
+  try {
+    var response = await fetch('/api/admin/auth/sudo-verify', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(body)
+    });
+    var data = await response.json().catch(function() { return {}; });
+
+    if (response.ok && data.success) {
+      var modal = document.getElementById('adminSudoModal');
+      if (modal) modal.classList.add('hidden');
+
+      if (adminState.pendingSudoRequest) {
+        var req = adminState.pendingSudoRequest;
+        adminState.pendingSudoRequest = null;
+        // Retry the original request with elevated privileges!
+        var retryResult = await adminApiRequest(req.endpoint, req.options);
+        req.resolve(retryResult);
+      }
+    } else {
+      if (alertEl) {
+        alertEl.textContent = data.error || 'Verification failed. Incorrect code or password.';
+        alertEl.classList.remove('hidden');
+      }
+    }
+  } catch (e) {
+    if (alertEl) {
+      alertEl.textContent = 'Network error during sudo verification';
+      alertEl.classList.remove('hidden');
+    }
+  } finally {
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm & Proceed';
+    }
+  }
+}
+
+function cancelAdminSudo() {
+  var modal = document.getElementById('adminSudoModal');
+  if (modal) modal.classList.add('hidden');
+  if (adminState.pendingSudoRequest) {
+    var req = adminState.pendingSudoRequest;
+    adminState.pendingSudoRequest = null;
+    req.reject({ success: false, error: 'Sudo authentication cancelled by user' });
+  }
+}
+
+async function open2FaModal() {
+  var modal = document.getElementById('admin2FaModal');
+  var activeView = document.getElementById('admin2FaActiveView');
+  var setupView = document.getElementById('admin2FaSetupView');
+  var alertEl = document.getElementById('admin2FaAlert');
+  if (alertEl) alertEl.classList.add('hidden');
+
+  if (adminState.me && adminState.me.admin_totp_enabled) {
+    if (activeView) activeView.classList.remove('hidden');
+    if (setupView) setupView.classList.add('hidden');
+    if (modal) modal.classList.remove('hidden');
+  } else {
+    if (activeView) activeView.classList.add('hidden');
+    if (setupView) setupView.classList.remove('hidden');
+    if (modal) modal.classList.remove('hidden');
+
+    var secretEl = document.getElementById('admin2FaSecretDisplay');
+    var linkEl = document.getElementById('admin2FaOtpauthLink');
+    if (secretEl) secretEl.textContent = 'Generating security secret...';
+
+    var res = await adminApiRequest('/api/admin/auth/2fa-setup');
+    if (res && res.success && res.secret) {
+      adminState.temp2FaSecret = res.secret;
+      if (secretEl) secretEl.textContent = res.secret;
+      if (linkEl) {
+        linkEl.href = res.otpauth_url;
+        linkEl.textContent = res.otpauth_url;
+      }
+    } else {
+      if (alertEl) {
+        alertEl.textContent = 'Failed to generate 2FA secret: ' + (res ? res.error : 'Unknown');
+        alertEl.classList.remove('hidden');
+      }
+    }
+  }
+}
+
+function close2FaModal() {
+  var modal = document.getElementById('admin2FaModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function copy2FaSecret() {
+  var secret = adminState.temp2FaSecret || (document.getElementById('admin2FaSecretDisplay') ? document.getElementById('admin2FaSecretDisplay').textContent : '');
+  if (secret && navigator.clipboard) {
+    navigator.clipboard.writeText(secret).then(function() {
+      alert('2FA Secret copied to clipboard!');
+    }).catch(function() {
+      prompt('Copy secret manually:', secret);
+    });
+  } else if (secret) {
+    prompt('Copy secret manually:', secret);
+  }
+}
+
+async function confirm2FaEnable() {
+  var codeInput = document.getElementById('admin2FaConfirmCode');
+  var alertEl = document.getElementById('admin2FaAlert');
+  var code = codeInput ? codeInput.value.trim() : '';
+
+  if (!code || code.length !== 6) {
+    if (alertEl) {
+      alertEl.textContent = 'Please enter a valid 6-digit confirmation code';
+      alertEl.classList.remove('hidden');
+    }
+    return;
+  }
+
+  var res = await adminApiRequest('/api/admin/auth/2fa-verify-enable', {
+    method: 'POST',
+    body: JSON.stringify({ secret: adminState.temp2FaSecret, code: code })
+  });
+
+  if (res && res.success) {
+    if (adminState.me) adminState.me.admin_totp_enabled = true;
+    updateAdminHeaderIdentity(adminState.me);
+    var activeView = document.getElementById('admin2FaActiveView');
+    var setupView = document.getElementById('admin2FaSetupView');
+    if (setupView) setupView.classList.add('hidden');
+    if (activeView) activeView.classList.remove('hidden');
+    if (alertEl) {
+      alertEl.textContent = 'Two-factor authentication successfully enabled!';
+      alertEl.className = 'p-3 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 text-xs rounded-xl';
+      alertEl.classList.remove('hidden');
+    }
+  } else {
+    if (alertEl) {
+      alertEl.textContent = res ? res.error : 'Failed to verify code';
+      alertEl.className = 'p-3 bg-red-950/60 border border-red-500/40 text-red-400 text-xs rounded-xl';
+      alertEl.classList.remove('hidden');
+    }
   }
 }
 
 function renderAccessDenied(message) {
-  document.body.innerHTML = `
-    <div class="min-h-screen bg-[#09090b] text-zinc-100 flex items-center justify-center p-6">
-      <div class="max-w-md w-full bg-zinc-950 border border-red-500/30 rounded-2xl p-6 space-y-4 shadow-2xl text-center">
-        <div class="w-12 h-12 rounded-full bg-red-950/60 border border-red-500/40 text-red-400 flex items-center justify-center text-xl font-mono-tag font-bold mx-auto">⛔</div>
-        <h2 class="text-lg font-bold font-mono-tag text-white">Admin Access Denied</h2>
-        <p class="text-xs text-zinc-400 font-mono-tag">${escapeHtml(message)}</p>
-        <p class="text-[11px] text-zinc-500">You must be logged in as an authorized admin or founder account to view this surface.</p>
-        <div class="pt-2 flex justify-center gap-3">
-          <a href="/" class="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-400 font-mono-tag text-xs rounded-xl font-bold transition">← Return to Kandid App</a>
-        </div>
-      </div>
-    </div>
-  `;
+  showAdminLoginGateway(message);
 }
 
 async function loadAdminOverview() {
@@ -848,13 +1152,22 @@ async function executeClusterStatusChange() {
   }
 }
 
-function logoutAdmin() {
+async function logoutAdmin() {
   try {
+    var token = getAuthToken();
+    var headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    await fetch('/api/admin/auth/logout', { method: 'POST', headers: headers }).catch(function() {});
+  } catch (e) {}
+
+  try {
+    sessionStorage.removeItem('kindid_admin_token');
     localStorage.removeItem('kandid_token');
     localStorage.removeItem('token');
     localStorage.removeItem('kandid_user');
   } catch (e) {}
-  window.location.href = '/';
+
+  window.location.href = '/admin';
 }
 
 document.addEventListener('DOMContentLoaded', function() {

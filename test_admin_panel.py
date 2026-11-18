@@ -1170,5 +1170,336 @@ class TestAdminPanelPhaseAAndB(unittest.TestCase):
             self.assertTrue(res["success"])
 
 
+class TestAdminSecurityHardening(unittest.TestCase):
+    """
+    Comprehensive tests for Enterprise Admin Security Hardening:
+    - Dedicated Admin Sessions (adm_ token, 2-hr expiry, isolated table)
+    - 2FA / TOTP Setup and Verification (RFC 6238 standard)
+    - Sudo Mode Step-Up Elevation on Destructive Actions
+    - Brute Force Login Rate Limiting (5 attempts / 15 mins)
+    """
+    @classmethod
+    def setUpClass(cls):
+        cls.keep_alive = sqlite3.connect("file:admin_sec_mem?mode=memory&cache=shared", uri=True)
+        cls.keep_alive.row_factory = sqlite3.Row
+
+        def make_db():
+            conn = sqlite3.connect("file:admin_sec_mem?mode=memory&cache=shared", uri=True)
+            conn.row_factory = sqlite3.Row
+            return conn
+
+        cls.db_patcher = patch("server.get_db", side_effect=make_db)
+        cls.db_patcher.start()
+        server.init_db()
+
+        # Seed test users
+        conn = make_db()
+        cursor = conn.cursor()
+
+        salt_admin = secrets.token_hex(16)
+        hash_admin, _ = server.hash_password("AdminSecret123!", salt_admin)
+        cursor.execute("""
+            INSERT OR REPLACE INTO users (id, handle, name, email, role, salt, password_hash, account_status)
+            VALUES ('u_harden_admin', 'secadmin', 'Sec Admin', 'secadmin@test.edu', 'admin', ?, ?, 'active')
+        """, (salt_admin, hash_admin))
+
+        salt_student = secrets.token_hex(16)
+        hash_student, _ = server.hash_password("StudentPass123!", salt_student)
+        cursor.execute("""
+            INSERT OR REPLACE INTO users (id, handle, name, email, role, salt, password_hash, account_status)
+            VALUES ('u_harden_student', 'secstudent', 'Sec Student', 'secstudent@test.edu', 'student', ?, ?, 'active')
+        """, (salt_student, hash_student))
+
+        cls.totp_secret = server.generate_totp_secret()
+        salt_2fa = secrets.token_hex(16)
+        hash_2fa, _ = server.hash_password("Admin2FaPass123!", salt_2fa)
+        cursor.execute("""
+            INSERT OR REPLACE INTO users (id, handle, name, email, role, salt, password_hash, account_status, admin_totp_secret, admin_totp_enabled)
+            VALUES ('u_harden_2fa', 'admin2fa', 'Admin 2FA', 'admin2fa@test.edu', 'admin', ?, ?, 'active', ?, 1)
+        """, (salt_2fa, hash_2fa, cls.totp_secret))
+
+        # Target user for destructive moderation actions
+        cursor.execute("""
+            INSERT OR REPLACE INTO users (id, handle, name, email, role, salt, password_hash, account_status)
+            VALUES ('u_target_user', 'targetuser', 'Target User', 'target@test.edu', 'student', 'salt', 'hash', 'active')
+        """)
+
+        conn.commit()
+        conn.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.db_patcher.stop()
+        cls.keep_alive.close()
+
+    def setUp(self):
+        self.handler = server.KandidHandler.__new__(server.KandidHandler)
+        self.handler.headers = {}
+        self.handler.request_version = "HTTP/1.1"
+        self.handler._headers_buffer = []
+        self.handler.wfile = BytesIO()
+        self.handler.rfile = BytesIO()
+        self.sent_status = []
+        self.sent_headers = {}
+        self.handler.client_address = ("127.0.0.1", 54321)
+
+        def fake_send_response(code):
+            self.sent_status.append(code)
+
+        def fake_send_header(keyword, value):
+            self.sent_headers[keyword] = value
+
+        def fake_end_headers():
+            pass
+
+        self.handler.send_response = fake_send_response
+        self.handler.send_header = fake_send_header
+        self.handler.end_headers = fake_end_headers
+
+        # Ensure clean state between tests
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET admin_totp_enabled = 0, admin_totp_secret = '' WHERE id = 'u_harden_admin'")
+        conn.commit()
+        conn.close()
+        server._admin_login_rate_limiter.buckets.clear()
+
+    def _set_post(self, path, payload, headers=None):
+        data = json.dumps(payload).encode("utf-8")
+        self.handler.path = path
+        self.handler.rfile = BytesIO(data)
+        self.handler.headers = {
+            "Content-Length": str(len(data)),
+            "Content-Type": "application/json"
+        }
+        if headers:
+            self.handler.headers.update(headers)
+        self.handler.read_json_body = lambda: payload
+        self.sent_status = []
+        self.sent_headers = {}
+        self.handler.wfile = BytesIO()
+
+    def test_admin_login_success_and_session_creation(self):
+        """Admin login succeeds with password, issues adm_ token, sets cookie, and persists in admin_sessions."""
+        self._set_post("/api/admin/auth/login", {
+            "handle": "secadmin",
+            "password": "AdminSecret123!"
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [200])
+        res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertTrue(res["success"])
+        self.assertTrue(res["token"].startswith("adm_"))
+        self.assertEqual(res["user"]["handle"], "secadmin")
+        self.assertFalse(res["totp_enabled"])
+
+        # Check Set-Cookie header
+        self.assertIn("Set-Cookie", self.sent_headers)
+        self.assertIn("kindid_admin_session=" + res["token"], self.sent_headers["Set-Cookie"])
+        self.assertIn("HttpOnly", self.sent_headers["Set-Cookie"])
+        self.assertIn("SameSite=Strict", self.sent_headers["Set-Cookie"])
+
+        # Verify session exists in DB
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM admin_sessions WHERE token = ?", (res["token"],))
+        s_row = cursor.fetchone()
+        self.assertIsNotNone(s_row)
+        self.assertEqual(s_row["admin_id"], "u_harden_admin")
+        conn.close()
+
+    def test_admin_login_invalid_password(self):
+        """Admin login with wrong password returns 401."""
+        self._set_post("/api/admin/auth/login", {
+            "handle": "secadmin",
+            "password": "WrongPassword123!"
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [401])
+        res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertFalse(res["success"])
+
+    def test_admin_login_student_forbidden(self):
+        """Student account attempting admin login is rejected with 403."""
+        self._set_post("/api/admin/auth/login", {
+            "handle": "secstudent",
+            "password": "StudentPass123!"
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [403])
+        res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertIn("Admin credentials required", res["error"])
+
+    def test_admin_login_totp_required_and_verified(self):
+        """Admin with 2FA enabled prompts for TOTP code and validates standard RFC 6238 code."""
+        # Step 1: Login without code -> prompts 401 with totp_required
+        self._set_post("/api/admin/auth/login", {
+            "handle": "admin2fa",
+            "password": "Admin2FaPass123!"
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [401])
+        res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertTrue(res.get("totp_required"))
+
+        # Step 2: Login with invalid code -> 401
+        self._set_post("/api/admin/auth/login", {
+            "handle": "admin2fa",
+            "password": "Admin2FaPass123!",
+            "code": "000000"
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [401])
+        res2 = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertIn("Invalid two-factor", res2["error"])
+
+        # Step 3: Login with valid TOTP code computed with compute_totp -> 200
+        valid_code = server.compute_totp(self.totp_secret)
+        self._set_post("/api/admin/auth/login", {
+            "handle": "admin2fa",
+            "password": "Admin2FaPass123!",
+            "code": valid_code
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [200])
+        res3 = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertTrue(res3["success"])
+        self.assertTrue(res3["sudo_active"])
+
+    def test_admin_logout(self):
+        """Admin logout clears session from DB and expires cookie."""
+        # Create an active session
+        adm_token = "adm_" + secrets.token_hex(24)
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO admin_sessions (id, admin_id, admin_handle, token, expires_at)
+            VALUES ('as_logout_test', 'u_harden_admin', 'secadmin', ?, '2099-01-01T00:00:00')
+        """, (adm_token,))
+        conn.commit()
+        conn.close()
+
+        self._set_post("/api/admin/auth/logout", {}, headers={"Authorization": "Bearer " + adm_token})
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [200])
+        self.assertIn("Set-Cookie", self.sent_headers)
+        self.assertIn("Max-Age=0", self.sent_headers["Set-Cookie"])
+
+        # Check session is deleted
+        conn = server.get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM admin_sessions WHERE token = ?", (adm_token,))
+        self.assertIsNone(cursor.fetchone())
+        conn.close()
+
+    def test_2fa_setup_and_verify_enable(self):
+        """2FA setup generates Base32 secret and verify-enable activates 2FA for the user."""
+        mock_admin = {"id": "u_harden_admin", "handle": "secadmin", "role": "admin"}
+        with patch("server.get_current_user", return_value=mock_admin):
+            # GET /api/admin/auth/2fa-setup
+            self.handler.path = "/api/admin/auth/2fa-setup"
+            self.handler.wfile = BytesIO()
+            self.sent_status = []
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [200])
+            setup_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(setup_res["success"])
+            secret = setup_res["secret"]
+            self.assertTrue(len(secret) >= 16)
+            self.assertIn("otpauth://totp/", setup_res["otpauth_url"])
+
+            # POST /api/admin/auth/2fa-verify-enable with valid code
+            valid_code = server.compute_totp(secret)
+            self._set_post("/api/admin/auth/2fa-verify-enable", {
+                "secret": secret,
+                "code": valid_code
+            }, headers={"Authorization": "Bearer token_test"})
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [200])
+            enable_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(enable_res["success"])
+
+            # Verify in DB
+            conn = server.get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT admin_totp_enabled, admin_totp_secret FROM users WHERE id = 'u_harden_admin'")
+            u_row = cursor.fetchone()
+            self.assertEqual(u_row["admin_totp_enabled"], 1)
+            self.assertEqual(u_row["admin_totp_secret"], secret)
+            conn.close()
+
+    def test_sudo_mode_enforcement_and_elevation(self):
+        """Destructive action requires sudo when 2FA is enabled; elevating sudo permits action."""
+        # Mock admin with 2FA enabled, but expired sudo
+        mock_2fa_admin_no_sudo = {
+            "id": "u_harden_2fa",
+            "handle": "admin2fa",
+            "role": "admin",
+            "admin_totp_enabled": 1,
+            "sudo_expires_at": "2000-01-01T00:00:00",
+            "admin_session_id": "as_test_sudo"
+        }
+
+        with patch("server.get_current_user", return_value=mock_2fa_admin_no_sudo):
+            # Attempting destructive user suspension without active sudo
+            self._set_post("/api/admin/users/u_target_user/status", {
+                "status": "suspended",
+                "reason": "Security violation"
+            }, headers={"Authorization": "Bearer adm_test_token"})
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [403])
+            res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(res.get("requires_sudo"))
+
+            # Elevate sudo via /api/admin/auth/sudo-verify
+            valid_code = server.compute_totp(self.totp_secret)
+            self._set_post("/api/admin/auth/sudo-verify", {
+                "code": valid_code
+            }, headers={"Authorization": "Bearer adm_test_token"})
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [200])
+            sudo_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(sudo_res["sudo_active"])
+
+        # Now with active sudo elevation
+        mock_2fa_admin_with_sudo = {
+            "id": "u_harden_2fa",
+            "handle": "admin2fa",
+            "role": "admin",
+            "admin_totp_enabled": 1,
+            "sudo_expires_at": "2099-01-01T00:00:00",
+            "admin_session_id": "as_test_sudo"
+        }
+        with patch("server.get_current_user", return_value=mock_2fa_admin_with_sudo):
+            self._set_post("/api/admin/users/u_target_user/status", {
+                "status": "suspended",
+                "reason": "Security violation"
+            }, headers={"Authorization": "Bearer adm_test_token"})
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [200])
+            suspend_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(suspend_res["success"])
+            self.assertEqual(suspend_res["account_status"], "suspended")
+
+    def test_admin_login_rate_limiting(self):
+        """Admin login locks out after 5 consecutive attempts within 15 minutes."""
+        for attempt in range(5):
+            self._set_post("/api/admin/auth/login", {
+                "handle": "bruteforce_target",
+                "password": f"WrongPass{attempt}"
+            })
+            self.handler.do_POST()
+
+        # 6th attempt must be rate-limited (429)
+        self._set_post("/api/admin/auth/login", {
+            "handle": "bruteforce_target",
+            "password": "AnyPassword"
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [429])
+        res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertIn("Too many admin login attempts", res["error"])
+
+
 if __name__ == "__main__":
     unittest.main()
