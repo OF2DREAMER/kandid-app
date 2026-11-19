@@ -602,18 +602,20 @@ async function loadAdminHealth() {
 
   container.innerHTML = `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="p-4 bg-zinc-900/60 rounded-xl border border-zinc-800 space-y-2">
-        <span class="text-zinc-500 font-bold uppercase">Database Status</span>
-        <p class="text-sm font-bold text-emerald-400">STATUS: ${escapeHtml(res.status || 'OK').toUpperCase()}</p>
-        <p class="text-zinc-400">Engine: <span class="text-white">${escapeHtml(res.db_engine || 'sqlite')}</span></p>
-        <p class="text-zinc-400">Latency: <span class="text-white">${res.db_latency_ms || 0} ms</span></p>
+      <div class="p-5 apple-card rounded-2xl border border-white/10 space-y-2.5">
+        <span class="text-[#86868b] text-[11px] font-semibold uppercase tracking-wider">Database Status</span>
+        <p class="text-sm font-semibold text-[#30d158] flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-[#30d158] animate-pulse"></span>STATUS: ${escapeHtml(res.status || 'OK').toUpperCase()}
+        </p>
+        <p class="text-xs text-[#86868b]">Engine: <span class="text-white font-medium">${escapeHtml(res.db_engine || 'sqlite')}</span></p>
+        <p class="text-xs text-[#86868b]">Latency: <span class="text-white font-medium">${res.db_latency_ms || 0} ms</span></p>
       </div>
 
-      <div class="p-4 bg-zinc-900/60 rounded-xl border border-zinc-800 space-y-2">
-        <span class="text-zinc-500 font-bold uppercase">Active Sessions & Telemetry</span>
-        <p class="text-zinc-400">Active User Sessions: <span class="text-white font-bold">${res.active_sessions || 0}</span></p>
-        <p class="text-zinc-400">Environment: <span class="text-amber-400 font-bold">${escapeHtml(res.environment || 'production')}</span></p>
-        <p class="text-zinc-400">Service Version: <span class="text-white">${escapeHtml(res.version || 'v5.2.2')}</span></p>
+      <div class="p-5 apple-card rounded-2xl border border-white/10 space-y-2.5">
+        <span class="text-[#86868b] text-[11px] font-semibold uppercase tracking-wider">Active Sessions & Telemetry</span>
+        <p class="text-xs text-[#86868b]">Active User Sessions: <span class="text-white font-semibold">${res.active_sessions || 0}</span></p>
+        <p class="text-xs text-[#86868b]">Environment: <span class="text-[#30d158] font-semibold uppercase">${escapeHtml(res.environment || 'production')}</span></p>
+        <p class="text-xs text-[#86868b]">Service Version: <span class="text-white font-medium">${escapeHtml(res.version || 'v5.2.2')}</span></p>
       </div>
     </div>
   `;
@@ -705,33 +707,33 @@ function renderAdminUsersTable() {
     var html = '';
     items.forEach(function(u) {
       var statusBadgeClass = u.account_status === 'suspended'
-        ? 'bg-red-500/20 text-red-400 border-red-500/30'
-        : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+        ? 'bg-red-500/15 text-[#ff453a] border border-red-500/25'
+        : 'bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/25';
       var roleBadgeClass = u.role === 'founder'
-        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-        : (u.role === 'admin' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' : 'bg-zinc-800 text-zinc-300 border-zinc-700');
+        ? 'bg-[#ff9f0a]/15 text-[#ffd60a] border border-[#ff9f0a]/25'
+        : (u.role === 'admin' ? 'bg-[#bf5af2]/15 text-[#bf5af2] border border-[#bf5af2]/25' : 'bg-white/10 text-white/80 border border-white/15');
 
       var createdStr = u.created_at ? String(u.created_at).split('T')[0] : '--';
       var activeStr = u.last_active ? String(u.last_active).split('T')[0] : 'Never';
 
       html += `
-        <tr class="hover:bg-zinc-900/50 transition">
-          <td class="px-4 py-3 font-bold text-white">
+        <tr class="hover:bg-white/[0.04] transition">
+          <td class="px-5 py-3.5 font-medium text-white">
             ${escapeHtml(u.name || 'User')}
-            <div class="text-[10px] text-amber-400 font-normal">@${escapeHtml(u.handle)}</div>
+            <div class="text-[11px] text-[#2997ff] font-normal">@${escapeHtml(u.handle)}</div>
           </td>
-          <td class="px-4 py-3 text-zinc-400">${escapeHtml(u.email || '--')}</td>
-          <td class="px-4 py-3">
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded border ${roleBadgeClass}">${escapeHtml(u.role)}</span>
+          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(u.email || '--')}</td>
+          <td class="px-5 py-3.5">
+            <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${roleBadgeClass}">${escapeHtml(u.role)}</span>
           </td>
-          <td class="px-4 py-3">
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded border ${statusBadgeClass}">${escapeHtml(u.account_status)}</span>
+          <td class="px-5 py-3.5">
+            <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${statusBadgeClass}">${escapeHtml(u.account_status)}</span>
           </td>
-          <td class="px-4 py-3 text-zinc-400">${escapeHtml(u.campus || 'Central Campus')}</td>
-          <td class="px-4 py-3 text-zinc-400">${escapeHtml(createdStr)}</td>
-          <td class="px-4 py-3 text-zinc-400">${escapeHtml(activeStr)}</td>
-          <td class="px-4 py-3 text-right">
-            <button onclick="openUserActionModal('${escapeHtml(u.id)}')" class="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-400 rounded-lg text-[11px] transition cursor-pointer font-bold">
+          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(u.campus || 'Central Campus')}</td>
+          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(createdStr)}</td>
+          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(activeStr)}</td>
+          <td class="px-5 py-3.5 text-right">
+            <button onclick="openUserActionModal('${escapeHtml(u.id)}')" class="px-3.5 py-1.5 apple-btn-secondary rounded-full text-xs font-medium transition cursor-pointer">
               Manage
             </button>
           </td>
@@ -765,12 +767,12 @@ async function openUserActionModal(userId) {
 
   if (!modal || !bodyEl) return;
 
-  bodyEl.innerHTML = '<p class="text-zinc-500">Loading user details...</p>';
+  bodyEl.innerHTML = '<p class="text-[#86868b]">Loading user details...</p>';
   modal.classList.remove('hidden');
 
   var res = await adminApiRequest('/api/admin/users/' + userId);
   if (!res || !res.success || !res.user) {
-    bodyEl.innerHTML = '<p class="text-red-400">Failed to load user details: ' + escapeHtml(res ? res.error : 'Unknown error') + '</p>';
+    bodyEl.innerHTML = '<p class="text-[#ff453a]">Failed to load user details: ' + escapeHtml(res ? res.error : 'Unknown error') + '</p>';
     return;
   }
 
@@ -781,25 +783,25 @@ async function openUserActionModal(userId) {
   if (handleEl) handleEl.textContent = '@' + u.handle;
 
   bodyEl.innerHTML = `
-    <div class="grid grid-cols-2 gap-3 p-3 bg-zinc-900/60 border border-zinc-800 rounded-xl">
-      <div><span class="text-zinc-500">User ID:</span> <span class="text-white font-bold">${escapeHtml(u.id)}</span></div>
-      <div><span class="text-zinc-500">Email:</span> <span class="text-white font-bold">${escapeHtml(u.email)}</span></div>
-      <div><span class="text-zinc-500">Role:</span> <span class="text-amber-400 font-bold">${escapeHtml(u.role)}</span></div>
-      <div><span class="text-zinc-500">Account Status:</span> <span class="text-white font-bold">${escapeHtml(u.account_status)}</span></div>
-      <div><span class="text-zinc-500">Campus:</span> <span class="text-white">${escapeHtml(u.campus || 'Central Campus')}</span></div>
-      <div><span class="text-zinc-500">Active Sessions:</span> <span class="text-white font-bold">${res.active_sessions || 0}</span></div>
-      <div><span class="text-zinc-500">Authenticity Score:</span> <span class="text-white">${u.authenticity_score || 100}</span></div>
-      <div><span class="text-zinc-500">Streak Count:</span> <span class="text-white">${u.streak_count || 0}</span></div>
+    <div class="grid grid-cols-2 gap-3 p-4 apple-card rounded-2xl border border-white/10 text-xs">
+      <div><span class="text-[#86868b]">User ID:</span> <span class="text-white font-medium">${escapeHtml(u.id)}</span></div>
+      <div><span class="text-[#86868b]">Email:</span> <span class="text-white font-medium">${escapeHtml(u.email)}</span></div>
+      <div><span class="text-[#86868b]">Role:</span> <span class="text-[#ffd60a] font-semibold">${escapeHtml(u.role)}</span></div>
+      <div><span class="text-[#86868b]">Account Status:</span> <span class="text-white font-semibold">${escapeHtml(u.account_status)}</span></div>
+      <div><span class="text-[#86868b]">Campus:</span> <span class="text-white">${escapeHtml(u.campus || 'Central Campus')}</span></div>
+      <div><span class="text-[#86868b]">Active Sessions:</span> <span class="text-[#30d158] font-semibold">${res.active_sessions || 0}</span></div>
+      <div><span class="text-[#86868b]">Authenticity Score:</span> <span class="text-white">${u.authenticity_score || 100}</span></div>
+      <div><span class="text-[#86868b]">Streak Count:</span> <span class="text-white">${u.streak_count || 0}</span></div>
     </div>
   `;
 
   if (btnStatus) {
     if (u.account_status === 'suspended') {
       btnStatus.textContent = 'Restore Account';
-      btnStatus.className = 'flex-1 px-3 py-2 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-900/60 rounded-xl font-bold transition cursor-pointer';
+      btnStatus.className = 'flex-1 py-2.5 apple-btn-success rounded-full text-xs font-medium transition cursor-pointer';
     } else {
       btnStatus.textContent = 'Suspend Account';
-      btnStatus.className = 'flex-1 px-3 py-2 bg-red-950/60 border border-red-500/40 text-red-400 hover:bg-red-900/60 rounded-xl font-bold transition cursor-pointer';
+      btnStatus.className = 'flex-1 py-2.5 apple-btn-danger rounded-full text-xs font-medium transition cursor-pointer';
     }
   }
 
@@ -949,45 +951,45 @@ function renderAdminPostsTable() {
     var html = '';
     items.forEach(function(p) {
       var statusBadgeClass = p.moderation_status === 'removed'
-        ? 'bg-red-500/20 text-red-400 border-red-500/30'
-        : (p.moderation_status === 'hidden' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30');
+        ? 'bg-red-500/15 text-[#ff453a] border border-red-500/25'
+        : (p.moderation_status === 'hidden' ? 'bg-[#ff9f0a]/15 text-[#ffd60a] border border-[#ff9f0a]/25' : 'bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/25');
 
       var visBadgeClass = p.is_private
-        ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-        : 'bg-zinc-800 text-zinc-400 border-zinc-700';
+        ? 'bg-[#bf5af2]/15 text-[#bf5af2] border border-[#bf5af2]/25'
+        : 'bg-white/10 text-white/70 border border-white/15';
 
       var createdStr = p.created_at ? String(p.created_at).split('T')[0] : '--';
       var clusterBadge = p.cluster_id
-        ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">Clustered</span>`
-        : `<span class="text-[9px] text-zinc-600">Standalone</span>`;
+        ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9f0a]/15 text-[#ffd60a] border border-[#ff9f0a]/30 font-medium">Clustered</span>`
+        : `<span class="text-[11px] text-[#86868b]">Standalone</span>`;
 
-      var mainThumb = p.main_img ? `<img src="${escapeHtml(p.main_img)}" class="w-10 h-10 object-cover rounded-lg border border-zinc-800" alt="thumb">` : `<div class="w-10 h-10 bg-zinc-900 rounded-lg flex items-center justify-center text-zinc-600">📷</div>`;
+      var mainThumb = p.main_img ? `<img src="${escapeHtml(p.main_img)}" class="w-10 h-10 object-cover rounded-xl border border-white/10 shadow-sm" alt="thumb">` : `<div class="w-10 h-10 bg-white/5 rounded-xl border border-white/10 flex items-center justify-center text-xs text-[#86868b]">📷</div>`;
 
-      var captionText = p.caption ? (p.caption.length > 35 ? p.caption.substring(0, 35) + '...' : p.caption) : '<span class="text-zinc-600 italic">No caption</span>';
+      var captionText = p.caption ? (p.caption.length > 35 ? p.caption.substring(0, 35) + '...' : p.caption) : '<span class="text-[#86868b] italic">No caption</span>';
 
       html += `
-        <tr class="hover:bg-zinc-900/50 transition">
-          <td class="px-4 py-3">
+        <tr class="hover:bg-white/[0.04] transition">
+          <td class="px-5 py-3.5">
             ${mainThumb}
           </td>
-          <td class="px-4 py-3 font-bold text-white">
+          <td class="px-5 py-3.5 font-medium text-white">
             ${escapeHtml(p.author_name || 'User')}
-            <div class="text-[10px] text-amber-400 font-normal">@${escapeHtml(p.author_handle)}</div>
+            <div class="text-[11px] text-[#2997ff] font-normal">@${escapeHtml(p.author_handle)}</div>
           </td>
-          <td class="px-4 py-3 text-zinc-300 max-w-xs truncate" title="${escapeHtml(p.caption || '')}">
+          <td class="px-5 py-3.5 text-[#e5e5ea] max-w-xs truncate" title="${escapeHtml(p.caption || '')}">
             ${escapeHtml(captionText)}
           </td>
-          <td class="px-4 py-3 text-zinc-400">${escapeHtml(p.campus || p.location_city || 'Central Campus')}</td>
-          <td class="px-4 py-3">${clusterBadge}</td>
-          <td class="px-4 py-3">
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded border ${statusBadgeClass}">${escapeHtml(p.moderation_status)}</span>
+          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(p.campus || p.location_city || 'Central Campus')}</td>
+          <td class="px-5 py-3.5">${clusterBadge}</td>
+          <td class="px-5 py-3.5">
+            <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${statusBadgeClass}">${escapeHtml(p.moderation_status)}</span>
           </td>
-          <td class="px-4 py-3">
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded border ${visBadgeClass}">${p.is_private ? 'Private' : 'Public'}</span>
+          <td class="px-5 py-3.5">
+            <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${visBadgeClass}">${p.is_private ? 'Private' : 'Public'}</span>
           </td>
-          <td class="px-4 py-3 text-zinc-400">${escapeHtml(createdStr)}</td>
-          <td class="px-4 py-3 text-right">
-            <button onclick="openPostActionModal('${escapeHtml(p.id)}')" class="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-400 rounded-lg text-[11px] transition cursor-pointer font-bold">
+          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(createdStr)}</td>
+          <td class="px-5 py-3.5 text-right">
+            <button onclick="openPostActionModal('${escapeHtml(p.id)}')" class="px-3.5 py-1.5 apple-btn-secondary rounded-full text-xs font-medium transition cursor-pointer">
               Inspect
             </button>
           </td>
@@ -1019,12 +1021,12 @@ async function openPostActionModal(postId) {
 
   if (!modal || !bodyEl) return;
 
-  bodyEl.innerHTML = '<p class="text-zinc-500">Loading moment details...</p>';
+  bodyEl.innerHTML = '<p class="text-[#86868b]">Loading moment details...</p>';
   modal.classList.remove('hidden');
 
   var res = await adminApiRequest('/api/admin/posts/' + postId);
   if (!res || !res.success || !res.post) {
-    bodyEl.innerHTML = '<p class="text-red-400">Failed to load moment: ' + escapeHtml(res ? res.error : 'Unknown error') + '</p>';
+    bodyEl.innerHTML = '<p class="text-[#ff453a]">Failed to load moment: ' + escapeHtml(res ? res.error : 'Unknown error') + '</p>';
     return;
   }
 
@@ -1034,30 +1036,30 @@ async function openPostActionModal(postId) {
   if (titleEl) titleEl.textContent = 'Moment Inspection: ' + (p.id || '');
   if (subEl) subEl.textContent = '@' + p.author_handle + ' (' + (p.author_name || 'User') + ')';
 
-  var mainImg = p.main_img ? `<img src="${escapeHtml(p.main_img)}" class="w-full h-44 object-cover rounded-xl border border-zinc-800" alt="Main">` : '';
-  var pipImg = p.pip_img ? `<img src="${escapeHtml(p.pip_img)}" class="w-24 h-24 object-cover rounded-xl border border-zinc-700 shadow-lg absolute bottom-2 right-2" alt="PiP">` : '';
+  var mainImg = p.main_img ? `<img src="${escapeHtml(p.main_img)}" class="w-full h-44 object-cover rounded-2xl border border-white/10 shadow-inner" alt="Main">` : '';
+  var pipImg = p.pip_img ? `<img src="${escapeHtml(p.pip_img)}" class="w-24 h-24 object-cover rounded-2xl border-2 border-white/20 shadow-2xl absolute bottom-3 right-3" alt="PiP">` : '';
 
   bodyEl.innerHTML = `
     <div class="space-y-4">
-      <div class="relative rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800">
+      <div class="relative rounded-2xl overflow-hidden bg-black/60 border border-white/10">
         ${mainImg}
         ${pipImg}
       </div>
 
-      <div class="grid grid-cols-2 gap-3 p-3 bg-zinc-900/60 border border-zinc-800 rounded-xl">
-        <div><span class="text-zinc-500">Moment ID:</span> <span class="text-white font-bold">${escapeHtml(p.id)}</span></div>
-        <div><span class="text-zinc-500">Author:</span> <span class="text-amber-400 font-bold">@${escapeHtml(p.author_handle)}</span></div>
-        <div><span class="text-zinc-500">Status:</span> <span class="text-white font-bold">${escapeHtml(p.moderation_status)}</span></div>
-        <div><span class="text-zinc-500">Visibility:</span> <span class="text-white font-bold">${p.is_private ? 'Private' : 'Public'}</span></div>
-        <div><span class="text-zinc-500">Campus:</span> <span class="text-white">${escapeHtml(p.campus || 'Central Campus')}</span></div>
-        <div><span class="text-zinc-500">Reactions:</span> <span class="text-white font-bold">${res.reactions_count || 0}</span></div>
-        <div><span class="text-zinc-500">Reports:</span> <span class="text-red-400 font-bold">${res.reports_count || 0}</span></div>
-        <div><span class="text-zinc-500">Cluster ID:</span> <span class="text-amber-300">${escapeHtml(p.cluster_id || (res.cluster ? res.cluster.id : 'None'))}</span></div>
+      <div class="grid grid-cols-2 gap-3 p-4 apple-card rounded-2xl border border-white/10 text-xs">
+        <div><span class="text-[#86868b]">Moment ID:</span> <span class="text-white font-medium">${escapeHtml(p.id)}</span></div>
+        <div><span class="text-[#86868b]">Author:</span> <span class="text-[#2997ff] font-medium">@${escapeHtml(p.author_handle)}</span></div>
+        <div><span class="text-[#86868b]">Status:</span> <span class="text-white font-semibold">${escapeHtml(p.moderation_status)}</span></div>
+        <div><span class="text-[#86868b]">Visibility:</span> <span class="text-white font-semibold">${p.is_private ? 'Private' : 'Public'}</span></div>
+        <div><span class="text-[#86868b]">Campus:</span> <span class="text-white">${escapeHtml(p.campus || 'Central Campus')}</span></div>
+        <div><span class="text-[#86868b]">Reactions:</span> <span class="text-white font-medium">${res.reactions_count || 0}</span></div>
+        <div><span class="text-[#86868b]">Reports:</span> <span class="text-[#ff453a] font-semibold">${res.reports_count || 0}</span></div>
+        <div><span class="text-[#86868b]">Cluster ID:</span> <span class="text-[#ffd60a]">${escapeHtml(p.cluster_id || (res.cluster ? res.cluster.id : 'None'))}</span></div>
       </div>
 
-      <div class="p-3 bg-zinc-900/40 border border-zinc-800 rounded-xl space-y-1">
-        <span class="text-zinc-500 text-[10px] uppercase font-bold">Caption</span>
-        <p class="text-zinc-200">${escapeHtml(p.caption || 'No caption provided.')}</p>
+      <div class="p-3.5 apple-card rounded-2xl border border-white/10 space-y-1">
+        <span class="text-[#86868b] text-[10px] uppercase font-semibold">Caption</span>
+        <p class="text-[#e5e5ea] text-xs">${escapeHtml(p.caption || 'No caption provided.')}</p>
       </div>
     </div>
   `;
@@ -1143,36 +1145,36 @@ function renderAdminClustersTable() {
     var html = '';
     items.forEach(function(c) {
       var statusBadgeClass = c.status === 'active'
-        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-        : (c.status === 'closed' ? 'bg-zinc-800 text-zinc-300 border-zinc-700' : 'bg-amber-500/20 text-amber-300 border-amber-500/30');
+        ? 'bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/25'
+        : (c.status === 'closed' ? 'bg-white/10 text-white/70 border border-white/15' : 'bg-[#ff9f0a]/15 text-[#ffd60a] border border-[#ff9f0a]/25');
 
       var createdStr = c.created_at ? String(c.created_at).split('T')[0] : '--';
 
       html += `
-        <tr class="hover:bg-zinc-900/50 transition">
-          <td class="px-4 py-3 font-bold text-white">
+        <tr class="hover:bg-white/[0.04] transition">
+          <td class="px-5 py-3.5 font-medium text-white">
             ${escapeHtml(c.originating_context || 'Shared Moment')}
-            <div class="text-[10px] text-zinc-500 font-mono font-normal">${escapeHtml(c.id)}</div>
+            <div class="text-[11px] text-[#86868b] font-mono font-normal">${escapeHtml(c.id)}</div>
           </td>
-          <td class="px-4 py-3 text-zinc-400">${escapeHtml(c.community_id || '--')}</td>
-          <td class="px-4 py-3 text-amber-400">@${escapeHtml(c.author_handle || 'originator')}</td>
-          <td class="px-4 py-3">
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30">
+          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(c.community_id || '--')}</td>
+          <td class="px-5 py-3.5 text-[#2997ff] font-medium">@${escapeHtml(c.author_handle || 'originator')}</td>
+          <td class="px-5 py-3.5">
+            <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-[#ff9f0a]/15 text-[#ffd60a] border border-[#ff9f0a]/30">
               📸 ${c.perspectives_count || 0}
             </span>
           </td>
-          <td class="px-4 py-3">
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/30">
+          <td class="px-5 py-3.5">
+            <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-[#0071e3]/15 text-[#2997ff] border border-[#0071e3]/30">
               📍 ${c.participants_count || 0}
             </span>
           </td>
-          <td class="px-4 py-3">
-            <span class="text-[10px] font-bold px-2 py-0.5 rounded border ${statusBadgeClass}">${escapeHtml(c.status)}</span>
+          <td class="px-5 py-3.5">
+            <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${statusBadgeClass}">${escapeHtml(c.status)}</span>
           </td>
-          <td class="px-4 py-3 text-zinc-400 capitalize">${escapeHtml(c.visibility || 'public')}</td>
-          <td class="px-4 py-3 text-zinc-400">${escapeHtml(createdStr)}</td>
-          <td class="px-4 py-3 text-right">
-            <button onclick="openClusterActionModal('${escapeHtml(c.id)}')" class="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-amber-400 rounded-lg text-[11px] transition cursor-pointer font-bold">
+          <td class="px-5 py-3.5 text-[#86868b] capitalize">${escapeHtml(c.visibility || 'public')}</td>
+          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(createdStr)}</td>
+          <td class="px-5 py-3.5 text-right">
+            <button onclick="openClusterActionModal('${escapeHtml(c.id)}')" class="px-3.5 py-1.5 apple-btn-secondary rounded-full text-xs font-medium transition cursor-pointer">
               Inspect
             </button>
           </td>
@@ -1225,42 +1227,42 @@ async function openClusterActionModal(clusterId) {
   if (res.perspectives && res.perspectives.length > 0) {
     perspectivesHtml = res.perspectives.map(function(p) {
       return `
-        <div class="p-2 bg-zinc-950 border border-zinc-800 rounded-lg flex items-center gap-3">
-          ${p.main_img ? `<img src="${escapeHtml(p.main_img)}" class="w-10 h-10 object-cover rounded" alt="p">` : ''}
+        <div class="p-3 apple-card rounded-xl border border-white/10 flex items-center gap-3">
+          ${p.main_img ? `<img src="${escapeHtml(p.main_img)}" class="w-10 h-10 object-cover rounded-xl border border-white/10" alt="p">` : ''}
           <div class="flex-1 min-w-0">
-            <div class="text-white font-bold text-xs">@${escapeHtml(p.author_handle)}</div>
-            <div class="text-[11px] text-zinc-400 truncate">${escapeHtml(p.caption || 'Perspective')}</div>
+            <div class="text-white font-medium text-xs">@${escapeHtml(p.author_handle)}</div>
+            <div class="text-[11px] text-[#86868b] truncate">${escapeHtml(p.caption || 'Perspective')}</div>
           </div>
-          <span class="text-[9px] px-1.5 py-0.5 rounded border border-zinc-700 text-zinc-400">${escapeHtml(p.moderation_status || 'active')}</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full border border-white/10 text-[#86868b] font-medium">${escapeHtml(p.moderation_status || 'active')}</span>
         </div>
       `;
     }).join('');
   } else {
-    perspectivesHtml = '<p class="text-zinc-600 text-[11px] italic">No co-located perspectives recorded.</p>';
+    perspectivesHtml = '<p class="text-[#86868b] text-xs italic">No co-located perspectives recorded.</p>';
   }
 
   var participantsHtml = '';
   if (res.participants && res.participants.length > 0) {
     participantsHtml = res.participants.map(function(u) {
-      return `<span class="px-2 py-1 rounded bg-zinc-900 border border-zinc-800 text-zinc-300 text-[10px]">@${escapeHtml(u.handle)}</span>`;
+      return `<span class="px-2.5 py-1 rounded-full bg-white/10 border border-white/10 text-[#e5e5ea] text-[10px] font-medium">@${escapeHtml(u.handle)}</span>`;
     }).join(' ');
   } else {
-    participantsHtml = '<p class="text-zinc-600 text-[11px] italic">No attendance records.</p>';
+    participantsHtml = '<p class="text-[#86868b] text-xs italic">No attendance records.</p>';
   }
 
   bodyEl.innerHTML = `
     <div class="space-y-4">
-      <div class="grid grid-cols-2 gap-3 p-3 bg-zinc-900/60 border border-zinc-800 rounded-xl">
-        <div><span class="text-zinc-500">Context:</span> <span class="text-white font-bold">${escapeHtml(c.originating_context || 'Event')}</span></div>
-        <div><span class="text-zinc-500">Status:</span> <span class="text-white font-bold uppercase">${escapeHtml(c.status)}</span></div>
-        <div><span class="text-zinc-500">Visibility:</span> <span class="text-white capitalize">${escapeHtml(c.visibility || 'public')}</span></div>
-        <div><span class="text-zinc-500">Community:</span> <span class="text-amber-400">${escapeHtml(c.community_id || 'Global')}</span></div>
-        <div><span class="text-zinc-500">Perspectives:</span> <span class="text-amber-300 font-bold">${res.perspectives_count || 0}</span></div>
-        <div><span class="text-zinc-500">Attendees ("I Was There"):</span> <span class="text-blue-300 font-bold">${res.participants_count || 0}</span></div>
+      <div class="grid grid-cols-2 gap-3 p-4 apple-card rounded-2xl border border-white/10 text-xs">
+        <div><span class="text-[#86868b]">Context:</span> <span class="text-white font-medium">${escapeHtml(c.originating_context || 'Event')}</span></div>
+        <div><span class="text-[#86868b]">Status:</span> <span class="text-white font-semibold uppercase">${escapeHtml(c.status)}</span></div>
+        <div><span class="text-[#86868b]">Visibility:</span> <span class="text-white capitalize">${escapeHtml(c.visibility || 'public')}</span></div>
+        <div><span class="text-[#86868b]">Community:</span> <span class="text-[#2997ff] font-medium">${escapeHtml(c.community_id || 'Global')}</span></div>
+        <div><span class="text-[#86868b]">Perspectives:</span> <span class="text-[#ffd60a] font-semibold">${res.perspectives_count || 0}</span></div>
+        <div><span class="text-[#86868b]">Attendees:</span> <span class="text-[#2997ff] font-semibold">${res.participants_count || 0}</span></div>
       </div>
 
       <div class="space-y-2">
-        <span class="text-zinc-400 text-[10px] uppercase font-bold tracking-wider">Perspectives (${res.perspectives ? res.perspectives.length : 0})</span>
+        <span class="text-[#86868b] text-[11px] uppercase font-semibold tracking-wider">Perspectives (${res.perspectives ? res.perspectives.length : 0})</span>
         <div class="max-h-40 overflow-y-auto space-y-2 pr-1">
           ${perspectivesHtml}
         </div>
