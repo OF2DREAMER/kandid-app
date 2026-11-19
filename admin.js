@@ -119,6 +119,7 @@ function showAdminLoginGateway(message) {
     if (message) {
       alertEl.textContent = message;
       alertEl.classList.remove('hidden');
+      triggerAppleShake('adminLoginGatewayModal');
     } else {
       alertEl.classList.add('hidden');
     }
@@ -130,6 +131,101 @@ function hideAdminLoginGateway() {
   if (modal) {
     modal.classList.add('hidden');
   }
+}
+
+function triggerAppleShake(modalId) {
+  var modal = document.getElementById(modalId);
+  if (!modal) return;
+  var card = modal.querySelector('.apple-glass') || modal.firstElementChild;
+  if (!card) return;
+  card.classList.remove('apple-shake');
+  void card.offsetWidth;
+  card.classList.add('apple-shake');
+  setTimeout(function() {
+    card.classList.remove('apple-shake');
+  }, 400);
+}
+
+function initAppleCodeDigitInputs() {
+  document.querySelectorAll('.apple-code-digit').forEach(function(input) {
+    input.addEventListener('input', function(e) {
+      var val = e.target.value.replace(/\D/g, '');
+      e.target.value = val ? val[0] : '';
+      var targetId = e.target.getAttribute('data-target');
+      var idx = parseInt(e.target.getAttribute('data-idx') || '0', 10);
+      var parent = e.target.parentElement;
+      if (val && idx < 5 && parent) {
+        var next = parent.querySelector('[data-idx="' + (idx + 1) + '"]');
+        if (next) next.focus();
+      }
+      var fullCode = syncAppleCodeDigits(parent, targetId);
+      if (fullCode && fullCode.length === 6) {
+        if (targetId === 'adminLoginTotpCode') {
+          submitAdminLogin();
+        } else if (targetId === 'admin2FaConfirmCode') {
+          confirm2FaEnable();
+        }
+      }
+    });
+
+    input.addEventListener('keydown', function(e) {
+      var targetId = e.target.getAttribute('data-target');
+      var idx = parseInt(e.target.getAttribute('data-idx') || '0', 10);
+      var parent = e.target.parentElement;
+      if (e.key === 'Backspace') {
+        if (!e.target.value && idx > 0 && parent) {
+          var prev = parent.querySelector('[data-idx="' + (idx - 1) + '"]');
+          if (prev) {
+            prev.focus();
+            prev.value = '';
+          }
+          syncAppleCodeDigits(parent, targetId);
+        } else {
+          setTimeout(function() { syncAppleCodeDigits(parent, targetId); }, 0);
+        }
+      } else if (e.key === 'ArrowLeft' && idx > 0 && parent) {
+        var prevLeft = parent.querySelector('[data-idx="' + (idx - 1) + '"]');
+        if (prevLeft) prevLeft.focus();
+      } else if (e.key === 'ArrowRight' && idx < 5 && parent) {
+        var nextRight = parent.querySelector('[data-idx="' + (idx + 1) + '"]');
+        if (nextRight) nextRight.focus();
+      }
+    });
+
+    input.addEventListener('paste', function(e) {
+      e.preventDefault();
+      var pasted = (e.clipboardData || window.clipboardData).getData('text').replace(/\D/g, '');
+      if (!pasted) return;
+      var parent = e.target.parentElement;
+      var targetId = e.target.getAttribute('data-target');
+      if (!parent) return;
+      var inputs = parent.querySelectorAll('.apple-code-digit');
+      for (var i = 0; i < inputs.length && i < pasted.length; i++) {
+        inputs[i].value = pasted[i];
+      }
+      var focusIdx = Math.min(pasted.length, 5);
+      if (inputs[focusIdx]) inputs[focusIdx].focus();
+      var fullCode = syncAppleCodeDigits(parent, targetId);
+      if (fullCode && fullCode.length === 6) {
+        if (targetId === 'adminLoginTotpCode') {
+          submitAdminLogin();
+        } else if (targetId === 'admin2FaConfirmCode') {
+          confirm2FaEnable();
+        }
+      }
+    });
+  });
+}
+
+function syncAppleCodeDigits(parent, targetId) {
+  if (!parent || !targetId) return '';
+  var code = '';
+  parent.querySelectorAll('.apple-code-digit').forEach(function(inp) {
+    code += inp.value || '';
+  });
+  var target = document.getElementById(targetId);
+  if (target) target.value = code;
+  return code;
 }
 
 async function submitAdminLogin(event) {
@@ -150,6 +246,7 @@ async function submitAdminLogin(event) {
     if (alertEl) {
       alertEl.textContent = 'Please enter your username/email and password';
       alertEl.classList.remove('hidden');
+      triggerAppleShake('adminLoginGatewayModal');
     }
     return;
   }
@@ -173,10 +270,14 @@ async function submitAdminLogin(event) {
       if (passInput) passInput.value = '';
       if (totpInput) totpInput.value = '';
       if (totpContainer) totpContainer.classList.add('hidden');
+      document.querySelectorAll('#loginCodeDigitGroup .apple-code-digit').forEach(function(inp) { inp.value = ''; });
       await verifyAdminIdentity();
     } else if (data.totp_required) {
       if (totpContainer) totpContainer.classList.remove('hidden');
-      if (totpInput) {
+      var firstDigit = document.querySelector('#loginCodeDigitGroup [data-idx="0"]');
+      if (firstDigit) {
+        setTimeout(function() { firstDigit.focus(); }, 100);
+      } else if (totpInput) {
         totpInput.focus();
         totpInput.required = true;
       }
@@ -188,17 +289,19 @@ async function submitAdminLogin(event) {
       if (alertEl) {
         alertEl.textContent = data.error || 'Login failed. Invalid admin credentials.';
         alertEl.classList.remove('hidden');
+        triggerAppleShake('adminLoginGatewayModal');
       }
     }
   } catch (e) {
     if (alertEl) {
       alertEl.textContent = 'Network error connecting to login service.';
       alertEl.classList.remove('hidden');
+      triggerAppleShake('adminLoginGatewayModal');
     }
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = 'Sign In to Control Panel';
+      submitBtn.textContent = 'Sign In';
     }
   }
 }
@@ -235,6 +338,7 @@ async function submitAdminSudo(event) {
     if (alertEl) {
       alertEl.textContent = 'Please enter your 2FA code or password';
       alertEl.classList.remove('hidden');
+      triggerAppleShake('adminSudoModal');
     }
     return;
   }
@@ -278,17 +382,19 @@ async function submitAdminSudo(event) {
       if (alertEl) {
         alertEl.textContent = data.error || 'Verification failed. Incorrect code or password.';
         alertEl.classList.remove('hidden');
+        triggerAppleShake('adminSudoModal');
       }
     }
   } catch (e) {
     if (alertEl) {
       alertEl.textContent = 'Network error during sudo verification';
       alertEl.classList.remove('hidden');
+      triggerAppleShake('adminSudoModal');
     }
   } finally {
     if (confirmBtn) {
       confirmBtn.disabled = false;
-      confirmBtn.textContent = 'Confirm & Proceed';
+      confirmBtn.textContent = 'Authorize';
     }
   }
 }
@@ -314,6 +420,11 @@ async function open2FaModal(isMandatory) {
   var btnMandatoryLogout = document.getElementById('btn2FaMandatoryLogout');
 
   if (alertEl) alertEl.classList.add('hidden');
+
+  // Reset 6-box TOTP passcode inputs
+  document.querySelectorAll('#setupCodeDigitGroup .apple-code-digit').forEach(function(inp) { inp.value = ''; });
+  var confirmHidden = document.getElementById('admin2FaConfirmCode');
+  if (confirmHidden) confirmHidden.value = '';
 
   if (isMandatory) {
     if (mandatoryBanner) mandatoryBanner.classList.remove('hidden');
@@ -348,10 +459,15 @@ async function open2FaModal(isMandatory) {
         linkEl.href = res.otpauth_url;
         linkEl.textContent = res.otpauth_url;
       }
+      setTimeout(function() {
+        var firstDigit = document.querySelector('#setupCodeDigitGroup [data-idx="0"]');
+        if (firstDigit) firstDigit.focus();
+      }, 150);
     } else {
       if (alertEl) {
         alertEl.textContent = 'Failed to generate 2FA secret: ' + (res ? res.error : 'Unknown');
         alertEl.classList.remove('hidden');
+        triggerAppleShake('admin2FaModal');
       }
     }
   }
@@ -383,7 +499,9 @@ async function confirm2FaEnable() {
   if (!code || code.length !== 6) {
     if (alertEl) {
       alertEl.textContent = 'Please enter a valid 6-digit confirmation code';
+      alertEl.className = 'p-3.5 bg-red-500/10 border border-red-500/25 text-[#ff453a] text-xs rounded-2xl';
       alertEl.classList.remove('hidden');
+      triggerAppleShake('admin2FaModal');
     }
     return;
   }
@@ -412,7 +530,7 @@ async function confirm2FaEnable() {
     if (activeView) activeView.classList.remove('hidden');
     if (alertEl) {
       alertEl.textContent = 'Two-factor authentication successfully enabled! Unlocking admin control surfaces...';
-      alertEl.className = 'p-3 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 text-xs rounded-xl';
+      alertEl.className = 'p-3.5 bg-[#30d158]/10 border border-[#30d158]/25 text-[#30d158] text-xs rounded-2xl';
       alertEl.classList.remove('hidden');
     }
 
@@ -423,8 +541,9 @@ async function confirm2FaEnable() {
   } else {
     if (alertEl) {
       alertEl.textContent = res ? res.error : 'Failed to verify code';
-      alertEl.className = 'p-3 bg-red-950/60 border border-red-500/40 text-red-400 text-xs rounded-xl';
+      alertEl.className = 'p-3.5 bg-red-500/10 border border-red-500/25 text-[#ff453a] text-xs rounded-2xl';
       alertEl.classList.remove('hidden');
+      triggerAppleShake('admin2FaModal');
     }
   }
 }
@@ -1213,5 +1332,6 @@ async function logoutAdmin() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  initAppleCodeDigitInputs();
   verifyAdminIdentity();
 });
