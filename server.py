@@ -5972,12 +5972,14 @@ def internal_ops_authorized(headers, user):
     )
 
 
-def require_admin(self_handler, headers=None, body=None, strict_bearer=False):
+def require_admin(self_handler, headers=None, body=None, strict_bearer=False, allow_unconfigured_2fa=False):
     """
     Server-side authorization for web admin endpoints.
     Requires an authenticated database session with user.role in ('admin', 'founder').
     If strict_bearer is True (required for all state-changing admin APIs),
     the token MUST come from the Authorization: Bearer header.
+    If allow_unconfigured_2fa is False (default for platform control and mutation surfaces),
+    and user has admin_totp_enabled == 0, returns 403 requiring 2FA setup.
     """
     headers = headers or getattr(self_handler, "headers", {})
     if strict_bearer:
@@ -5999,15 +6001,25 @@ def require_admin(self_handler, headers=None, body=None, strict_bearer=False):
     if user.get("account_status") in ("suspended", "banned") or role == "banned":
         return None, (403, {"error": "Account is suspended or banned", "success": False})
 
+    # Mandatory 2FA Enforcement:
+    # If 2FA is explicitly unconfigured/disabled on this admin account (admin_totp_enabled == 0),
+    # strictly block access to platform control surfaces until 2FA setup is completed.
+    if not allow_unconfigured_2fa and user.get("admin_totp_enabled") == 0:
+        return None, (403, {
+            "error": "Two-factor authentication (2FA) is mandatory for administrator access. Please complete 2FA setup.",
+            "requires_2fa_setup": True,
+            "success": False
+        })
+
     return user, None
 
 
-def require_founder(self_handler, headers=None, body=None, strict_bearer=False):
+def require_founder(self_handler, headers=None, body=None, strict_bearer=False, allow_unconfigured_2fa=False):
     """
     Server-side authorization for founder-only admin endpoints.
     Requires authenticated user with role == 'founder'.
     """
-    user, err = require_admin(self_handler, headers=headers, body=body, strict_bearer=strict_bearer)
+    user, err = require_admin(self_handler, headers=headers, body=body, strict_bearer=strict_bearer, allow_unconfigured_2fa=allow_unconfigured_2fa)
     if err:
         return None, err
     if user.get("role") != "founder":
@@ -6108,6 +6120,84 @@ def verify_admin_sudo(user, headers=None):
                 "success": False
             })
     return True, None
+
+
+def dispatch_admin_security_alert_email(admin_user, alert_type: str, details: dict = None):
+    """
+    Sends real-time enterprise security alert email to admin/founder on critical events:
+    - successful login
+    - failed login attempt (bad password / invalid 2FA)
+    - 2FA enabled / modified
+    - sudo elevation granted
+    Runs asynchronously in daemon thread to ensure zero latency impact on request handling.
+    """
+    if not admin_user:
+        return
+    details = details or {}
+    recipient_email = (admin_user.get("email") or "").strip()
+
+    # Fallback to founder email if recipient email is empty
+    if not recipient_email:
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT email FROM users WHERE role = 'founder' AND email != '' LIMIT 1")
+            row = cursor.fetchone()
+            if row and row[0]:
+                recipient_email = row[0]
+            conn.close()
+        except Exception:
+            pass
+
+    if not recipient_email:
+        return
+
+    def _worker():
+        try:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ip = details.get("ip") or "Unknown IP"
+            user_agent = details.get("user_agent") or "Unknown Device"
+            handle = admin_user.get("handle") or "admin"
+            reason = details.get("reason", "")
+
+            titles = {
+                "admin_login_success": "Admin Portal Login Detected",
+                "admin_login_failed": "SECURITY ALERT: Failed Admin Login Attempt",
+                "admin_2fa_enabled": "Two-Factor Authentication Enabled",
+                "admin_sudo_elevated": "Privilege Elevated (Sudo Mode Active - 15m)"
+            }
+            alert_title = titles.get(alert_type, "Admin Security Event")
+
+            subject = f"🔐 [Kindid Admin Alert] {alert_title} (@{handle})"
+
+            html = f"""
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #09090b; color: #f4f4f5; padding: 24px; border-radius: 12px; border: 1px solid #27272a;">
+                <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                    <span style="font-size: 24px; margin-right: 12px;">🛡️</span>
+                    <h2 style="margin: 0; color: #f59e0b; font-size: 18px;">Kindid Admin Security Alert</h2>
+                </div>
+                <p style="font-size: 14px; color: #d4d4d8;">A security event was recorded on administrative account <strong>@{handle}</strong>:</p>
+                <div style="background: #18181b; padding: 16px; border-radius: 8px; border: 1px solid #27272a; margin: 16px 0; font-size: 13px; line-height: 1.6;">
+                    <div><strong>Event:</strong> {alert_title}</div>
+                    <div><strong>Account Handle:</strong> @{handle}</div>
+                    <div><strong>Timestamp:</strong> {now_str}</div>
+                    <div><strong>Client IP:</strong> {ip}</div>
+                    <div><strong>Device / User-Agent:</strong> {user_agent}</div>
+                    {f"<div><strong>Details:</strong> {reason}</div>" if reason else ""}
+                </div>
+                <p style="font-size: 12px; color: #a1a1aa; line-height: 1.5;">If this action was authorized by you, no further action is required.<br>If you did <strong>NOT</strong> initiate this activity, someone may be attempting to access your account. Please log in immediately, rotate your password, and revoke active sessions.</p>
+                <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #27272a; font-size: 11px; color: #71717a;">
+                    Kindid Platform Security • Automated Administrative Notification
+                </div>
+            </div>
+            """
+            text = f"Kindid Admin Security Alert\\nEvent: {alert_title}\\nAccount: @{handle}\\nTimestamp: {now_str}\\nIP: {ip}\\nDevice: {user_agent}\\n"
+            send_email_brevo(recipient_email, subject, html, text)
+        except Exception as e:
+            log_operational_event("admin_security_alert_email_failed", category="security", properties={"error": str(e)[:100]}, level="WARNING")
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
 
 
 def resolve_user_id(raw_val, conn=None):
@@ -6660,26 +6750,28 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 return self.send_json(404, {"error": "Admin script file not found"})
 
         if path == "/api/admin/me":
-            user, err = require_admin(self, self.headers)
+            user, err = require_admin(self, self.headers, allow_unconfigured_2fa=True)
             if err:
                 return self.send_json(*err)
             now_iso = datetime.now().isoformat()
             sudo_active = bool(user.get("sudo_expires_at") and user["sudo_expires_at"] > now_iso)
+            totp_enabled = bool(user.get("admin_totp_enabled", 0))
             return self.send_json(200, {
                 "success": True,
                 "user": {
-                    "id": user["id"],
-                    "handle": user["handle"],
-                    "name": user["name"],
-                    "role": user["role"],
+                    "id": user.get("id", ""),
+                    "handle": user.get("handle", ""),
+                    "name": user.get("name", user.get("handle", "")),
+                    "role": user.get("role", "admin"),
                     "avatar_url": user.get("avatar_url", ""),
-                    "admin_totp_enabled": bool(user.get("admin_totp_enabled", 0)),
-                    "sudo_active": sudo_active
+                    "admin_totp_enabled": totp_enabled,
+                    "sudo_active": sudo_active,
+                    "force_2fa_setup": not totp_enabled
                 }
             })
 
         if path == "/api/admin/auth/2fa-setup":
-            user, err = require_admin(self, self.headers)
+            user, err = require_admin(self, self.headers, allow_unconfigured_2fa=True)
             if err:
                 return self.send_json(*err)
             secret = generate_totp_secret()
@@ -12210,6 +12302,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not verify_password(password, user["salt"], user["password_hash"]):
                 conn.close()
                 record_admin_audit_event(user, "admin_login_failed_password", "admin_auth", user["id"], "Incorrect password", client_ip)
+                dispatch_admin_security_alert_email(user, "admin_login_failed", {
+                    "ip": client_ip,
+                    "user_agent": self.headers.get("User-Agent", ""),
+                    "reason": "Failed login attempt: Incorrect password"
+                })
                 return self.send_json(401, {"error": "Invalid admin credentials", "success": False})
 
             totp_enabled = bool(user.get("admin_totp_enabled", 0))
@@ -12227,6 +12324,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if not verify_totp(totp_secret, code):
                     conn.close()
                     record_admin_audit_event(user, "admin_login_failed_2fa", "admin_auth", user["id"], "Invalid 2FA code", client_ip)
+                    dispatch_admin_security_alert_email(user, "admin_login_failed", {
+                        "ip": client_ip,
+                        "user_agent": self.headers.get("User-Agent", ""),
+                        "reason": "Failed login attempt: Invalid 2FA verification code"
+                    })
                     return self.send_json(401, {
                         "error": "Invalid two-factor authentication code",
                         "totp_required": True,
@@ -12249,6 +12351,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
 
             record_admin_audit_event(user, "admin_login_success", "admin_auth", user["id"], f"Session {admin_session_id} created", client_ip)
+            dispatch_admin_security_alert_email(user, "admin_login_success", {
+                "ip": client_ip,
+                "user_agent": user_agent,
+                "reason": "Administrative session established"
+            })
 
             cookie_header = f"kindid_admin_session={admin_token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=7200"
             self.send_response(200)
@@ -12259,16 +12366,18 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "success": True,
                 "token": admin_token,
                 "user": {
-                    "id": user["id"],
-                    "handle": user["handle"],
-                    "name": user["name"],
-                    "role": user["role"],
+                    "id": user.get("id", ""),
+                    "handle": user.get("handle", ""),
+                    "name": user.get("name", user.get("handle", "")),
+                    "role": user.get("role", "admin"),
                     "avatar_url": user.get("avatar_url", ""),
                     "admin_totp_enabled": totp_enabled,
-                    "sudo_active": sudo_active
+                    "sudo_active": sudo_active,
+                    "force_2fa_setup": not totp_enabled
                 },
                 "totp_enabled": totp_enabled,
-                "sudo_active": sudo_active
+                "sudo_active": sudo_active,
+                "force_2fa_setup": not totp_enabled
             }
             self.wfile.write(json.dumps(resp_data).encode("utf-8"))
             return
@@ -12298,7 +12407,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/admin/auth/2fa-verify-enable":
-            user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
+            user, err = require_admin(self, self.headers, body=body, strict_bearer=True, allow_unconfigured_2fa=True)
             if err:
                 return self.send_json(*err)
 
@@ -12324,6 +12433,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
             record_admin_audit_event(user, "admin_2fa_enabled", "admin_auth", user["id"], "2FA enabled with TOTP", client_ip)
+            dispatch_admin_security_alert_email(user, "admin_2fa_enabled", {
+                "ip": client_ip,
+                "user_agent": self.headers.get("User-Agent", ""),
+                "reason": "Two-factor authentication successfully configured and verified"
+            })
 
             return self.send_json(200, {
                 "success": True,
@@ -12373,6 +12487,11 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
             record_admin_audit_event(user, "admin_sudo_elevated", "admin_auth", user["id"], "Sudo mode granted for 15 minutes", client_ip)
+            dispatch_admin_security_alert_email(user, "admin_sudo_elevated", {
+                "ip": client_ip,
+                "user_agent": self.headers.get("User-Agent", ""),
+                "reason": "Administrative privilege elevated (sudo mode) for 15 minutes"
+            })
 
             return self.send_json(200, {
                 "success": True,
