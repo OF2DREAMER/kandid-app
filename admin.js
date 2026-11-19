@@ -258,16 +258,17 @@ function toggleBackupLoginMode(isBackup) {
     if (backup) backup.classList.remove('hidden');
     if (backupInput) {
       backupInput.value = '';
-      setTimeout(function() { backupInput.focus(); }, 100);
+      setTimeout(function() { backupInput.focus(); }, 60);
     }
   } else {
     if (backup) backup.classList.add('hidden');
     if (normal) normal.classList.remove('hidden');
     if (firstDigit) {
-      setTimeout(function() { firstDigit.focus(); }, 100);
+      setTimeout(function() { firstDigit.focus(); }, 60);
     }
   }
 }
+window.toggleBackupLoginMode = toggleBackupLoginMode;
 
 async function submitAdminLogin(event) {
   if (event) event.preventDefault();
@@ -1499,5 +1500,19 @@ async function logoutAdmin() {
 
 document.addEventListener('DOMContentLoaded', function() {
   initAppleCodeDigitInputs();
+  var btnSwitchBackup = document.getElementById('btnSwitchToBackupCode');
+  if (btnSwitchBackup) {
+    btnSwitchBackup.addEventListener('click', function(e) {
+      e.preventDefault();
+      toggleBackupLoginMode(true);
+    });
+  }
+  var btnSwitchNormal = document.getElementById('btnSwitchToNormalTotp');
+  if (btnSwitchNormal) {
+    btnSwitchNormal.addEventListener('click', function(e) {
+      e.preventDefault();
+      toggleBackupLoginMode(false);
+    });
+  }
   verifyAdminIdentity();
 });

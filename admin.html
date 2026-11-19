@@ -844,7 +844,7 @@
               <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="adminLoginTotpCode" data-idx="5">
             </div>
             <div class="text-center pt-2">
-              <button type="button" onclick="toggleBackupLoginMode(true)" class="text-xs text-[#2997ff] hover:underline font-normal cursor-pointer">
+              <button type="button" id="btnSwitchToBackupCode" onclick="toggleBackupLoginMode(true); return false;" class="text-xs text-[#2997ff] hover:underline font-normal cursor-pointer py-1 px-2 select-none" style="touch-action: manipulation;">
                 Can't access your phone? Use Emergency Backup Code
               </button>
             </div>
@@ -854,7 +854,7 @@
             <div class="text-[12px] text-[#86868b] text-center font-normal">Enter one of your 8-character Emergency Recovery Codes.</div>
             <input type="text" id="adminLoginBackupCode" maxlength="9" placeholder="XXXX-XXXX" class="apple-input w-full rounded-2xl px-4 py-3 text-center text-sm font-mono tracking-widest uppercase placeholder-[#636366]">
             <div class="text-center pt-1">
-              <button type="button" onclick="toggleBackupLoginMode(false)" class="text-xs text-[#2997ff] hover:underline font-normal cursor-pointer">
+              <button type="button" id="btnSwitchToNormalTotp" onclick="toggleBackupLoginMode(false); return false;" class="text-xs text-[#2997ff] hover:underline font-normal cursor-pointer py-1 px-2 select-none" style="touch-action: manipulation;">
                 Use 6-digit Authenticator Code instead
               </button>
             </div>
@@ -1036,6 +1036,29 @@
     </div>
   </div>
 
-  <script src="/admin.js?v=5.4.0"></script>
+  <script>
+    function toggleBackupLoginMode(isBackup) {
+      var normal = document.getElementById('totpNormalPrompt');
+      var backup = document.getElementById('totpBackupPrompt');
+      var backupInput = document.getElementById('adminLoginBackupCode');
+      var firstDigit = document.querySelector('#loginCodeDigitGroup [data-idx="0"]');
+      if (isBackup) {
+        if (normal) normal.classList.add('hidden');
+        if (backup) backup.classList.remove('hidden');
+        if (backupInput) {
+          backupInput.value = '';
+          setTimeout(function() { backupInput.focus(); }, 60);
+        }
+      } else {
+        if (backup) backup.classList.add('hidden');
+        if (normal) normal.classList.remove('hidden');
+        if (firstDigit) {
+          setTimeout(function() { firstDigit.focus(); }, 60);
+        }
+      }
+    }
+    window.toggleBackupLoginMode = toggleBackupLoginMode;
+  </script>
+  <script src="/admin.js?v=5.5.0"></script>
 </body>
 </html>
