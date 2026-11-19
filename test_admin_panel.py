@@ -1583,6 +1583,89 @@ class TestAdminSecurityHardening(unittest.TestCase):
             time.sleep(0.05)
             self.assertTrue(any("Admin Portal Login Detected" in e["subject"] for e in sent_emails))
 
+    def test_admin_emergency_backup_recovery_codes_workflow(self):
+        """Test backup recovery codes generation, verification, single-use burning, and login."""
+        # 1. Establish session
+        totp_code = server.compute_totp(self.totp_secret)
+        self._set_post("/api/admin/auth/login", {
+            "handle": "admin2fa",
+            "password": "Admin2FaPass123!",
+            "code": totp_code
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [200])
+        login_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        admin_token = login_res["token"]
+
+        # 2. Generate 8 backup recovery codes
+        codes = server.generate_admin_backup_codes("u_harden_2fa", count=8)
+        self.assertEqual(len(codes), 8)
+        for c in codes:
+            self.assertEqual(len(c), 9) # Format XXXX-XXXX
+            self.assertIn("-", c)
+
+        # 3. Check remaining count via GET /api/admin/auth/backup-codes
+        self.sent_status.clear()
+        self.handler.wfile = BytesIO()
+        self.handler.path = "/api/admin/auth/backup-codes"
+        self.handler.headers = {"Authorization": f"Bearer {admin_token}"}
+        self.handler.do_GET()
+        self.assertEqual(self.sent_status, [200])
+        status_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertTrue(status_res.get("success"))
+        self.assertEqual(status_res.get("remaining"), 8)
+
+        # 4. Use one code to log in via POST /api/admin/auth/login
+        test_code = codes[0]
+        self._set_post("/api/admin/auth/login", {
+            "handle": "admin2fa",
+            "password": "Admin2FaPass123!",
+            "code": test_code
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [200])
+        login_res2 = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertTrue(login_res2.get("success"))
+        self.assertTrue(login_res2.get("sudo_active"))
+
+        # 5. Same code CANNOT be reused (single-use guarantee)
+        self._set_post("/api/admin/auth/login", {
+            "handle": "admin2fa",
+            "password": "Admin2FaPass123!",
+            "code": test_code
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [401])
+        fail_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertFalse(fail_res.get("success"))
+
+        # 6. Check remaining count is now 7
+        self.sent_status.clear()
+        self.handler.wfile = BytesIO()
+        self.handler.path = "/api/admin/auth/backup-codes"
+        self.handler.headers = {"Authorization": f"Bearer {admin_token}"}
+        self.handler.do_GET()
+        self.assertEqual(self.sent_status, [200])
+        status_res2 = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertEqual(status_res2.get("remaining"), 7)
+
+    def test_mobile_clock_skew_tolerance_window(self):
+        """Test verify_totp accepts +/- 60s window to absorb mobile phone carrier clock drift."""
+        import time
+        secret = "JBSWY3DPEHPK3PXP"
+        now = int(time.time())
+        # Code from 60 seconds ago (-2 intervals)
+        code_minus_60 = server.compute_totp(secret, for_time=now - 60)
+        # Code from 60 seconds in future (+2 intervals)
+        code_plus_60 = server.compute_totp(secret, for_time=now + 60)
+        # Code from 120 seconds ago (outside window)
+        code_minus_120 = server.compute_totp(secret, for_time=now - 120)
+
+        # verify_totp with window=2 (the default) accepts +/- 60s
+        self.assertTrue(server.verify_totp(secret, code_minus_60))
+        self.assertTrue(server.verify_totp(secret, code_plus_60))
+        self.assertFalse(server.verify_totp(secret, code_minus_120))
+
 
 if __name__ == "__main__":
     unittest.main()
