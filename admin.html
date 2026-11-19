@@ -8,9 +8,80 @@
   <link rel="stylesheet" href="/tailwind.compiled.css?v=4.3.3">
   <link rel="stylesheet" href="/style.css?v=3.1.6">
   <style>
-    body { font-family: 'Plus Jakarta Sans', sans-serif; background: #09090b; color: #f4f4f5; }
-    .mono { font-family: 'JetBrains Mono', monospace; }
-    .admin-nav-item.active { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: rgba(245, 158, 11, 0.4); }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Plus Jakarta Sans', system-ui, sans-serif; background: #000000; color: #f5f5f7; }
+    .mono { font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace; }
+    .admin-nav-item.active { background: rgba(255, 255, 255, 0.08); color: #ffffff; border-color: rgba(255, 255, 255, 0.2); }
+
+    /* Apple Glassmorphism & Micro-Interactions */
+    .apple-glass {
+      background: rgba(28, 28, 30, 0.88);
+      backdrop-filter: blur(40px) saturate(190%);
+      -webkit-backdrop-filter: blur(40px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    }
+    .apple-input {
+      background: rgba(44, 44, 46, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .apple-input:focus {
+      border-color: #0071e3;
+      box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.3);
+      outline: none;
+      background: rgba(44, 44, 46, 0.95);
+    }
+    .apple-btn-primary {
+      background: #0071e3;
+      color: #ffffff;
+      font-weight: 500;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .apple-btn-primary:hover {
+      background: #0077ed;
+      transform: translateY(-0.5px);
+    }
+    .apple-btn-primary:active {
+      transform: scale(0.98);
+      background: #0062c4;
+    }
+    .apple-btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: #e5e5ea;
+      transition: all 0.2s ease;
+    }
+    .apple-btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+    }
+    .apple-code-digit {
+      width: 44px;
+      height: 52px;
+      background: rgba(44, 44, 46, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', monospace;
+      font-size: 22px;
+      font-weight: 600;
+      color: #ffffff;
+      text-align: center;
+      transition: all 0.15s ease;
+    }
+    .apple-code-digit:focus {
+      border-color: #0071e3;
+      box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.35);
+      outline: none;
+      background: rgba(58, 58, 60, 0.95);
+    }
+    @keyframes apple-shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .apple-shake {
+      animation: apple-shake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col bg-[#09090b] text-zinc-100">
@@ -607,153 +678,181 @@
     </div>
   </div>
 
-  <!-- Dedicated Admin Authentication Gateway Modal -->
-  <div id="adminLoginGatewayModal" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-zinc-950 border border-amber-500/30 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl font-mono-tag">
-      <div class="text-center space-y-1">
-        <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-500 font-extrabold flex items-center justify-center text-xl mx-auto">K</div>
-        <h2 class="text-lg font-bold text-white tracking-wide">Kandid Admin Portal</h2>
-        <p class="text-xs text-zinc-400">Restricted Enterprise Administrative Gateway</p>
+  <!-- Dedicated Admin Authentication Gateway Modal (Apple ID Aesthetic) -->
+  <div id="adminLoginGatewayModal" class="fixed inset-0 bg-black/70 backdrop-blur-3xl z-50 flex items-center justify-center p-4 hidden">
+    <div class="apple-glass rounded-[28px] max-w-[420px] w-full p-8 space-y-6 shadow-2xl relative text-center">
+      <!-- Apple Security Glyph Badge -->
+      <div class="w-16 h-16 rounded-full bg-gradient-to-b from-white/15 to-white/[0.03] border border-white/20 shadow-inner flex items-center justify-center mx-auto mb-1">
+        <svg class="w-8 h-8 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
       </div>
 
-      <div id="adminLoginAlert" class="p-3 bg-red-950/60 border border-red-500/40 text-red-400 text-xs rounded-xl hidden"></div>
+      <div class="space-y-1">
+        <h2 class="text-xl font-semibold tracking-tight text-white">Sign in to Kindid Admin</h2>
+        <p class="text-[13px] text-[#86868b]">Enterprise Administrative Control Surface</p>
+      </div>
 
-      <form id="adminLoginForm" onsubmit="submitAdminLogin(event)" class="space-y-4">
-        <div class="space-y-1">
-          <label class="text-[10px] text-zinc-400 uppercase font-bold">Admin Handle or Email</label>
-          <input type="text" id="adminLoginHandle" required placeholder="admin or admin@campus.edu" autocomplete="username" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500">
+      <div id="adminLoginAlert" class="p-3.5 bg-red-500/10 border border-red-500/25 text-[#ff453a] text-xs rounded-2xl text-left hidden"></div>
+
+      <form id="adminLoginForm" onsubmit="submitAdminLogin(event)" class="space-y-4 text-left">
+        <div class="space-y-1.5">
+          <label class="text-[11px] font-medium text-[#86868b] tracking-wide">Administrator Handle or Email</label>
+          <input type="text" id="adminLoginHandle" required placeholder="admin or admin@campus.edu" autocomplete="username" class="apple-input w-full rounded-2xl px-4 py-3 text-sm placeholder-[#636366]">
         </div>
 
-        <div class="space-y-1">
-          <label class="text-[10px] text-zinc-400 uppercase font-bold">Password</label>
-          <input type="password" id="adminLoginPassword" required placeholder="••••••••••••" autocomplete="current-password" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500">
+        <div class="space-y-1.5">
+          <label class="text-[11px] font-medium text-[#86868b] tracking-wide">Password</label>
+          <input type="password" id="adminLoginPassword" required placeholder="••••••••••••" autocomplete="current-password" class="apple-input w-full rounded-2xl px-4 py-3 text-sm placeholder-[#636366]">
         </div>
 
-        <div id="adminLoginTotpContainer" class="space-y-1 hidden">
-          <label class="text-[10px] text-amber-400 uppercase font-bold flex items-center justify-between">
-            <span>Two-Factor Authentication Code</span>
-            <span class="text-[9px] text-zinc-500">6 DIGITS</span>
-          </label>
-          <input type="text" id="adminLoginTotpCode" maxlength="6" pattern="[0-9]{6}" placeholder="123456" class="w-full bg-zinc-900 border border-amber-500/50 rounded-xl px-3 py-2 text-center text-base tracking-widest text-amber-400 font-mono focus:outline-none focus:border-amber-400">
+        <div id="adminLoginTotpContainer" class="space-y-3 pt-2 hidden">
+          <div class="text-[12px] text-[#86868b] text-center font-normal">Enter the 6-digit verification code from your Authenticator app.</div>
+          <div class="flex items-center justify-center gap-2" id="loginCodeDigitGroup">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="adminLoginTotpCode" data-idx="0">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="adminLoginTotpCode" data-idx="1">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="adminLoginTotpCode" data-idx="2">
+            <span class="text-white/20 text-base font-bold select-none">•</span>
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="adminLoginTotpCode" data-idx="3">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="adminLoginTotpCode" data-idx="4">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="adminLoginTotpCode" data-idx="5">
+          </div>
+          <input type="hidden" id="adminLoginTotpCode">
         </div>
 
-        <button type="submit" id="btnAdminLoginSubmit" class="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl text-xs transition cursor-pointer">
-          Sign In to Control Panel
-        </button>
+        <div class="pt-2">
+          <button type="submit" id="btnAdminLoginSubmit" class="apple-btn-primary w-full py-3 rounded-full text-sm font-medium tracking-normal shadow-sm cursor-pointer">
+            Sign In
+          </button>
+        </div>
       </form>
 
-      <div class="pt-2 text-center">
-        <a href="/" class="text-[11px] text-zinc-500 hover:text-zinc-300 transition">← Return to Kandid User Application</a>
+      <div class="pt-1">
+        <a href="/" class="text-xs text-[#2997ff] hover:underline font-normal inline-flex items-center gap-1 transition">
+          ← Return to Kandid User Application
+        </a>
       </div>
     </div>
   </div>
 
-  <!-- 2FA Setup & Security Modal -->
-  <div id="admin2FaModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-5 shadow-2xl font-mono-tag max-h-[90vh] overflow-y-auto">
-      <div class="flex justify-between items-start border-b border-zinc-800 pb-3">
-        <div>
-          <h2 class="text-base font-bold text-white flex items-center gap-2"><span>🔐</span> Two-Factor Authentication (2FA)</h2>
-          <p class="text-xs text-zinc-400">RFC 6238 Standard Time-based One-Time Passwords</p>
+  <!-- 2FA Setup & Security Modal (Apple Security Flow) -->
+  <div id="admin2FaModal" class="fixed inset-0 bg-black/75 backdrop-blur-3xl z-50 flex items-center justify-center p-4 hidden">
+    <div class="apple-glass rounded-[28px] max-w-lg w-full p-8 space-y-6 shadow-2xl relative text-left max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center gap-3.5 border-b border-white/10 pb-4">
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-b from-[#0071e3]/20 to-white/5 border border-[#0071e3]/30 flex items-center justify-center text-[#2997ff] shadow-inner shrink-0">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
         </div>
-        <button id="btn2FaCloseTop" onclick="close2FaModal()" class="text-zinc-500 hover:text-white text-lg font-bold cursor-pointer">✕</button>
+        <div>
+          <h2 class="text-base font-semibold text-white tracking-tight">Two-Factor Authentication</h2>
+          <p class="text-xs text-[#86868b]">Apple ID & Enterprise Security Standards</p>
+        </div>
+        <button id="btn2FaCloseTop" onclick="close2FaModal()" class="ml-auto w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white flex items-center justify-center text-sm transition cursor-pointer">✕</button>
       </div>
 
-      <div id="admin2FaMandatoryBanner" class="p-3 bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs rounded-xl hidden flex items-center gap-2.5">
-        <span class="text-xl">⚠️</span>
+      <div id="admin2FaMandatoryBanner" class="p-4 bg-[#ff9f0a]/10 border border-[#ff9f0a]/25 text-[#ffd60a] rounded-2xl text-xs hidden flex items-start gap-3">
+        <span class="text-lg leading-none mt-0.5">⚠️</span>
         <div>
-          <p class="font-bold">Mandatory Security Requirement</p>
-          <p class="text-[11px] text-amber-400/90">Enterprise policy requires Two-Factor Authentication (2FA) on all administrator accounts before control surfaces can be accessed.</p>
+          <p class="font-semibold text-sm text-[#ffd60a]">Mandatory Security Requirement</p>
+          <p class="text-[12px] text-[#ffd60a]/90 mt-0.5 leading-relaxed">Enterprise policy requires Two-Factor Authentication (2FA) on all administrator accounts before control surfaces can be accessed.</p>
         </div>
       </div>
 
-      <div id="admin2FaAlert" class="p-3 bg-zinc-900 border border-zinc-800 text-xs rounded-xl hidden"></div>
+      <div id="admin2FaAlert" class="p-3.5 bg-red-500/10 border border-red-500/25 text-[#ff453a] text-xs rounded-2xl hidden"></div>
 
       <div id="admin2FaActiveView" class="space-y-4 hidden">
-        <div class="p-4 bg-emerald-950/30 border border-emerald-500/40 rounded-xl flex items-center gap-3 text-emerald-400">
-          <div class="text-2xl">🛡️</div>
+        <div class="p-5 bg-[#30d158]/10 border border-[#30d158]/25 rounded-2xl flex items-center gap-4 text-[#30d158]">
+          <div class="w-12 h-12 rounded-full bg-[#30d158]/20 flex items-center justify-center text-2xl font-bold shrink-0">✓</div>
           <div class="text-xs">
-            <p class="font-bold">2FA Protection is Active</p>
-            <p class="text-[11px] text-emerald-500/80">Your administrator account requires a 6-digit TOTP verification code for login and sensitive mutations.</p>
+            <p class="font-semibold text-sm text-white">2FA Protection is Active</p>
+            <p class="text-[#86868b] mt-0.5 leading-relaxed">Your administrator account requires a 6-digit TOTP verification code for login and sensitive mutations.</p>
           </div>
         </div>
-        <div class="text-xs text-zinc-400 space-y-2">
-          <p>Authenticator app (Google Authenticator, Authy, Apple Passwords, 1Password) is paired.</p>
-        </div>
+        <p class="text-xs text-[#86868b] leading-relaxed">
+          Authenticator app (Google Authenticator, Authy, Apple Passwords, 1Password) is securely linked.
+        </p>
       </div>
 
-      <div id="admin2FaSetupView" class="space-y-4 hidden">
-        <p class="text-xs text-zinc-300">
-          Enhance administrator security by linking an authenticator app (Google Authenticator, Authy, Microsoft Authenticator, Apple Passwords).
+      <div id="admin2FaSetupView" class="space-y-5 hidden">
+        <p class="text-xs text-[#d1d1d6] leading-relaxed">
+          Link an authenticator app (Apple Passwords, Google Authenticator, Microsoft Authenticator, Authy) to safeguard administrative access.
         </p>
 
-        <div class="p-3 bg-zinc-900 border border-zinc-800 rounded-xl space-y-2">
-          <div class="text-[10px] text-zinc-400 uppercase font-bold">1. Secret Key</div>
+        <div class="p-4 bg-white/[0.04] border border-white/10 rounded-2xl space-y-2.5">
+          <div class="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider">1. Secret Key</div>
           <div class="flex items-center gap-2">
-            <code id="admin2FaSecretDisplay" class="flex-1 bg-zinc-950 px-3 py-2 rounded-lg text-amber-400 text-xs tracking-wider select-all font-mono">Loading...</code>
-            <button onclick="copy2FaSecret()" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs cursor-pointer">Copy</button>
+            <code id="admin2FaSecretDisplay" class="flex-1 bg-black/40 border border-white/5 px-3.5 py-2.5 rounded-xl text-[#ff9f0a] text-xs font-mono tracking-wider select-all">Loading...</code>
+            <button onclick="copy2FaSecret()" class="px-4 py-2.5 apple-btn-secondary rounded-xl text-xs font-medium cursor-pointer">Copy</button>
           </div>
-          <div class="text-[10px] text-zinc-500">
-            Manual entry account type: <strong>Time-based (TOTP)</strong>, 6 digits.
+          <div class="text-[11px] text-[#86868b]">
+            Account Type: <strong>Time-based (TOTP)</strong>, 6 digits.
           </div>
         </div>
 
-        <div class="p-3 bg-zinc-900 border border-zinc-800 rounded-xl space-y-2">
-          <div class="text-[10px] text-zinc-400 uppercase font-bold">2. Quick Configuration Link</div>
-          <a id="admin2FaOtpauthLink" href="#" target="_blank" class="inline-block text-xs text-amber-400 hover:underline break-all">Open Authenticator App</a>
+        <div class="p-4 bg-white/[0.04] border border-white/10 rounded-2xl space-y-2">
+          <div class="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider">2. Quick Configuration Link</div>
+          <a id="admin2FaOtpauthLink" href="#" target="_blank" class="inline-block text-xs text-[#2997ff] hover:underline break-all font-mono">Open in Authenticator App</a>
         </div>
 
-        <div class="space-y-2">
-          <label class="text-[10px] text-zinc-400 uppercase font-bold">3. Enter 6-digit confirmation code</label>
-          <div class="flex gap-2">
-            <input type="text" id="admin2FaConfirmCode" maxlength="6" pattern="[0-9]{6}" placeholder="123456" class="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-center text-sm tracking-widest text-white font-mono focus:outline-none focus:border-amber-500">
-            <button onclick="confirm2FaEnable()" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl text-xs transition cursor-pointer">
-              Verify & Enable
-            </button>
+        <div class="space-y-3 pt-1">
+          <label class="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider block text-center">3. Enter 6-digit confirmation code</label>
+          <div class="flex items-center justify-center gap-2" id="setupCodeDigitGroup">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="admin2FaConfirmCode" data-idx="0">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="admin2FaConfirmCode" data-idx="1">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="admin2FaConfirmCode" data-idx="2">
+            <span class="text-white/20 text-base font-bold select-none">•</span>
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="admin2FaConfirmCode" data-idx="3">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="admin2FaConfirmCode" data-idx="4">
+            <input type="text" maxlength="1" inputmode="numeric" class="apple-code-digit" data-target="admin2FaConfirmCode" data-idx="5">
           </div>
+          <input type="hidden" id="admin2FaConfirmCode">
+          <button onclick="confirm2FaEnable()" class="apple-btn-primary w-full py-3 rounded-full text-sm font-medium tracking-normal mt-2 cursor-pointer">
+            Verify & Enable
+          </button>
         </div>
       </div>
 
-      <div class="flex justify-end gap-2 pt-2 border-t border-zinc-800">
-        <button id="btn2FaMandatoryLogout" onclick="logoutAdmin()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer hidden">
+      <div class="flex justify-end gap-3 pt-3 border-t border-white/10">
+        <button id="btn2FaMandatoryLogout" onclick="logoutAdmin()" class="px-5 py-2.5 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer hidden">
           Sign Out
         </button>
-        <button id="btn2FaCloseBottom" onclick="close2FaModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer">
+        <button id="btn2FaCloseBottom" onclick="close2FaModal()" class="px-5 py-2.5 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer">
           Close
         </button>
       </div>
     </div>
   </div>
 
-  <!-- Sudo Step-Up Authentication Modal -->
-  <div id="adminSudoModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-zinc-950 border border-amber-500/40 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl font-mono-tag">
-      <div class="flex items-center gap-3 border-b border-zinc-800 pb-3">
-        <div class="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-xl text-amber-400">🛡️</div>
-        <div>
-          <h2 class="text-sm font-bold text-white">Sudo Elevation Required</h2>
-          <p class="text-[11px] text-zinc-400">Step-up security check for destructive operation</p>
-        </div>
+  <!-- Sudo Step-Up Authentication Modal (macOS System Authorization Style) -->
+  <div id="adminSudoModal" class="fixed inset-0 bg-black/75 backdrop-blur-3xl z-50 flex items-center justify-center p-4 hidden">
+    <div class="apple-glass rounded-[28px] max-w-[420px] w-full p-8 space-y-6 shadow-2xl relative text-center">
+      <!-- Touch ID / Shield Vector -->
+      <div class="w-16 h-16 rounded-full bg-gradient-to-b from-[#0071e3]/20 to-white/5 border border-[#0071e3]/30 flex items-center justify-center mx-auto text-[#2997ff] shadow-inner">
+        <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"/>
+        </svg>
       </div>
 
-      <p class="text-xs text-zinc-300">
-        This action modifies sensitive system state. Enter your 2FA verification code or password to grant administrative sudo mode for 15 minutes.
-      </p>
+      <div class="space-y-1">
+        <h2 class="text-base font-semibold text-white tracking-tight">Privilege Elevation Required</h2>
+        <p class="text-xs text-[#86868b] leading-relaxed">Enter your 2FA verification code or password to authorize this action for 15 minutes.</p>
+      </div>
 
-      <div id="adminSudoAlert" class="p-2.5 bg-red-950/60 border border-red-500/40 text-red-400 text-xs rounded-xl hidden"></div>
+      <div id="adminSudoAlert" class="p-3.5 bg-red-500/10 border border-red-500/25 text-[#ff453a] text-xs rounded-2xl text-left hidden"></div>
 
-      <form id="adminSudoForm" onsubmit="submitAdminSudo(event)" class="space-y-4">
-        <div class="space-y-1">
-          <label class="text-[10px] text-zinc-400 uppercase font-bold">2FA TOTP Code or Password</label>
-          <input type="text" id="adminSudoCodeInput" placeholder="6-digit 2FA code or admin password" required class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500">
+      <form id="adminSudoForm" onsubmit="submitAdminSudo(event)" class="space-y-4 text-left">
+        <div class="space-y-1.5">
+          <label class="text-[11px] font-medium text-[#86868b] tracking-wide">2FA Verification Code or Password</label>
+          <input type="text" id="adminSudoCodeInput" placeholder="6-digit code or admin password" required class="apple-input w-full rounded-2xl px-4 py-3 text-sm text-center tracking-wider placeholder-[#636366]">
         </div>
 
-        <div class="flex justify-end gap-2 pt-2">
-          <button type="button" onclick="cancelAdminSudo()" class="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer">
+        <div class="flex justify-end gap-3 pt-2">
+          <button type="button" onclick="cancelAdminSudo()" class="flex-1 py-2.5 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer">
             Cancel
           </button>
-          <button type="submit" id="btnAdminSudoConfirm" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl text-xs transition cursor-pointer">
-            Confirm & Proceed
+          <button type="submit" id="btnAdminSudoConfirm" class="flex-1 py-2.5 apple-btn-primary rounded-full text-xs font-medium cursor-pointer">
+            Authorize
           </button>
         </div>
       </form>
