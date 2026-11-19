@@ -8,18 +8,47 @@
   <link rel="stylesheet" href="/tailwind.compiled.css?v=4.3.3">
   <link rel="stylesheet" href="/style.css?v=3.1.6">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Plus Jakarta Sans', system-ui, sans-serif; background: #000000; color: #f5f5f7; }
-    .mono { font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace; }
-    .admin-nav-item.active { background: rgba(255, 255, 255, 0.08); color: #ffffff; border-color: rgba(255, 255, 255, 0.2); }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
+      background: #000000;
+      color: #f5f5f7;
+      letter-spacing: -0.012em;
+      -webkit-font-smoothing: antialiased;
+      background-image: 
+        radial-gradient(at 10% 10%, rgba(0, 113, 227, 0.08) 0px, transparent 45%),
+        radial-gradient(at 90% 20%, rgba(191, 90, 242, 0.06) 0px, transparent 40%),
+        radial-gradient(at 50% 90%, rgba(48, 209, 88, 0.05) 0px, transparent 45%);
+      background-attachment: fixed;
+    }
+    .mono { font-family: 'SF Mono', Menlo, Consolas, monospace; }
 
-    /* Apple Glassmorphism & Micro-Interactions */
+    /* Custom Apple Scrollbar */
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
+
+    /* Apple Glassmorphism */
     .apple-glass {
-      background: rgba(28, 28, 30, 0.88);
+      background: rgba(28, 28, 30, 0.82);
       backdrop-filter: blur(40px) saturate(190%);
       -webkit-backdrop-filter: blur(40px) saturate(190%);
       border: 1px solid rgba(255, 255, 255, 0.12);
       box-shadow: 0 30px 80px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.15);
     }
+    .apple-card {
+      background: rgba(28, 28, 30, 0.55);
+      backdrop-filter: blur(25px) saturate(180%);
+      -webkit-backdrop-filter: blur(25px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .apple-card:hover {
+      border-color: rgba(255, 255, 255, 0.16);
+    }
+
+    /* Apple Form Controls */
     .apple-input {
       background: rgba(44, 44, 46, 0.75);
       border: 1px solid rgba(255, 255, 255, 0.1);
@@ -28,10 +57,12 @@
     }
     .apple-input:focus {
       border-color: #0071e3;
-      box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.3);
+      box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.32);
       outline: none;
       background: rgba(44, 44, 46, 0.95);
     }
+
+    /* Apple Button Variants */
     .apple-btn-primary {
       background: #0071e3;
       color: #ffffff;
@@ -48,13 +79,54 @@
     }
     .apple-btn-secondary {
       background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
       color: #e5e5ea;
       transition: all 0.2s ease;
     }
     .apple-btn-secondary:hover {
       background: rgba(255, 255, 255, 0.14);
       color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.18);
     }
+    .apple-btn-danger {
+      background: rgba(255, 69, 58, 0.15);
+      border: 1px solid rgba(255, 69, 58, 0.3);
+      color: #ff453a;
+      transition: all 0.2s ease;
+    }
+    .apple-btn-danger:hover {
+      background: rgba(255, 69, 58, 0.25);
+      border-color: rgba(255, 69, 58, 0.45);
+    }
+    .apple-btn-success {
+      background: rgba(48, 209, 88, 0.15);
+      border: 1px solid rgba(48, 209, 88, 0.3);
+      color: #30d158;
+      transition: all 0.2s ease;
+    }
+    .apple-btn-success:hover {
+      background: rgba(48, 209, 88, 0.25);
+      border-color: rgba(48, 209, 88, 0.45);
+    }
+
+    /* Apple Navigation Capsule */
+    .admin-nav-item {
+      color: #a1a1a6;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .admin-nav-item:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: #ffffff;
+    }
+    .admin-nav-item.active {
+      background: rgba(255, 255, 255, 0.12) !important;
+      color: #ffffff !important;
+      border-color: rgba(255, 255, 255, 0.15) !important;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      font-weight: 550;
+    }
+
+    /* 6-box TOTP passcode */
     .apple-code-digit {
       width: 44px;
       height: 52px;
@@ -74,6 +146,7 @@
       outline: none;
       background: rgba(58, 58, 60, 0.95);
     }
+
     @keyframes apple-shake {
       0%, 100% { transform: translateX(0); }
       20%, 60% { transform: translateX(-6px); }
@@ -84,172 +157,219 @@
     }
   </style>
 </head>
-<body class="min-h-screen flex flex-col bg-[#09090b] text-zinc-100">
+<body class="min-h-screen flex flex-col bg-[#000000] text-[#f5f5f7]">
 
-  <!-- Top Navigation Header -->
-  <header class="h-14 bg-zinc-950 border-b border-zinc-800/80 px-6 flex items-center justify-between sticky top-0 z-50">
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center font-bold text-amber-500 font-mono-tag">K</div>
-      <span class="font-extrabold tracking-wider text-sm font-mono-tag text-white">KANDID ADMIN</span>
-      <span id="envBadge" class="text-[10px] font-mono-tag font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40 uppercase">PRODUCTION</span>
+  <!-- Top Navigation Header (macOS Command Bar Style) -->
+  <header class="h-16 apple-glass border-b border-white/10 px-6 flex items-center justify-between sticky top-0 z-40">
+    <div class="flex items-center gap-3.5">
+      <div class="w-9 h-9 rounded-2xl bg-gradient-to-b from-white/20 to-white/5 border border-white/20 shadow-inner flex items-center justify-center font-bold text-white text-base">K</div>
+      <div class="flex items-center gap-2.5">
+        <span class="font-semibold tracking-tight text-sm text-white">Kandid Admin</span>
+        <span id="envBadge" class="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30 flex items-center gap-1.5 shadow-sm">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#30d158] animate-pulse"></span>PRODUCTION
+        </span>
+      </div>
     </div>
 
-    <div class="flex items-center gap-3 text-xs font-mono-tag">
-      <div id="adminIdentityBadge" class="text-zinc-400">
+    <div class="flex items-center gap-3 text-xs">
+      <div id="adminIdentityBadge" class="text-[#86868b] text-xs font-medium">
         Loading admin identity...
       </div>
-      <button id="btnAdmin2FaHeader" onclick="open2FaModal()" class="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white rounded-lg transition cursor-pointer flex items-center gap-1.5 hidden">
-        <span>🔐 2FA</span>
-        <span id="badge2FaHeaderStatus" class="w-2 h-2 rounded-full bg-zinc-600"></span>
+      <button id="btnAdmin2FaHeader" onclick="open2FaModal()" class="px-3.5 py-1.5 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer flex items-center gap-2 hidden">
+        <span>🔐 2FA Protected</span>
+        <span id="badge2FaHeaderStatus" class="w-2 h-2 rounded-full bg-[#30d158] shadow-sm"></span>
       </button>
-      <button onclick="logoutAdmin()" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white rounded-lg transition cursor-pointer">
+      <button onclick="logoutAdmin()" class="px-3.5 py-1.5 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer">
         Sign Out
       </button>
     </div>
   </header>
 
   <!-- Main Body Layout -->
-  <div class="flex-1 flex">
+  <div class="flex-1 flex overflow-hidden">
 
-    <!-- Sidebar Navigation -->
-    <aside class="w-64 bg-zinc-950/70 border-r border-zinc-800/80 p-4 flex flex-col justify-between shrink-0">
-      <nav class="space-y-1 text-xs font-mono-tag">
-        <div class="px-3 py-2 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Control Surface</div>
+    <!-- Sidebar Navigation (macOS Translucent Sidebar) -->
+    <aside class="w-64 bg-black/40 backdrop-blur-2xl border-r border-white/10 p-4 flex flex-col justify-between shrink-0">
+      <nav class="space-y-1.5 text-xs">
+        <div class="px-3.5 py-2 text-[10px] text-[#86868b] uppercase tracking-wider font-semibold">Control Surface</div>
 
-        <button onclick="switchAdminTab('overview')" id="tab-overview" class="admin-nav-item active w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
-          <span>📊 Overview</span>
+        <button onclick="switchAdminTab('overview')" id="tab-overview" class="admin-nav-item active w-full text-left px-3.5 py-2.5 rounded-xl border border-transparent flex items-center justify-between cursor-pointer">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-[#2997ff]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+            <span>Overview</span>
+          </div>
         </button>
 
-        <button onclick="switchAdminTab('users')" id="tab-users" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
-          <span>👥 Users</span>
-          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase C</span>
+        <button onclick="switchAdminTab('users')" id="tab-users" class="admin-nav-item w-full text-left px-3.5 py-2.5 rounded-xl border border-transparent flex items-center justify-between cursor-pointer">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-[#30d158]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <span>Users</span>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-[#86868b] font-medium">Phase C</span>
         </button>
 
-        <button onclick="switchAdminTab('content')" id="tab-content" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
-          <span>📸 Content & Moments</span>
-          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase D</span>
+        <button onclick="switchAdminTab('content')" id="tab-content" class="admin-nav-item w-full text-left px-3.5 py-2.5 rounded-xl border border-transparent flex items-center justify-between cursor-pointer">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-[#ff9f0a]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span>Content & Moments</span>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-[#86868b] font-medium">Phase D</span>
         </button>
 
-        <button onclick="switchAdminTab('communities')" id="tab-communities" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
-          <span>🏛️ Communities</span>
-          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase E</span>
+        <button onclick="switchAdminTab('communities')" id="tab-communities" class="admin-nav-item w-full text-left px-3.5 py-2.5 rounded-xl border border-transparent flex items-center justify-between cursor-pointer">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-[#bf5af2]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+            <span>Communities</span>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-[#86868b] font-medium">Phase E</span>
         </button>
 
-        <button onclick="switchAdminTab('clusters')" id="tab-clusters" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
-          <span>🌐 Moment Clusters</span>
-          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase D</span>
+        <button onclick="switchAdminTab('clusters')" id="tab-clusters" class="admin-nav-item w-full text-left px-3.5 py-2.5 rounded-xl border border-transparent flex items-center justify-between cursor-pointer">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-[#64d2ff]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"/><path stroke-linecap="round" stroke-linejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"/></svg>
+            <span>Moment Clusters</span>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-[#86868b] font-medium">Phase D</span>
         </button>
 
-        <button onclick="switchAdminTab('reports')" id="tab-reports" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
-          <span>🚨 Moderation Queue</span>
-          <span id="pendingReportsBadge" class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">0</span>
+        <button onclick="switchAdminTab('reports')" id="tab-reports" class="admin-nav-item w-full text-left px-3.5 py-2.5 rounded-xl border border-transparent flex items-center justify-between cursor-pointer">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-[#ff453a]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <span>Moderation Queue</span>
+          </div>
+          <span id="pendingReportsBadge" class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#ff9f0a]/15 text-[#ffd60a] border border-[#ff9f0a]/30">0</span>
         </button>
 
-        <div class="pt-4 px-3 py-2 text-[10px] text-zinc-500 uppercase tracking-widest font-bold">System Integrity</div>
+        <div class="pt-4 px-3.5 py-2 text-[10px] text-[#86868b] uppercase tracking-wider font-semibold">System Integrity</div>
 
-        <button onclick="switchAdminTab('health')" id="tab-health" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
-          <span>🩺 System Health</span>
+        <button onclick="switchAdminTab('health')" id="tab-health" class="admin-nav-item w-full text-left px-3.5 py-2.5 rounded-xl border border-transparent flex items-center justify-between cursor-pointer">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-[#30d158]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            <span>System Health</span>
+          </div>
         </button>
 
-        <button onclick="switchAdminTab('audit')" id="tab-audit" class="admin-nav-item w-full text-left px-3 py-2.5 rounded-xl border border-transparent hover:bg-zinc-900 transition flex items-center justify-between cursor-pointer">
-          <span>📜 Audit Trail</span>
-          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Phase G</span>
+        <button onclick="switchAdminTab('audit')" id="tab-audit" class="admin-nav-item w-full text-left px-3.5 py-2.5 rounded-xl border border-transparent flex items-center justify-between cursor-pointer">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 text-[#a1a1a6]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+            <span>Audit Trail</span>
+          </div>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-[#86868b] font-medium">Phase G</span>
         </button>
       </nav>
 
-      <div class="p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl text-[10px] text-zinc-500 font-mono-tag space-y-1">
-        <p class="font-bold text-zinc-400">Platform Identity</p>
+      <div class="p-3.5 apple-card rounded-2xl text-[11px] text-[#86868b] space-y-1">
+        <p class="font-semibold text-white/90">Platform Identity</p>
         <p>Kindid Production Runtime</p>
-        <p>Server Engine: Python 3.14</p>
+        <p class="text-[10px] text-[#86868b]">Engine: Python 3.14 (macOS Sequoia UI)</p>
       </div>
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-1 p-6 space-y-6 overflow-y-auto">
+    <main class="flex-1 p-8 space-y-8 overflow-y-auto">
 
       <!-- View: Overview -->
       <section id="view-overview" class="admin-view space-y-6">
         <div class="flex justify-between items-center">
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">System Overview</h1>
-            <p class="text-xs text-zinc-400">Real-time platform activity and system metrics</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">System Overview</h1>
+            <p class="text-xs text-[#86868b] mt-0.5">Real-time platform activity and system metrics</p>
           </div>
-          <button onclick="loadAdminOverview()" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
-            🔄 Refresh Metrics
+          <button onclick="loadAdminOverview()" class="px-4 py-2 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer flex items-center gap-2">
+            <span>🔄</span>
+            <span>Refresh Metrics</span>
           </button>
         </div>
 
-        <!-- Metrics Grid -->
+        <!-- Metrics Bento Grid (Apple Widget Aesthetic) -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-2 shadow-lg">
-            <p class="text-[10px] text-zinc-400 font-mono-tag uppercase tracking-wider">Total Registered Users</p>
-            <h2 id="metricTotalUsers" class="text-2xl font-extrabold text-white font-mono-tag">--</h2>
-            <p id="metricActiveUsers" class="text-[11px] text-amber-400 font-mono-tag">-- active nodes</p>
+          <div class="p-5 apple-card rounded-[22px] border border-white/10 space-y-2 relative overflow-hidden">
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] font-medium text-[#86868b] uppercase tracking-wider">Total Registered Users</p>
+              <div class="w-7 h-7 rounded-full bg-[#0071e3]/15 flex items-center justify-center text-[#2997ff] text-xs">👥</div>
+            </div>
+            <h2 id="metricTotalUsers" class="text-3xl font-semibold tracking-tight text-white">--</h2>
+            <p id="metricActiveUsers" class="text-[12px] text-[#30d158] font-medium flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#30d158]"></span>-- active nodes
+            </p>
           </div>
 
-          <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-2 shadow-lg">
-            <p class="text-[10px] text-zinc-400 font-mono-tag uppercase tracking-wider">Authentic Moments</p>
-            <h2 id="metricTotalMoments" class="text-2xl font-extrabold text-white font-mono-tag">--</h2>
-            <p id="metricActiveClusters" class="text-[11px] text-zinc-400 font-mono-tag">-- moment clusters</p>
+          <div class="p-5 apple-card rounded-[22px] border border-white/10 space-y-2 relative overflow-hidden">
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] font-medium text-[#86868b] uppercase tracking-wider">Authentic Moments</p>
+              <div class="w-7 h-7 rounded-full bg-[#ff9f0a]/15 flex items-center justify-center text-[#ffd60a] text-xs">📸</div>
+            </div>
+            <h2 id="metricTotalMoments" class="text-3xl font-semibold tracking-tight text-white">--</h2>
+            <p id="metricActiveClusters" class="text-[12px] text-[#86868b] font-medium">-- moment clusters</p>
           </div>
 
-          <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-2 shadow-lg">
-            <p class="text-[10px] text-zinc-400 font-mono-tag uppercase tracking-wider">Active Communities</p>
-            <h2 id="metricActiveCommunities" class="text-2xl font-extrabold text-white font-mono-tag">--</h2>
-            <p class="text-[11px] text-zinc-400 font-mono-tag">Public & Place spaces</p>
+          <div class="p-5 apple-card rounded-[22px] border border-white/10 space-y-2 relative overflow-hidden">
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] font-medium text-[#86868b] uppercase tracking-wider">Active Communities</p>
+              <div class="w-7 h-7 rounded-full bg-[#bf5af2]/15 flex items-center justify-center text-[#bf5af2] text-xs">🏛️</div>
+            </div>
+            <h2 id="metricActiveCommunities" class="text-3xl font-semibold tracking-tight text-white">--</h2>
+            <p class="text-[12px] text-[#86868b] font-medium">Public & Place spaces</p>
           </div>
 
-          <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-2 shadow-lg">
-            <p class="text-[10px] text-zinc-400 font-mono-tag uppercase tracking-wider">Moderation Queue</p>
-            <h2 id="metricPendingReports" class="text-2xl font-extrabold text-amber-400 font-mono-tag">--</h2>
-            <p class="text-[11px] text-zinc-400 font-mono-tag">Pending reports requiring review</p>
+          <div class="p-5 apple-card rounded-[22px] border border-white/10 space-y-2 relative overflow-hidden">
+            <div class="flex items-center justify-between">
+              <p class="text-[11px] font-medium text-[#86868b] uppercase tracking-wider">Moderation Queue</p>
+              <div class="w-7 h-7 rounded-full bg-[#ff453a]/15 flex items-center justify-center text-[#ff453a] text-xs">🚨</div>
+            </div>
+            <h2 id="metricPendingReports" class="text-3xl font-semibold tracking-tight text-[#ff453a]">--</h2>
+            <p class="text-[12px] text-[#86868b] font-medium">Pending reports requiring review</p>
           </div>
         </div>
 
-        <!-- System Status Banner -->
-        <div class="p-4 bg-zinc-950 border border-zinc-800/80 rounded-2xl space-y-3">
+        <!-- System Status Banner (Apple System Card) -->
+        <div class="p-6 apple-card rounded-[22px] border border-white/10 space-y-4">
           <div class="flex items-center justify-between">
-            <h3 class="text-xs font-bold font-mono-tag text-white uppercase tracking-wider">Platform Health Status</h3>
-            <span id="healthStatusBadge" class="text-[10px] font-mono-tag font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">OPERATIONAL</span>
+            <div class="flex items-center gap-2.5">
+              <div class="w-2.5 h-2.5 rounded-full bg-[#30d158] animate-pulse"></div>
+              <h3 class="text-sm font-semibold text-white tracking-tight">Platform Health & Telemetry</h3>
+            </div>
+            <span id="healthStatusBadge" class="text-[11px] font-medium px-3 py-1 rounded-full bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30">OPERATIONAL</span>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs font-mono-tag">
-            <div class="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800/80 space-y-1">
-              <span class="text-zinc-500 text-[10px]">Database Connection</span>
-              <p id="healthDbStatus" class="font-bold text-white">Checking...</p>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+            <div class="p-4 bg-white/[0.03] rounded-2xl border border-white/10 space-y-1">
+              <span class="text-[#86868b] text-[11px] font-medium">Database Connection</span>
+              <p id="healthDbStatus" class="font-semibold text-white text-sm">Checking...</p>
             </div>
-            <div class="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800/80 space-y-1">
-              <span class="text-zinc-500 text-[10px]">Database Engine</span>
-              <p id="healthDbEngine" class="font-bold text-white">SQLite / PostgreSQL</p>
+            <div class="p-4 bg-white/[0.03] rounded-2xl border border-white/10 space-y-1">
+              <span class="text-[#86868b] text-[11px] font-medium">Database Engine</span>
+              <p id="healthDbEngine" class="font-semibold text-white text-sm">SQLite / PostgreSQL</p>
             </div>
-            <div class="p-3 bg-zinc-900/60 rounded-xl border border-zinc-800/80 space-y-1">
-              <span class="text-zinc-500 text-[10px]">Active User Sessions</span>
-              <p id="healthActiveSessions" class="font-bold text-white">-- sessions</p>
+            <div class="p-4 bg-white/[0.03] rounded-2xl border border-white/10 space-y-1">
+              <span class="text-[#86868b] text-[11px] font-medium">Active User Sessions</span>
+              <p id="healthActiveSessions" class="font-semibold text-white text-sm">-- sessions</p>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- View: Users (Phase C Implementation) -->
-      <section id="view-users" class="admin-view space-y-4 hidden">
+      <!-- View: Users (Apple Pro Directory) -->
+      <section id="view-users" class="admin-view space-y-6 hidden">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">User Management</h1>
-            <p class="text-xs text-zinc-400">Account status, role governance, session revocation, and audit controls</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">User Directory & Governance</h1>
+            <p class="text-xs text-[#86868b] mt-0.5">Account state, role governance, session revocation, and security audit records</p>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="loadAdminUsers(1)" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
-              🔄 Refresh Users
+            <button onclick="loadAdminUsers(1)" class="px-4 py-2 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer flex items-center gap-2">
+              <span>🔄</span>
+              <span>Refresh Users</span>
             </button>
           </div>
         </div>
 
-        <!-- Filter & Search Bar -->
-        <div class="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col md:flex-row gap-3">
-          <div class="flex-1">
-            <input type="text" id="adminUserSearchInput" placeholder="Search handle, name, or email..." onkeydown="if(event.key==='Enter') loadAdminUsers(1)" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500/50">
+        <!-- Filter & Search Bar (Apple Search Bar) -->
+        <div class="p-4 apple-card rounded-2xl flex flex-col md:flex-row gap-3 border border-white/10">
+          <div class="flex-1 relative">
+            <input type="text" id="adminUserSearchInput" placeholder="Search by name, @handle, or email..." onkeydown="if(event.key==='Enter') loadAdminUsers(1)" class="apple-input w-full rounded-xl px-4 py-2.5 text-xs placeholder-[#86868b]">
           </div>
-          <div class="flex gap-2">
-            <select id="adminUserRoleFilter" onchange="loadAdminUsers(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+          <div class="flex gap-2.5">
+            <select id="adminUserRoleFilter" onchange="loadAdminUsers(1)" class="apple-input rounded-xl px-3 py-2 text-xs bg-[#2c2c2e]">
               <option value="">All Roles</option>
               <option value="student">student</option>
               <option value="creator">creator</option>
@@ -257,50 +377,50 @@
               <option value="founder">founder</option>
             </select>
 
-            <select id="adminUserStatusFilter" onchange="loadAdminUsers(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+            <select id="adminUserStatusFilter" onchange="loadAdminUsers(1)" class="apple-input rounded-xl px-3 py-2 text-xs bg-[#2c2c2e]">
               <option value="">All Statuses</option>
               <option value="active">active</option>
               <option value="suspended">suspended</option>
             </select>
 
-            <button onclick="loadAdminUsers(1)" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold font-mono-tag text-xs rounded-xl transition cursor-pointer">
+            <button onclick="loadAdminUsers(1)" class="px-5 py-2 apple-btn-primary rounded-xl text-xs font-medium cursor-pointer">
               Search
             </button>
           </div>
         </div>
 
-        <!-- Users Table -->
-        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
+        <!-- Users Table (Apple Glass Table) -->
+        <div class="apple-card rounded-[22px] border border-white/10 overflow-hidden shadow-2xl">
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs font-mono-tag">
-              <thead class="bg-zinc-900/60 border-b border-zinc-800 text-zinc-400 uppercase text-[10px] tracking-wider">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-white/[0.03] border-b border-white/10 text-[#86868b] uppercase text-[10px] tracking-wider font-semibold">
                 <tr>
-                  <th class="px-4 py-3">User</th>
-                  <th class="px-4 py-3">Email</th>
-                  <th class="px-4 py-3">Role</th>
-                  <th class="px-4 py-3">Status</th>
-                  <th class="px-4 py-3">Campus</th>
-                  <th class="px-4 py-3">Created</th>
-                  <th class="px-4 py-3">Last Active</th>
-                  <th class="px-4 py-3 text-right">Actions</th>
+                  <th class="px-5 py-3.5">User</th>
+                  <th class="px-5 py-3.5">Email</th>
+                  <th class="px-5 py-3.5">Role</th>
+                  <th class="px-5 py-3.5">Status</th>
+                  <th class="px-5 py-3.5">Campus</th>
+                  <th class="px-5 py-3.5">Created</th>
+                  <th class="px-5 py-3.5">Last Active</th>
+                  <th class="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody id="adminUsersTableBody" class="divide-y divide-zinc-800/60 text-zinc-300">
+              <tbody id="adminUsersTableBody" class="divide-y divide-white/[0.05] text-[#e5e5ea]">
                 <tr>
-                  <td colspan="8" class="px-4 py-8 text-center text-zinc-500">Loading user records...</td>
+                  <td colspan="8" class="px-5 py-10 text-center text-[#86868b]">Loading user records...</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <!-- Pagination Bar -->
-          <div class="p-4 bg-zinc-900/40 border-t border-zinc-800 flex items-center justify-between text-xs font-mono-tag">
-            <span id="adminUsersPageInfo" class="text-zinc-400">Page 1 of 1 (0 users)</span>
+          <div class="p-4 bg-white/[0.02] border-t border-white/10 flex items-center justify-between text-xs text-[#86868b]">
+            <span id="adminUsersPageInfo" class="font-medium">Page 1 of 1 (0 users)</span>
             <div class="flex gap-2">
-              <button id="adminUsersPrevBtn" onclick="changeAdminUsersPage(-1)" disabled class="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 disabled:opacity-40 cursor-pointer">
+              <button id="adminUsersPrevBtn" onclick="changeAdminUsersPage(-1)" disabled class="px-3.5 py-1.5 apple-btn-secondary rounded-full disabled:opacity-30 cursor-pointer text-xs font-medium">
                 Previous
               </button>
-              <button id="adminUsersNextBtn" onclick="changeAdminUsersPage(1)" disabled class="px-3 py-1 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 disabled:opacity-40 cursor-pointer">
+              <button id="adminUsersNextBtn" onclick="changeAdminUsersPage(1)" disabled class="px-3.5 py-1.5 apple-btn-secondary rounded-full disabled:opacity-30 cursor-pointer text-xs font-medium">
                 Next
               </button>
             </div>
@@ -308,52 +428,52 @@
         </div>
       </section>
 
-      <!-- User Action & Detail Modal -->
-      <div id="adminUserModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-lg w-full p-6 space-y-6 shadow-2xl font-mono-tag">
-          <div class="flex justify-between items-start border-b border-zinc-800 pb-3">
+      <!-- User Action & Detail Modal (macOS System Inspector) -->
+      <div id="adminUserModal" class="fixed inset-0 bg-black/75 backdrop-blur-3xl z-50 flex items-center justify-center p-4 hidden">
+        <div class="apple-glass rounded-[28px] max-w-lg w-full p-8 space-y-6 shadow-2xl relative text-left">
+          <div class="flex justify-between items-start border-b border-white/10 pb-4">
             <div>
-              <h2 id="modalUserName" class="text-lg font-bold text-white">User Details</h2>
-              <p id="modalUserHandle" class="text-xs text-amber-400">@handle</p>
+              <h2 id="modalUserName" class="text-base font-semibold text-white tracking-tight">User Details</h2>
+              <p id="modalUserHandle" class="text-xs text-[#2997ff] font-medium mt-0.5">@handle</p>
             </div>
-            <button onclick="closeAdminUserModal()" class="text-zinc-500 hover:text-white text-lg font-bold">✕</button>
+            <button onclick="closeAdminUserModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white flex items-center justify-center text-sm transition cursor-pointer">✕</button>
           </div>
 
-          <div id="modalUserDetailBody" class="space-y-4 text-xs text-zinc-300">
-            <p class="text-zinc-500">Loading user details...</p>
+          <div id="modalUserDetailBody" class="space-y-4 text-xs text-[#e5e5ea]">
+            <p class="text-[#86868b]">Loading user details...</p>
           </div>
 
           <!-- Audit Reason Input -->
-          <div class="space-y-1">
-            <label class="text-[10px] text-zinc-400 uppercase font-bold">Reason for Action (Audit Record)</label>
-            <input type="text" id="adminUserActionReason" placeholder="Enter reason for audit log..." class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500/50">
+          <div class="space-y-1.5">
+            <label class="text-[11px] font-medium text-[#86868b] tracking-wide">Reason for Action (Audit Record)</label>
+            <input type="text" id="adminUserActionReason" placeholder="Enter reason for audit log..." class="apple-input w-full rounded-xl px-3.5 py-2.5 text-xs">
           </div>
 
           <!-- Action Control Buttons -->
-          <div class="space-y-3 pt-2 border-t border-zinc-800">
-            <div class="flex gap-2">
-              <button id="btnModalToggleStatus" onclick="executeModalStatusChange()" class="flex-1 px-3 py-2 bg-red-950/60 border border-red-500/40 text-red-400 hover:bg-red-900/60 rounded-xl font-bold transition cursor-pointer">
+          <div class="space-y-3.5 pt-2 border-t border-white/10">
+            <div class="flex gap-3">
+              <button id="btnModalToggleStatus" onclick="executeModalStatusChange()" class="flex-1 py-2.5 apple-btn-danger rounded-full text-xs font-medium transition cursor-pointer">
                 Suspend Account
               </button>
-              <button onclick="executeModalRevokeSessions()" class="flex-1 px-3 py-2 bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white rounded-xl font-bold transition cursor-pointer">
+              <button onclick="executeModalRevokeSessions()" class="flex-1 py-2.5 apple-btn-secondary rounded-full text-xs font-medium transition cursor-pointer">
                 Revoke All Sessions
               </button>
             </div>
 
             <!-- Founder-Only Role Controls -->
-            <div class="p-3 bg-zinc-900/60 border border-zinc-800 rounded-xl space-y-2">
+            <div class="p-4 apple-card rounded-2xl border border-white/10 space-y-2.5">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] text-amber-400 font-bold uppercase">Role Change (Founder Only)</span>
-                <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">FOUNDER ACCESS</span>
+                <span class="text-[11px] font-semibold text-[#ffd60a] uppercase tracking-wider">Role Elevation (Founder Only)</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9f0a]/15 text-[#ffd60a] border border-[#ff9f0a]/30 font-medium">FOUNDER ACCESS</span>
               </div>
-              <div class="flex gap-2">
-                <select id="modalRoleSelect" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white">
+              <div class="flex gap-2.5">
+                <select id="modalRoleSelect" class="flex-1 apple-input rounded-xl px-3 py-2 text-xs bg-[#2c2c2e]">
                   <option value="student">student</option>
                   <option value="creator">creator</option>
                   <option value="admin">admin</option>
                   <option value="founder">founder</option>
                 </select>
-                <button onclick="executeModalRoleChange()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl transition cursor-pointer">
+                <button onclick="executeModalRoleChange()" class="px-5 py-2 apple-btn-primary rounded-full text-xs font-medium cursor-pointer">
                   Update Role
                 </button>
               </div>
@@ -361,126 +481,128 @@
           </div>
 
           <div class="flex justify-end pt-2">
-            <button onclick="closeAdminUserModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs">
+            <button onclick="closeAdminUserModal()" class="px-5 py-2 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer">
               Close
             </button>
           </div>
         </div>
       </div>
 
-      <!-- View: Content (Phase D Implementation) -->
-      <section id="view-content" class="admin-view space-y-4 hidden">
+      <!-- View: Content & Moments (Apple Media Moderation) -->
+      <section id="view-content" class="admin-view space-y-6 hidden">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Content & Moments</h1>
-            <p class="text-xs text-zinc-400">Soft moderation, feed visibility controls, and cluster graph preservation</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">Content & Moments</h1>
+            <p class="text-xs text-[#86868b] mt-0.5">Perspective moderation, feed visibility controls, and cluster graph preservation</p>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="loadAdminPosts(1)" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
-              🔄 Refresh Moments
+            <button onclick="loadAdminPosts(1)" class="px-4 py-2 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer flex items-center gap-2">
+              <span>🔄</span>
+              <span>Refresh Moments</span>
             </button>
           </div>
         </div>
 
         <!-- Filter & Search Bar -->
-        <div class="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col md:flex-row gap-3">
+        <div class="p-4 apple-card rounded-2xl flex flex-col md:flex-row gap-3 border border-white/10">
           <div class="flex-1">
-            <input type="text" id="adminPostSearchInput" placeholder="Search caption, @handle, author, campus..." onkeydown="if(event.key==='Enter') loadAdminPosts(1)" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500/50">
+            <input type="text" id="adminPostSearchInput" placeholder="Search caption, @handle, author, campus..." onkeydown="if(event.key==='Enter') loadAdminPosts(1)" class="apple-input w-full rounded-xl px-4 py-2.5 text-xs placeholder-[#86868b]">
           </div>
-          <div class="flex gap-2">
-            <select id="adminPostStatusFilter" onchange="loadAdminPosts(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+          <div class="flex gap-2.5">
+            <select id="adminPostStatusFilter" onchange="loadAdminPosts(1)" class="apple-input rounded-xl px-3 py-2 text-xs bg-[#2c2c2e]">
               <option value="all">All Statuses</option>
               <option value="active">Active</option>
               <option value="hidden">Hidden</option>
               <option value="removed">Removed</option>
             </select>
 
-            <select id="adminPostVisibilityFilter" onchange="loadAdminPosts(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+            <select id="adminPostVisibilityFilter" onchange="loadAdminPosts(1)" class="apple-input rounded-xl px-3 py-2 text-xs bg-[#2c2c2e]">
               <option value="all">All Visibility</option>
               <option value="public">Public</option>
               <option value="private">Private</option>
             </select>
 
-            <button onclick="loadAdminPosts(1)" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold font-mono-tag text-xs rounded-xl transition cursor-pointer">
+            <button onclick="loadAdminPosts(1)" class="px-5 py-2 apple-btn-primary rounded-xl text-xs font-medium cursor-pointer">
               Search
             </button>
           </div>
         </div>
 
         <!-- Moments Table -->
-        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
+        <div class="apple-card rounded-[22px] border border-white/10 overflow-hidden shadow-2xl">
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs font-mono-tag">
-              <thead class="bg-zinc-900/50 border-b border-zinc-800 text-zinc-400">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-white/[0.03] border-b border-white/10 text-[#86868b] uppercase text-[10px] tracking-wider font-semibold">
                 <tr>
-                  <th class="px-4 py-3 font-medium">Moment</th>
-                  <th class="px-4 py-3 font-medium">Author</th>
-                  <th class="px-4 py-3 font-medium">Caption</th>
-                  <th class="px-4 py-3 font-medium">Campus / Context</th>
-                  <th class="px-4 py-3 font-medium">Cluster</th>
-                  <th class="px-4 py-3 font-medium">Status</th>
-                  <th class="px-4 py-3 font-medium">Visibility</th>
-                  <th class="px-4 py-3 font-medium">Created</th>
-                  <th class="px-4 py-3 font-medium text-right">Actions</th>
+                  <th class="px-5 py-3.5">Moment</th>
+                  <th class="px-5 py-3.5">Author</th>
+                  <th class="px-5 py-3.5">Caption</th>
+                  <th class="px-5 py-3.5">Campus / Context</th>
+                  <th class="px-5 py-3.5">Cluster</th>
+                  <th class="px-5 py-3.5">Status</th>
+                  <th class="px-5 py-3.5">Visibility</th>
+                  <th class="px-5 py-3.5">Created</th>
+                  <th class="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody id="adminPostsTableBody" class="divide-y divide-zinc-850 text-zinc-300">
+              <tbody id="adminPostsTableBody" class="divide-y divide-white/[0.05] text-[#e5e5ea]">
                 <tr>
-                  <td colspan="9" class="px-4 py-8 text-center text-zinc-500">
-                    Loading moments...
-                  </td>
+                  <td colspan="9" class="px-5 py-10 text-center text-[#86868b]">Loading moments...</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <!-- Pagination Bar -->
-          <div class="p-3 bg-zinc-900/30 border-t border-zinc-800 flex items-center justify-between text-xs font-mono-tag">
-            <button id="adminPostsPrevBtn" onclick="changeAdminPostsPage(-1)" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition">
-              ← Previous
+          <div class="p-4 bg-white/[0.02] border-t border-white/10 flex items-center justify-between text-xs text-[#86868b]">
+            <button id="adminPostsPrevBtn" onclick="changeAdminPostsPage(-1)" class="px-3.5 py-1.5 apple-btn-secondary rounded-full disabled:opacity-30 cursor-pointer text-xs font-medium">
+              Previous
             </button>
-            <span id="adminPostsPageInfo" class="text-zinc-500">Page 1 of 1</span>
-            <button id="adminPostsNextBtn" onclick="changeAdminPostsPage(1)" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition">
-              Next →
+            <span id="adminPostsPageInfo" class="font-medium">Page 1 of 1</span>
+            <button id="adminPostsNextBtn" onclick="changeAdminPostsPage(1)" class="px-3.5 py-1.5 apple-btn-secondary rounded-full disabled:opacity-30 cursor-pointer text-xs font-medium">
+              Next
             </button>
           </div>
         </div>
       </section>
 
-      <!-- View: Communities (Placeholder for Phase E) -->
-      <section id="view-communities" class="admin-view space-y-4 hidden">
+      <!-- View: Communities (Apple Workspace) -->
+      <section id="view-communities" class="admin-view space-y-6 hidden">
         <div class="flex justify-between items-center">
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Communities</h1>
-            <p class="text-xs text-zinc-400">Phase E — Community spaces and activation status</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">Communities & Hubs</h1>
+            <p class="text-xs text-[#86868b] mt-0.5">Phase E — Verified community spaces and activation status</p>
           </div>
         </div>
-        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
-          <p class="text-sm font-mono-tag text-zinc-400">Community Operations Module scheduled for Phase E implementation.</p>
+        <div class="p-12 apple-card rounded-[22px] border border-white/10 text-center space-y-3">
+          <div class="w-12 h-12 rounded-2xl bg-[#bf5af2]/15 text-[#bf5af2] flex items-center justify-center mx-auto text-xl">🏛️</div>
+          <h3 class="text-base font-semibold text-white">Community Operations Module</h3>
+          <p class="text-xs text-[#86868b] max-w-md mx-auto">Campus hubs, creator affiliations, and community governance pipelines scheduled for Phase E rollout.</p>
         </div>
       </section>
 
-      <!-- View: Clusters (Phase D Implementation) -->
-      <section id="view-clusters" class="admin-view space-y-4 hidden">
+      <!-- View: Clusters (Moment Perspective Graphs) -->
+      <section id="view-clusters" class="admin-view space-y-6 hidden">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Moment Clusters</h1>
-            <p class="text-xs text-zinc-400">Co-located perspective clusters, viral event graphs, and I-Was-There attendance</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">Moment Clusters</h1>
+            <p class="text-xs text-[#86868b] mt-0.5">Multi-perspective occasion graphs, viral co-locations, and attendance topology</p>
           </div>
           <div class="flex items-center gap-2">
-            <button onclick="loadAdminClusters(1)" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
-              🔄 Refresh Clusters
+            <button onclick="loadAdminClusters(1)" class="px-4 py-2 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer flex items-center gap-2">
+              <span>🔄</span>
+              <span>Refresh Clusters</span>
             </button>
           </div>
         </div>
 
         <!-- Filter & Search Bar -->
-        <div class="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl flex flex-col md:flex-row gap-3">
+        <div class="p-4 apple-card rounded-2xl flex flex-col md:flex-row gap-3 border border-white/10">
           <div class="flex-1">
-            <input type="text" id="adminClusterSearchInput" placeholder="Search context, community, or creator..." onkeydown="if(event.key==='Enter') loadAdminClusters(1)" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500/50">
+            <input type="text" id="adminClusterSearchInput" placeholder="Search occasion, community, or originator..." onkeydown="if(event.key==='Enter') loadAdminClusters(1)" class="apple-input w-full rounded-xl px-4 py-2.5 text-xs placeholder-[#86868b]">
           </div>
-          <div class="flex gap-2">
-            <select id="adminClusterStatusFilter" onchange="loadAdminClusters(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+          <div class="flex gap-2.5">
+            <select id="adminClusterStatusFilter" onchange="loadAdminClusters(1)" class="apple-input rounded-xl px-3 py-2 text-xs bg-[#2c2c2e]">
               <option value="all">All Statuses</option>
               <option value="active">Active</option>
               <option value="closed">Closed</option>
@@ -488,68 +610,68 @@
               <option value="hidden">Hidden</option>
             </select>
 
-            <select id="adminClusterVisibilityFilter" onchange="loadAdminClusters(1)" class="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono-tag text-zinc-300 focus:outline-none focus:border-amber-500/50">
+            <select id="adminClusterVisibilityFilter" onchange="loadAdminClusters(1)" class="apple-input rounded-xl px-3 py-2 text-xs bg-[#2c2c2e]">
               <option value="all">All Visibility</option>
               <option value="public">Public</option>
               <option value="private">Private</option>
             </select>
 
-            <button onclick="loadAdminClusters(1)" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold font-mono-tag text-xs rounded-xl transition cursor-pointer">
+            <button onclick="loadAdminClusters(1)" class="px-5 py-2 apple-btn-primary rounded-xl text-xs font-medium cursor-pointer">
               Search
             </button>
           </div>
         </div>
 
         <!-- Clusters Table -->
-        <div class="bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
+        <div class="apple-card rounded-[22px] border border-white/10 overflow-hidden shadow-2xl">
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs font-mono-tag">
-              <thead class="bg-zinc-900/50 border-b border-zinc-800 text-zinc-400">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-white/[0.03] border-b border-white/10 text-[#86868b] uppercase text-[10px] tracking-wider font-semibold">
                 <tr>
-                  <th class="px-4 py-3 font-medium">Context / Occasion</th>
-                  <th class="px-4 py-3 font-medium">Community</th>
-                  <th class="px-4 py-3 font-medium">Originator</th>
-                  <th class="px-4 py-3 font-medium">Perspectives</th>
-                  <th class="px-4 py-3 font-medium">Attendees</th>
-                  <th class="px-4 py-3 font-medium">Status</th>
-                  <th class="px-4 py-3 font-medium">Visibility</th>
-                  <th class="px-4 py-3 font-medium">Created</th>
-                  <th class="px-4 py-3 font-medium text-right">Actions</th>
+                  <th class="px-5 py-3.5">Context / Occasion</th>
+                  <th class="px-5 py-3.5">Community</th>
+                  <th class="px-5 py-3.5">Originator</th>
+                  <th class="px-5 py-3.5">Perspectives</th>
+                  <th class="px-5 py-3.5">Attendees</th>
+                  <th class="px-5 py-3.5">Status</th>
+                  <th class="px-5 py-3.5">Visibility</th>
+                  <th class="px-5 py-3.5">Created</th>
+                  <th class="px-5 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody id="adminClustersTableBody" class="divide-y divide-zinc-850 text-zinc-300">
+              <tbody id="adminClustersTableBody" class="divide-y divide-white/[0.05] text-[#e5e5ea]">
                 <tr>
-                  <td colspan="9" class="px-4 py-8 text-center text-zinc-500">
-                    Loading clusters...
-                  </td>
+                  <td colspan="9" class="px-5 py-10 text-center text-[#86868b]">Loading clusters...</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <!-- Pagination Bar -->
-          <div class="p-3 bg-zinc-900/30 border-t border-zinc-800 flex items-center justify-between text-xs font-mono-tag">
-            <button id="adminClustersPrevBtn" onclick="changeAdminClustersPage(-1)" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition">
-              ← Previous
+          <div class="p-4 bg-white/[0.02] border-t border-white/10 flex items-center justify-between text-xs text-[#86868b]">
+            <button id="adminClustersPrevBtn" onclick="changeAdminClustersPage(-1)" class="px-3.5 py-1.5 apple-btn-secondary rounded-full disabled:opacity-30 cursor-pointer text-xs font-medium">
+              Previous
             </button>
-            <span id="adminClustersPageInfo" class="text-zinc-500">Page 1 of 1</span>
-            <button id="adminClustersNextBtn" onclick="changeAdminClustersPage(1)" class="px-3 py-1 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition">
-              Next →
+            <span id="adminClustersPageInfo" class="font-medium">Page 1 of 1</span>
+            <button id="adminClustersNextBtn" onclick="changeAdminClustersPage(1)" class="px-3.5 py-1.5 apple-btn-secondary rounded-full disabled:opacity-30 cursor-pointer text-xs font-medium">
+              Next
             </button>
           </div>
         </div>
       </section>
 
-      <!-- View: Reports Queue (Placeholder for Phase F) -->
-      <section id="view-reports" class="admin-view space-y-4 hidden">
+      <!-- View: Moderation Queue -->
+      <section id="view-reports" class="admin-view space-y-6 hidden">
         <div class="flex justify-between items-center">
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Moderation Queue</h1>
-            <p class="text-xs text-zinc-400">Phase F — Unified user and community reports review queue</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">Unified Moderation Queue</h1>
+            <p class="text-xs text-[#86868b] mt-0.5">Phase F — Centralized safety, flag triage, and incident resolution pipeline</p>
           </div>
         </div>
-        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
-          <p class="text-sm font-mono-tag text-zinc-400">Unified Moderation Queue scheduled for Phase F implementation.</p>
+        <div class="p-12 apple-card rounded-[22px] border border-white/10 text-center space-y-3">
+          <div class="w-12 h-12 rounded-2xl bg-[#ff453a]/15 text-[#ff453a] flex items-center justify-center mx-auto text-xl">🚨</div>
+          <h3 class="text-base font-semibold text-white">Trust & Safety Triage Queue</h3>
+          <p class="text-xs text-[#86868b] max-w-md mx-auto">Automated flagging, community violation reviews, and swift resolution controls scheduled for Phase F rollout.</p>
         </div>
       </section>
 
@@ -557,121 +679,124 @@
       <section id="view-health" class="admin-view space-y-6 hidden">
         <div class="flex justify-between items-center">
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">System Health & Telemetry</h1>
-            <p class="text-xs text-zinc-400">Infrastructure operational metrics and service status</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">System Health & Telemetry</h1>
+            <p class="text-xs text-[#86868b] mt-0.5">Infrastructure operational performance and runtime metrics</p>
           </div>
-          <button onclick="loadAdminHealth()" class="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-xl text-xs font-mono-tag text-zinc-300 hover:text-white transition cursor-pointer">
-            🔄 Check Health
+          <button onclick="loadAdminHealth()" class="px-4 py-2 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer flex items-center gap-2">
+            <span>🔄</span>
+            <span>Check Health</span>
           </button>
         </div>
 
-        <div id="healthDetailsContainer" class="p-6 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-4 font-mono-tag text-xs">
-          <p class="text-zinc-400">Loading system health details...</p>
+        <div id="healthDetailsContainer" class="p-6 apple-card rounded-[22px] border border-white/10 space-y-4 text-xs">
+          <p class="text-[#86868b]">Loading system health details...</p>
         </div>
       </section>
 
-      <!-- View: Audit Trail (Placeholder for Phase G) -->
-      <section id="view-audit" class="admin-view space-y-4 hidden">
+      <!-- View: Audit Trail -->
+      <section id="view-audit" class="admin-view space-y-6 hidden">
         <div class="flex justify-between items-center">
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-white font-mono-tag">Admin Audit Trail</h1>
-            <p class="text-xs text-zinc-400">Phase G — Application-level append-only administrative action log</p>
+            <h1 class="text-2xl font-semibold tracking-tight text-white">Administrative Audit Trail</h1>
+            <p class="text-xs text-[#86868b] mt-0.5">Phase G — Tamper-evident administrative action ledger and session logs</p>
           </div>
         </div>
-        <div class="p-8 bg-zinc-950 border border-zinc-800 rounded-2xl text-center space-y-2">
-          <p class="text-sm font-mono-tag text-zinc-400">Audit Trail Viewer scheduled for Phase G implementation.</p>
+        <div class="p-12 apple-card rounded-[22px] border border-white/10 text-center space-y-3">
+          <div class="w-12 h-12 rounded-2xl bg-white/10 text-white flex items-center justify-center mx-auto text-xl">📜</div>
+          <h3 class="text-base font-semibold text-white">Immutable Audit Ledger</h3>
+          <p class="text-xs text-[#86868b] max-w-md mx-auto">Cryptographically linked ledger for all administrative mutations scheduled for Phase G rollout.</p>
         </div>
       </section>
 
     </main>
   </div>
 
-  <!-- Moment Moderation Modal -->
-  <div id="adminPostModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-xl w-full p-6 space-y-6 shadow-2xl font-mono-tag max-h-[90vh] overflow-y-auto">
-      <div class="flex justify-between items-start border-b border-zinc-800 pb-3">
+  <!-- Moment Moderation Modal (macOS Media Inspector) -->
+  <div id="adminPostModal" class="fixed inset-0 bg-black/75 backdrop-blur-3xl z-50 flex items-center justify-center p-4 hidden">
+    <div class="apple-glass rounded-[28px] max-w-xl w-full p-8 space-y-6 shadow-2xl relative text-left max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-start border-b border-white/10 pb-4">
         <div>
-          <h2 id="modalPostTitle" class="text-lg font-bold text-white">Moment Inspection</h2>
-          <p id="modalPostSubtitle" class="text-xs text-amber-400">@author</p>
+          <h2 id="modalPostTitle" class="text-base font-semibold text-white tracking-tight">Moment Inspection</h2>
+          <p id="modalPostSubtitle" class="text-xs text-[#ff9f0a] font-medium mt-0.5">@author</p>
         </div>
-        <button onclick="closeAdminPostModal()" class="text-zinc-500 hover:text-white text-lg font-bold cursor-pointer">✕</button>
+        <button onclick="closeAdminPostModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white flex items-center justify-center text-sm transition cursor-pointer">✕</button>
       </div>
 
-      <div id="modalPostDetailBody" class="space-y-4 text-xs text-zinc-300">
-        <p class="text-zinc-500">Loading moment details...</p>
+      <div id="modalPostDetailBody" class="space-y-4 text-xs text-[#e5e5ea]">
+        <p class="text-[#86868b]">Loading moment details...</p>
       </div>
 
       <!-- Audit Reason Input -->
-      <div class="space-y-1">
-        <label class="text-[10px] text-zinc-400 uppercase font-bold">Reason for Action (Audit Record)</label>
-        <input type="text" id="adminPostActionReason" placeholder="Enter moderation reason for audit log..." class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500/50">
+      <div class="space-y-1.5">
+        <label class="text-[11px] font-medium text-[#86868b] tracking-wide">Reason for Action (Audit Record)</label>
+        <input type="text" id="adminPostActionReason" placeholder="Enter moderation reason for audit log..." class="apple-input w-full rounded-xl px-3.5 py-2.5 text-xs">
       </div>
 
       <!-- Action Control Buttons -->
-      <div class="space-y-3 pt-2 border-t border-zinc-800">
-        <div class="flex gap-2">
-          <button id="btnModalRestorePost" onclick="executePostModeration('active')" class="flex-1 px-3 py-2 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-900/60 rounded-xl font-bold transition cursor-pointer">
+      <div class="space-y-3.5 pt-2 border-t border-white/10">
+        <div class="flex gap-2.5">
+          <button id="btnModalRestorePost" onclick="executePostModeration('active')" class="flex-1 py-2.5 apple-btn-success rounded-full text-xs font-medium transition cursor-pointer">
             Restore Active
           </button>
-          <button id="btnModalHidePost" onclick="executePostModeration('hidden')" class="flex-1 px-3 py-2 bg-amber-950/60 border border-amber-500/40 text-amber-300 hover:bg-amber-900/60 rounded-xl font-bold transition cursor-pointer">
+          <button id="btnModalHidePost" onclick="executePostModeration('hidden')" class="flex-1 py-2.5 apple-btn-secondary rounded-full text-xs font-medium transition cursor-pointer text-[#ffd60a] border-[#ff9f0a]/30">
             Hide Moment
           </button>
-          <button id="btnModalRemovePost" onclick="executePostModeration('removed')" class="flex-1 px-3 py-2 bg-red-950/60 border border-red-500/40 text-red-400 hover:bg-red-900/60 rounded-xl font-bold transition cursor-pointer">
+          <button id="btnModalRemovePost" onclick="executePostModeration('removed')" class="flex-1 py-2.5 apple-btn-danger rounded-full text-xs font-medium transition cursor-pointer">
             Remove Moment
           </button>
         </div>
       </div>
 
       <div class="flex justify-end pt-2">
-        <button onclick="closeAdminPostModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer">
+        <button onclick="closeAdminPostModal()" class="px-5 py-2 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer">
           Close
         </button>
       </div>
     </div>
   </div>
 
-  <!-- Cluster Action & Detail Modal -->
-  <div id="adminClusterModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-2xl w-full p-6 space-y-6 shadow-2xl font-mono-tag max-h-[90vh] overflow-y-auto">
-      <div class="flex justify-between items-start border-b border-zinc-800 pb-3">
+  <!-- Cluster Action & Detail Modal (macOS Graph Inspector) -->
+  <div id="adminClusterModal" class="fixed inset-0 bg-black/75 backdrop-blur-3xl z-50 flex items-center justify-center p-4 hidden">
+    <div class="apple-glass rounded-[28px] max-w-2xl w-full p-8 space-y-6 shadow-2xl relative text-left max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-start border-b border-white/10 pb-4">
         <div>
-          <h2 id="modalClusterTitle" class="text-lg font-bold text-white">Cluster Inspection</h2>
-          <p id="modalClusterSubtitle" class="text-xs text-amber-400">Context Occasion</p>
+          <h2 id="modalClusterTitle" class="text-base font-semibold text-white tracking-tight">Cluster Graph Inspection</h2>
+          <p id="modalClusterSubtitle" class="text-xs text-[#2997ff] font-medium mt-0.5">Context Occasion</p>
         </div>
-        <button onclick="closeAdminClusterModal()" class="text-zinc-500 hover:text-white text-lg font-bold cursor-pointer">✕</button>
+        <button onclick="closeAdminClusterModal()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white flex items-center justify-center text-sm transition cursor-pointer">✕</button>
       </div>
 
-      <div id="modalClusterDetailBody" class="space-y-4 text-xs text-zinc-300">
-        <p class="text-zinc-500">Loading cluster details...</p>
+      <div id="modalClusterDetailBody" class="space-y-4 text-xs text-[#e5e5ea]">
+        <p class="text-[#86868b]">Loading cluster details...</p>
       </div>
 
       <!-- Audit Reason Input -->
-      <div class="space-y-1">
-        <label class="text-[10px] text-zinc-400 uppercase font-bold">Reason for Action (Audit Record)</label>
-        <input type="text" id="adminClusterActionReason" placeholder="Enter reason for cluster status change..." class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500/50">
+      <div class="space-y-1.5">
+        <label class="text-[11px] font-medium text-[#86868b] tracking-wide">Reason for Action (Audit Record)</label>
+        <input type="text" id="adminClusterActionReason" placeholder="Enter reason for cluster status change..." class="apple-input w-full rounded-xl px-3.5 py-2.5 text-xs">
       </div>
 
       <!-- Cluster Status Controls -->
-      <div class="p-3 bg-zinc-900/60 border border-zinc-800 rounded-xl space-y-2">
+      <div class="p-4 apple-card rounded-2xl border border-white/10 space-y-2.5">
         <div class="flex items-center justify-between">
-          <span class="text-[10px] text-amber-400 font-bold uppercase">Update Cluster Status</span>
-          <span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">GRAPH STATUS</span>
+          <span class="text-[11px] font-semibold text-[#86868b] uppercase tracking-wider">Update Cluster Status</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white font-medium">GRAPH STATUS</span>
         </div>
-        <div class="flex gap-2">
-          <select id="modalClusterStatusSelect" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white">
+        <div class="flex gap-2.5">
+          <select id="modalClusterStatusSelect" class="flex-1 apple-input rounded-xl px-3 py-2 text-xs bg-[#2c2c2e]">
             <option value="active">active</option>
             <option value="closed">closed</option>
             <option value="archived">archived</option>
             <option value="hidden">hidden</option>
           </select>
-          <button onclick="executeClusterStatusChange()" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold rounded-xl transition cursor-pointer">
+          <button onclick="executeClusterStatusChange()" class="px-5 py-2 apple-btn-primary rounded-full text-xs font-medium cursor-pointer">
             Update Status
           </button>
         </div>
       </div>
 
       <div class="flex justify-end pt-2">
-        <button onclick="closeAdminClusterModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer">
+        <button onclick="closeAdminClusterModal()" class="px-5 py-2 apple-btn-secondary rounded-full text-xs font-medium cursor-pointer">
           Close
         </button>
       </div>
