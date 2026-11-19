@@ -656,7 +656,15 @@
           <h2 class="text-base font-bold text-white flex items-center gap-2"><span>🔐</span> Two-Factor Authentication (2FA)</h2>
           <p class="text-xs text-zinc-400">RFC 6238 Standard Time-based One-Time Passwords</p>
         </div>
-        <button onclick="close2FaModal()" class="text-zinc-500 hover:text-white text-lg font-bold cursor-pointer">✕</button>
+        <button id="btn2FaCloseTop" onclick="close2FaModal()" class="text-zinc-500 hover:text-white text-lg font-bold cursor-pointer">✕</button>
+      </div>
+
+      <div id="admin2FaMandatoryBanner" class="p-3 bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs rounded-xl hidden flex items-center gap-2.5">
+        <span class="text-xl">⚠️</span>
+        <div>
+          <p class="font-bold">Mandatory Security Requirement</p>
+          <p class="text-[11px] text-amber-400/90">Enterprise policy requires Two-Factor Authentication (2FA) on all administrator accounts before control surfaces can be accessed.</p>
+        </div>
       </div>
 
       <div id="admin2FaAlert" class="p-3 bg-zinc-900 border border-zinc-800 text-xs rounded-xl hidden"></div>
@@ -706,8 +714,11 @@
         </div>
       </div>
 
-      <div class="flex justify-end pt-2 border-t border-zinc-800">
-        <button onclick="close2FaModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer">
+      <div class="flex justify-end gap-2 pt-2 border-t border-zinc-800">
+        <button id="btn2FaMandatoryLogout" onclick="logoutAdmin()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer hidden">
+          Sign Out
+        </button>
+        <button id="btn2FaCloseBottom" onclick="close2FaModal()" class="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-xl text-xs cursor-pointer">
           Close
         </button>
       </div>

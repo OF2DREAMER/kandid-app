@@ -1500,6 +1500,89 @@ class TestAdminSecurityHardening(unittest.TestCase):
         res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
         self.assertIn("Too many admin login attempts", res["error"])
 
+    def test_mandatory_2fa_enforcement_blocks_control_surfaces_until_enabled(self):
+        """Mandatory 2FA: Unconfigured 2FA admin can reach /me and /2fa-setup, but /overview and /users are 403 blocked."""
+        mock_unconfigured_admin = {
+            "id": "u_unconfigured_admin",
+            "handle": "unconfigured_admin",
+            "name": "Unconfigured Admin",
+            "role": "admin",
+            "admin_totp_enabled": 0
+        }
+
+        with patch("server.get_current_user", return_value=mock_unconfigured_admin):
+            # 1. /api/admin/me returns force_2fa_setup: True
+            self.handler.path = "/api/admin/me"
+            self.handler.wfile = BytesIO()
+            self.sent_status = []
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [200])
+            me_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(me_res["user"]["force_2fa_setup"])
+            self.assertFalse(me_res["user"]["admin_totp_enabled"])
+
+            # 2. /api/admin/auth/2fa-setup is accessible
+            self.handler.path = "/api/admin/auth/2fa-setup"
+            self.handler.wfile = BytesIO()
+            self.sent_status = []
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [200])
+            setup_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(setup_res["success"])
+            self.assertIn("secret", setup_res)
+
+            # 3. Control surface /api/admin/overview is strictly 403 blocked
+            self.handler.path = "/api/admin/overview"
+            self.handler.wfile = BytesIO()
+            self.sent_status = []
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [403])
+            overview_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(overview_res.get("requires_2fa_setup"))
+            self.assertIn("mandatory for administrator access", overview_res.get("error", ""))
+
+            # 4. Users list /api/admin/users is strictly 403 blocked
+            self.handler.path = "/api/admin/users"
+            self.handler.wfile = BytesIO()
+            self.sent_status = []
+            self.handler.do_GET()
+            self.assertEqual(self.sent_status, [403])
+            users_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+            self.assertTrue(users_res.get("requires_2fa_setup"))
+
+    def test_admin_security_email_alerts_dispatched(self):
+        """Security alert emails are triggered on failed login, successful login, and sudo elevation."""
+        sent_emails = []
+
+        def mock_send_email(to, subject, html, text=""):
+            sent_emails.append({"to": to, "subject": subject, "html": html, "text": text})
+            return {"success": True}
+
+        with patch("server.send_email_brevo", side_effect=mock_send_email):
+            # 1. Failed login attempt triggers security alert email
+            self._set_post("/api/admin/auth/login", {
+                "handle": "secadmin",
+                "password": "WrongPasswordAlertTest"
+            })
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [401])
+
+            # Give daemon thread a brief tick to run
+            import time
+            time.sleep(0.05)
+            self.assertTrue(any("Failed Admin Login Attempt" in e["subject"] for e in sent_emails))
+
+            # 2. Successful login triggers login notification
+            self._set_post("/api/admin/auth/login", {
+                "handle": "secadmin",
+                "password": "AdminSecret123!"
+            })
+            self.handler.do_POST()
+            self.assertEqual(self.sent_status, [200])
+
+            time.sleep(0.05)
+            self.assertTrue(any("Admin Portal Login Detected" in e["subject"] for e in sent_emails))
+
 
 if __name__ == "__main__":
     unittest.main()

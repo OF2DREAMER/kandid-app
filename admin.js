@@ -42,6 +42,12 @@ async function adminApiRequest(endpoint, options) {
       return await handleSudoElevation(endpoint, options);
     }
 
+    // Mandatory 2FA Interception
+    if (data && data.requires_2fa_setup === true) {
+      open2FaModal(true);
+      return data;
+    }
+
     if (response.status === 401 || response.status === 403) {
       if (endpoint === '/api/admin/me') {
         showAdminLoginGateway(data.error || 'Admin authentication required');
@@ -73,6 +79,10 @@ async function verifyAdminIdentity() {
     adminState.me = res.user;
     hideAdminLoginGateway();
     updateAdminHeaderIdentity(res.user);
+    if (!res.user.admin_totp_enabled || res.user.force_2fa_setup) {
+      open2FaModal(true);
+      return;
+    }
     loadAdminOverview();
   } else {
     showAdminLoginGateway(res ? res.error : '');
@@ -293,14 +303,31 @@ function cancelAdminSudo() {
   }
 }
 
-async function open2FaModal() {
+async function open2FaModal(isMandatory) {
   var modal = document.getElementById('admin2FaModal');
   var activeView = document.getElementById('admin2FaActiveView');
   var setupView = document.getElementById('admin2FaSetupView');
   var alertEl = document.getElementById('admin2FaAlert');
+  var mandatoryBanner = document.getElementById('admin2FaMandatoryBanner');
+  var btnCloseTop = document.getElementById('btn2FaCloseTop');
+  var btnCloseBottom = document.getElementById('btn2FaCloseBottom');
+  var btnMandatoryLogout = document.getElementById('btn2FaMandatoryLogout');
+
   if (alertEl) alertEl.classList.add('hidden');
 
-  if (adminState.me && adminState.me.admin_totp_enabled) {
+  if (isMandatory) {
+    if (mandatoryBanner) mandatoryBanner.classList.remove('hidden');
+    if (btnCloseTop) btnCloseTop.classList.add('hidden');
+    if (btnCloseBottom) btnCloseBottom.classList.add('hidden');
+    if (btnMandatoryLogout) btnMandatoryLogout.classList.remove('hidden');
+  } else {
+    if (mandatoryBanner) mandatoryBanner.classList.add('hidden');
+    if (btnCloseTop) btnCloseTop.classList.remove('hidden');
+    if (btnCloseBottom) btnCloseBottom.classList.remove('hidden');
+    if (btnMandatoryLogout) btnMandatoryLogout.classList.add('hidden');
+  }
+
+  if (adminState.me && adminState.me.admin_totp_enabled && !isMandatory) {
     if (activeView) activeView.classList.remove('hidden');
     if (setupView) setupView.classList.add('hidden');
     if (modal) modal.classList.remove('hidden');
@@ -371,13 +398,28 @@ async function confirm2FaEnable() {
     updateAdminHeaderIdentity(adminState.me);
     var activeView = document.getElementById('admin2FaActiveView');
     var setupView = document.getElementById('admin2FaSetupView');
+    var mandatoryBanner = document.getElementById('admin2FaMandatoryBanner');
+    var btnCloseTop = document.getElementById('btn2FaCloseTop');
+    var btnCloseBottom = document.getElementById('btn2FaCloseBottom');
+    var btnMandatoryLogout = document.getElementById('btn2FaMandatoryLogout');
+
+    if (mandatoryBanner) mandatoryBanner.classList.add('hidden');
+    if (btnCloseTop) btnCloseTop.classList.remove('hidden');
+    if (btnCloseBottom) btnCloseBottom.classList.remove('hidden');
+    if (btnMandatoryLogout) btnMandatoryLogout.classList.add('hidden');
+
     if (setupView) setupView.classList.add('hidden');
     if (activeView) activeView.classList.remove('hidden');
     if (alertEl) {
-      alertEl.textContent = 'Two-factor authentication successfully enabled!';
+      alertEl.textContent = 'Two-factor authentication successfully enabled! Unlocking admin control surfaces...';
       alertEl.className = 'p-3 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 text-xs rounded-xl';
       alertEl.classList.remove('hidden');
     }
+
+    setTimeout(function() {
+      close2FaModal();
+      loadAdminOverview();
+    }, 1200);
   } else {
     if (alertEl) {
       alertEl.textContent = res ? res.error : 'Failed to verify code';
