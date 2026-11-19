@@ -4518,6 +4518,20 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(token);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_sessions_expiry ON admin_sessions(expires_at);")
 
+    # Phase Admin Emergency Backup Recovery Codes
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS admin_backup_codes (
+        id TEXT PRIMARY KEY,
+        admin_id TEXT NOT NULL,
+        code_hash TEXT NOT NULL,
+        used INTEGER DEFAULT 0,
+        used_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_backup_codes_lookup ON admin_backup_codes(admin_id, used);")
+
     # Auto-migrations for users table (admin_totp_secret, admin_totp_enabled)
     cursor.execute("PRAGMA table_info(users)")
     u_cols_admin = [row[1] for row in cursor.fetchall()]
@@ -6078,11 +6092,11 @@ def compute_totp(secret: str, interval: int = 30, digits: int = 6, for_time: int
     return str(code_int % (10 ** digits)).zfill(digits)
 
 
-def verify_totp(secret: str, code: str, interval: int = 30, window: int = 1) -> bool:
-    """Verifies a 6-digit TOTP code within a time window (+/- 30s) against secret."""
+def verify_totp(secret: str, code: str, interval: int = 30, window: int = 2) -> bool:
+    """Verifies a 6-digit TOTP code within a generous time window (+/- 60s) to absorb mobile clock skew."""
     if not secret or not code:
         return False
-    code = str(code).strip()
+    code = str(code).strip().replace(" ", "").replace("-", "")
     if len(code) != 6 or not code.isdigit():
         return False
     now = int(time.time())
@@ -6091,6 +6105,77 @@ def verify_totp(secret: str, code: str, interval: int = 30, window: int = 1) -> 
         expected = compute_totp(secret, interval=interval, digits=6, for_time=step_time)
         if hmac.compare_digest(expected, code):
             return True
+    return False
+
+
+def generate_admin_backup_codes(admin_id: str, count: int = 8, conn=None) -> list:
+    """Generates 8 cryptographically secure 8-character emergency backup recovery codes."""
+    close_at_end = False
+    if conn is None:
+        conn = get_db()
+        close_at_end = True
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM admin_backup_codes WHERE admin_id = ?", (admin_id,))
+
+    codes = []
+    for _ in range(count):
+        part1 = secrets.token_hex(2).upper()
+        part2 = secrets.token_hex(2).upper()
+        formatted_code = f"{part1}-{part2}"
+        codes.append(formatted_code)
+
+        clean_code = formatted_code.replace("-", "").upper()
+        salt = secrets.token_hex(8)
+        code_hash = f"{salt}:{hashlib.sha256((salt + clean_code).encode()).hexdigest()}"
+        code_id = f"bk_{secrets.token_hex(8)}"
+        cursor.execute("""
+            INSERT INTO admin_backup_codes (id, admin_id, code_hash, used, created_at)
+            VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+        """, (code_id, admin_id, code_hash))
+
+    conn.commit()
+    if close_at_end:
+        conn.close()
+    return codes
+
+
+def verify_admin_backup_code(admin_id: str, submitted_code: str, conn=None) -> bool:
+    """Verifies and burns a single-use emergency backup recovery code."""
+    if not admin_id or not submitted_code:
+        return False
+    clean_code = str(submitted_code).replace("-", "").replace(" ", "").strip().upper()
+    if len(clean_code) != 8:
+        return False
+
+    close_at_end = False
+    if conn is None:
+        conn = get_db()
+        close_at_end = True
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, code_hash FROM admin_backup_codes WHERE admin_id = ? AND used = 0", (admin_id,))
+    rows = cursor.fetchall()
+
+    matched_id = None
+    for row in rows:
+        cid = row[0]
+        chash = row[1]
+        if ":" in chash:
+            salt, hash_val = chash.split(":", 1)
+            expected = hashlib.sha256((salt + clean_code).encode()).hexdigest()
+            if hmac.compare_digest(expected, hash_val):
+                matched_id = cid
+                break
+
+    if matched_id:
+        now_iso = datetime.now().isoformat()
+        cursor.execute("UPDATE admin_backup_codes SET used = 1, used_at = ? WHERE id = ?", (now_iso, matched_id))
+        conn.commit()
+        if close_at_end:
+            conn.close()
+        return True
+
+    if close_at_end:
+        conn.close()
     return False
 
 
@@ -6782,6 +6867,23 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "success": True,
                 "secret": secret,
                 "otpauth_url": otpauth_url
+            })
+
+        if path == "/api/admin/auth/backup-codes":
+            user, err = require_admin(self, self.headers)
+            if err:
+                return self.send_json(*err)
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM admin_backup_codes WHERE admin_id = ? AND used = 0", (user["id"],))
+            remaining = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM admin_backup_codes WHERE admin_id = ?", (user["id"],))
+            total = cursor.fetchone()[0]
+            conn.close()
+            return self.send_json(200, {
+                "success": True,
+                "remaining": remaining,
+                "total": total
             })
 
         if path == "/api/admin/overview":
@@ -12321,16 +12423,22 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         "totp_required": True,
                         "success": False
                     })
-                if not verify_totp(totp_secret, code):
+                clean_code = str(code).strip().replace(" ", "").replace("-", "")
+                totp_valid = verify_totp(totp_secret, clean_code, window=2)
+                backup_valid = False
+                if not totp_valid and len(clean_code) == 8:
+                    backup_valid = verify_admin_backup_code(user["id"], clean_code, conn=conn)
+
+                if not totp_valid and not backup_valid:
                     conn.close()
-                    record_admin_audit_event(user, "admin_login_failed_2fa", "admin_auth", user["id"], "Invalid 2FA code", client_ip)
+                    record_admin_audit_event(user, "admin_login_failed_2fa", "admin_auth", user["id"], "Invalid 2FA or backup code", client_ip)
                     dispatch_admin_security_alert_email(user, "admin_login_failed", {
                         "ip": client_ip,
                         "user_agent": self.headers.get("User-Agent", ""),
-                        "reason": "Failed login attempt: Invalid 2FA verification code"
+                        "reason": "Failed login attempt: Invalid 2FA verification or recovery code"
                     })
                     return self.send_json(401, {
-                        "error": "Invalid two-factor authentication code",
+                        "error": "Invalid two-factor authentication code or recovery code",
                         "totp_required": True,
                         "success": False
                     })
@@ -12417,12 +12525,15 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if not secret or not code:
                 return self.send_json(400, {"error": "Secret and verification code are required", "success": False})
 
-            if not verify_totp(secret, code):
+            if not verify_totp(secret, code, window=2):
                 return self.send_json(400, {"error": "Invalid 2FA verification code. Please check your authenticator app.", "success": False})
 
             conn = get_db()
             cursor = conn.cursor()
             cursor.execute("UPDATE users SET admin_totp_secret = ?, admin_totp_enabled = 1 WHERE id = ?", (secret, user["id"]))
+
+            # Generate 8 single-use emergency backup recovery codes
+            backup_codes = generate_admin_backup_codes(user["id"], count=8, conn=conn)
 
             now = datetime.now()
             sudo_expires_at = (now + timedelta(minutes=15)).isoformat()
@@ -12432,7 +12543,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
 
             client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
-            record_admin_audit_event(user, "admin_2fa_enabled", "admin_auth", user["id"], "2FA enabled with TOTP", client_ip)
+            record_admin_audit_event(user, "admin_2fa_enabled", "admin_auth", user["id"], "2FA enabled with TOTP and recovery codes generated", client_ip)
             dispatch_admin_security_alert_email(user, "admin_2fa_enabled", {
                 "ip": client_ip,
                 "user_agent": self.headers.get("User-Agent", ""),
@@ -12442,6 +12553,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {
                 "success": True,
                 "message": "Two-factor authentication successfully enabled",
+                "backup_codes": backup_codes,
                 "sudo_active": True,
                 "sudo_expires_at": sudo_expires_at
             })
@@ -12451,7 +12563,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             if err:
                 return self.send_json(*err)
 
-            code = (body.get("code") or "").strip()
+            code = (body.get("code") or "").strip().replace(" ", "").replace("-", "")
             password = (body.get("password") or "").strip()
 
             conn = get_db()
@@ -12466,7 +12578,9 @@ class KandidHandler(SimpleHTTPRequestHandler):
             verified = False
 
             if db_user.get("admin_totp_enabled") and db_user.get("admin_totp_secret"):
-                if code and verify_totp(db_user["admin_totp_secret"], code):
+                if code and verify_totp(db_user["admin_totp_secret"], code, window=2):
+                    verified = True
+                elif code and len(code) == 8 and verify_admin_backup_code(db_user["id"], code, conn=conn):
                     verified = True
             elif password:
                 if verify_password(password, db_user["salt"], db_user["password_hash"]):
@@ -12486,17 +12600,45 @@ class KandidHandler(SimpleHTTPRequestHandler):
             conn.close()
 
             client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
-            record_admin_audit_event(user, "admin_sudo_elevated", "admin_auth", user["id"], "Sudo mode granted for 15 minutes", client_ip)
-            dispatch_admin_security_alert_email(user, "admin_sudo_elevated", {
-                "ip": client_ip,
-                "user_agent": self.headers.get("User-Agent", ""),
-                "reason": "Administrative privilege elevated (sudo mode) for 15 minutes"
-            })
-
+            record_admin_audit_event(user, "admin_sudo_elevated", "admin_auth", user["id"], "Sudo mode elevated for 15m", client_ip)
             return self.send_json(200, {
                 "success": True,
                 "sudo_active": True,
                 "sudo_expires_at": sudo_expires_at
+            })
+
+        if path == "/api/admin/auth/backup-codes/generate":
+            user, err = require_admin(self, self.headers, body=body, strict_bearer=True)
+            if err:
+                return self.send_json(*err)
+
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT admin_totp_secret, admin_totp_enabled FROM users WHERE id = ?", (user["id"],))
+            u_row = cursor.fetchone()
+            if not u_row or not u_row[1]:
+                conn.close()
+                return self.send_json(400, {"error": "2FA must be enabled to generate backup recovery codes", "success": False})
+
+            code = (body.get("code") or "").strip().replace(" ", "").replace("-", "")
+            if not code or not verify_totp(u_row[0], code, window=2):
+                conn.close()
+                return self.send_json(401, {"error": "Valid 2FA verification code required to regenerate recovery codes", "success": False})
+
+            codes = generate_admin_backup_codes(user["id"], count=8, conn=conn)
+            conn.close()
+
+            client_ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or getattr(self, "client_address", [""])[0]
+            record_admin_audit_event(user, "admin_backup_codes_regenerated", "admin_auth", user["id"], "8 new emergency recovery codes generated", client_ip)
+            dispatch_admin_security_alert_email(user, "admin_backup_codes_regenerated", {
+                "ip": client_ip,
+                "user_agent": self.headers.get("User-Agent", ""),
+                "reason": "Emergency backup recovery codes were regenerated"
+            })
+            return self.send_json(200, {
+                "success": True,
+                "codes": codes,
+                "message": "8 new emergency recovery codes generated successfully"
             })
 
         # Admin Phase C User Management POST APIs

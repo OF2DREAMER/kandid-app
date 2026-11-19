@@ -150,10 +150,30 @@ function initAppleCodeDigitInputs() {
   document.querySelectorAll('.apple-code-digit').forEach(function(input) {
     input.addEventListener('input', function(e) {
       var val = e.target.value.replace(/\D/g, '');
-      e.target.value = val ? val[0] : '';
+      var parent = e.target.parentElement;
       var targetId = e.target.getAttribute('data-target');
       var idx = parseInt(e.target.getAttribute('data-idx') || '0', 10);
-      var parent = e.target.parentElement;
+
+      // Handle mobile keyboard autofill or full 6-digit input
+      if (val.length > 1 && parent) {
+        var allInputs = parent.querySelectorAll('.apple-code-digit');
+        for (var k = 0; k < allInputs.length && k < val.length; k++) {
+          allInputs[k].value = val[k];
+        }
+        var nextFocus = Math.min(val.length, 5);
+        if (allInputs[nextFocus]) allInputs[nextFocus].focus();
+        var fullCodeMulti = syncAppleCodeDigits(parent, targetId);
+        if (fullCodeMulti && fullCodeMulti.length === 6) {
+          if (targetId === 'adminLoginTotpCode') {
+            submitAdminLogin();
+          } else if (targetId === 'admin2FaConfirmCode') {
+            confirm2FaEnable();
+          }
+        }
+        return;
+      }
+
+      e.target.value = val ? val[0] : '';
       if (val && idx < 5 && parent) {
         var next = parent.querySelector('[data-idx="' + (idx + 1) + '"]');
         if (next) next.focus();
@@ -228,6 +248,27 @@ function syncAppleCodeDigits(parent, targetId) {
   return code;
 }
 
+function toggleBackupLoginMode(isBackup) {
+  var normal = document.getElementById('totpNormalPrompt');
+  var backup = document.getElementById('totpBackupPrompt');
+  var backupInput = document.getElementById('adminLoginBackupCode');
+  var firstDigit = document.querySelector('#loginCodeDigitGroup [data-idx="0"]');
+  if (isBackup) {
+    if (normal) normal.classList.add('hidden');
+    if (backup) backup.classList.remove('hidden');
+    if (backupInput) {
+      backupInput.value = '';
+      setTimeout(function() { backupInput.focus(); }, 100);
+    }
+  } else {
+    if (backup) backup.classList.add('hidden');
+    if (normal) normal.classList.remove('hidden');
+    if (firstDigit) {
+      setTimeout(function() { firstDigit.focus(); }, 100);
+    }
+  }
+}
+
 async function submitAdminLogin(event) {
   if (event) event.preventDefault();
 
@@ -240,7 +281,28 @@ async function submitAdminLogin(event) {
 
   var handle = handleInput ? handleInput.value.trim() : '';
   var password = passInput ? passInput.value : '';
-  var code = totpInput ? totpInput.value.trim() : '';
+  var code = '';
+
+  // Check backup code prompt first
+  var backupPrompt = document.getElementById('totpBackupPrompt');
+  var backupInput = document.getElementById('adminLoginBackupCode');
+  if (backupPrompt && !backupPrompt.classList.contains('hidden') && backupInput && backupInput.value.trim()) {
+    code = backupInput.value.trim().replace(/[\s-]/g, '');
+  } else {
+    var digitGroup = document.getElementById('loginCodeDigitGroup');
+    if (digitGroup) {
+      var scanned = '';
+      digitGroup.querySelectorAll('.apple-code-digit').forEach(function(inp) {
+        scanned += (inp.value || '').trim();
+      });
+      if (scanned) {
+        code = scanned;
+      }
+    }
+    if (!code && totpInput) {
+      code = totpInput.value.trim().replace(/[\s-]/g, '');
+    }
+  }
 
   if (!handle || !password) {
     if (alertEl) {
@@ -269,6 +331,7 @@ async function submitAdminLogin(event) {
       hideAdminLoginGateway();
       if (passInput) passInput.value = '';
       if (totpInput) totpInput.value = '';
+      if (backupInput) backupInput.value = '';
       if (totpContainer) totpContainer.classList.add('hidden');
       document.querySelectorAll('#loginCodeDigitGroup .apple-code-digit').forEach(function(inp) { inp.value = ''; });
       await verifyAdminIdentity();
@@ -441,10 +504,15 @@ async function open2FaModal(isMandatory) {
   if (adminState.me && adminState.me.admin_totp_enabled && !isMandatory) {
     if (activeView) activeView.classList.remove('hidden');
     if (setupView) setupView.classList.add('hidden');
+    var backupCodesView = document.getElementById('admin2FaBackupCodesView');
+    if (backupCodesView) backupCodesView.classList.add('hidden');
     if (modal) modal.classList.remove('hidden');
+    loadBackupCodesStatus();
   } else {
     if (activeView) activeView.classList.add('hidden');
     if (setupView) setupView.classList.remove('hidden');
+    var backupCodesView2 = document.getElementById('admin2FaBackupCodesView');
+    if (backupCodesView2) backupCodesView2.classList.add('hidden');
     if (modal) modal.classList.remove('hidden');
 
     var secretEl = document.getElementById('admin2FaSecretDisplay');
@@ -494,7 +562,17 @@ function copy2FaSecret() {
 async function confirm2FaEnable() {
   var codeInput = document.getElementById('admin2FaConfirmCode');
   var alertEl = document.getElementById('admin2FaAlert');
-  var code = codeInput ? codeInput.value.trim() : '';
+  var code = '';
+
+  var digitGroup = document.getElementById('setupCodeDigitGroup');
+  if (digitGroup) {
+    digitGroup.querySelectorAll('.apple-code-digit').forEach(function(inp) {
+      code += (inp.value || '').trim();
+    });
+  }
+  if (!code && codeInput) {
+    code = codeInput.value.trim();
+  }
 
   if (!code || code.length !== 6) {
     if (alertEl) {
@@ -516,6 +594,7 @@ async function confirm2FaEnable() {
     updateAdminHeaderIdentity(adminState.me);
     var activeView = document.getElementById('admin2FaActiveView');
     var setupView = document.getElementById('admin2FaSetupView');
+    var backupCodesView = document.getElementById('admin2FaBackupCodesView');
     var mandatoryBanner = document.getElementById('admin2FaMandatoryBanner');
     var btnCloseTop = document.getElementById('btn2FaCloseTop');
     var btnCloseBottom = document.getElementById('btn2FaCloseBottom');
@@ -527,17 +606,29 @@ async function confirm2FaEnable() {
     if (btnMandatoryLogout) btnMandatoryLogout.classList.add('hidden');
 
     if (setupView) setupView.classList.add('hidden');
-    if (activeView) activeView.classList.remove('hidden');
-    if (alertEl) {
-      alertEl.textContent = 'Two-factor authentication successfully enabled! Unlocking admin control surfaces...';
-      alertEl.className = 'p-3.5 bg-[#30d158]/10 border border-[#30d158]/25 text-[#30d158] text-xs rounded-2xl';
-      alertEl.classList.remove('hidden');
-    }
 
-    setTimeout(function() {
-      close2FaModal();
+    if (res.backup_codes && res.backup_codes.length > 0) {
+      adminState.lastBackupCodes = res.backup_codes;
+      renderBackupCodesGrid(res.backup_codes);
+      if (backupCodesView) backupCodesView.classList.remove('hidden');
+      if (alertEl) {
+        alertEl.textContent = 'Two-Factor Authentication is active! Please save your 8 Emergency Recovery Codes below.';
+        alertEl.className = 'p-3.5 bg-[#30d158]/10 border border-[#30d158]/25 text-[#30d158] text-xs rounded-2xl';
+        alertEl.classList.remove('hidden');
+      }
       loadAdminOverview();
-    }, 1200);
+    } else {
+      if (activeView) activeView.classList.remove('hidden');
+      if (alertEl) {
+        alertEl.textContent = 'Two-factor authentication successfully enabled! Unlocking admin control surfaces...';
+        alertEl.className = 'p-3.5 bg-[#30d158]/10 border border-[#30d158]/25 text-[#30d158] text-xs rounded-2xl';
+        alertEl.classList.remove('hidden');
+      }
+      setTimeout(function() {
+        close2FaModal();
+        loadAdminOverview();
+      }, 1200);
+    }
   } else {
     if (alertEl) {
       alertEl.textContent = res ? res.error : 'Failed to verify code';
@@ -546,6 +637,79 @@ async function confirm2FaEnable() {
       triggerAppleShake('admin2FaModal');
     }
   }
+}
+
+async function loadBackupCodesStatus() {
+  var badge = document.getElementById('adminBackupCodesCountBadge');
+  if (!badge) return;
+  badge.textContent = 'Checking...';
+  var res = await adminApiRequest('/api/admin/auth/backup-codes');
+  if (res && res.success) {
+    badge.textContent = res.remaining + ' of ' + res.total + ' remaining';
+    if (res.remaining === 0) {
+      badge.className = 'text-[11px] px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/30 text-[#ff453a]';
+    } else {
+      badge.className = 'text-[11px] px-2.5 py-0.5 rounded-full bg-[#30d158]/20 border border-[#30d158]/30 text-[#30d158]';
+    }
+  }
+}
+
+async function promptRegenerateBackupCodes() {
+  var code = prompt('Enter your 6-digit Authenticator code to regenerate emergency recovery codes:');
+  if (!code) return;
+  var res = await adminApiRequest('/api/admin/auth/backup-codes/generate', {
+    method: 'POST',
+    body: JSON.stringify({ code: code.trim() })
+  });
+  if (res && res.success && res.codes) {
+    adminState.lastBackupCodes = res.codes;
+    renderBackupCodesGrid(res.codes);
+    var activeView = document.getElementById('admin2FaActiveView');
+    var codesView = document.getElementById('admin2FaBackupCodesView');
+    if (activeView) activeView.classList.add('hidden');
+    if (codesView) codesView.classList.remove('hidden');
+    loadBackupCodesStatus();
+  } else {
+    alert((res && res.error) ? res.error : 'Failed to regenerate backup codes. Please check code.');
+  }
+}
+
+function renderBackupCodesGrid(codes) {
+  var grid = document.getElementById('adminBackupCodesGrid');
+  if (!grid) return;
+  grid.innerHTML = codes.map(function(c) {
+    return '<div class="p-2.5 bg-black/40 border border-white/5 rounded-xl text-center font-mono text-sm tracking-wider text-[#2997ff] select-all">' + c + '</div>';
+  }).join('');
+}
+
+function copyAllBackupCodes() {
+  var codes = adminState.lastBackupCodes || [];
+  if (!codes.length) return;
+  var text = "KANDID ADMIN EMERGENCY BACKUP RECOVERY CODES\n" +
+             "Generated: " + new Date().toISOString() + "\n" +
+             "Each code is single-use only:\n\n" +
+             codes.join("\n") + "\n\nStore these in Apple Notes, 1Password, or a safe place.";
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function() {
+      alert('All 8 emergency backup codes copied to clipboard!');
+    });
+  } else {
+    prompt('Copy your emergency recovery codes:', text);
+  }
+}
+
+function downloadBackupCodes() {
+  var codes = adminState.lastBackupCodes || [];
+  if (!codes.length) return;
+  var text = "KANDID ADMIN EMERGENCY BACKUP RECOVERY CODES\n" +
+             "Generated: " + new Date().toISOString() + "\n" +
+             "Each code is single-use only:\n\n" +
+             codes.join("\n") + "\n\nStore these in Apple Notes, 1Password, or a safe place.";
+  var blob = new Blob([text], { type: 'text/plain' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kandid-admin-backup-codes.txt';
+  a.click();
 }
 
 function renderAccessDenied(message) {
