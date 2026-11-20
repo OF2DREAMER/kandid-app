@@ -346,6 +346,43 @@
             </div>
           </div>
         </div>
+
+        <!-- Geographic Origin & Campus Circles (Apple Intelligence Analytics Card) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- Left: IP-Based Geographic Inflow -->
+          <div class="p-6 apple-card rounded-[22px] border border-white/10 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-full bg-[#0071e3]/15 flex items-center justify-center text-[#2997ff] text-sm">📍</div>
+                <div>
+                  <h3 class="text-sm font-semibold text-white tracking-tight">Geographic Origin (IP City & State)</h3>
+                  <p class="text-[11px] text-[#86868b]">Privacy-safe real-time regional inflow</p>
+                </div>
+              </div>
+              <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-[#30d158]/15 text-[#30d158] border border-[#30d158]/30 font-medium">100% Privacy-Safe</span>
+            </div>
+            <div id="adminGeoCitiesList" class="space-y-3 text-xs pt-1">
+              <div class="text-[#86868b] text-center py-4">Loading geographic distribution...</div>
+            </div>
+          </div>
+
+          <!-- Right: Campus Circles Distribution -->
+          <div class="p-6 apple-card rounded-[22px] border border-white/10 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-full bg-[#bf5af2]/15 flex items-center justify-center text-[#bf5af2] text-sm">🎓</div>
+                <div>
+                  <h3 class="text-sm font-semibold text-white tracking-tight">Campus Circles Activity</h3>
+                  <p class="text-[11px] text-[#86868b]">Active student hubs and circle engagement</p>
+                </div>
+              </div>
+              <span class="text-[10px] px-2.5 py-0.5 rounded-full bg-[#bf5af2]/15 text-[#bf5af2] border border-[#bf5af2]/30 font-medium">Campus Communities</span>
+            </div>
+            <div id="adminCampusCirclesList" class="space-y-3 text-xs pt-1">
+              <div class="text-[#86868b] text-center py-4">Loading campus circles...</div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- View: Users (Apple Pro Directory) -->
@@ -1059,6 +1096,6 @@
     }
     window.toggleBackupLoginMode = toggleBackupLoginMode;
   </script>
-  <script src="/admin.js?v=5.5.0"></script>
+  <script src="/admin.js?v=5.6.0"></script>
 </body>
 </html>

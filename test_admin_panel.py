@@ -1666,6 +1666,35 @@ class TestAdminSecurityHardening(unittest.TestCase):
         self.assertTrue(server.verify_totp(secret, code_plus_60))
         self.assertFalse(server.verify_totp(secret, code_minus_120))
 
+    def test_admin_geographic_origin_and_campus_circles_analytics(self):
+        """Test /api/admin/overview returns geo_distribution and top_campuses."""
+        # 1. Establish session token
+        totp_code = server.compute_totp(self.totp_secret)
+        self._set_post("/api/admin/auth/login", {
+            "handle": "admin2fa",
+            "password": "Admin2FaPass123!",
+            "code": totp_code
+        })
+        self.handler.do_POST()
+        self.assertEqual(self.sent_status, [200])
+        login_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        admin_token = login_res["token"]
+
+        # 2. Query /api/admin/overview
+        self.sent_status.clear()
+        self.handler.wfile = BytesIO()
+        self.handler.path = "/api/admin/overview"
+        self.handler.headers = {"Authorization": f"Bearer {admin_token}"}
+        self.handler.do_GET()
+        self.assertEqual(self.sent_status, [200])
+        overview_res = json.loads(self.handler.wfile.getvalue().decode("utf-8"))
+        self.assertTrue(overview_res.get("success"))
+        self.assertIn("geo_distribution", overview_res)
+        self.assertIn("top_campuses", overview_res)
+        self.assertIsInstance(overview_res["geo_distribution"], list)
+        self.assertIsInstance(overview_res["top_campuses"], list)
+        self.assertGreater(len(overview_res["top_campuses"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

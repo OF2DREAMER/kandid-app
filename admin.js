@@ -751,6 +751,62 @@ async function loadAdminOverview() {
     if (activeSessionsEl) activeSessionsEl.textContent = Number(res.system_health.active_sessions || 0).toLocaleString() + ' sessions';
     if (envBadgeEl) envBadgeEl.textContent = (res.system_health.environment || 'PRODUCTION').toUpperCase();
   }
+
+  // Geographic Analytics & Campus Circles
+  renderGeoOverview(res.geo_distribution || [], res.top_campuses || []);
+}
+
+function renderGeoOverview(geoList, campusList) {
+  var geoContainer = document.getElementById('adminGeoCitiesList');
+  if (geoContainer) {
+    if (!geoList || geoList.length === 0) {
+      geoContainer.innerHTML = '<div class="text-[#86868b] text-center py-4">No regional inflow detected yet.</div>';
+    } else {
+      var maxCnt = Math.max.apply(null, geoList.map(function(g) { return g.count || 1; })) || 1;
+      geoContainer.innerHTML = geoList.map(function(g) {
+        var pct = Math.round((g.count / maxCnt) * 100);
+        var label = g.state ? (g.city + ', ' + g.state) : g.city;
+        return `
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-white flex items-center gap-1.5">
+                <span class="text-[#2997ff]">📍</span> ${escapeHtml(label)}
+              </span>
+              <span class="text-[#86868b] font-mono text-[11px]">${g.count} moments</span>
+            </div>
+            <div class="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+              <div class="bg-gradient-to-r from-[#0071e3] to-[#2997ff] h-1.5 rounded-full" style="width: ${Math.max(8, pct)}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  var campusContainer = document.getElementById('adminCampusCirclesList');
+  if (campusContainer) {
+    if (!campusList || campusList.length === 0) {
+      campusContainer.innerHTML = '<div class="text-[#86868b] text-center py-4">No campus circles detected yet.</div>';
+    } else {
+      var maxUsers = Math.max.apply(null, campusList.map(function(c) { return c.user_count || 1; })) || 1;
+      campusContainer.innerHTML = campusList.map(function(c) {
+        var pct = Math.round((c.user_count / maxUsers) * 100);
+        return `
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-white flex items-center gap-1.5">
+                <span class="text-[#bf5af2]">🎓</span> ${escapeHtml(c.name)}
+              </span>
+              <span class="text-[#86868b] text-[11px] font-mono">${c.user_count} students • ${c.post_count || 0} moments</span>
+            </div>
+            <div class="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+              <div class="bg-gradient-to-r from-[#bf5af2] to-[#da8fff] h-1.5 rounded-full" style="width: ${Math.max(8, pct)}%"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
 }
 
 async function loadAdminHealth() {
@@ -880,6 +936,9 @@ function renderAdminUsersTable() {
 
       var createdStr = u.created_at ? String(u.created_at).split('T')[0] : '--';
       var activeStr = u.last_active ? String(u.last_active).split('T')[0] : 'Never';
+      var geoTag = (u.last_city || u.last_region)
+        ? `<div class="text-[10px] text-[#2997ff] flex items-center gap-1 mt-0.5"><span>📍</span><span>${escapeHtml([u.last_city, u.last_region].filter(Boolean).join(', '))}</span></div>`
+        : '';
 
       html += `
         <tr class="hover:bg-white/[0.04] transition">
@@ -894,7 +953,10 @@ function renderAdminUsersTable() {
           <td class="px-5 py-3.5">
             <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${statusBadgeClass}">${escapeHtml(u.account_status)}</span>
           </td>
-          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(u.campus || 'Central Campus')}</td>
+          <td class="px-5 py-3.5 text-[#86868b]">
+            <span class="font-medium text-white/90">${escapeHtml(u.campus || 'Central Campus')}</span>
+            ${geoTag}
+          </td>
           <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(createdStr)}</td>
           <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(activeStr)}</td>
           <td class="px-5 py-3.5 text-right">
@@ -953,7 +1015,8 @@ async function openUserActionModal(userId) {
       <div><span class="text-[#86868b]">Email:</span> <span class="text-white font-medium">${escapeHtml(u.email)}</span></div>
       <div><span class="text-[#86868b]">Role:</span> <span class="text-[#ffd60a] font-semibold">${escapeHtml(u.role)}</span></div>
       <div><span class="text-[#86868b]">Account Status:</span> <span class="text-white font-semibold">${escapeHtml(u.account_status)}</span></div>
-      <div><span class="text-[#86868b]">Campus:</span> <span class="text-white">${escapeHtml(u.campus || 'Central Campus')}</span></div>
+      <div><span class="text-[#86868b]">Campus Circle:</span> <span class="text-[#bf5af2] font-semibold">${escapeHtml(u.campus || 'Central Campus')}</span></div>
+      <div><span class="text-[#86868b]">Origin Location:</span> <span class="text-[#2997ff] font-medium">📍 ${escapeHtml([u.last_city, u.last_region].filter(Boolean).join(', ') || 'Auto-Detected (India)')}</span></div>
       <div><span class="text-[#86868b]">Active Sessions:</span> <span class="text-[#30d158] font-semibold">${res.active_sessions || 0}</span></div>
       <div><span class="text-[#86868b]">Authenticity Score:</span> <span class="text-white">${u.authenticity_score || 100}</span></div>
       <div><span class="text-[#86868b]">Streak Count:</span> <span class="text-white">${u.streak_count || 0}</span></div>
@@ -1128,6 +1191,9 @@ function renderAdminPostsTable() {
         ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-[#ff9f0a]/15 text-[#ffd60a] border border-[#ff9f0a]/30 font-medium">Clustered</span>`
         : `<span class="text-[11px] text-[#86868b]">Standalone</span>`;
 
+      var postGeo = (p.location_city || p.region) ? [p.location_city, p.region].filter(Boolean).join(', ') : '';
+      var campusCircle = p.circle || p.campus || 'Central Campus';
+
       var mainThumb = p.main_img ? `<img src="${escapeHtml(p.main_img)}" class="w-10 h-10 object-cover rounded-xl border border-white/10 shadow-sm" alt="thumb">` : `<div class="w-10 h-10 bg-white/5 rounded-xl border border-white/10 flex items-center justify-center text-xs text-[#86868b]">📷</div>`;
 
       var captionText = p.caption ? (p.caption.length > 35 ? p.caption.substring(0, 35) + '...' : p.caption) : '<span class="text-[#86868b] italic">No caption</span>';
@@ -1144,7 +1210,10 @@ function renderAdminPostsTable() {
           <td class="px-5 py-3.5 text-[#e5e5ea] max-w-xs truncate" title="${escapeHtml(p.caption || '')}">
             ${escapeHtml(captionText)}
           </td>
-          <td class="px-5 py-3.5 text-[#86868b]">${escapeHtml(p.campus || p.location_city || 'Central Campus')}</td>
+          <td class="px-5 py-3.5 text-[#86868b]">
+            <span class="font-medium text-white/90">${escapeHtml(campusCircle)}</span>
+            ${postGeo ? `<div class="text-[10px] text-[#2997ff] flex items-center gap-1 mt-0.5"><span>📍</span><span>${escapeHtml(postGeo)}</span></div>` : ''}
+          </td>
           <td class="px-5 py-3.5">${clusterBadge}</td>
           <td class="px-5 py-3.5">
             <span class="text-[10px] font-semibold px-2.5 py-0.5 rounded-full ${statusBadgeClass}">${escapeHtml(p.moderation_status)}</span>
@@ -1216,7 +1285,8 @@ async function openPostActionModal(postId) {
         <div><span class="text-[#86868b]">Author:</span> <span class="text-[#2997ff] font-medium">@${escapeHtml(p.author_handle)}</span></div>
         <div><span class="text-[#86868b]">Status:</span> <span class="text-white font-semibold">${escapeHtml(p.moderation_status)}</span></div>
         <div><span class="text-[#86868b]">Visibility:</span> <span class="text-white font-semibold">${p.is_private ? 'Private' : 'Public'}</span></div>
-        <div><span class="text-[#86868b]">Campus:</span> <span class="text-white">${escapeHtml(p.campus || 'Central Campus')}</span></div>
+        <div><span class="text-[#86868b]">Campus Circle:</span> <span class="text-[#bf5af2] font-semibold">${escapeHtml(p.circle || p.campus || 'Central Campus')}</span></div>
+        <div><span class="text-[#86868b]">Origin Location:</span> <span class="text-[#2997ff] font-medium">📍 ${escapeHtml([p.location_city, p.region].filter(Boolean).join(', ') || 'Auto-Detected (India)')}</span></div>
         <div><span class="text-[#86868b]">Reactions:</span> <span class="text-white font-medium">${res.reactions_count || 0}</span></div>
         <div><span class="text-[#86868b]">Reports:</span> <span class="text-[#ff453a] font-semibold">${res.reports_count || 0}</span></div>
         <div><span class="text-[#86868b]">Cluster ID:</span> <span class="text-[#ffd60a]">${escapeHtml(p.cluster_id || (res.cluster ? res.cluster.id : 'None'))}</span></div>
