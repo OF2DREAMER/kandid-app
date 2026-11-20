@@ -25,6 +25,7 @@ Run (both drivers installed):
       python3 test_pg8000_row_shape.py -v
 """
 
+import collections.abc
 import contextlib
 import importlib
 import json
@@ -84,8 +85,27 @@ class FakeCursor(object):
         return iter(rows)
 
 
-class DictRow(dict):
-    """Stand-in for psycopg2.extras.DictRow (a dict subclass)."""
+class MappingShapedRow(collections.abc.Mapping):
+    """A non-dict, mapping-shaped row (a third-party cursor implementation).
+
+    Real psycopg2 DictRow rows are exercised in
+    test_real_dictrow_row_contract.py; a hand-written ``dict`` stand-in is not
+    used here because it would misrepresent their sequence behaviour.
+    """
+
+    def __init__(self, data):
+        self._data = dict(data)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            raise TypeError("integer subscripts are not supported")
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
 
 
 class ARowContract(unittest.TestCase):
@@ -144,8 +164,11 @@ class ARowContract(unittest.TestCase):
         self.assertEqual(row[1], "second")
         self.assertEqual(len(row), 1)
 
-    def test_05_psycopg2_mapping_rows_pass_through_unchanged(self):
-        original = DictRow({"id": "u1", "email": "u1@example.test"})
+    def test_05_mapping_shaped_rows_pass_through_unchanged(self):
+        # The pass-through rule is capability-based, so any non-dict row that
+        # already exposes keys()/column subscripts survives untouched instead
+        # of being silently re-typed.
+        original = MappingShapedRow({"id": "u1", "email": "u1@example.test"})
         cursor = PostgresCursorWrapper(
             FakeCursor(_description("id", "email"), [original])
         )
@@ -191,6 +214,97 @@ class ARowContract(unittest.TestCase):
         row = cursor.fetchone()
         self.assertEqual(row["id"], "u1")
         self.assertEqual(dict(row), {"id": "u1"})
+
+    # -- R2: mapping-shaped rows must never become positional rows ---------
+    def test_10_mapping_row_with_unresolvable_column_is_rejected(self):
+        # keys() succeeds, but the described first column is absent. The row is
+        # mapping-shaped, so its iteration yields KEYS; converting it would
+        # silently store "id"/"email" as the column values.
+        original = MappingShapedRow({"id": "u1", "email": "u1@example.test"})
+        cursor = PostgresCursorWrapper(
+            FakeCursor(_description("user_id", "user_email"), [original])
+        )
+        with self.assertRaises(server.PostgresRowShapeError) as ctx:
+            cursor.fetchone()
+        self.assertIn("user_id", str(ctx.exception))
+        self.assertIn("MappingShapedRow", str(ctx.exception))
+        # The row itself was neither mutated nor consumed.
+        self.assertEqual(
+            dict(original), {"id": "u1", "email": "u1@example.test"}
+        )
+
+        # fetchall() and iteration take the same path, not a silent fallback.
+        cursor = PostgresCursorWrapper(
+            FakeCursor(_description("user_id"), [original])
+        )
+        with self.assertRaises(server.PostgresRowShapeError):
+            cursor.fetchall()
+        cursor = PostgresCursorWrapper(
+            FakeCursor(_description("user_id"), [original])
+        )
+        with self.assertRaises(server.PostgresRowShapeError):
+            list(cursor)
+
+    def test_11_mapping_row_lookup_errors_are_not_swallowed(self):
+        # Only "column absent" errors are classified. A defect inside the row
+        # implementation must surface as itself, never as a normalisation
+        # decision and never as a rewritten row.
+        class ExplodingRow(MappingShapedRow):
+            def __getitem__(self, key):
+                raise RuntimeError("row lookup blew up")
+
+        cursor = PostgresCursorWrapper(
+            FakeCursor(_description("id"), [ExplodingRow({"id": 1})])
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            cursor.fetchone()
+        self.assertNotIsInstance(ctx.exception, server.PostgresRowShapeError)
+        self.assertIn("blew up", str(ctx.exception))
+
+    def test_12_equal_width_key_mismatch_never_converts_keys_to_values(self):
+        # Same apparent width, different keys: the dangerous case, because a
+        # positional conversion would succeed structurally while losing every
+        # value (it would store the keys instead).
+        original = MappingShapedRow({"first": 1, "second": 2})
+        self.assertEqual(len(original), 2)
+        cursor = PostgresCursorWrapper(
+            FakeCursor(_description("one", "two"), [original])
+        )
+        with self.assertRaises(server.PostgresRowShapeError):
+            cursor.fetchone()
+        # No PostgresRowMapping was produced from the keys.
+        self.assertEqual(list(original.values()), [1, 2])
+        self.assertEqual(list(original.keys()), ["first", "second"])
+
+    def test_13_unnamed_first_column_preserves_the_mapping_row(self):
+        # An empty column name cannot be probed; preserving the row is the only
+        # safe choice (converting could still turn keys into values).
+        original = MappingShapedRow({"": "v"})
+        cursor = PostgresCursorWrapper(FakeCursor([("",)], [original]))
+        self.assertIs(cursor.fetchone(), original)
+
+    def test_14_malformed_description_raises_a_descriptive_error(self):
+        cursor = PostgresCursorWrapper(FakeCursor([123], [("v",)]))
+        with self.assertRaises(server.PostgresRowShapeError) as ctx:
+            cursor.fetchone()
+        self.assertIn("description", str(ctx.exception).lower())
+
+    def test_15_valid_mapping_row_and_tuple_row_keep_their_shapes(self):
+        # The R2 fix must not disturb the happy paths: a matching mapping row is
+        # returned as-is, and a bare pg8000 row is still normalised.
+        mapping_row = MappingShapedRow({"id": "u1", "email": "u1@example.test"})
+        cursor = PostgresCursorWrapper(
+            FakeCursor(_description("id", "email"), [mapping_row])
+        )
+        self.assertIs(cursor.fetchone(), mapping_row)
+
+        tuple_row = ("u1", "u1@example.test")
+        cursor = PostgresCursorWrapper(
+            FakeCursor(_description("id", "email"), [tuple_row])
+        )
+        normalised = cursor.fetchone()
+        self.assertIsInstance(normalised, PostgresRowMapping)
+        self.assertEqual(dict(normalised), {"id": "u1", "email": "u1@example.test"})
 
 
 def _request(path, token, body, timeout=30.0):
@@ -468,7 +582,22 @@ class BDriverParity(PgDriverTestBase):
                     row = cursor.fetchone()
                 finally:
                     conn.close()
-                self.assertIsInstance(row, dict, "%s row is not a mapping" % mode)
+                # psycopg2 rows are real DictRow objects (a list subclass) and
+                # must survive untouched; only pg8000 tuples are normalised.
+                if mode == "psycopg2":
+                    import psycopg2.extras
+
+                    self.assertIsInstance(
+                        row,
+                        psycopg2.extras.DictRow,
+                        "psycopg2 rows must pass through as real DictRow objects",
+                    )
+                else:
+                    self.assertIsInstance(
+                        row,
+                        PostgresRowMapping,
+                        "pg8000 tuple rows must be normalised",
+                    )
                 self.assertEqual(row[0], uid)
                 self.assertEqual(row["id"], uid)
                 seen[mode] = dict(row)
