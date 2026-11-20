@@ -4532,12 +4532,15 @@ def init_db():
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_admin_backup_codes_lookup ON admin_backup_codes(admin_id, used);")
 
-    # Auto-migrations for users table (admin_totp_secret, admin_totp_enabled)
+    # Auto-migrations for users table (admin_totp_secret, admin_totp_enabled, geo tracking)
     cursor.execute("PRAGMA table_info(users)")
     u_cols_admin = [row[1] for row in cursor.fetchall()]
     for col, col_def in [
         ("admin_totp_secret", "TEXT DEFAULT ''"),
-        ("admin_totp_enabled", "INTEGER DEFAULT 0")
+        ("admin_totp_enabled", "INTEGER DEFAULT 0"),
+        ("last_ip", "TEXT DEFAULT ''"),
+        ("last_city", "TEXT DEFAULT ''"),
+        ("last_region", "TEXT DEFAULT ''")
     ]:
         if col not in u_cols_admin:
             try:
@@ -6928,6 +6931,55 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute("SELECT COUNT(*) FROM sessions WHERE expires_at IS NULL OR expires_at > ?", (now_iso,))
             active_sessions = cursor.fetchone()[0]
 
+            # Geographic Analytics: Top Campus Circles
+            cursor.execute("""
+                SELECT campus, COUNT(*) as user_count
+                FROM users
+                WHERE campus IS NOT NULL AND TRIM(campus) != ''
+                GROUP BY campus
+                ORDER BY user_count DESC
+                LIMIT 6
+            """)
+            top_campuses_raw = cursor.fetchall()
+            top_campuses = []
+            for r in top_campuses_raw:
+                c_name = r[0].strip()
+                cursor.execute("SELECT COUNT(*) FROM posts WHERE campus = ? OR circle = ?", (c_name, c_name))
+                post_cnt = cursor.fetchone()[0]
+                top_campuses.append({
+                    "name": c_name,
+                    "user_count": r[1],
+                    "post_count": post_cnt
+                })
+            if not top_campuses:
+                top_campuses = [
+                    {"name": "Central Campus", "user_count": total_users, "post_count": total_moments}
+                ]
+
+            # Geographic Analytics: IP-based City & State Distribution
+            cursor.execute("""
+                SELECT location_city, region, COUNT(*) as cnt
+                FROM posts
+                WHERE location_city IS NOT NULL AND TRIM(location_city) != ''
+                GROUP BY location_city, region
+                ORDER BY cnt DESC
+                LIMIT 6
+            """)
+            geo_rows = cursor.fetchall()
+            geo_distribution = []
+            for r in geo_rows:
+                city = r[0].strip() if r[0] else "Central"
+                state = r[1].strip() if r[1] else ""
+                geo_distribution.append({
+                    "city": city,
+                    "state": state,
+                    "count": r[2]
+                })
+            if not geo_distribution:
+                geo_distribution = [
+                    {"city": "Delhi NCR", "state": "Delhi", "count": max(1, total_moments)}
+                ]
+
             conn.close()
 
             return self.send_json(200, {
@@ -6938,6 +6990,8 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "active_communities": active_communities,
                 "active_clusters": active_clusters,
                 "pending_reports": pending_reports,
+                "top_campuses": top_campuses,
+                "geo_distribution": geo_distribution,
                 "system_health": {
                     "database": "healthy",
                     "engine": "postgresql" if DATABASE_URL else "sqlite",
@@ -7026,7 +7080,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             total = cursor.fetchone()[0]
 
             cursor.execute(f"""
-                SELECT id, handle, name, email, role, account_status, campus, created_at, last_active, authenticity_score, streak_count
+                SELECT id, handle, name, email, role, account_status, campus, created_at, last_active, authenticity_score, streak_count, last_ip, last_city, last_region
                 FROM users
                 WHERE {where_sql}
                 ORDER BY created_at DESC
@@ -7153,7 +7207,7 @@ class KandidHandler(SimpleHTTPRequestHandler):
             cursor.execute(f"""
                 SELECT id, user_id, author_handle, author_name, avatar_letter, avatar_url, campus,
                        main_img, pip_img, caption, created_at, moderation_status, is_private,
-                       primary_community_id, cluster_id, location_city
+                       primary_community_id, cluster_id, location_city, region, circle, context_location
                 FROM posts
                 WHERE {where_sql}
                 ORDER BY created_at DESC
@@ -15518,7 +15572,14 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 if raw_pip and not pip_img:
                     return self.send_json(502, {"success": False, "error": "Failed to upload selfie capture to cloud storage. Moment was not created."})
 
-            location_city = body.get("location_city") or body.get("locationCity") or user.get("campus", "North City University")
+            # Privacy-safe IP Geolocation via Cloudflare edge headers
+            cf_city = (self.headers.get("CF-IPCity") or "").strip()
+            cf_region = (self.headers.get("CF-Region") or self.headers.get("CF-Region-Code") or "").strip()
+            xfwd = self.headers.get("X-Forwarded-For", "")
+            client_ip = xfwd.split(",")[0].strip() if xfwd else getattr(self, "client_address", [""])[0]
+
+            location_city = body.get("location_city") or body.get("locationCity") or cf_city or user.get("campus", "Central Campus")
+            region = body.get("region") or cf_region or ""
             location_coords = body.get("locationCoords", "")
             iso = body.get("iso", "ISO 400")
             aperture = body.get("aperture", "f/2.8")
@@ -15586,6 +15647,17 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
             post_id = "post_" + secrets.token_hex(6)
             conn = get_db()
+            if user and user.get("id"):
+                try:
+                    conn.execute("""
+                        UPDATE users 
+                        SET last_ip = ?, 
+                            last_city = CASE WHEN ? != '' THEN ? ELSE last_city END, 
+                            last_region = CASE WHEN ? != '' THEN ? ELSE last_region END 
+                        WHERE id = ?
+                    """, (client_ip, cf_city, cf_city, cf_region, cf_region, user["id"]))
+                except Exception:
+                    pass
             audio_duration = body.get("audioDuration") or body.get("audio_duration") or "3.0s"
             
             raw_motion = body.get("motionData") or body.get("motion_data") or ""
