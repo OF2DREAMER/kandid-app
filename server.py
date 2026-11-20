@@ -2727,9 +2727,69 @@ def verify_google_id_token(token_str: str) -> dict:
         except Exception:
             return None
 
+def _pg_column_name(description_entry):
+    """Column name from one ``cursor.description`` entry (bytes-safe)."""
+    name = description_entry[0] if description_entry else ""
+    if isinstance(name, (bytes, bytearray)):
+        try:
+            return name.decode("utf-8")
+        except Exception:
+            return str(name)
+    return str(name)
+
+
+class PostgresRowMapping(dict):
+    """One DB-API row exposed as a mapping *and* as a sequence.
+
+    PostgreSQL access goes through PostgresCursorWrapper, which asks psycopg2 for
+    DictCursor rows. pg8000 has no equivalent cursor and returns plain tuples,
+    so every ``dict(row)`` / ``row["col"]`` call on the request path raised.
+    Converting in the cursor wrapper -- the single place both drivers meet --
+    keeps one row contract for the rest of the server:
+
+      * keys come from ``cursor.description`` in column order (aliases work),
+      * duplicate column names keep the last value, matching DictCursor,
+      * integer subscripts address columns positionally, matching DictRow, so
+        existing ``row[0]`` call sites keep working,
+      * SQL NULL stays None.
+
+    psycopg2 rows are already DictRow mappings and are never converted.
+    """
+
+    __slots__ = ("_values",)
+
+    def __init__(self, columns, values):
+        values = tuple(values)
+        columns = list(columns)
+        if len(columns) != len(values):
+            raise ValueError(
+                "row/description mismatch: %d columns, %d values"
+                % (len(columns), len(values))
+            )
+        dict.__init__(self, zip(columns, values))
+        self._values = values
+
+    def __getitem__(self, key):
+        if isinstance(key, int) and not isinstance(key, bool):
+            return self._values[key]
+        return dict.__getitem__(self, key)
+
+    def __repr__(self):
+        return "PostgresRowMapping(%r)" % (dict(self),)
+
+
 class PostgresCursorWrapper:
     def __init__(self, raw_cursor):
         self.raw_cursor = raw_cursor
+
+    def _normalize_row(self, row):
+        """Give both drivers the same row shape (see PostgresRowMapping)."""
+        if row is None or isinstance(row, dict):
+            return row
+        description = getattr(self.raw_cursor, "description", None)
+        if not description:
+            return row
+        return PostgresRowMapping([_pg_column_name(d) for d in description], row)
 
     def execute(self, sql, params=None):
         if not sql or not sql.strip():
@@ -2819,20 +2879,17 @@ class PostgresCursorWrapper:
     def fetchone(self):
         if getattr(self.raw_cursor, "description", None) is None:
             return None
-        row = self.raw_cursor.fetchone()
-        if row is None:
-            return None
-        return row
+        return self._normalize_row(self.raw_cursor.fetchone())
 
     def fetchall(self):
         if getattr(self.raw_cursor, "description", None) is None:
             return []
-        return self.raw_cursor.fetchall()
+        return [self._normalize_row(row) for row in self.raw_cursor.fetchall()]
 
     def __iter__(self):
         if getattr(self.raw_cursor, "description", None) is None:
             return iter([])
-        return iter(self.raw_cursor)
+        return (self._normalize_row(row) for row in self.raw_cursor)
 
     @property
     def rowcount(self):

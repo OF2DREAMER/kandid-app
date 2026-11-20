@@ -756,7 +756,11 @@ class HttpBoundaryReleaseTests(unittest.TestCase):
         conn = acquire_wrapper(probe_pool)
         cur = conn.cursor()
         cur.execute("SELECT 1")
-        self.assertEqual(cur.fetchone(), (1,))
+        row = cur.fetchone()
+        # A described tuple row is normalised into a mapping row (the pg8000
+        # path); positional access still works, so both probe styles agree.
+        self.assertEqual(row["probe"], 1)
+        self.assertEqual(row[0], 1)
         conn.close()
         self.assertEqual(probe_pool.idle_count, 1)
 
