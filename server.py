@@ -2727,9 +2727,164 @@ def verify_google_id_token(token_str: str) -> dict:
         except Exception:
             return None
 
+def _pg_column_name(description_entry):
+    """Column name from one ``cursor.description`` entry (bytes-safe)."""
+    name = description_entry[0] if description_entry else ""
+    if isinstance(name, (bytes, bytearray)):
+        try:
+            return name.decode("utf-8")
+        except Exception:
+            return str(name)
+    return str(name)
+
+
+class PostgresRowMapping(dict):
+    """One DB-API row exposed as a mapping *and* as a sequence.
+
+    PostgreSQL access goes through PostgresCursorWrapper, which asks psycopg2 for
+    DictCursor rows. pg8000 has no equivalent cursor and returns plain tuples,
+    so every ``dict(row)`` / ``row["col"]`` call on the request path raised.
+    Wrapping only the rows that are not already mapping-shaped -- in the single
+    place both drivers meet -- keeps one row contract for the rest of the server:
+
+      * keys come from ``cursor.description`` in column order (aliases work),
+      * duplicate column names keep the last value, matching DictCursor,
+      * integer subscripts address columns positionally, matching DictRow, so
+        existing ``row[0]`` call sites keep working,
+      * iteration yields the positional *values*, matching DictRow and the
+        pg8000 tuple this row replaces, so ``list(row)``, ``tuple(row)``,
+        unpacking and ``for value in row`` keep their sequence meaning,
+      * ``len(row)`` still counts unique column names, like the dict it is,
+      * SQL NULL stays None.
+
+    psycopg2's DictCursor returns ``psycopg2.extras.DictRow``, which subclasses
+    ``list`` -- not ``dict``. It is already mapping-shaped (``keys()`` plus
+    column-name subscripts) and is therefore returned untouched: its sequence
+    behaviour (iteration yields values, slicing, ``len``) is exactly what
+    psycopg2 callers already see. Only rows without that capability, such as
+    pg8000 tuples, are converted.
+
+    A row that exposes ``keys()`` is never treated as positional, not even
+    when its keys do not match the cursor description. Iterating a mapping
+    yields its *keys*, so converting such a row would silently turn column
+    names into column values. Rows whose described first column cannot be
+    looked up raise ``PostgresRowShapeError`` instead.
+    """
+
+    __slots__ = ("_values",)
+
+    def __init__(self, columns, values):
+        values = tuple(values)
+        columns = list(columns)
+        if len(columns) != len(values):
+            raise ValueError(
+                "row/description mismatch: %d columns, %d values"
+                % (len(columns), len(values))
+            )
+        dict.__init__(self, zip(columns, values))
+        self._values = values
+
+    def __getitem__(self, key):
+        if isinstance(key, int) and not isinstance(key, bool):
+            return self._values[key]
+        return dict.__getitem__(self, key)
+
+    def __iter__(self):
+        """Iterate the row's *values*, like the tuple/DictRow it replaces.
+
+        ``dict`` would iterate keys here, which silently turned ``list(row)``
+        and ``tuple(row)`` into column names. Iteration is positional, so a
+        normalised pg8000 row keeps exactly the sequence meaning it had as a
+        tuple. ``len`` is deliberately not overridden: it keeps counting
+        unique keys, so duplicate column names collapse only in the mapping.
+        """
+        return iter(self._values)
+
+    def __repr__(self):
+        return "PostgresRowMapping(%r)" % (dict(self),)
+
+
+class PostgresRowShapeError(RuntimeError):
+    """A cursor row cannot be reconciled with its own ``description``.
+
+    Raised instead of guessing. A mapping-shaped row whose described columns
+    are not present is never reinterpreted positionally: iterating a mapping
+    yields its keys, which would silently turn column names into column
+    values. Failing loudly keeps the corruption out of the response and points
+    at the real problem -- a cursor whose description and rows disagree.
+    """
+
+
+# Lookup errors that mean "this mapping does not have the described column".
+# Anything else is a genuine defect in the row implementation and propagates
+# untouched, so a broken third-party cursor cannot hide behind our probe.
+_ROW_LOOKUP_ERRORS = (KeyError, IndexError, TypeError, AttributeError)
+
+
+def _row_exposes_mapping_interface(row):
+    """True when ``row`` claims column-name access via a callable ``keys()``.
+
+    A ``dict`` check is not enough: psycopg2's DictRow subclasses ``list``, so
+    ``isinstance(row, dict)`` is False for real psycopg2 rows. Capability is
+    therefore tested directly, which recognises dicts, DictRow and any
+    third-party mapping-shaped row, while pg8000 tuples/lists expose no
+    ``keys()`` at all.
+    """
+    return callable(getattr(row, "keys", None))
+
+
+def _preserve_mapping_shaped_row(row, columns):
+    """Return a mapping-shaped ``row`` unchanged, or reject it clearly.
+
+    ``row`` already exposes ``keys()``, so it is mapping-shaped and is kept as
+    it is -- its identity, iteration, slicing and ``len`` stay native. The
+    described first column is only used to verify that the row's keys really
+    do match the description:
+
+      * lookup succeeds -> the row is returned untouched;
+      * the first column cannot be looked up -> ``PostgresRowShapeError``,
+        because converting the row positionally would turn its keys into
+        values;
+      * the description does not name the first column -> nothing can be
+        verified, so the row is preserved rather than converted.
+
+    Unexpected exceptions from the lookup are not caught here.
+    """
+    column = columns[0]
+    if not column:
+        return row
+    try:
+        row[column]
+    except _ROW_LOOKUP_ERRORS as exc:
+        raise PostgresRowShapeError(
+            "cursor returned a mapping-shaped row (%s) whose described first"
+            " column %r cannot be looked up; refusing to reinterpret its keys"
+            " as positional values" % (type(row).__name__, column)
+        ) from exc
+    return row
+
+
 class PostgresCursorWrapper:
     def __init__(self, raw_cursor):
         self.raw_cursor = raw_cursor
+
+    def _normalize_row(self, row):
+        """Give both drivers the same row shape (see PostgresRowMapping)."""
+        if row is None:
+            return row
+        description = getattr(self.raw_cursor, "description", None)
+        if not description:
+            return row
+        try:
+            columns = [_pg_column_name(entry) for entry in description]
+        except (TypeError, IndexError) as exc:
+            raise PostgresRowShapeError(
+                "cursor.description cannot be read as column names: %r"
+                % (description,)
+            ) from exc
+        if not _row_exposes_mapping_interface(row):
+            return PostgresRowMapping(columns, row)
+        return _preserve_mapping_shaped_row(row, columns)
 
     def execute(self, sql, params=None):
         if not sql or not sql.strip():
@@ -2819,20 +2974,17 @@ class PostgresCursorWrapper:
     def fetchone(self):
         if getattr(self.raw_cursor, "description", None) is None:
             return None
-        row = self.raw_cursor.fetchone()
-        if row is None:
-            return None
-        return row
+        return self._normalize_row(self.raw_cursor.fetchone())
 
     def fetchall(self):
         if getattr(self.raw_cursor, "description", None) is None:
             return []
-        return self.raw_cursor.fetchall()
+        return [self._normalize_row(row) for row in self.raw_cursor.fetchall()]
 
     def __iter__(self):
         if getattr(self.raw_cursor, "description", None) is None:
             return iter([])
-        return iter(self.raw_cursor)
+        return (self._normalize_row(row) for row in self.raw_cursor)
 
     @property
     def rowcount(self):
