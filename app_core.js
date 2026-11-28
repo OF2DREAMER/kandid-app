@@ -1356,7 +1356,6 @@ window.switchScreenView = switchScreenView;
 async function loadCommunityScreen() {
   var activeName = document.getElementById('communityActiveName');
   var activeLoc = document.getElementById('communityActiveLocation');
-  var contextDesc = document.getElementById('communityContextDesc');
   var momentsContainer = document.getElementById('campusMomentsContainer');
   var loadingEl = document.getElementById('campusMomentsLoading');
   var emptyEl = document.getElementById('campusMomentsEmpty');
@@ -1387,9 +1386,6 @@ async function loadCommunityScreen() {
           activeName.dataset.communityId = c.id;
         }
         if (activeLoc) activeLoc.textContent = c.location || 'Local Region';
-        if (contextDesc) {
-          contextDesc.textContent = c.description || ('People capturing ordinary life around ' + c.name + ' without performance or rankings.');
-        }
       }
     }).catch(function() {});
 
