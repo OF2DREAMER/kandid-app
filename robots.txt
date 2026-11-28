@@ -1,6 +1,7 @@
 User-agent: *
 Allow: /
 Allow: /about
+Allow: /campuses
 Allow: /privacy
 Allow: /terms
 Disallow: /api/
@@ -8,5 +9,12 @@ Disallow: /data/
 Disallow: /scratch/
 Disallow: /backend/
 Disallow: /uploads/chat_attachments/
+Disallow: /admin
+Disallow: /kandid_feed.html
+Disallow: /kandid_campus.html
+Disallow: /kandid_capture.html
+Disallow: /kandid_global.html
+Disallow: /kandid_search.html
+Disallow: /kandid_you.html
 
 Sitemap: https://kindid.in/sitemap.xml

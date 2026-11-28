@@ -3,22 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>About Kandid — Authentic Moments &amp; Communities</title>
-  <meta name="description" content="Learn about Kandid, the authentic social platform for real-world moments, campuses, and communities. Developed by SolvarionX.">
+  <title>About Kindid — Authentic Moments &amp; Campus Communities</title>
+  <meta name="description" content="Learn about Kindid (kindid.in), India's authentic social platform for real-world moments, college campuses, and local communities. Developed by SolvarionX.">
   <link rel="canonical" href="https://kindid.in/about">
   <meta name="robots" content="index, follow, max-image-preview:large">
 
   <!-- Open Graph / Facebook / WhatsApp -->
-  <meta property="og:site_name" content="Kandid">
-  <meta property="og:title" content="About Kandid — Authentic Moments &amp; Communities">
-  <meta property="og:description" content="The authentic social platform for real-world moments, campuses, and communities. Developed by SolvarionX.">
+  <meta property="og:site_name" content="Kindid">
+  <meta property="og:title" content="About Kindid — Authentic Moments &amp; Campus Communities">
+  <meta property="og:description" content="Kindid is the authentic social platform for dual-camera moments, college campuses, and real-world communities. Developed by SolvarionX at kindid.in.">
   <meta property="og:url" content="https://kindid.in/about">
   <meta property="og:type" content="website">
+  <meta property="og:image" content="https://kindid.in/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Kindid — Your world. Your moments.">
 
   <!-- Twitter / X -->
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="About Kandid — Authentic Moments &amp; Communities">
-  <meta name="twitter:description" content="The authentic social platform for real-world moments, campuses, and communities. Developed by SolvarionX.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="About Kindid — Authentic Moments &amp; Campus Communities">
+  <meta name="twitter:description" content="Kindid is the authentic social platform for dual-camera moments, college campuses, and real-world communities.">
+  <meta name="twitter:image" content="https://kindid.in/og-image.png">
 
   <!-- Structured Data (JSON-LD) -->
   <script type="application/ld+json">
@@ -29,25 +34,47 @@
         "@type": "Organization",
         "@id": "https://kindid.in/#organization",
         "name": "SolvarionX",
-        "url": "https://kindid.in/"
+        "url": "https://kindid.in/",
+        "logo": "https://kindid.in/icon-512.png"
       },
       {
         "@type": "Brand",
         "@id": "https://kindid.in/#brand",
-        "name": "Kandid",
-        "url": "https://kindid.in/"
+        "name": "Kindid",
+        "alternateName": "Kandid",
+        "url": "https://kindid.in/",
+        "logo": "https://kindid.in/icon-512.png",
+        "description": "Authentic dual-camera social moments and campus communities platform at kindid.in."
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://kindid.in/#app",
+        "name": "Kindid",
+        "applicationCategory": "SocialNetworkingApplication",
+        "operatingSystem": "Web, Android, iOS",
+        "url": "https://kindid.in/",
+        "image": "https://kindid.in/og-image.png",
+        "description": "Authentic dual-camera moments, 3-second ambient audio captures, campus circles, and real-time community pulse without vanity metrics.",
+        "publisher": {
+          "@id": "https://kindid.in/#organization"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "INR"
+        }
       },
       {
         "@type": "AboutPage",
         "@id": "https://kindid.in/about#webpage",
         "url": "https://kindid.in/about",
-        "name": "About Kandid — Authentic Moments & Communities",
-        "description": "Learn about Kandid, an authentic social platform for real-world moments, campuses, and communities developed by SolvarionX.",
+        "name": "About Kindid — Authentic Moments & Campus Communities",
+        "description": "Learn about Kindid, the authentic social platform for real-world moments, college campuses, and communities developed by SolvarionX.",
         "isPartOf": {
           "@type": "WebSite",
           "@id": "https://kindid.in/#website",
           "url": "https://kindid.in/",
-          "name": "Kandid"
+          "name": "Kindid"
         },
         "about": {
           "@id": "https://kindid.in/#brand"
@@ -58,7 +85,11 @@
   </script>
 
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/tailwind.compiled.css?v=4.3.3">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -74,13 +105,14 @@
 <body class="bg-black text-zinc-100 min-h-screen flex flex-col selection:bg-amber-500 selection:text-black">
   <!-- Header / Nav -->
   <header class="border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md sticky top-0 z-50 no-print">
-    <div class="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2.5 group">
-        <div class="w-7 h-7 rounded-lg bg-amber-500 flex items-center justify-center font-bold text-black text-sm tracking-tighter">K</div>
-        <span class="font-extrabold text-base text-white tracking-tight group-hover:text-amber-400 transition">Kandid</span>
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
+      <a href="/" class="flex items-center gap-2.5 group shrink-0">
+        <img src="/favicon.svg" alt="Kindid Logo" class="w-7 h-7 rounded-lg">
+        <span class="font-extrabold text-base text-white tracking-tight group-hover:text-amber-400 transition">Kindid</span>
       </a>
-      <nav class="flex items-center gap-4 text-xs font-semibold text-zinc-400">
+      <nav aria-label="Primary navigation" class="flex items-center gap-4 text-xs font-semibold text-zinc-400 flex-wrap justify-end">
         <a href="/about" class="text-amber-400 font-bold border-b border-amber-400 pb-0.5">About</a>
+        <a href="/campuses" class="hover:text-white transition">Campuses</a>
         <a href="/terms" class="hover:text-white transition">Terms of Service</a>
         <a href="/privacy" class="hover:text-white transition">Privacy Policy</a>
       </nav>
@@ -93,55 +125,55 @@
       <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900 border border-zinc-800 text-amber-400 text-xs font-mono-tag font-semibold mb-3">
         PRODUCT &amp; MISSION
       </div>
-      <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-2">About Kandid</h1>
-      <p class="text-xs sm:text-sm text-zinc-400 font-mono-tag">Kandid is developed by SolvarionX · Official Domain: kindid.in</p>
+      <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-2">About Kindid</h1>
+      <p class="text-xs sm:text-sm text-zinc-400 font-mono-tag">Kindid is developed by SolvarionX &middot; Official Domain: kindid.in</p>
     </div>
 
-    <article class="prose prose-invert max-w-none space-y-10 text-sm sm:text-base text-zinc-300 leading-relaxed">
+    <article class="max-w-none space-y-10 text-sm sm:text-base text-zinc-300 leading-relaxed">
       <!-- Section 1: Overview -->
       <section class="space-y-3">
         <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <span class="text-amber-400 font-mono-tag text-base">01.</span> What is Kandid?
+          <span class="text-amber-400 font-mono-tag text-base">01.</span> What is Kindid?
         </h2>
         <p>
-          Kandid is an authentic community platform designed around real-world places, university campuses, and genuine everyday moments. Rather than curating an idealized online persona, Kandid provides a grounded space where students, creators, and community members can capture their surroundings honestly and stay connected with the spaces they care about.
+          <strong>Kindid</strong> (<a href="https://kindid.in/" class="text-amber-400 hover:underline">kindid.in</a>) is an authentic social and community platform built around real-world places, university campuses, and genuine everyday moments. Rather than curating an idealized online persona, Kindid provides a grounded space where students, creators, and local communities capture their surroundings honestly and stay connected with the spaces they belong to.
         </p>
       </section>
 
-      <!-- Section 2: Why Kandid Exists -->
+      <!-- Section 2: Why Kindid Exists -->
       <section class="space-y-4">
         <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <span class="text-amber-400 font-mono-tag text-base">02.</span> Why Kandid Exists
+          <span class="text-amber-400 font-mono-tag text-base">02.</span> Why Kindid Exists
         </h2>
         <p>
           Modern social networks frequently incentivize performance over presence. Algorithms prioritize outrage, vanity metrics dictate self-worth, and feeds become saturated with staged content disconnected from physical reality.
         </p>
         <p>
-          Kandid was built on a different premise: <strong>real people, real places, real moments.</strong>
+          Kindid was built on a different premise: <strong>real people, real places, real moments.</strong>
         </p>
         <div class="p-4 sm:p-5 rounded-2xl bg-zinc-950 border border-amber-500/20 shadow-lg">
           <p class="text-xs sm:text-sm text-amber-300/90 font-medium leading-relaxed italic">
-            &ldquo;Kandid isn't about making your life look interesting. It's about noticing the life you're already living.&rdquo;
+            &ldquo;Kindid isn't about making your life look interesting. It's about noticing the life you're already living.&rdquo;
           </p>
         </div>
         <p>
-          By removing public popularity contests and focusing on shared spatial and campus contexts, Kandid helps communities stay anchored in real-world shared experiences.
+          By removing public popularity contests and focusing on shared spatial and campus contexts, Kindid helps communities stay anchored in real-world shared experiences.
         </p>
       </section>
 
       <!-- Section 3: Core Features (How It Works) -->
       <section class="space-y-4">
         <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <span class="text-amber-400 font-mono-tag text-base">03.</span> How It Works
+          <span class="text-amber-400 font-mono-tag text-base">03.</span> How Kindid Works
         </h2>
-        <p>Kandid provides focused, intentional features designed for authentic connection:</p>
+        <p>Kindid provides focused, intentional features designed for authentic connection:</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
           <div class="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2">
             <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
               <span class="text-amber-400 font-mono-tag text-xs">📷</span> Dual-Camera Moment Capture
             </h3>
             <p class="text-xs sm:text-sm text-zinc-400 leading-relaxed">
-              Capture simultaneous front and rear perspectives in a single moment, showcasing both what you see and your genuine presence within that environment.
+              Capture simultaneous front and rear perspectives with optional 3-second ambient audio, showcasing both what you see and your genuine presence in that moment.
             </p>
           </div>
           <div class="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2">
@@ -149,12 +181,12 @@
               <span class="text-amber-400 font-mono-tag text-xs">🏛️</span> Campus &amp; Place Hubs
             </h3>
             <p class="text-xs sm:text-sm text-zinc-400 leading-relaxed">
-              Explore and participate in dedicated communities anchored to real universities, colleges, and shared creative spaces.
+              Explore and participate in <a href="/campuses" class="text-amber-400 hover:underline">dedicated campus circles</a> anchored to real universities, colleges, and local creator spaces.
             </p>
           </div>
           <div class="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2">
             <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-              <span class="text-amber-400 font-mono-tag text-xs">🤝</span> RealMoji Reactions
+              <span class="text-amber-400 font-mono-tag text-xs">🤝</span> KindMoji Reactions
             </h3>
             <p class="text-xs sm:text-sm text-zinc-400 leading-relaxed">
               React to friends and shared community posts using authentic emoji expressions and personal photo reactions rather than passive like counts.
@@ -162,19 +194,19 @@
           </div>
           <div class="p-4 rounded-xl bg-zinc-900/60 border border-zinc-800/80 space-y-2">
             <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-              <span class="text-amber-400 font-mono-tag text-xs">💬</span> Direct Messaging
+              <span class="text-amber-400 font-mono-tag text-xs">💬</span> Focused Direct Messaging
             </h3>
             <p class="text-xs sm:text-sm text-zinc-400 leading-relaxed">
-              Communicate directly with friends and connections in private, focused conversation channels without public broadcast pressures.
+              Communicate directly with friends and campus connections in private conversation channels without public broadcast pressures.
             </p>
           </div>
         </div>
       </section>
 
-      <!-- Section 4: What Kandid Is NOT -->
+      <!-- Section 4: What Kindid Is NOT -->
       <section class="space-y-3">
         <h2 class="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
-          <span class="text-amber-400 font-mono-tag text-base">04.</span> What Kandid is NOT
+          <span class="text-amber-400 font-mono-tag text-base">04.</span> What Kindid is NOT
         </h2>
         <ul class="list-disc pl-5 space-y-2 text-zinc-300">
           <li><strong>Not an influencer platform:</strong> We do not offer public follower rankings, viral scoreboards, or engagement-maximizing algorithmic feeds designed to induce endless scrolling.</li>
@@ -204,12 +236,16 @@
           <span class="text-amber-400 font-mono-tag text-base">06.</span> Developer &amp; Corporate Relationship
         </h2>
         <p>
-          <strong>Kandid is developed by SolvarionX.</strong> SolvarionX is the technology company responsible for the design, architecture, infrastructure, and legal governance of the platform.
+          <strong>Kindid is developed by SolvarionX.</strong> SolvarionX is the technology company responsible for the design, architecture, infrastructure, and legal governance of the Kindid social platform at <a href="https://kindid.in/" class="text-amber-400 hover:underline">kindid.in</a>.
         </p>
         <p class="text-sm text-zinc-400">
           Platform inquiries and technical support: <a href="mailto:support@kindid.in" class="text-amber-400 hover:underline font-mono-tag">support@kindid.in</a><br>
           Company &amp; corporate inquiries: <a href="mailto:contact@solvarionx.com" class="text-amber-400 hover:underline font-mono-tag">contact@solvarionx.com</a>
         </p>
+        <div class="pt-3 flex flex-wrap gap-3">
+          <a href="/" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs uppercase font-mono-tag tracking-wider transition">Open Kindid &rarr;</a>
+          <a href="/campuses" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-white font-bold text-xs uppercase font-mono-tag tracking-wider transition">Explore Campuses</a>
+        </div>
       </section>
     </article>
   </main>
@@ -218,11 +254,12 @@
   <footer class="border-t border-zinc-800 bg-zinc-950 py-8 no-print">
     <div class="max-w-4xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-zinc-500">
       <div class="flex items-center gap-2">
-        <span class="font-extrabold text-white">Kandid</span>
+        <span class="font-extrabold text-white">Kindid</span>
         <span>&copy; 2026 SolvarionX. All rights reserved.</span>
       </div>
-      <div class="flex items-center gap-4 font-mono-tag">
+      <div class="flex items-center gap-4 font-mono-tag flex-wrap justify-center">
         <a href="/about" class="text-amber-400">About</a>
+        <a href="/campuses" class="hover:text-zinc-300 transition">Campuses</a>
         <a href="/terms" class="hover:text-zinc-300 transition">Terms of Service</a>
         <a href="/privacy" class="hover:text-zinc-300 transition">Privacy Policy</a>
       </div>

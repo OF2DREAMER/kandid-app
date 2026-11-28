@@ -2,23 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Kindid — Authentic Moments & Communities</title>
-  <meta name="description" content="Kindid — The authentic social platform for communities and campuses. Dual-camera moments, live telemetry, and real-time community pulse.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Kindid — Authentic Dual-Camera Moments &amp; Campus Communities</title>
+  <meta name="description" content="Kindid (kindid.in) — The authentic social platform for Indian college campuses and real-world communities. Share unfiltered dual-camera moments, 3-second ambient audio, and Live Pulse without vanity metrics.">
   <link rel="canonical" href="https://kindid.in/">
   <meta name="robots" content="index, follow, max-image-preview:large">
 
   <!-- Open Graph / Facebook / WhatsApp -->
   <meta property="og:site_name" content="Kindid">
-  <meta property="og:title" content="Kindid — Authentic Moments & Communities">
-  <meta property="og:description" content="The authentic social platform for communities and campuses.">
+  <meta property="og:title" content="Kindid — Your world. Your moments.">
+  <meta property="og:description" content="The authentic social platform for college campuses and local communities. Dual-camera moments, 3-second ambient audio, and zero vanity metrics.">
   <meta property="og:url" content="https://kindid.in/">
   <meta property="og:type" content="website">
+  <meta property="og:image" content="https://kindid.in/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Kindid — Your world. Your moments.">
 
   <!-- Twitter / X -->
-  <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Kindid — Authentic Moments & Communities">
-  <meta name="twitter:description" content="The authentic social platform for communities and campuses.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Kindid — Your world. Your moments.">
+  <meta name="twitter:description" content="The authentic social platform for college campuses and local communities at kindid.in.">
+  <meta name="twitter:image" content="https://kindid.in/og-image.png">
 
   <!-- Structured Data (JSON-LD) -->
   <script type="application/ld+json">
@@ -30,6 +35,7 @@
         "@id": "https://kindid.in/#organization",
         "name": "SolvarionX",
         "url": "https://kindid.in/",
+        "logo": "https://kindid.in/icon-512.png",
         "brand": {
           "@id": "https://kindid.in/#brand"
         }
@@ -38,13 +44,36 @@
         "@type": "Brand",
         "@id": "https://kindid.in/#brand",
         "name": "Kindid",
-        "url": "https://kindid.in/"
+        "alternateName": "Kandid",
+        "url": "https://kindid.in/",
+        "logo": "https://kindid.in/icon-512.png",
+        "description": "Authentic dual-camera social moments and campus communities platform at kindid.in."
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://kindid.in/#app",
+        "name": "Kindid",
+        "applicationCategory": "SocialNetworkingApplication",
+        "operatingSystem": "Web, Android, iOS",
+        "url": "https://kindid.in/",
+        "image": "https://kindid.in/og-image.png",
+        "screenshot": "https://kindid.in/og-image.png",
+        "description": "Authentic dual-camera moments, 3-second ambient audio captures, campus circles, and real-time community pulse without vanity metrics.",
+        "publisher": {
+          "@id": "https://kindid.in/#organization"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "INR"
+        }
       },
       {
         "@type": "WebSite",
         "@id": "https://kindid.in/#website",
         "url": "https://kindid.in/",
         "name": "Kindid",
+        "description": "Authentic social platform for dual-camera moments and campus communities.",
         "publisher": {
           "@id": "https://kindid.in/#organization"
         }
@@ -52,11 +81,6 @@
     ]
   }
   </script>
-  
-  <!-- Cache Control Meta for Realtime Development -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
   
   <!-- PWA & Mobile Web App Meta -->
   <meta name="theme-color" content="#09090b">
@@ -77,6 +101,9 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
 
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/style.css?v=3.3.2">
   <style>
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: #000000; color: #F4F4F5; margin: 0; padding: 0; }
@@ -300,7 +327,7 @@
         <div class="flex justify-between items-center mb-3">
           <div class="flex items-center gap-2.5">
             <img src="/favicon.svg" class="w-7 h-7 rounded-lg shadow-md flex-shrink-0" alt="Kindid Logo">
-            <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</h1>
+            <span class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</span>
           </div>
 
           <div class="flex items-center gap-2">
@@ -372,14 +399,14 @@
               <svg aria-hidden="true" focusable="false" class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"></path></svg>
               <span>Back</span>
           </button>
-          <h1 class="text-xs font-bold text-white tracking-widest uppercase font-mono-tag">Settings</h1>
+          <h2 class="text-xs font-bold text-white tracking-widest uppercase font-mono-tag">Settings</h2>
           <button class="text-xs font-bold text-amber-500 hover:text-amber-400 cursor-pointer active:scale-95 transition-transform" onclick="switchScreenView('you')">Done</button>
       </header>
       <!-- State Headers -->
       <header id="headerEmptySearch" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <div class="flex items-center gap-2.5">
               <div class="w-7 h-7 bg-white text-black font-extrabold rounded-lg flex items-center justify-center text-sm shadow-md font-mono-tag">K</div>
-              <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</h1>
+              <span class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</span>
           </div>
           <span class="text-[9px] text-zinc-500 font-mono-tag tracking-widest uppercase">DISCOVERY</span>
       </header>
@@ -387,32 +414,32 @@
       <header id="headerError" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <div class="flex items-center gap-2.5">
               <div class="w-7 h-7 bg-white text-black font-extrabold rounded-lg flex items-center justify-center text-sm shadow-md font-mono-tag">K</div>
-              <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</h1>
+              <span class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</span>
           </div>
           <span class="text-[9px] text-amber-400 font-mono-tag tracking-widest uppercase">CONNECTION INTERRUPTED</span>
       </header>
 
       <header id="headerReport" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2.5 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <button class="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer" onclick="switchScreenView('feed')"><span>←</span> BACK</button>
-          <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</h1></div>
+          <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><span class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</span></div>
           <div class="w-10"></div>
       </header>
 
       <header id="headerBlock" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2.5 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <button class="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer" onclick="switchScreenView('feed')"><span>←</span> BACK</button>
-          <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</h1></div>
+          <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><span class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</span></div>
           <div class="w-10"></div>
       </header>
 
       <header id="headerReportConfirm" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2.5 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <div class="w-10"></div>
-          <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</h1></div>
+          <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><span class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</span></div>
           <div class="w-10"></div>
       </header>
 
       <header id="headerBlockConfirm" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2.5 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <div class="w-10"></div>
-          <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</h1></div>
+          <div class="flex items-center gap-2"><div class="w-6 h-6 bg-white text-black font-extrabold rounded-md flex items-center justify-center text-xs font-mono-tag">K</div><span class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</span></div>
           <div class="w-10"></div>
       </header>
 
@@ -423,7 +450,7 @@
 
       <header id="headerChatNew" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <button class="text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer" onclick="switchScreenView('chat-home')">← BACK</button>
-          <h1 class="text-xs tracking-[0.2em] font-extrabold text-white uppercase font-mono-tag">NEW MESSAGE</h1>
+          <h2 class="text-xs tracking-[0.2em] font-extrabold text-white uppercase font-mono-tag">NEW MESSAGE</h2>
           <div class="w-10"></div>
       </header>
 
@@ -461,19 +488,19 @@
       </header>
 
       <header id="headerChatEmpty" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
-          <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">CHAT</h1>
+          <h2 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">CHAT</h2>
           <div class="w-8"></div>
       </header>
 
       <header id="headerChatRequest" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <button class="text-zinc-400 font-mono-tag cursor-pointer hover:text-white" onclick="switchScreenView('chat-home')">←</button>
-          <h1 class="text-xs tracking-[0.2em] font-extrabold text-white uppercase font-mono-tag">MESSAGE REQUEST</h1>
+          <h2 class="text-xs tracking-[0.2em] font-extrabold text-white uppercase font-mono-tag">MESSAGE REQUEST</h2>
           <div class="w-6"></div>
       </header>
 
       <header id="headerChatSettings" style="display:none;" class="bg-[#09090b]/90 apple-blur px-5 pt-2 pb-3 border-b border-zinc-800/80 z-30 flex justify-between items-center">
           <button class="text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer" onclick="switchScreenView('chat-conversation')">← BACK</button>
-          <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">CONVERSATION SETTINGS</h1>
+          <h2 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">CONVERSATION SETTINGS</h2>
           <div class="w-10"></div>
       </header>
 
@@ -481,7 +508,7 @@
           <button class="text-xs text-zinc-400 hover:text-white font-mono-tag cursor-pointer flex items-center gap-1.5" onclick="handlePeerProfileBack()">
               <span>←</span> <span>BACK</span>
           </button>
-          <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">USER PROFILE</h1>
+          <h2 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">USER PROFILE</h2>
           <div class="w-12"></div>
       </header>
 
@@ -959,7 +986,7 @@
                             <input type="file" id="youDirectAvatarInput" accept="image/*" class="hidden" onchange="handleDirectAvatarUpload(event)">
                         </div>
                         <div class="pt-6">
-                            <h1 class="font-bold text-[19px] text-white tracking-tight leading-tight" id="youProfileName">You</h1>
+                            <h2 class="font-bold text-[19px] text-white tracking-tight leading-tight" id="youProfileName">You</h2>
                             <p class="text-[11px] text-gray-400 font-medium mt-0.5" id="youProfileUsername">@user</p>
                         </div>
                     </div>
@@ -1176,7 +1203,7 @@
                             </div>
                         </div>
                         <div class="pt-6 min-w-0">
-                            <h1 class="font-bold text-[19px] text-white tracking-tight leading-tight truncate" id="peerPublicName">User</h1>
+                            <h2 class="font-bold text-[19px] text-white tracking-tight leading-tight truncate" id="peerPublicName">User</h2>
                             <p class="text-[11px] text-gray-400 font-medium mt-0.5 truncate" id="peerPublicUsername">@user</p>
                         </div>
                     </div>
@@ -1293,7 +1320,7 @@
 
                     <!-- Name & Username -->
                     <div class="mt-3.5">
-                        <h1 class="font-bold text-[22px] text-white tracking-tight leading-tight" id="peerPrivateName">User</h1>
+                        <h2 class="font-bold text-[22px] text-white tracking-tight leading-tight" id="peerPrivateName">User</h2>
                         <p class="text-xs text-gray-400 font-medium mt-0.5" id="peerPrivateUsername">@user</p>
                     </div>
 
@@ -1344,7 +1371,7 @@
 
           <!-- Journal Introduction -->
           <div class="space-y-1 pt-1">
-              <h1 class="text-[10px] font-bold tracking-[0.2em] text-zinc-400 uppercase font-mono-tag">MEMORIES</h1>
+              <h2 class="text-[10px] font-bold tracking-[0.2em] text-zinc-400 uppercase font-mono-tag">MEMORIES</h2>
               <h2 class="text-base font-bold text-white font-sans tracking-tight">Your authentic archive.</h2>
               <p class="text-xs text-zinc-400 font-normal leading-relaxed">Real people, real places, real moments — kept as they happened.</p>
           </div>
@@ -2461,7 +2488,7 @@
           <!-- Header Section (Kindid Brand + Notification Action Only) -->
           <header class="px-5 pt-3 pb-2 flex justify-between items-center sticky top-0 bg-[#0b0b0c]/90 backdrop-blur-md z-40">
               <div class="flex items-center space-x-2">
-                  <h1 class="text-sm font-bold tracking-[0.25em] text-white">KINDID</h1>
+                  <span class="text-sm font-bold tracking-[0.25em] text-white">KINDID</span>
               </div>
               <div class="flex items-center gap-2">
                   <button type="button" class="singularity-btn no-notifications" id="chatNotifBtn" onclick="switchScreenView('notifications')" title="Notifications">
@@ -2646,7 +2673,7 @@
               <button type="button" onclick="closeChatPrivacyScreen()" aria-label="Back to conversation" class="hover:text-amber-400 transition p-1 -ml-1 text-gray-300 cursor-pointer">
                   <i class="fa-solid fa-arrow-left text-base" aria-hidden="true"></i>
               </button>
-              <h1 class="text-xs font-bold tracking-[0.2em] text-gray-400 uppercase ml-3 font-mono-meta">CHAT PRIVACY</h1>
+              <h2 class="text-xs font-bold tracking-[0.2em] text-gray-400 uppercase ml-3 font-mono-meta">CHAT PRIVACY</h2>
           </header>
 
           <!-- Main Content Container -->
@@ -2862,7 +2889,7 @@
         <!-- Header -->
         <div>
             <header class="px-5 pt-3 pb-2.5 flex justify-center items-center border-b border-zinc-800/80 bg-[#09090b]/90 apple-blur">
-                <h1 class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</h1>
+                <span class="text-xs tracking-[0.25em] font-extrabold text-white uppercase font-mono-tag">KINDID</span>
             </header>
         </div>
 
@@ -2925,7 +2952,7 @@
             </div>
 
             <div class="space-y-1">
-                <h1 id="campusPageName" class="text-xl font-extrabold text-white tracking-tight">North City University</h1>
+                <h2 id="campusPageName" class="text-xl font-extrabold text-white tracking-tight">North City University</h2>
                 <p id="campusPageLocation" class="text-xs text-zinc-400 font-mono-tag">Supaul, Bihar · Created by @kindid</p>
                 <p id="campusPageDescription" class="text-xs text-zinc-300 font-sans leading-relaxed pt-1">Academic & student community life across campus.</p>
             </div>
@@ -3091,7 +3118,7 @@
                  <span class="text-xs text-amber-400">🏛️</span>
                  <p class="font-mono-tag text-[9px] uppercase tracking-[.2em] text-amber-500 font-bold">MEMORIES AROUND US</p>
              </div>
-             <h1 class="text-lg font-extrabold text-white tracking-tight">Community Memory Archives</h1>
+             <h2 class="text-lg font-extrabold text-white tracking-tight">Community Memory Archives</h2>
              <p class="text-xs text-zinc-400 leading-relaxed">
                  Explore living collective memory archives from your joined communities and public spaces.
              </p>
@@ -3131,7 +3158,7 @@
             </div>
 
             <div class="space-y-1">
-                <h1 id="collectiveMemoryTitle" class="text-lg font-extrabold text-white tracking-tight">Collective Memory</h1>
+                <h2 id="collectiveMemoryTitle" class="text-lg font-extrabold text-white tracking-tight">Collective Memory</h2>
                 <p id="collectiveMemoryCommunity" class="text-xs text-zinc-400 font-mono-tag"></p>
             </div>
 
@@ -3190,7 +3217,7 @@
         <!-- Pulse Hero Card -->
         <div class="p-5 rounded-3xl bg-gradient-to-b from-zinc-900/90 to-zinc-950 border border-amber-500/30 shadow-2xl space-y-2 relative overflow-hidden">
             <div class="space-y-0.5">
-                <h1 id="livePulseCommunityName" class="text-xl font-extrabold text-white tracking-tight">North City University</h1>
+                <h2 id="livePulseCommunityName" class="text-xl font-extrabold text-white tracking-tight">North City University</h2>
                 <p id="livePulseLocation" class="text-xs text-zinc-400 font-mono-tag">Supaul, Bihar</p>
             </div>
             <p id="livePulseTagline" class="text-xs text-zinc-300 font-sans leading-relaxed pt-0.5">
@@ -3709,7 +3736,7 @@
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
           </button>
-          <h1 class="text-xl sm:text-2xl font-black text-white tracking-tight font-sans select-none">Kindid.</h1>
+          <span class="text-xl sm:text-2xl font-black text-white tracking-tight font-sans select-none">Kindid.</span>
           <div class="w-10 h-10 pointer-events-none"></div>
         </header>
 
@@ -3888,10 +3915,15 @@
                 </button>
 
                 <!-- Legal Copy: Readable contrast, optimal bottom safe area -->
-                <div class="text-center pt-1.5 select-none">
+                <div class="text-center pt-1.5 space-y-1.5 select-none">
                     <p class="text-[10px] text-zinc-500 leading-normal">
-                        By continuing, you agree to Kindid's <span onclick="openLegalModal('terms')" class="underline text-zinc-400 hover:text-white cursor-pointer transition-colors">Terms</span> and <span onclick="openLegalModal('privacy')" class="underline text-zinc-400 hover:text-white cursor-pointer transition-colors">Privacy Policy</span>.
+                        By continuing, you agree to Kindid's <a href="/terms" onclick="event.preventDefault(); openLegalModal('terms')" class="underline text-zinc-400 hover:text-white cursor-pointer transition-colors">Terms</a> and <a href="/privacy" onclick="event.preventDefault(); openLegalModal('privacy')" class="underline text-zinc-400 hover:text-white cursor-pointer transition-colors">Privacy Policy</a>.
                     </p>
+                    <nav aria-label="About Kindid" class="flex items-center justify-center gap-3 text-[10px] text-zinc-500 font-mono-tag">
+                        <a href="/about" class="hover:text-zinc-300 transition-colors">About Kindid</a>
+                        <span aria-hidden="true">&middot;</span>
+                        <a href="/campuses" class="hover:text-zinc-300 transition-colors">Campuses</a>
+                    </nav>
                 </div>
             </div>
         </div>
@@ -3982,7 +4014,7 @@
 
                 <!-- Headline & Human Supporting Copy -->
                 <div class="space-y-1.5 select-none pt-1">
-                    <h1 class="text-[22px] font-bold text-white tracking-tight leading-[1.2]">Let's start with you.</h1>
+                    <h2 class="text-[22px] font-bold text-white tracking-tight leading-[1.2]">Let's start with you.</h2>
                     <p class="text-xs text-zinc-400 font-normal">Set up your Kindid identity.</p>
                 </div>
 
@@ -4073,7 +4105,7 @@
                 
                 <!-- Headline & Supporting Copy -->
                 <div class="space-y-1.5 select-none pt-1">
-                    <h1 class="text-[26px] font-bold text-white tracking-tight leading-[1.15]">Where is your world?</h1>
+                    <h2 class="text-[26px] font-bold text-white tracking-tight leading-[1.15]">Where is your world?</h2>
                     <p class="text-[12px] text-zinc-400 font-normal leading-relaxed">Choose the places and interests that matter to you.</p>
                 </div>
 
@@ -4186,7 +4218,7 @@
                 
                 <!-- Headline & Subtitle -->
                 <div class="space-y-1.5 select-none pt-1">
-                    <h1 class="text-[26px] font-bold text-white tracking-tight leading-[1.15]">Review & confirm.</h1>
+                    <h2 class="text-[26px] font-bold text-white tracking-tight leading-[1.15]">Review & confirm.</h2>
                     <p class="text-[12px] text-zinc-400 font-normal leading-relaxed">Make sure everything looks right before you enter Kindid.</p>
                 </div>
 
@@ -5383,7 +5415,20 @@
 
   </div> <!-- End #appContainer -->
 
-  <script src="/observability.js?v=1.0.0"></script>
-  <script src="/app_core.js?v=3.3.7"></script>
+  <noscript>
+    <div style="max-width:640px;margin:40px auto;padding:24px;background:#09090b;border:1px solid #27272a;border-radius:16px;color:#e4e4e7;font-family:sans-serif;">
+      <h2 style="font-size:20px;font-weight:700;color:#ffffff;margin-bottom:8px;">Kindid — Authentic Dual-Camera Moments &amp; Campus Communities</h2>
+      <p style="font-size:14px;line-height:1.6;color:#a1a1aa;margin-bottom:16px;">Kindid (kindid.in), developed by SolvarionX, is an authentic social platform for real-world places, Indian university campuses, and everyday moments — free from follower counts and vanity metrics.</p>
+      <p style="font-size:13px;">
+        <a href="/about" style="color:#f59e0b;margin-right:16px;">About Kindid</a>
+        <a href="/campuses" style="color:#f59e0b;margin-right:16px;">Campus Circles</a>
+        <a href="/privacy" style="color:#f59e0b;margin-right:16px;">Privacy Policy</a>
+        <a href="/terms" style="color:#f59e0b;">Terms of Service</a>
+      </p>
+    </div>
+  </noscript>
+
+  <script src="/observability.js?v=1.0.0" defer></script>
+  <script src="/app_core.js?v=3.3.7" defer></script>
 </body>
 </html>
