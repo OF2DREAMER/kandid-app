@@ -4184,7 +4184,7 @@ function renderFeedCards(moments, container, options) {
 
           '<div class="flex items-center gap-1.5">' +
             '<button type="button" onclick="event.stopPropagation(); openStoryShareModal(\'' + m.id + '\')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[9px] font-mono-tag font-bold tracking-wider transition cursor-pointer active:scale-95 shadow-sm" title="Flex to Story">' +
-              '<span>↗</span> <span>Flex</span>' +
+              '<span>↗</span> <span>Share</span>' +
             '</button>' +
             iWasThereHtml +
             '<div class="relative flex items-center gap-1 reaction-control-container">' +
