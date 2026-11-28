@@ -4144,7 +4144,6 @@ function renderFeedCards(moments, container, options) {
         '<img src="' + escapeHtml(mainImgSrc) + '" class="w-full h-full object-cover main-stage-img" alt="Moment Photo">' +
         '<div class="sub-camera-pip absolute top-3 left-3 w-20 h-28 rounded-xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black cursor-pointer z-10 active:scale-95 transition-transform" title="Tap to Swap Optics">' +
           '<img src="' + escapeHtml(pipImgSrc) + '" class="w-full h-full object-cover pip-sub-img" alt="Selfie Photo">' +
-          '<div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/70 backdrop-blur-md text-[9px] text-zinc-200 font-bold font-mono-tag rounded-md tracking-wider border border-white/10">ME • 50mm</div>' +
         '</div>' +
         clusterBadgeHtml +
         (reactionPillsHtml ?
