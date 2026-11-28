@@ -987,22 +987,20 @@
                     </div>
                 </div>
 
-                <!-- Campus & Location Context -->
-                <div class="flex flex-col text-[11px] text-gray-300 mt-2.5 space-y-1" aria-label="Location context">
-                    <div class="flex items-center space-x-1.5">
+                <!-- Campus & Location Context (only rendered when the user added it) -->
+                <div class="flex flex-col text-[11px] text-gray-300 mt-2.5 space-y-1" id="youProfileLocationRow" aria-label="Location context" style="display:none;">
+                    <div class="flex items-center space-x-1.5" id="youProfileCampusRow" style="display:none;">
                         <i class="fa-solid fa-graduation-cap text-gray-400 text-[10px]" aria-hidden="true"></i>
-                        <span id="youProfileCampusName">Campus Community</span>
+                        <span id="youProfileCampusName"></span>
                     </div>
-                    <div class="flex items-center space-x-1.5">
+                    <div class="flex items-center space-x-1.5" id="youProfileCampusCityRow" style="display:none;">
                         <i class="fa-solid fa-location-dot text-gray-400 text-[10px]" aria-hidden="true"></i>
-                        <span id="youProfileCampusCity">Local</span>
+                        <span id="youProfileCampusCity"></span>
                     </div>
                 </div>
 
-                <!-- Bio -->
-                <div class="text-[11px] text-gray-300 mt-2.5 leading-relaxed font-normal" id="youProfileBio" aria-label="User biography">
-                    Authentic moments across campus.
-                </div>
+                <!-- Bio (only rendered when the user added it) -->
+                <div class="text-[11px] text-gray-300 mt-2.5 leading-relaxed font-normal" id="youProfileBio" aria-label="User biography" style="display:none;"></div>
             </section>
 
             <!-- Your Journal Section -->
@@ -1220,10 +1218,8 @@
                     </div>
                 </div>
 
-                <!-- Bio -->
-                <div class="text-[11px] text-gray-300 mt-2.5 leading-relaxed font-normal" id="peerPublicBio" aria-label="Biography">
-                    Authentic moments across campus.
-                </div>
+                <!-- Bio (only rendered when the user added it) -->
+                <div class="text-[11px] text-gray-300 mt-2.5 leading-relaxed font-normal" id="peerPublicBio" aria-label="Biography" style="display:none;"></div>
             </section>
 
             <!-- Recent Moments Header -->
@@ -1313,10 +1309,8 @@
                         <p class="text-xs text-gray-400 font-medium mt-0.5" id="peerPrivateUsername">@user</p>
                     </div>
 
-                    <!-- Bio Section -->
-                    <div class="text-xs text-gray-300 mt-3 leading-relaxed font-normal max-w-[280px]" id="peerPrivateBio" aria-label="Biography">
-                        Authentic moments across campus.
-                    </div>
+                    <!-- Bio Section (only rendered when the user added it) -->
+                    <div class="text-xs text-gray-300 mt-3 leading-relaxed font-normal max-w-[280px]" id="peerPrivateBio" aria-label="Biography" style="display:none;"></div>
 
                     <!-- Restrained Private Profile Indicator -->
                     <div class="inline-flex items-center space-x-1.5 mt-4 px-3 py-1 rounded-full bg-neutral-900/90 border border-neutral-800" aria-label="Private profile status">
@@ -5402,6 +5396,6 @@
   </div> <!-- End #appContainer -->
 
   <script src="/observability.js?v=1.0.0"></script>
-  <script src="/app_core.js?v=3.3.6"></script>
+  <script src="/app_core.js?v=3.3.7"></script>
 </body>
 </html>
