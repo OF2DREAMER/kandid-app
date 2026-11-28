@@ -6484,12 +6484,22 @@ BLOCKED_STATIC_EXTENSIONS = (
 )
 BLOCKED_STATIC_DIRS = ("/cloudflared", "/ngrok", "/backend", "/scratch")
 BLOCKED_STATIC_NAMES = ("/cf.tgz",)
+BLOCKED_PROTOTYPE_HTML = (
+    "/kandid_feed.html",
+    "/kandid_campus.html",
+    "/kandid_capture.html",
+    "/kandid_global.html",
+    "/kandid_search.html",
+    "/kandid_you.html",
+)
 
 
 def is_blocked_static_path(norm_path):
     """True when a normalized request path must never be served over HTTP."""
     import posixpath
     if norm_path in ("/admin", "/admin/", "/admin.html", "/admin.js") or norm_path.startswith("/admin/"):
+        return True
+    if norm_path in BLOCKED_PROTOTYPE_HTML:
         return True
     if norm_path == "/data" or norm_path.startswith("/data/") or "chat_attachments" in norm_path:
         return True
@@ -6748,26 +6758,36 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         # ---- Cache policy: API responses stay non-cacheable; uploads immutable; static assets cacheable ----
-        req_path = urlparse(self.path).path
+        parsed_url = urlparse(self.path)
+        req_path = parsed_url.path
         status = getattr(self, "_response_status", 0)
         is_api = req_path.startswith(("/api", "/health"))
+        is_admin = req_path in ("/admin", "/admin/", "/admin.html", "/admin.js") or req_path.startswith("/admin/")
+        is_invite = req_path.startswith(("/invite/", "/i/"))
         is_cacheable_status = status in (200, 304)
 
-        if is_cacheable_status and not is_api and req_path.startswith("/uploads/"):
+        if is_cacheable_status and not is_api and not is_admin and req_path.startswith("/uploads/"):
             cache_control = "public, max-age=31536000, immutable"
-        elif is_cacheable_status and not is_api and (req_path == "/manifest.json" or req_path.lower().endswith(self.STATIC_CACHEABLE_EXTS)):
+        elif is_cacheable_status and not is_api and not is_admin and req_path == "/" and not parsed_url.query:
+            cache_control = "public, max-age=300, must-revalidate"
+        elif is_cacheable_status and not is_api and not is_admin and (req_path == "/manifest.json" or req_path.lower().endswith(self.STATIC_CACHEABLE_EXTS)):
             cache_control = "public, max-age=86400"
         else:
             cache_control = "no-cache, no-store, must-revalidate"
 
-        self.send_header("Cache-Control", cache_control)
-        if cache_control.startswith("no-cache"):
-            self.send_header("Pragma", "no-cache")
-            self.send_header("Expires", "0")
-        elif status == 200:
-            etag = self._static_asset_etag(self.translate_path(req_path))
-            if etag:
-                self.send_header("ETag", etag)
+        if not is_admin:
+            self.send_header("Cache-Control", cache_control)
+            if cache_control.startswith("no-cache"):
+                self.send_header("Pragma", "no-cache")
+                self.send_header("Expires", "0")
+            elif status == 200:
+                etag_path = "/index.html" if req_path == "/" else req_path
+                etag = self._static_asset_etag(self.translate_path(etag_path))
+                if etag:
+                    self.send_header("ETag", etag)
+
+        if is_api or is_admin or is_invite or "chat_attachments" in req_path:
+            self.send_header("X-Robots-Tag", "noindex, nofollow")
 
         # CORS Origin Control
         origin = self.headers.get("Origin", "").strip()
@@ -6876,8 +6896,26 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
                 return
+        canonical_redirects = {
+            "/about.html": "/about",
+            "/campuses.html": "/campuses",
+            "/privacy.html": "/privacy",
+            "/terms.html": "/terms",
+            "/index.html": "/",
+            "/landing": "/",
+        }
+        if norm_path in canonical_redirects:
+            target = canonical_redirects[norm_path]
+            self.send_response(301)
+            self.send_header("Location", target)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if norm_path in ["/about", "/about/"]:
             self.path = "/about.html"
+            return super().do_HEAD()
+        if norm_path in ["/campuses", "/campuses/"]:
+            self.path = "/campuses.html"
             return super().do_HEAD()
         if norm_path in ["/privacy", "/privacy/"]:
             self.path = "/privacy.html"
@@ -7642,8 +7680,33 @@ class KandidHandler(SimpleHTTPRequestHandler):
             except FileNotFoundError:
                 return self.send_json(404, {"error": "File not found"})
 
+        # Canonical clean-URL 301 redirects (eliminate duplicate .html & broken /landing URLs)
+        canonical_redirects = {
+            "/about.html": "/about",
+            "/campuses.html": "/campuses",
+            "/privacy.html": "/privacy",
+            "/terms.html": "/terms",
+            "/landing": "/",
+        }
+        if norm_path in canonical_redirects:
+            target = canonical_redirects[norm_path]
+            if parsed.query:
+                target = f"{target}?{parsed.query}"
+            self.send_response(301)
+            self.send_header("Location", target)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if norm_path == "/index.html":
+            target = f"/?{parsed.query}" if parsed.query else "/"
+            self.send_response(301)
+            self.send_header("Location", target)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+
         # Viral Loop & Open Graph Engine: Dynamic link previews for WhatsApp/Twitter
-        if path == "/" or path == "/index.html":
+        if path == "/":
             moment_id = query.get("moment", [""])[0]
             if moment_id:
                 try:
@@ -7651,34 +7714,59 @@ class KandidHandler(SimpleHTTPRequestHandler):
                         html_content = f.read()
                     conn = get_db()
                     cursor = conn.cursor()
-                    cursor.execute("SELECT p.image_url, p.caption, u.handle FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?", (moment_id,))
+                    cursor.execute(
+                        "SELECT p.main_img, p.caption, p.is_private, COALESCE(p.moderation_status, 'active') as moderation_status, u.handle "
+                        "FROM posts p LEFT JOIN users u ON p.user_id = u.id WHERE p.id = ?",
+                        (moment_id,),
+                    )
                     post = cursor.fetchone()
                     conn.close()
-                    
-                    if post:
-                        img_url = post["image_url"] or ""
-                        caption = post["caption"] or "A Kindid moment"
-                        handle = post["handle"] or "someone"
-                        
-                        if img_url and img_url.startswith("/"):
+
+                    if post and not post["is_private"] and post["moderation_status"] == "active":
+                        img_url = (post["main_img"] or "").strip()
+                        caption = (post["caption"] or "").strip() or "A real-world moment shared on Kindid."
+                        handle = (post["handle"] or "").strip() or "someone"
+
+                        if not img_url or img_url.startswith("data:"):
+                            img_url = "https://kindid.in/og-image.png"
+                        elif img_url.startswith("/"):
                             img_url = f"https://kindid.in{img_url}"
-                            
-                        import html
-                        safe_caption = html.escape(caption)
-                        safe_handle = html.escape(handle)
-                        
-                        og_tags = f'''
-  <meta property="og:title" content="Moment by @{safe_handle} on Kindid" />
-  <meta property="og:description" content="{safe_caption}" />
-  <meta property="og:image" content="{img_url}" />
-  <meta property="og:type" content="website" />
-  <meta property="twitter:card" content="summary_large_image" />
-  <meta property="twitter:image" content="{img_url}" />
-'''
-                        html_content = html_content.replace("</title>", "</title>\n" + og_tags)
-                        
+
+                        import html as html_lib
+                        safe_caption = html_lib.escape(caption, quote=True)
+                        safe_handle = html_lib.escape(handle, quote=True)
+                        safe_img = html_lib.escape(img_url, quote=True)
+                        safe_moment_url = html_lib.escape(f"https://kindid.in/?moment={moment_id}", quote=True)
+
+                        dynamic_head = f"""  <title>Moment by @{safe_handle} on Kindid</title>
+  <meta name="description" content="{safe_caption}">
+  <link rel="canonical" href="{safe_moment_url}">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+
+  <!-- Open Graph / Facebook / WhatsApp -->
+  <meta property="og:site_name" content="Kindid">
+  <meta property="og:title" content="Moment by @{safe_handle} on Kindid">
+  <meta property="og:description" content="{safe_caption}">
+  <meta property="og:url" content="{safe_moment_url}">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="{safe_img}">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Moment by @{safe_handle} on Kindid">
+  <meta name="twitter:description" content="{safe_caption}">
+  <meta name="twitter:image" content="{safe_img}">"""
+
+                        html_content = re.sub(
+                            r"  <title>.*?</title>\s*.*?<!-- Structured Data",
+                            dynamic_head + "\n\n  <!-- Structured Data",
+                            html_content,
+                            count=1,
+                            flags=re.DOTALL,
+                        )
+
                     self.send_response(200)
-                    self.send_header("Content-type", "text/html; charset=utf-8")
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
                     self.end_headers()
                     self.wfile.write(html_content.encode("utf-8"))
                     return
@@ -7699,10 +7787,6 @@ class KandidHandler(SimpleHTTPRequestHandler):
                 "time": datetime.now().isoformat()
             })
 
-        if path == "/landing":
-            self.path = "/landing.html"
-            return super().do_GET()
-
         if path.startswith("/invite/") or path.startswith("/i/"):
             asset_match = re.search(r"/(?:invite|i)/([^/]+\.(css|js|svg|png|jpg|jpeg|ico|json|woff2?|ttf))$", path)
             if asset_match:
@@ -7713,6 +7797,10 @@ class KandidHandler(SimpleHTTPRequestHandler):
 
         if path in ["/about", "/about/"]:
             self.path = "/about.html"
+            return super().do_GET()
+
+        if path in ["/campuses", "/campuses/"]:
+            self.path = "/campuses.html"
             return super().do_GET()
 
         if path in ["/privacy", "/privacy/"]:
